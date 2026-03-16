@@ -1032,12 +1032,12 @@ export default function CalendarScreen({ navigation }: Props) {
           const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
           return (
             <TouchableOpacity
-              style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: barColor + '50' }]}
               activeOpacity={0.7}
               onPress={() => handleEventTap(event)}
             >
               <View style={[styles.feedEventColorBar, { backgroundColor: barColor }]} />
-              <View style={styles.feedEventContent}>
+              <View style={[styles.feedEventContent, { backgroundColor: barColor + '12' }]}>
                 <View style={styles.feedEventTop}>
                   <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
                     {event.title}
@@ -1483,12 +1483,12 @@ export default function CalendarScreen({ navigation }: Props) {
             return (
               <TouchableOpacity
                 key={event.id}
-                style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: (event.color || colors.border) + '50' }]}
                 activeOpacity={0.7}
                 onPress={() => handleEventTap(event)}
               >
                 <View style={[styles.feedEventColorBar, { backgroundColor: event.color }]} />
-                <View style={styles.feedEventContent}>
+                <View style={[styles.feedEventContent, { backgroundColor: (event.color || '') + '12' }]}>
                   <View style={styles.feedEventTop}>
                     <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
                       {event.title}
@@ -2084,7 +2084,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  feedEventColorBar: { width: 4, alignSelf: 'stretch' },
+  feedEventColorBar: { width: 5, alignSelf: 'stretch' },
   feedEventContent: { flex: 1, paddingVertical: 11, paddingHorizontal: 11 },
   feedEventTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   feedEventTitle: { flex: 1, fontSize: 14, fontWeight: '500', lineHeight: 20 },
