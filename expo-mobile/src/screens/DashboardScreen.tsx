@@ -567,30 +567,39 @@ export default function DashboardScreen({ navigation }: Props) {
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.taskScroll}>
-              {todayTasks.slice(0, 5).map(task => {
-                const projectColor = getProjectColor(task.projectId);
-                const done = isComplete(task.status);
-                const taskCardWidth = Dimensions.get('window').width * 0.72 - 16;
-                return (
-                  <TouchableOpacity
-                    key={task.id}
-                    style={[styles.taskCard, { backgroundColor: colors.card, width: taskCardWidth }]}
-                    onPress={() => toggleTaskComplete(task.id, task.status)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.taskColorBar, { backgroundColor: projectColor }]} />
-                    <Text
-                      style={[styles.taskCardTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
-                      numberOfLines={1}
-                    >
-                      {task.title}
-                    </Text>
-                    <View style={[styles.checkbox, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent', marginRight: 10 }]}>
-                      {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+              {(() => {
+                const taskCardWidth = Dimensions.get('window').width * 0.62 - 16;
+                const displayed = todayTasks.slice(0, 16);
+                const columns: typeof displayed[] = [];
+                for (let i = 0; i < displayed.length; i += 4) columns.push(displayed.slice(i, i + 4));
+                return columns.map((col, colIdx) => (
+                  <View key={colIdx} style={{ width: taskCardWidth, gap: 6 }}>
+                    {col.map(task => {
+                      const projectColor = getProjectColor(task.projectId);
+                      const done = isComplete(task.status);
+                      return (
+                        <TouchableOpacity
+                          key={task.id}
+                          style={[styles.taskCard, { backgroundColor: colors.card, width: taskCardWidth }]}
+                          onPress={() => toggleTaskComplete(task.id, task.status)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[styles.taskColorBar, { backgroundColor: projectColor }]} />
+                          <Text
+                            style={[styles.taskCardTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
+                            numberOfLines={1}
+                          >
+                            {task.title}
+                          </Text>
+                          <View style={[styles.checkbox, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent', marginRight: 10 }]}>
+                            {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ));
+              })()}
             </ScrollView>
           )}
         </View>
