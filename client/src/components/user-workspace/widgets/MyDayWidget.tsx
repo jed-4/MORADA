@@ -449,7 +449,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                         </span>
                       )}
                       {project && (() => {
-                        const colors = generateNotionColors((project as any).color);
+                        const colors = generateNotionColors(project.color);
                         return (
                           <span 
                             className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
