@@ -59,6 +59,10 @@ function formatTime12h(time24: string): string {
   return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
 }
 
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getWeekBounds(offset: number) {
   const now = new Date();
   const day = now.getDay();
@@ -69,7 +73,7 @@ function getWeekBounds(offset: number) {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
-  return { start: monday, end: sunday };
+  return { start: monday, end: sunday, startStr: toLocalDateStr(monday), endStr: toLocalDateStr(sunday) };
 }
 
 function formatShortDate(date: Date): string {
@@ -563,11 +567,14 @@ export default function TimesheetsScreen() {
     ]);
   };
 
-  const { start: weekStart, end: weekEnd } = getWeekBounds(weekOffset);
+  const { start: weekStart, end: weekEnd, startStr: weekStartStr, endStr: weekEndStr } = getWeekBounds(weekOffset);
   const filteredTimesheets = timesheets
     .filter(ts => {
-      const d = new Date(ts.date);
-      return d >= weekStart && d <= weekEnd;
+      // Compare using local calendar dates to avoid UTC timezone boundary mismatches.
+      // A timesheet created Sunday evening AEST must not fall into the previous week
+      // just because its UTC timestamp crosses midnight into Saturday/Sunday UTC.
+      const localDateStr = toLocalDateStr(new Date(ts.date));
+      return localDateStr >= weekStartStr && localDateStr <= weekEndStr;
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
