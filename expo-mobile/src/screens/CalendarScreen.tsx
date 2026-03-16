@@ -306,6 +306,10 @@ export default function CalendarScreen({ navigation }: Props) {
   const [savingView, setSavingView] = useState(false);
   const [allDayExpanded, setAllDayExpanded] = useState(false);
   const [allDayRowHeight, setAllDayRowHeight] = useState(0);
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  });
 
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -578,6 +582,15 @@ export default function CalendarScreen({ navigation }: Props) {
     apiRequest('/api/calendar-views/cleanup-duplicates', 'POST', { calendarType: 'personal' })
       .then(() => fetchData())
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const tick = () => {
+      const n = new Date();
+      setNowMinutes(n.getHours() * 60 + n.getMinutes());
+    };
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -1269,7 +1282,9 @@ export default function CalendarScreen({ navigation }: Props) {
               contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
               onLayout={() => {
                 setTimeout(() => {
-                  const y = 7 * HOUR_HEIGHT;
+                  const n = new Date();
+                  const mins = n.getHours() * 60 + n.getMinutes();
+                  const y = Math.max(0, (mins / 60) * HOUR_HEIGHT - 120);
                   timeGridScrollRef.current?.scrollTo({ y, animated: false });
                   timeLabelScrollRef.current?.scrollTo({ y, animated: false });
                 }, 100);
@@ -1340,6 +1355,34 @@ export default function CalendarScreen({ navigation }: Props) {
                           }}
                         />
                       ))}
+
+                      {currentDay && (
+                        <View
+                          pointerEvents="none"
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            top: (nowMinutes / 60) * HOUR_HEIGHT - 1,
+                            zIndex: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <View style={{
+                            width: 9,
+                            height: 9,
+                            borderRadius: 5,
+                            backgroundColor: colors.accent,
+                            marginLeft: -4,
+                          }} />
+                          <View style={{
+                            flex: 1,
+                            height: 2,
+                            backgroundColor: colors.accent,
+                          }} />
+                        </View>
+                      )}
 
                       {layoutEvents.map(({ event, startMin, endMin }) => {
                         const top = (startMin / 60) * HOUR_HEIGHT;
