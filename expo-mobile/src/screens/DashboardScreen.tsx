@@ -177,7 +177,7 @@ export default function DashboardScreen({ navigation }: Props) {
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
-        apiFetch<ScheduleItem[]>('/api/schedule-items/user-assigned').catch(() => []),
+        apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
       ]);
       setProjects(projectsData || []);
       const myTasks = (tasksData || []).filter((t) => {
