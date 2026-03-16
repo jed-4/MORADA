@@ -88,7 +88,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd expo-mobile && npx expo start --tunnel --port 8081"
+args = "fuser -k 8081/tcp 2>/dev/null; sleep 1; cd expo-mobile && npx expo start --tunnel --port 8081"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:1.0.0", "google-calendar:1.0.0", "javascript_object_storage:2.0.0"]
