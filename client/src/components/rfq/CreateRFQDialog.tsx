@@ -13,9 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { CalendarIcon, Upload, X, FileText, Search } from "lucide-react";
+import { CalendarIcon, Upload, X, FileText, Search, UserPlus } from "lucide-react";
 import type { EstimateItem, Contact } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
+import AddContactDialog from "@/components/AddContactDialog";
 
 // RFQ Form Schema
 const rfqFormSchema = z.object({
@@ -51,11 +52,13 @@ export function CreateRFQDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [supplierSearch, setSupplierSearch] = useState("");
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
 
-  // Fetch suppliers (from contacts with contactType='supplier')
-  const { data: suppliers = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts?contactType=supplier"],
+  // Fetch all contacts and filter suppliers client-side so invalidation works after adding
+  const { data: allContacts = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts"],
   });
+  const suppliers = useMemo(() => allContacts.filter((c) => c.contactType === "supplier"), [allContacts]);
 
   const filteredSuppliers = useMemo(() => {
     const search = supplierSearch.toLowerCase();
@@ -142,6 +145,12 @@ export function CreateRFQDialog({
   };
 
   return (
+    <>
+    <AddContactDialog
+      open={showAddSupplier}
+      onOpenChange={setShowAddSupplier}
+      defaultContactType="supplier"
+    />
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -176,7 +185,19 @@ export function CreateRFQDialog({
 
           {/* Multi-Supplier Selection */}
           <div className="space-y-2">
-            <Label>Suppliers</Label>
+            <div className="flex items-center justify-between">
+              <Label>Suppliers</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground"
+                onClick={() => setShowAddSupplier(true)}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Add new supplier
+              </Button>
+            </div>
             <div className="relative mb-2">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
@@ -189,7 +210,7 @@ export function CreateRFQDialog({
             <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
               {suppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">
-                  No suppliers found. Add suppliers first.
+                  No suppliers found. Use "Add new supplier" above to create one.
                 </p>
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-2">
@@ -349,5 +370,6 @@ export function CreateRFQDialog({
         </form>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

@@ -90,17 +90,51 @@ export default function AddContactDialog({
     },
   });
 
+  // Reset form and type when dialog opens/closes
   useEffect(() => {
-    if (defaultContactType) {
-      form.setValue("contactType", defaultContactType);
-      setSelectedType(defaultContactType);
+    if (open) {
+      const type = defaultContactType || "trade";
+      form.reset({
+        name: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        mobile: "",
+        company: "",
+        position: "",
+        contactType: type,
+        spouseName: "",
+        spousePhone: "",
+        spouseEmail: "",
+        primaryContact: undefined,
+        abn: "",
+        businessNumber: "",
+        address: "",
+        paymentTerms: "",
+        defaultCostCodeId: "__none__",
+        role: "",
+        hourlyRate: "",
+        hourlyPrice: "",
+        notes: "",
+        labels: [],
+        projectIds: [],
+        avatarColor: DEFAULT_GREY,
+        portalEnabled: false,
+        isArchived: false,
+      });
+      setSelectedType(type);
     }
-  }, [defaultContactType, form]);
+  }, [open, defaultContactType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === "contactType") {
-        setSelectedType(value.contactType as "trade" | "supplier" | "client");
+        const validTypes = ["trade", "supplier", "client", "team"] as const;
+        const t = value.contactType;
+        if (t && validTypes.includes(t as typeof validTypes[number])) {
+          setSelectedType(t as "trade" | "supplier" | "client");
+        }
       }
     });
     return () => subscription.unsubscribe();
