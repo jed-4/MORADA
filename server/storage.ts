@@ -13948,9 +13948,11 @@ export class DbStorage implements IStorage {
         const conditions = [];
         if (projectFilter) conditions.push(projectFilter);
         // Visibility filter: hide assignee_only checklists from non-assignees (unless admin)
+        // NULL visibility is treated as 'everyone' for backwards compatibility with pre-migration rows
         if (userId && !isAdmin) {
           conditions.push(
             or(
+              isNull(schema.checklistInstances.visibility),
               eq(schema.checklistInstances.visibility, 'everyone'),
               eq(schema.checklistInstances.assigneeId, userId)
             )
