@@ -102,6 +102,7 @@ import {
   MessageSquare,
   UserPlus,
   Lock,
+  Globe,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -407,6 +408,20 @@ export default function ProjectChecklists() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete group.", variant: "destructive" });
+    },
+  });
+
+  const updateInstanceMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      await apiRequest(`/api/checklist-instances/${id}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update group.", variant: "destructive" });
     },
   });
 
@@ -1017,6 +1032,25 @@ export default function ProjectChecklists() {
                         >
                           <Clock className="h-3 w-3 mr-2" />
                           Activity Log
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newVisibility = instance.visibility === "assignee_only" ? "everyone" : "assignee_only";
+                            updateInstanceMutation.mutate({ id: instance.id, data: { visibility: newVisibility } });
+                            toast({
+                              title: newVisibility === "assignee_only" ? "Set to Assignee Only" : "Set to Everyone",
+                              description: newVisibility === "assignee_only"
+                                ? "Only you and admins can see this checklist group."
+                                : "All project members can now see this checklist group.",
+                            });
+                          }}
+                        >
+                          {instance.visibility === "assignee_only" ? (
+                            <><Globe className="h-3 w-3 mr-2" />Make Visible to Everyone</>
+                          ) : (
+                            <><Lock className="h-3 w-3 mr-2" />Restrict to Assignee Only</>
+                          )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
