@@ -420,35 +420,36 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const renderItemRow = (item: ChecklistItem) => (
     <View key={item.id} style={[styles.itemRow, { borderColor: colors.border }]}>
       <TouchableOpacity
-        style={styles.itemCheckArea}
+        style={styles.itemCheckBtn}
         onPress={() => toggleItemStatus(item)}
         activeOpacity={0.7}
         disabled={item.status === 'na'}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
       >
         <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
-        <View style={styles.itemContent}>
-          <Text
-            style={[
-              styles.itemDescription,
-              { color: item.status === 'completed' ? colors.muted : colors.text },
-              item.status === 'completed' && styles.itemStrikethrough,
-            ]}
-            numberOfLines={2}
-          >
-            {item.description}
-          </Text>
-          {item.assigneeName && (
-            <Text style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
-              {item.assigneeName.split(' ')[0]}
-            </Text>
-          )}
-        </View>
-        {item.isRequired && (
-          <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
-            <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
-          </View>
-        )}
       </TouchableOpacity>
+      <View style={styles.itemContent}>
+        <Text
+          style={[
+            styles.itemDescription,
+            { color: item.status === 'completed' ? colors.muted : colors.text },
+            item.status === 'completed' && styles.itemStrikethrough,
+          ]}
+          numberOfLines={2}
+        >
+          {item.description}
+        </Text>
+        {item.assigneeName && (
+          <Text style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
+            {item.assigneeName.split(' ')[0]}
+          </Text>
+        )}
+      </View>
+      {item.isRequired && (
+        <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
+          <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
+        </View>
+      )}
       <View style={styles.itemRightActions}>
         {item.notes && (
           <Ionicons name="chatbubble" size={13} color={colors.accent} />
@@ -937,8 +938,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    maxWidth: 150,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    maxWidth: 160,
   },
   filterPillText: { fontSize: 13, fontWeight: '500' },
   scrollContent: { padding: 16, paddingBottom: 32 },
@@ -1032,11 +1035,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 4,
   },
-  itemCheckArea: {
-    flexDirection: 'row',
+  itemCheckBtn: {
+    paddingRight: 10,
+    paddingLeft: 2,
+    justifyContent: 'center',
     alignItems: 'center',
-    flex: 1,
-    gap: 10,
   },
   itemContent: { flex: 1 },
   itemDescription: { fontSize: 14 },

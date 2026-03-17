@@ -15,6 +15,7 @@ import {
   Platform,
   Dimensions,
   Alert,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -483,25 +484,36 @@ export default function TasksScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={styles.headerControls}>
+      <SafeAreaView style={{ backgroundColor: colors.accent + '30' }}>
+        <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
           <TouchableOpacity
-            style={[styles.groupByBtn, { borderColor: colors.border }]}
-            onPress={() => setShowGroupByModal(true)}
+            style={styles.headerBackBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
           >
-            <Ionicons name="funnel-outline" size={16} color={colors.secondary} />
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.groupByBtn, { borderColor: colors.border }]}
-            onPress={() => setShowFilterModal(true)}
-          >
-            <Ionicons name="filter-outline" size={16} color={colors.secondary} />
-            {hasActiveFilters && (
-              <View style={styles.filterDot} />
-            )}
-          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>My Tasks</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+              onPress={() => setShowGroupByModal(true)}
+            >
+              <Ionicons name="funnel-outline" size={16} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+              onPress={() => setShowFilterModal(true)}
+            >
+              <Ionicons name="options-outline" size={16} color={colors.text} />
+              {hasActiveFilters && (
+                <View style={[styles.filterDot, { backgroundColor: colors.accent }]} />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
 
       <ScrollView
         horizontal
@@ -1007,10 +1019,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderBottomWidth: 1,
+    gap: 8,
+  },
+  headerBackBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerControls: {
     flexDirection: 'row',
@@ -1057,7 +1089,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   datePresetText: {
     fontSize: 13,
