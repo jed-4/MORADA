@@ -78,7 +78,9 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const getCostCodeName = (ts: any) => {
     const codeId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
     if (!codeId) return null;
-    return costCodes.find(cc => cc.id === codeId)?.name || null;
+    const cc = costCodes.find(c => c.id === codeId);
+    if (!cc) return null;
+    return cc.code ? `${cc.code} — ${cc.title}` : cc.title;
   };
 
   const getStatusColor = (status: string) => {
