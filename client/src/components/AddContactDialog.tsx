@@ -157,9 +157,14 @@ export default function AddContactDialog({
       // Convert "__none__" to undefined for defaultCostCodeId (no cost code selected)
       if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = undefined;
       
-      // Auto-generate full name from firstName and lastName, or fall back to company name
+      // For trade/supplier contacts, company name is the primary identity.
+      // For client/team contacts, person name takes priority.
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
-      const fullName = personName || cleanData.company || cleanData.name || "Unnamed Contact";
+      const contactType = cleanData.contactType;
+      const isBusinessContact = contactType === "trade" || contactType === "supplier";
+      const fullName = isBusinessContact
+        ? cleanData.company || personName || cleanData.name || "Unnamed Contact"
+        : personName || cleanData.company || cleanData.name || "Unnamed Contact";
       const payload = { ...cleanData, name: fullName };
       return await apiRequest("/api/contacts", "POST", payload);
     },
