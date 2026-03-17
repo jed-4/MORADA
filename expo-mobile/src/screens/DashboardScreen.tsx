@@ -176,7 +176,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const fetchData = useCallback(async () => {
     try {
       const userId = user?.id || '';
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData, costCodesData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
@@ -185,8 +185,10 @@ export default function DashboardScreen({ navigation }: Props) {
         apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
         apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
         apiFetch<CompanySettings>('/api/company-settings').catch(() => null),
+        apiFetch<CostCode[]>('/api/cost-codes').catch(() => []),
       ]);
       setProjects(projectsData || []);
+      setCostCodes(costCodesData || []);
       setCompanySettings(settingsData || null);
       const myTasks = (tasksData || []).filter((t) => {
         const ids = t.assigneeIds || [];
@@ -525,7 +527,8 @@ export default function DashboardScreen({ navigation }: Props) {
               >
                 {recentTimesheets.map(ts => {
                   const projectColor = getProjectColor(ts.projectId);
-                  const costCodeName = ts.costCodeSplits?.[0]?.costCodeName || '';
+                  const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+                  const costCodeName = ccId ? getCostCodeLabel(ccId) : '';
                   const cardWidth = Dimensions.get('window').width * 0.864 - 16;
                   return (
                     <TouchableOpacity
@@ -537,7 +540,7 @@ export default function DashboardScreen({ navigation }: Props) {
                       <View style={styles.timesheetCardContent}>
                         <View style={styles.timesheetCardRow}>
                           <Text style={[styles.timesheetCardProject, { color: colors.text }]} numberOfLines={1}>
-                            {ts.projectName || 'No project'}
+                            {ts.projectId ? getProjectName(ts.projectId) : 'No project'}
                           </Text>
                           <Text style={[styles.timesheetCardDate, { color: colors.secondary }]}>
                             {formatDateShort(ts.date)}
