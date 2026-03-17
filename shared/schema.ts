@@ -2693,6 +2693,7 @@ export const checklistInstances = pgTable("checklist_instances", {
   completedByName: text("completed_by_name"),
   notes: text("notes"),
   triggeredByStatus: text("triggered_by_status"), // Which project status triggered this
+  visibility: text("visibility").notNull().default("everyone"), // "everyone" | "assignee_only"
   createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2715,6 +2716,7 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   dueDate: z.coerce.date().optional().nullable(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
+  visibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
   selectedGroupIds: z.array(z.string()).optional(),
 });
 

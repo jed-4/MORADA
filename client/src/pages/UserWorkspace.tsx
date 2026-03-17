@@ -13,7 +13,7 @@ import UserOverview from "@/components/user-workspace/UserOverview";
 import UserCalendar from "@/components/user-workspace/UserCalendar";
 import UserTasks from "@/components/user-workspace/UserTasks";
 import UserTime from "@/components/user-workspace/UserTime";
-import Memos from "@/components/user-workspace/Memos";
+import UserNotes from "@/components/user-workspace/UserNotes";
 import UserReminders from "@/components/user-workspace/UserReminders";
 import UserSettings from "@/components/user-workspace/UserSettings";
 import UserActivity from "@/components/user-workspace/UserActivity";
@@ -26,7 +26,7 @@ const USER_TABS = [
   { id: "time", label: "Timesheets", icon: Timer, path: "time" },
   { id: "reminders", label: "Reminders", icon: Bell, path: "reminders" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
-  { id: "notes", label: "Memos", icon: FileText, path: "notes" },
+  { id: "notes", label: "Notes", icon: FileText, path: "notes" },
   { id: "activity", label: "Activity", icon: Activity, path: "activity" },
   { id: "settings", label: "Settings", icon: SettingsIcon, path: "settings" },
 ] as const;
@@ -102,7 +102,7 @@ export default function UserWorkspace() {
       case "messages":
         return <Messages channelTypeFilter="dm" />;
       case "notes":
-        return <Memos user={user} isOwnPage={isOwnPage} />;
+        return <UserNotes user={user} isOwnPage={isOwnPage} />;
       case "settings":
         // Show UserSettings for own page, ComingSoon only when definitely not own page
         if (isDefinitelyNotOwnPage) {

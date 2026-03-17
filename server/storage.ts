@@ -205,7 +205,7 @@ export interface IStorage {
   // Notes CRUD operations
   getNotes(projectId?: string | null, companyId?: string, userId?: string, includeArchived?: boolean): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
-  getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]>;
+  getPersonalNotesByUser(userId: string, companyId: string): Promise<{ myNotes: Note[], assignedNotes: Note[] }>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
   deleteNote(id: string): Promise<boolean>;
@@ -762,7 +762,7 @@ export interface IStorage {
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
 
   // Checklist Instances CRUD (these are "Checklist Groups" in user terminology)
-  getChecklistInstances(projectId?: string): Promise<ChecklistInstance[]>;
+  getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]>;
   getChecklistInstance(id: string): Promise<ChecklistInstance | undefined>;
   createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance>;
   updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined>;
@@ -2711,24 +2711,21 @@ export class MemStorage implements IStorage {
     return note;
   }
 
-  async getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]> {
+  async getPersonalNotesByUser(userId: string, companyId: string): Promise<{ myNotes: Note[], assignedNotes: Note[] }> {
     const allNotes = Array.from(this.notes.values());
     
-    // Filter for personal notes owned by this user in this company
-    const filtered = allNotes.filter(note => {
-      // Must be owned by the specified user
-      if (note.ownerId !== userId) return false;
-      
-      // Must be personal scope
-      if (note.scope !== 'personal') return false;
-      
-      // Must belong to the same company (check via owner's company, not project)
-      // In-memory storage limitation: we can't easily verify company here
-      // In production (DbStorage), we'll properly filter by company
-      return true;
-    });
+    const myNotes = allNotes.filter(note =>
+      note.ownerId === userId && note.scope === 'personal' && note.type === 'note'
+    ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     
-    return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const assignedNotes = allNotes.filter(note =>
+      note.type === 'note' &&
+      !note.archivedAt &&
+      Array.isArray(note.assigneeIds) && note.assigneeIds.includes(userId) &&
+      note.ownerId !== userId
+    ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    return { myNotes, assignedNotes };
   }
 
   async createNote(insertNote: InsertNote): Promise<Note> {
@@ -7938,65 +7935,43 @@ export class DbStorage implements IStorage {
     return undefined;
   }
 
-  async getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]> {
+  async getPersonalNotesByUser(userId: string, companyId: string): Promise<{ myNotes: Note[], assignedNotes: Note[] }> {
     try {
-      // Get personal notes for this user with proper security filtering
-      // Join with users table to verify the user belongs to the specified company
-      const result = await db
-        .select({
-          id: schema.notes.id,
-          companyId: schema.notes.companyId,
-          title: schema.notes.title,
-          content: schema.notes.content,
-          contentHtml: schema.notes.contentHtml,
-          contentText: schema.notes.contentText,
-          category: schema.notes.category,
-          priority: schema.notes.priority,
-          author: schema.notes.author,
-          ownerId: schema.notes.ownerId,
-          ownerName: schema.notes.ownerName,
-          visibility: schema.notes.visibility,
-          pinned: schema.notes.pinned,
-          customFields: schema.notes.customFields,
-          projectId: schema.notes.projectId,
-          scope: schema.notes.scope,
-          type: schema.notes.type,
-          status: schema.notes.status,
-          assigneeId: schema.notes.assigneeId,
-          assigneeName: schema.notes.assigneeName,
-          dueDate: schema.notes.dueDate,
-          startTime: schema.notes.startTime,
-          endTime: schema.notes.endTime,
-          completedAt: schema.notes.completedAt,
-          tags: schema.notes.tags,
-          labels: schema.notes.labels,
-          parentTaskId: schema.notes.parentTaskId,
-          subtaskOrder: schema.notes.subtaskOrder,
-          isRecurring: schema.notes.isRecurring,
-          recurringType: schema.notes.recurringType,
-          recurringInterval: schema.notes.recurringInterval,
-          recurringDays: schema.notes.recurringDays,
-          recurringStartDate: schema.notes.recurringStartDate,
-          recurringEndDate: schema.notes.recurringEndDate,
-          lastRecurringDate: schema.notes.lastRecurringDate,
-          templateId: schema.notes.templateId,
-          createdAt: schema.notes.createdAt,
-          updatedAt: schema.notes.updatedAt,
-        })
+      // Personal notes: owned by this user, scope=personal, type=note
+      const myNotes = await db
+        .select()
         .from(schema.notes)
         .innerJoin(schema.users, eq(schema.notes.ownerId, schema.users.id))
         .where(and(
           eq(schema.notes.ownerId, userId),
           eq(schema.notes.scope, 'personal'),
-          eq(schema.users.companyId, companyId), // Security: verify user belongs to company
-          eq(schema.notes.type, 'note') // Only notes, not tasks
+          eq(schema.users.companyId, companyId),
+          eq(schema.notes.type, 'note')
         ))
         .orderBy(desc(schema.notes.createdAt));
-      
-      return result as Note[];
+
+      // Assigned notes: any note where this user is in assigneeIds, not archived, not owned by them
+      const assignedNotes = await db
+        .select()
+        .from(schema.notes)
+        .innerJoin(schema.users, eq(schema.notes.companyId, schema.users.companyId))
+        .where(and(
+          eq(schema.users.id, userId),
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, 'note'),
+          isNull(schema.notes.archivedAt),
+          sql`${schema.notes.assigneeIds} @> ARRAY[${userId}]::text[]`,
+          not(eq(schema.notes.ownerId, userId))
+        ))
+        .orderBy(desc(schema.notes.createdAt));
+
+      return {
+        myNotes: myNotes.map(r => r.notes) as Note[],
+        assignedNotes: assignedNotes.map(r => r.notes) as Note[],
+      };
     } catch (error) {
       console.error("Database error in getPersonalNotesByUser:", error);
-      return [];
+      return { myNotes: [], assignedNotes: [] };
     }
   }
 
@@ -13967,17 +13942,35 @@ export class DbStorage implements IStorage {
   }
 
   // Checklist Instances CRUD
-  async getChecklistInstances(projectId?: string): Promise<ChecklistInstance[]> {
+  async getChecklistInstances(projectId?: string, userId?: string, isAdmin?: boolean): Promise<ChecklistInstance[]> {
     try {
-      if (projectId) {
-        return await db.select()
-          .from(schema.checklistInstances)
-          .where(eq(schema.checklistInstances.projectId, projectId))
-          .orderBy(desc(schema.checklistInstances.createdAt));
-      }
-      return await db.select()
+      const buildWhere = (projectFilter?: ReturnType<typeof eq>) => {
+        const conditions = [];
+        if (projectFilter) conditions.push(projectFilter);
+        // Visibility filter: hide assignee_only checklists from non-assignees (unless admin)
+        if (userId && !isAdmin) {
+          conditions.push(
+            or(
+              eq(schema.checklistInstances.visibility, 'everyone'),
+              eq(schema.checklistInstances.assigneeId, userId)
+            )
+          );
+        }
+        return conditions.length > 0 ? and(...conditions) : undefined;
+      };
+
+      const whereClause = buildWhere(
+        projectId ? eq(schema.checklistInstances.projectId, projectId) : undefined
+      );
+
+      const query = db.select()
         .from(schema.checklistInstances)
         .orderBy(desc(schema.checklistInstances.createdAt));
+
+      if (whereClause) {
+        return await query.where(whereClause);
+      }
+      return await query;
     } catch (error) {
       console.error("Database error in getChecklistInstances:", error);
       throw error;

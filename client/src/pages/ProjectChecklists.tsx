@@ -101,6 +101,7 @@ import {
   Send,
   MessageSquare,
   UserPlus,
+  Lock,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -246,6 +247,7 @@ export default function ProjectChecklists() {
     priority: "medium" as "low" | "medium" | "high" | "urgent",
     dueDate: "",
     assigneeId: "",
+    visibility: "everyone" as "everyone" | "assignee_only",
     selectedGroupIds: [] as string[],
   });
 
@@ -381,7 +383,7 @@ export default function ProjectChecklists() {
       });
       toast({ title: "Group created", description: "The group has been created successfully." });
       setShowAddDialog(false);
-      setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
+      setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", visibility: "everyone", selectedGroupIds: [] });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create group.", variant: "destructive" });
@@ -969,7 +971,12 @@ export default function ProjectChecklists() {
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                     <FolderOpen className="h-4 w-4 text-[#bba7db]" />
-                    <span className="text-sm font-medium flex-1">{instance.name}</span>
+                    <span className="text-sm font-medium flex-1 flex items-center gap-1.5">
+                      {instance.name}
+                      {instance.visibility === "assignee_only" && (
+                        <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      )}
+                    </span>
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                       {groups.length} checklists
                     </Badge>
@@ -1911,6 +1918,50 @@ export default function ProjectChecklists() {
                 rows={2}
                 data-testid="textarea-description"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, visibility: "everyone" })}
+                  className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    formData.visibility === "everyone"
+                      ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                      : "border-border text-muted-foreground hover-elevate"
+                  }`}
+                  data-testid="visibility-everyone"
+                >
+                  <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
+                    formData.visibility === "everyone" ? "border-[#bba7db] bg-[#bba7db]" : "border-muted-foreground"
+                  }`} />
+                  <div>
+                    <div className="font-medium">Everyone</div>
+                    <div className="text-xs text-muted-foreground">Visible to all project members</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, visibility: "assignee_only" })}
+                  className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    formData.visibility === "assignee_only"
+                      ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                      : "border-border text-muted-foreground hover-elevate"
+                  }`}
+                  data-testid="visibility-assignee-only"
+                >
+                  <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
+                    formData.visibility === "assignee_only" ? "border-[#bba7db] bg-[#bba7db]" : "border-muted-foreground"
+                  }`} />
+                  <div>
+                    <div className="font-medium flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> Assignee Only
+                    </div>
+                    <div className="text-xs text-muted-foreground">Only visible to the assignee</div>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 

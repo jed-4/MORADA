@@ -744,9 +744,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden - cannot access other users' personal notes" });
       }
       
-      // Get personal notes for this user only
-      const notes = await storage.getPersonalNotesByUser(targetUserId, companyId);
-      res.json(notes);
+      // Get personal notes + assigned notes for this user
+      const result = await storage.getPersonalNotesByUser(targetUserId, companyId);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching personal notes:", error);
       res.status(500).json({ error: "Failed to fetch personal notes" });
@@ -14470,7 +14470,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/checklist-instances", async (req, res) => {
     try {
       const projectId = req.query.projectId as string | undefined;
-      const instances = await storage.getChecklistInstances(projectId);
+      const currentUser = req.user as any;
+      const userId = currentUser ? String(currentUser.id) : undefined;
+      const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
+      const instances = await storage.getChecklistInstances(projectId, userId, isAdmin);
       
       // Get item counts for each instance
       const instancesWithCounts = await Promise.all(
@@ -14628,7 +14631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Get all instances for the company first (filtered by companyId)
-      const allInstances = await storage.getChecklistInstances();
+      const allInstances = await storage.getChecklistInstances(undefined, String(user.id), user?.role === 'admin' || user?.isAdmin);
       const companyInstances = allInstances.filter(i => i.companyId === user.companyId);
       
       // Get groups for each instance and flatten
