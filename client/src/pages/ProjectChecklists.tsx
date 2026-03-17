@@ -804,6 +804,28 @@ export default function ProjectChecklists() {
     }
   };
 
+  const checkGroupAutoComplete = (groupId: string, currentGroupStatus: string, itemId: string, newItemStatus: string) => {
+    if (currentGroupStatus === "completed") return;
+    const currentItems = checklistItems[groupId] || [];
+    if (currentItems.length === 0) return;
+    const updatedItems = currentItems.map(i =>
+      i.id === itemId ? { ...i, status: newItemStatus } : i
+    );
+    const allDone = updatedItems.every(i => i.status === "completed" || i.status === "na");
+    if (allDone) {
+      const now = new Date().toISOString();
+      updateGroupMutation.mutate({
+        groupId,
+        data: {
+          status: "completed",
+          completedAt: now,
+          completedBy: user?.id || null,
+          completedByName: userDisplayName,
+        }
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1381,19 +1403,23 @@ export default function ProjectChecklists() {
                                               <Checkbox
                                                 checked={item.status === "completed"}
                                                 onCheckedChange={(checked) => {
+                                                  const newStatus = checked ? "completed" : "pending";
                                                   const updatedNotes = checked
                                                     ? addSystemNote(item.notes, `Completed by ${userDisplayName}`)
                                                     : addSystemNote(item.notes, `Reopened by ${userDisplayName}`);
                                                   updateItemMutation.mutate({
                                                     itemId: item.id,
                                                     data: { 
-                                                      status: checked ? "completed" : "pending",
+                                                      status: newStatus,
                                                       completedAt: checked ? new Date().toISOString() : null,
                                                       completedBy: checked ? user?.id : null,
                                                       completedByName: checked ? userDisplayName : null,
                                                       notes: updatedNotes,
                                                     }
                                                   });
+                                                  if (checked) {
+                                                    checkGroupAutoComplete(group.id, group.status, item.id, newStatus);
+                                                  }
                                                 }}
                                                 className="mt-0.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
                                               />
@@ -1623,6 +1649,7 @@ export default function ProjectChecklists() {
                                                         completedByName: userDisplayName,
                                                       }
                                                     });
+                                                    checkGroupAutoComplete(group.id, group.status, item.id, "completed");
                                                   }}
                                                   className="mt-2 flex flex-wrap gap-3"
                                                 >
@@ -1658,16 +1685,20 @@ export default function ProjectChecklists() {
                                                             const newSelected = checked
                                                               ? [...selectedResponses, option]
                                                               : selectedResponses.filter(s => s !== option);
+                                                            const newItemStatus = newSelected.length > 0 ? "completed" : "pending";
                                                             updateItemMutation.mutate({
                                                               itemId: item.id,
                                                               data: { 
                                                                 selectedResponses: newSelected,
-                                                                status: newSelected.length > 0 ? "completed" : "pending",
+                                                                status: newItemStatus,
                                                                 completedAt: newSelected.length > 0 ? new Date().toISOString() : null,
                                                                 completedBy: newSelected.length > 0 ? user?.id : null,
                                                                 completedByName: newSelected.length > 0 ? userDisplayName : null,
                                                               }
                                                             });
+                                                            if (checked) {
+                                                              checkGroupAutoComplete(group.id, group.status, item.id, "completed");
+                                                            }
                                                           }}
                                                           className="h-3.5 w-3.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
                                                         />
