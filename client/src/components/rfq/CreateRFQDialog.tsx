@@ -58,7 +58,7 @@ export function CreateRFQDialog({
   const { data: allContacts = [] } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
   });
-  const suppliers = useMemo(() => allContacts.filter((c) => c.contactType === "supplier"), [allContacts]);
+  const suppliers = useMemo(() => allContacts.filter((c) => c.contactType === "supplier" || c.contactType === "trade"), [allContacts]);
 
   const filteredSuppliers = useMemo(() => {
     const search = supplierSearch.toLowerCase();
@@ -186,7 +186,7 @@ export function CreateRFQDialog({
           {/* Multi-Supplier Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Suppliers</Label>
+              <Label>Suppliers &amp; Trades</Label>
               <Button
                 type="button"
                 variant="ghost"
@@ -195,7 +195,7 @@ export function CreateRFQDialog({
                 onClick={() => setShowAddSupplier(true)}
               >
                 <UserPlus className="h-3.5 w-3.5" />
-                Add new supplier
+                Add new contact
               </Button>
             </div>
             <div className="relative mb-2">
@@ -203,18 +203,18 @@ export function CreateRFQDialog({
               <Input
                 value={supplierSearch}
                 onChange={(e) => setSupplierSearch(e.target.value)}
-                placeholder="Search suppliers..."
+                placeholder="Search suppliers & trades..."
                 className="h-8 pl-7 text-sm"
               />
             </div>
             <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
               {suppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">
-                  No suppliers found. Use "Add new supplier" above to create one.
+                  No suppliers or trades found. Use "Add new contact" above to create one.
                 </p>
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-2">
-                  No suppliers match your search.
+                  No contacts match your search.
                 </p>
               ) : (
                 filteredSuppliers.map((supplier) => (
