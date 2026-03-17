@@ -653,13 +653,11 @@ export default function Contacts() {
         )}
       </div>
 
-      <ErrorBoundary>
-        <AddContactDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-          defaultContactType={selectedContactType}
-        />
-      </ErrorBoundary>
+      <AddContactDialog
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
+        defaultContactType={selectedContactType}
+      />
 
       {contactToEdit && (
         <EditContactDialog

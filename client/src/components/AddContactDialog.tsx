@@ -661,14 +661,17 @@ export default function AddContactDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Payment Terms</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
+                          value={field.value || "__none__"}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-payment-terms">
                               <SelectValue placeholder="Select payment terms" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {paymentTermsOptions.map((option) => (
                               <SelectItem key={option.id} value={option.name}>
                                 {option.name}
@@ -765,7 +768,10 @@ export default function AddContactDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Primary Contact</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "__none__" ? undefined : val)}
+                          value={field.value || "__none__"}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-primary-contact">
                               <SelectValue placeholder="Select primary contact" />
