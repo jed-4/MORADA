@@ -15,7 +15,6 @@ import {
   Platform,
   Dimensions,
   Alert,
-  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -484,36 +483,34 @@ export default function TasksScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <SafeAreaView style={{ backgroundColor: colors.accent + '30' }}>
-        <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
+      <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
+        <TouchableOpacity
+          style={styles.headerBackBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>My Tasks</Text>
+        <View style={styles.headerActions}>
           <TouchableOpacity
-            style={styles.headerBackBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.7}
+            style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+            onPress={() => setShowGroupByModal(true)}
           >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
+            <Ionicons name="funnel-outline" size={16} color={colors.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>My Tasks</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-              onPress={() => setShowGroupByModal(true)}
-            >
-              <Ionicons name="funnel-outline" size={16} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-              onPress={() => setShowFilterModal(true)}
-            >
-              <Ionicons name="options-outline" size={16} color={colors.text} />
-              {hasActiveFilters && (
-                <View style={[styles.filterDot, { backgroundColor: colors.accent }]} />
-              )}
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.groupByBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+            onPress={() => setShowFilterModal(true)}
+          >
+            <Ionicons name="options-outline" size={16} color={colors.text} />
+            {hasActiveFilters && (
+              <View style={[styles.filterDot, { backgroundColor: colors.accent }]} />
+            )}
+          </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
 
       <ScrollView
         horizontal
@@ -1022,8 +1019,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
+    paddingTop: 56,
+    paddingBottom: 14,
+    borderBottomWidth: 0,
     gap: 8,
   },
   headerBackBtn: {
@@ -1079,11 +1077,13 @@ const styles = StyleSheet.create({
   },
   datePresetScroll: {
     borderBottomWidth: 1,
+    height: 48,
   },
   datePresetRow: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 8,
+    alignItems: 'center',
   },
   datePresetPill: {
     borderRadius: 16,

@@ -932,8 +932,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
-  filterScroll: { borderBottomWidth: 1 },
-  filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  filterScroll: { borderBottomWidth: 1, height: 52 },
+  filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     borderRadius: 16,
     borderWidth: 1,
