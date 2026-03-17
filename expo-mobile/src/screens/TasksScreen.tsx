@@ -17,9 +17,12 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+const TASKS_PREFS_KEY = '@buildpro_tasks_prefs';
 
 interface Task {
   id: string;
@@ -47,6 +50,7 @@ interface Project {
 
 type ViewMode = 'list' | 'board';
 type GroupBy = 'status' | 'priority' | 'project' | 'dueDate';
+type DatePreset = 'all' | 'today' | 'this-week' | 'overdue';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -145,8 +149,10 @@ export default function TasksScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [groupBy, setGroupBy] = useState<GroupBy>('status');
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [showGroupByModal, setShowGroupByModal] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -198,7 +204,26 @@ export default function TasksScreen({ navigation }: Props) {
     }
   }, [user?.id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    AsyncStorage.getItem(TASKS_PREFS_KEY).then(raw => {
+      if (raw) {
+        try {
+          const prefs = JSON.parse(raw);
+          if (prefs.viewMode) setViewMode(prefs.viewMode);
+          if (prefs.groupBy) setGroupBy(prefs.groupBy);
+          if (prefs.datePreset) setDatePreset(prefs.datePreset);
+          if (prefs.filters) setFilters(prefs.filters);
+        } catch {}
+      }
+    }).finally(() => setPrefsLoaded(true));
+  }, []);
+
+  useEffect(() => { if (prefsLoaded) fetchData(); }, [fetchData, prefsLoaded]);
+
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    AsyncStorage.setItem(TASKS_PREFS_KEY, JSON.stringify({ viewMode, groupBy, datePreset, filters })).catch(() => {});
+  }, [viewMode, groupBy, datePreset, filters, prefsLoaded]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -240,6 +265,13 @@ export default function TasksScreen({ navigation }: Props) {
     }
     if (filters.projects.length > 0) {
       filteredTasks = filteredTasks.filter(t => t.projectId && filters.projects.includes(t.projectId));
+    }
+    if (datePreset === 'today') {
+      filteredTasks = filteredTasks.filter(t => getDueDateGroup(t.dueDate) === 'Today');
+    } else if (datePreset === 'this-week') {
+      filteredTasks = filteredTasks.filter(t => ['Today', 'This Week'].includes(getDueDateGroup(t.dueDate)));
+    } else if (datePreset === 'overdue') {
+      filteredTasks = filteredTasks.filter(t => getDueDateGroup(t.dueDate) === 'Overdue');
     }
 
     const groups: { key: string; label: string; color: string; tasks: Task[] }[] = [];
@@ -471,6 +503,41 @@ export default function TasksScreen({ navigation }: Props) {
         </View>
       </View>
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.datePresetRow}
+        style={[styles.datePresetScroll, { borderBottomColor: colors.border }]}
+      >
+        {([
+          { key: 'all', label: 'All' },
+          { key: 'overdue', label: 'Overdue', color: '#ef4444' },
+          { key: 'today', label: 'Today', color: '#3b82f6' },
+          { key: 'this-week', label: 'This Week', color: '#f97316' },
+        ] as { key: DatePreset; label: string; color?: string }[]).map(preset => {
+          const active = datePreset === preset.key;
+          const chipColor = preset.color || colors.accent;
+          return (
+            <TouchableOpacity
+              key={preset.key}
+              style={[
+                styles.datePresetPill,
+                {
+                  borderColor: active ? chipColor : colors.border,
+                  backgroundColor: active ? chipColor + '20' : 'transparent',
+                },
+              ]}
+              onPress={() => setDatePreset(preset.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.datePresetText, { color: active ? chipColor : colors.secondary }]}>
+                {preset.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {viewMode === 'list' ? (
         <ScrollView
           style={styles.listScroll}
@@ -480,7 +547,12 @@ export default function TasksScreen({ navigation }: Props) {
           {groupedTasks.length === 0 && (
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="checkbox-outline" size={40} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No tasks found</Text>
+              <Text style={[styles.emptyText, { color: colors.secondary }]}>
+                {datePreset === 'today' ? 'No tasks due today'
+                  : datePreset === 'this-week' ? 'No tasks due this week'
+                  : datePreset === 'overdue' ? 'No overdue tasks'
+                  : 'No tasks found'}
+              </Text>
             </View>
           )}
           {groupedTasks.map(group => (
@@ -972,6 +1044,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  datePresetScroll: {
+    borderBottomWidth: 1,
+  },
+  datePresetRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  datePresetPill: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  datePresetText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   listScroll: {
     flex: 1,

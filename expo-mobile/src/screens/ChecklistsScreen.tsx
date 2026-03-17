@@ -437,25 +437,11 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           >
             {item.description}
           </Text>
-          <View style={styles.itemIndicators}>
-            {item.assigneeName && (
-              <View style={styles.indicatorChip}>
-                <Ionicons name="person" size={10} color={colors.accent} />
-                <Text style={[styles.indicatorText, { color: colors.accent }]} numberOfLines={1}>{item.assigneeName.split(' ')[0]}</Text>
-              </View>
-            )}
-            {item.notes && (
-              <View style={styles.indicatorChip}>
-                <Ionicons name="chatbubble" size={10} color={colors.accent} />
-              </View>
-            )}
-            {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
-              <View style={styles.indicatorChip}>
-                <Ionicons name="attach" size={11} color={colors.accent} />
-                <Text style={[styles.indicatorText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
-              </View>
-            )}
-          </View>
+          {item.assigneeName && (
+            <Text style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
+              {item.assigneeName.split(' ')[0]}
+            </Text>
+          )}
         </View>
         {item.isRequired && (
           <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
@@ -463,14 +449,25 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           </View>
         )}
       </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.itemMenuBtn}
-        onPress={() => openItemMenu(item)}
-        activeOpacity={0.6}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
-      </TouchableOpacity>
+      <View style={styles.itemRightActions}>
+        {item.notes && (
+          <Ionicons name="chatbubble" size={13} color={colors.accent} />
+        )}
+        {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
+          <View style={styles.attachCountBadge}>
+            <Ionicons name="attach" size={12} color={colors.accent} />
+            <Text style={[styles.attachCountText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.itemMenuBtn}
+          onPress={() => openItemMenu(item)}
+          activeOpacity={0.6}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -639,8 +636,10 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           <TouchableOpacity
             style={[
               styles.filterPill,
-              { borderColor: !selectedProjectId ? colors.accent : colors.border },
-              !selectedProjectId && { backgroundColor: colors.accent + '20' },
+              {
+                borderColor: !selectedProjectId ? colors.accent : colors.border,
+                backgroundColor: !selectedProjectId ? colors.accent + '20' : 'transparent',
+              },
             ]}
             onPress={() => setSelectedProjectId(null)}
             activeOpacity={0.7}
@@ -652,8 +651,10 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
               key={p.id}
               style={[
                 styles.filterPill,
-                { borderColor: selectedProjectId === p.id ? colors.accent : colors.border },
-                selectedProjectId === p.id && { backgroundColor: colors.accent + '20' },
+                {
+                  borderColor: selectedProjectId === p.id ? colors.accent : colors.border,
+                  backgroundColor: selectedProjectId === p.id ? colors.accent + '20' : 'transparent',
+                },
               ]}
               onPress={() => setSelectedProjectId(p.id)}
               activeOpacity={0.7}
@@ -1040,20 +1041,25 @@ const styles = StyleSheet.create({
   itemContent: { flex: 1 },
   itemDescription: { fontSize: 14 },
   itemStrikethrough: { textDecorationLine: 'line-through' },
-  itemIndicators: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  itemAssignee: { fontSize: 11 },
-  indicatorChip: {
+  itemAssigneeText: { fontSize: 11, marginTop: 2 },
+  itemRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 6,
+    paddingLeft: 4,
   },
-  indicatorText: {
-    fontSize: 10,
-    fontWeight: '500',
-    maxWidth: 60,
+  attachCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  attachCountText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   itemMenuBtn: {
-    padding: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
