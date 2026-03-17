@@ -471,8 +471,7 @@ export default function Timesheets() {
   const bulkActionMutation = useMutation({
     mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
       apiRequest("/api/timesheets/bulk-action", "POST", data),
-    onSuccess: async (res: Response, variables) => {
-      const result = await res.json();
+    onSuccess: (result: { success: number; errors: string[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
