@@ -134,7 +134,6 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  const businessLabel = user?.companyNickname || "Business";
 
   const toggleRowExpanded = useCallback((id: string) => {
     setExpandedRows((prev) => {
@@ -314,6 +313,10 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       unassignedRow: unassigned.length > 0 ? { id: "__unassigned__", name: "Unassigned", color: "#9ca3af", items: unassigned } : null,
     };
   }, [items, hiddenAssignees, hiddenProjects, hidePreconstructionSchedule]);
+
+  // Business label: prefer the actual company name stored on the schedule items,
+  // fall back to user's companyNickname from /api/user, then generic "Business"
+  const businessLabel = companyRow?.name || user?.companyNickname || "Business";
 
   // Build team rows from items with teamId
   const teamRows = useMemo(() => {

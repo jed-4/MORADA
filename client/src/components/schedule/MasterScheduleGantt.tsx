@@ -155,9 +155,9 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
   return (
     <>
       {items.filter((item) => {
-        // Skip bars that end before the visible window
-        if (item.endDate && new Date(item.endDate) < windowStart) return false;
-        return true;
+        if (!item.startDate || !item.endDate) return false;
+        // Only show items that overlap the visible window (same filter as left panel)
+        return new Date(item.startDate) < windowEnd && new Date(item.endDate) >= windowStart;
       }).map((item) => {
         const hasStart = !!item.startDate;
         const hasEnd = !!item.endDate;
@@ -223,14 +223,25 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
   );
 }
 
-function ProjectItemsLeft({ projectId, project }: { projectId: string; project: MasterProject }) {
-  const { data: items = [] } = useQuery<ScheduleItem[]>({
+function ProjectItemsLeft({ projectId, project, windowStart, windowEnd }: {
+  projectId: string;
+  project: MasterProject;
+  windowStart: Date;
+  windowEnd: Date;
+}) {
+  const { data: allItems = [] } = useQuery<ScheduleItem[]>({
     queryKey: ["/api/business-schedule/projects", projectId, "schedule-items"],
     queryFn: async () => {
       const res = await fetch(`/api/business-schedule/projects/${projectId}/schedule-items`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
+  });
+
+  // Only show items that overlap the visible date window (same filter as right panel)
+  const items = allItems.filter((item) => {
+    if (!item.startDate || !item.endDate) return false;
+    return new Date(item.startDate) < windowEnd && new Date(item.endDate) >= windowStart;
   });
 
   return (
@@ -253,6 +264,11 @@ function ProjectItemsLeft({ projectId, project }: { projectId: string; project: 
           )}
         </div>
       ))}
+      {items.length === 0 && (
+        <div style={{ height: ITEM_ROW_HEIGHT }} className="flex items-center px-4 border-b border-border/10">
+          <span className="text-[10px] text-muted-foreground/50 italic">No items in this window</span>
+        </div>
+      )}
     </>
   );
 }
@@ -261,10 +277,14 @@ function SortableProjectRow({
   project,
   isExpanded,
   onToggle,
+  windowStart,
+  windowEnd,
 }: {
   project: MasterProject;
   isExpanded: boolean;
   onToggle: (id: string) => void;
+  windowStart: Date;
+  windowEnd: Date;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
 
@@ -306,7 +326,7 @@ function SortableProjectRow({
         </button>
       </div>
       {isExpanded && (
-        <ProjectItemsLeft projectId={project.id} project={project} />
+        <ProjectItemsLeft projectId={project.id} project={project} windowStart={windowStart} windowEnd={windowEnd} />
       )}
     </div>
   );
@@ -533,6 +553,8 @@ export default function MasterScheduleGantt() {
                     project={project}
                     isExpanded={expandedProjects.has(project.id)}
                     onToggle={toggleExpanded}
+                    windowStart={windowStart}
+                    windowEnd={windowEnd}
                   />
                 ))}
               </SortableContext>
