@@ -202,7 +202,8 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const allAssignees = useMemo(() => {
     const map = new Map<string, { id: string; name: string; color: string }>();
     for (const item of items) {
-      if (item.assignedToId && item.assignedToName) {
+      const isLegacyCompany = item.assignedToId?.startsWith("company:");
+      if (item.assignedToId && item.assignedToName && !isLegacyCompany) {
         if (!map.has(item.assignedToId)) {
           map.set(item.assignedToId, {
             id: item.assignedToId,
@@ -210,7 +211,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             color: item.assignedToColor || "#6b7280",
           });
         }
-      } else if (!item.assignedToId && item.assignedToName) {
+      } else if ((!item.assignedToId || isLegacyCompany) && item.assignedToName) {
         const bizKey = `biz:${item.assignedToName}`;
         if (!map.has(bizKey)) {
           map.set(bizKey, {
@@ -275,7 +276,11 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
         continue;
       }
 
-      const rowKey = item.assignedToId || `biz:${item.assignedToName}`;
+      // Legacy data: assignedToId may still contain "company:UUID" (before the server
+      // was fixed to null it out). Treat those the same as null so they land in the company row.
+      const isLegacyCompanyId = item.assignedToId?.startsWith("company:");
+      const effectiveAssignedToId = isLegacyCompanyId ? null : item.assignedToId;
+      const rowKey = effectiveAssignedToId || `biz:${item.assignedToName}`;
 
       if (hiddenAssignees.has(rowKey)) continue;
 

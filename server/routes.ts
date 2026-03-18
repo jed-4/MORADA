@@ -16125,7 +16125,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(and(...conditions))
         .orderBy(scheduleItems.startDate);
       
-      res.json(items);
+      // Normalise legacy items where assignedToId was stored as "company:UUID" before
+      // the server-side fix that nulls it out. Treat them identically to properly
+      // company-assigned items (assignedToId = null) so the frontend can bucket them correctly.
+      const normalised = items.map((item) => {
+        if (item.assignedToId?.startsWith("company:")) {
+          return { ...item, assignedToId: null };
+        }
+        return item;
+      });
+
+      res.json(normalised);
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch workload items",

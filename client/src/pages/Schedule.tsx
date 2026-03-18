@@ -1630,7 +1630,7 @@ export default function Schedule() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => sortByDateMutation.mutate()}
-                  disabled={schedule?.status === "locked" || sortByDateMutation.isPending || scheduleItems.length === 0}
+                  disabled={sortByDateMutation.isPending || scheduleItems.length === 0}
                 >
                   <ArrowUpDown className="w-4 h-4 mr-2" />
                   {sortByDateMutation.isPending ? "Sorting..." : "Sort by Date"}
