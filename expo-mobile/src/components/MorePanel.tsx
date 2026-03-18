@@ -140,9 +140,14 @@ export default function MorePanel({ visible, onClose, navigationRef }: MorePanel
         closeAndNavigate(() => nav()?.navigate('More', { screen: 'Notes' }));
         break;
       case 'task':
-        setTaskTitle('');
-        setTaskDescription('');
-        setShowTaskModal(true);
+        // Close the panel first — two simultaneous Modals freeze iOS.
+        // Show the task modal only after the panel's slide-out animation completes.
+        onClose();
+        setTimeout(() => {
+          setTaskTitle('');
+          setTaskDescription('');
+          setShowTaskModal(true);
+        }, 350);
         break;
       case 'site-diary':
         closeAndNavigate(() => nav()?.navigate('More', { screen: 'SiteDiaryList', params: { openCreate: true } }));
