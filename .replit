@@ -100,7 +100,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd expo-mobile && eas build --platform ios --profile preview --non-interactive"
+args = "cd expo-mobile && eas build --platform ios --profile preview --non-interactive --auto-submit"
 
 [workflows.workflow.metadata]
 outputType = "console"

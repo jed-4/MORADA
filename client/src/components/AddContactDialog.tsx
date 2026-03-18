@@ -223,7 +223,7 @@ export default function AddContactDialog({
           <DialogTitle>Add Contact</DialogTitle>
         </DialogHeader>
 
-        <DialogErrorBoundary onClose={() => onOpenChange(false)}>
+        <DialogErrorBoundary key={open ? "open" : "closed"} onClose={() => onOpenChange(false)}>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto space-y-6 pr-2">

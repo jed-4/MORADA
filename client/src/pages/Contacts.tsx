@@ -47,7 +47,6 @@ import { type Contact } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AddContactDialog from "@/components/AddContactDialog";
-import { ErrorBoundary } from "@/components/ui/error-boundary";
 import EditContactDialog from "@/components/EditContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
 import QuickReviewPanel from "@/components/contacts/QuickReviewPanel";

@@ -185,20 +185,8 @@ export function CreateRFQDialog({
 
           {/* Multi-Supplier Selection */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Suppliers &amp; Trades</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 text-xs text-muted-foreground"
-                onClick={() => setShowAddSupplier(true)}
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Add new contact
-              </Button>
-            </div>
-            <div className="relative mb-2">
+            <Label>Suppliers &amp; Trades</Label>
+            <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 value={supplierSearch}
@@ -207,10 +195,20 @@ export function CreateRFQDialog({
                 className="h-8 pl-7 text-sm"
               />
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs text-muted-foreground px-0"
+              onClick={() => setShowAddSupplier(true)}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              Add new supplier
+            </Button>
             <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
               {suppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">
-                  No suppliers or trades found. Use "Add new contact" above to create one.
+                  No suppliers or trades found. Use "Add new supplier" below to create one.
                 </p>
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-2">
