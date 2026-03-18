@@ -144,7 +144,6 @@ export default function TasksScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  console.log('[TasksScreen] insets.top =', insets.top, 'insets.bottom =', insets.bottom);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -486,13 +485,8 @@ export default function TasksScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* DEBUG OVERLAY — remove after fix */}
-      <View style={{ position: 'absolute', top: 0, left: 0, zIndex: 9999, backgroundColor: 'rgba(255,0,0,0.85)', padding: 4 }}>
-        <Text style={{ color: 'white', fontSize: 11 }}>top:{insets.top} bot:{insets.bottom}</Text>
-      </View>
       <View
         style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50', paddingTop: insets.top + 12 }]}
-        onLayout={e => console.log('[TasksScreen] header height =', e.nativeEvent.layout.height)}
       >
         <TouchableOpacity
           style={styles.headerBackBtn}
@@ -527,6 +521,8 @@ export default function TasksScreen({ navigation }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.datePresetRow}
         style={[styles.datePresetScroll, { borderBottomColor: colors.border }]}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
       >
         {([
           { key: 'all', label: 'All' },
@@ -562,6 +558,8 @@ export default function TasksScreen({ navigation }: Props) {
           style={styles.listScroll}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
         >
           {groupedTasks.length === 0 && (
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -605,6 +603,8 @@ export default function TasksScreen({ navigation }: Props) {
           contentContainerStyle={styles.boardContent}
           showsHorizontalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
         >
           {groupedTasks.map(group => (
             <View key={group.key} style={[styles.boardColumn, { width: columnWidth }]}>
@@ -1087,6 +1087,8 @@ const styles = StyleSheet.create({
   datePresetScroll: {
     borderBottomWidth: 1,
     height: 48,
+    flexShrink: 0,
+    flexGrow: 0,
   },
   datePresetRow: {
     paddingHorizontal: 16,
