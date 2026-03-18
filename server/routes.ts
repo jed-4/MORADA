@@ -15829,6 +15829,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Non-Working Days routes
+  // Company-level non-working days for the authenticated user's company (no companyId in URL)
+  app.get("/api/non-working-days", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const companyId = (req.user as any).companyId;
+    if (!companyId) return res.status(400).json({ error: "No company context" });
+    const days = await db.select().from(nonWorkingDays)
+      .where(and(eq(nonWorkingDays.companyId, companyId), isNull(nonWorkingDays.scheduleId)))
+      .orderBy(nonWorkingDays.date);
+    res.json(days);
+  });
+
   app.get("/api/companies/:companyId/non-working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
     const { companyId } = req.params;

@@ -121,6 +121,19 @@ export default function BusinessSchedule() {
     queryKey: ["/api/business-schedule/projects"],
   });
 
+  const { data: nonWorkingDaysData = [] } = useQuery<{ id: string; date: string; name: string }[]>({
+    queryKey: ["/api/non-working-days"],
+  });
+
+  const holidaySet = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of nonWorkingDaysData) {
+      const dt = new Date(d.date);
+      s.add(`${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`);
+    }
+    return s;
+  }, [nonWorkingDaysData]);
+
   const updateProjectMutation = useMutation({
     mutationFn: async ({ projectId, ...data }: { projectId: string; [key: string]: any }) => {
       return apiRequest(`/api/business-schedule/projects/${projectId}`, "PATCH", data);
@@ -642,12 +655,13 @@ export default function BusinessSchedule() {
                 {zoomLevel === 'day' && days.map((day, i) => {
                   const left = getPosition(day);
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                  const isHol = holidaySet.has(`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`);
                   return (
                     <div
                       key={i}
                       className={cn(
                         "absolute top-0 h-full flex items-center justify-center text-[9px] border-l border-border/30",
-                        isWeekend ? "text-muted-foreground/50" : "text-muted-foreground"
+                        (isWeekend || isHol) ? "bg-muted/30 text-muted-foreground/50" : "text-muted-foreground"
                       )}
                       style={{ left, width: pixelsPerDay }}
                     >
@@ -702,17 +716,17 @@ export default function BusinessSchedule() {
 
               {/* Weekend shading */}
               {zoomLevel !== 'month' && days.map((day, i) => {
-                if (day.getDay() === 0 || day.getDay() === 6) {
-                  const left = getPosition(day);
-                  return (
-                    <div
-                      key={`weekend-${i}`}
-                      className="absolute top-0 bottom-0 bg-muted/30"
-                      style={{ left, width: pixelsPerDay }}
-                    />
-                  );
-                }
-                return null;
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const isHoliday = holidaySet.has(`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`);
+                if (!isWeekend && !isHoliday) return null;
+                const left = getPosition(day);
+                return (
+                  <div
+                    key={`nonwork-${i}`}
+                    className="absolute top-0 bottom-0 bg-muted/30"
+                    style={{ left, width: pixelsPerDay }}
+                  />
+                );
               })}
 
               {/* Today line */}
