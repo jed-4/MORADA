@@ -2045,14 +2045,8 @@ export default function EstimateDetail() {
       // Snapshot the previous value
       const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
       
-      // Convert dollar values to cents for optimistic update (backend stores in cents)
+      // Keep dollar values as-is for optimistic update (cache stores dollars, same as API returns)
       const optimisticData = { ...data };
-      if (typeof optimisticData.unitCostExTax === 'number') {
-        optimisticData.unitCostExTax = Math.round(optimisticData.unitCostExTax * 100);
-      }
-      if (typeof optimisticData.quantity === 'number') {
-        optimisticData.quantity = Math.round(optimisticData.quantity * 100);
-      }
       
       // Optimistically update to the new value
       queryClient.setQueryData<EstimateItem[]>(
@@ -3519,9 +3513,6 @@ export default function EstimateDetail() {
     let itemClassName = "";
     if (isInGroup) {
       itemClassName += " item-in-group";
-      if (isLastInGroup && subItems.length === 0) {
-        itemClassName += " item-in-group-last";
-      }
     }
     
     // Add lilac background for selected items
@@ -5423,7 +5414,7 @@ export default function EstimateDetail() {
                             </div>
                           </div>
                           
-                          <div className="space-y-2 p-2">
+                          <div className="space-y-2 py-2">
                             {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>

@@ -714,22 +714,6 @@
     z-index: -1;
   }
 
-  /* Last item in group gets bottom rounding */
-  .item-in-group-last {
-    position: relative;
-  }
-
-  .item-in-group-last::after {
-    content: '';
-    position: absolute;
-    inset: -1px -1px -1px -1px;
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
-    border-top: none;
-    border-radius: 0 0 calc(var(--radius) * 1.5) calc(var(--radius) * 1.5); /* rounded-b-xl */
-    z-index: -2;
-    pointer-events: none;
-  }
 
   /* React Big Calendar Styles - ClickUp 2025 Aesthetic */
   .rbc-calendar {
