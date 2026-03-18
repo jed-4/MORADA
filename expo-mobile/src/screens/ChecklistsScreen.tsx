@@ -674,6 +674,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
       >
         {instances.length === 0 ? (
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -932,7 +934,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
-  filterScroll: { borderBottomWidth: 1, height: 52 },
+  filterScroll: { borderBottomWidth: 1, height: 52, flexShrink: 0, flexGrow: 0 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     borderRadius: 16,
