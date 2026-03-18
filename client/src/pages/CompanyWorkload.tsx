@@ -117,13 +117,15 @@ function assignLanes(items: WorkloadItem[]): { layouts: BarLayout[]; laneCount: 
 
 interface CompanyWorkloadProps {
   onSwitchView?: () => void;
+  className?: string;
 }
 
-export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) {
+export default function CompanyWorkload({ onSwitchView, className }: CompanyWorkloadProps) {
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<WorkloadItem | null>(null);
   const [weekStartDay] = useState(1);
   const [rangeStart, setRangeStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
+  const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
   const [visibleDays, setVisibleDays] = useState(28);
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
@@ -149,18 +151,8 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function calculateDays() {
-      if (!containerRef.current) return;
-      const availableWidth = containerRef.current.clientWidth - PANEL_WIDTH;
-      const avgDayWidth = (DAY_WIDTH * 5 + WEEKEND_DAY_WIDTH * 2) / 7;
-      const viewportDays = Math.ceil(availableWidth / avgDayWidth);
-      setVisibleDays(Math.max(viewportDays + 60, 90));
-    }
-    calculateDays();
-    const observer = new ResizeObserver(calculateDays);
-    if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
+    setVisibleDays(windowWeeks * 7);
+  }, [windowWeeks]);
 
   const rangeEnd = useMemo(() => addDays(rangeStart, visibleDays), [rangeStart, visibleDays]);
 
@@ -478,7 +470,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   }
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full">
+    <div ref={containerRef} className={`flex flex-col h-full${className ? ` ${className}` : ''}`}>
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
           {onSwitchView && (
@@ -639,19 +631,32 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             </PopoverContent>
           </Popover>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={goToToday} className="text-xs h-7 px-2">
-            Today
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-          <span className="text-xs text-muted-foreground ml-1">
-            {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border rounded-md overflow-hidden">
+            {([2, 4, 6] as const).map((w) => (
+              <button
+                key={w}
+                className={`h-7 px-2.5 text-xs ${windowWeeks === w ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+                onClick={() => setWindowWeeks(w)}
+              >
+                {w}w
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={goToToday} className="text-xs h-7 px-2">
+              Today
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground ml-1">
+              {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
+            </span>
+          </div>
         </div>
       </div>
 
