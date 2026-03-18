@@ -48,7 +48,7 @@ interface MasterProject {
   id: string;
   name: string;
   color: string;
-  category: "scheduled" | "unscheduled" | "prospective";
+  category: "online" | "offline" | "prospective" | "scheduled" | "unscheduled";
   projectStartDate: string | null;
   projectEndDate: string | null;
   itemStartDate: string | null;
@@ -298,7 +298,7 @@ function SortableProjectRow({
   return (
     <div ref={setNodeRef} style={style}>
       <div
-        style={{ height: PROJECT_ROW_HEIGHT, borderLeft: `3px solid ${project.color || "#3b82f6"}` }}
+        style={{ height: PROJECT_ROW_HEIGHT, borderLeft: `3px ${project.category === 'offline' ? 'dashed' : 'solid'} ${project.color || "#3b82f6"}` }}
         className="flex items-center pl-1.5 pr-2 border-b border-border/20 gap-1.5"
       >
         <button
@@ -337,6 +337,7 @@ export default function MasterScheduleGantt() {
   const [windowStart, setWindowStart] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFilter, setShowFilter] = useState(false);
+  const [showOffline, setShowOffline] = useState(false);
   const [containerWidth, setContainerWidth] = useState(800);
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
@@ -360,7 +361,10 @@ export default function MasterScheduleGantt() {
     },
   });
 
-  const allVisibleProjects = useMemo(() => projects.filter((p) => p.isVisible), [projects]);
+  const allVisibleProjects = useMemo(
+    () => projects.filter((p) => p.isVisible && (showOffline || p.category !== "offline")),
+    [projects, showOffline]
+  );
   const hiddenCount = projects.length - allVisibleProjects.length;
 
   const visibleProjects = useMemo(() => {
@@ -479,6 +483,15 @@ export default function MasterScheduleGantt() {
               <ChevronRight className="w-3.5 h-3.5" />
             </Button>
           </div>
+
+          {/* Offline toggle */}
+          <button
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
+            onClick={() => setShowOffline(v => !v)}
+          >
+            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
+            Offline
+          </button>
 
           <span className="text-xs text-muted-foreground border-l pl-2">
             {format(windowStart, "d MMM")} – {format(addDays(windowEnd, -1), "d MMM yyyy")}
@@ -717,7 +730,7 @@ export default function MasterScheduleGantt() {
                             top: 6,
                             bottom: 6,
                             backgroundColor: hexToRgba(color, 0.28),
-                            border: `2px solid ${color}`,
+                            border: `2px ${project.category === 'offline' ? 'dashed' : 'solid'} ${color}`,
                           }}
                         >
                           {showLeftArrow && (

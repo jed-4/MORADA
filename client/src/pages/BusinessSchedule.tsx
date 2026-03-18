@@ -114,6 +114,7 @@ export default function BusinessSchedule() {
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
+  const [showOffline, setShowOffline] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -146,6 +147,7 @@ export default function BusinessSchedule() {
   const visibleProjects = useMemo(() => {
     return projects.filter(p => {
       if (!p.isVisible) return false;
+      if (!showOffline && p.category === 'offline') return false;
       if (scheduleTypeFilter === 'construction') {
         return p.currentSystemPhase === 'construction' || p.currentSystemPhase === 'post_construction';
       }
@@ -154,7 +156,7 @@ export default function BusinessSchedule() {
       }
       return true;
     });
-  }, [projects, scheduleTypeFilter]);
+  }, [projects, scheduleTypeFilter, showOffline]);
 
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
     const now = new Date();
@@ -228,7 +230,7 @@ export default function BusinessSchedule() {
     if (project.category === "offline") {
       return {
         backgroundColor: "transparent",
-        border: "2px dashed #d97706",
+        border: `2px dashed ${project.color || "#3b82f6"}`,
         opacity: 0.8,
       };
     }
@@ -486,6 +488,15 @@ export default function BusinessSchedule() {
               onClick={() => setScheduleTypeFilter('precon')}
             >Pre-con</button>
           </div>
+
+          {/* Offline toggle */}
+          <button
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
+            onClick={() => setShowOffline(v => !v)}
+          >
+            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
+            Offline
+          </button>
 
           {/* Project visibility filter — moved to left */}
           <Popover open={showFilter} onOpenChange={setShowFilter}>
