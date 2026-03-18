@@ -239,6 +239,12 @@ export default function TasksScreen({ navigation }: Props) {
     return p?.name || '';
   }, [projects]);
 
+  const getProjectColor = useCallback((projectId?: string): string => {
+    if (!projectId) return '#94a3b8';
+    const p = projects.find(pr => pr.id === projectId);
+    return p?.color || '#94a3b8';
+  }, [projects]);
+
   const getStatusColor = useCallback((status?: string): string => {
     if (statusOptions.length > 0) {
       const opt = statusOptions.find(o => o.key === status);
@@ -260,13 +266,13 @@ export default function TasksScreen({ navigation }: Props) {
   const groupedTasks = useMemo(() => {
     let filteredTasks = tasks;
     if (filters.statuses.length > 0) {
-      filteredTasks = filteredTasks.filter(t => filters.statuses.includes(t.status || 'todo'));
+      filteredTasks = filteredTasks.filter(t => !filters.statuses.includes(t.status || 'todo'));
     }
     if (filters.priorities.length > 0) {
-      filteredTasks = filteredTasks.filter(t => filters.priorities.includes(t.priority || 'low'));
+      filteredTasks = filteredTasks.filter(t => !filters.priorities.includes(t.priority || 'low'));
     }
     if (filters.projects.length > 0) {
-      filteredTasks = filteredTasks.filter(t => t.projectId && filters.projects.includes(t.projectId));
+      filteredTasks = filteredTasks.filter(t => !filters.projects.includes(t.projectId || ''));
     }
     if (datePreset === 'today') {
       filteredTasks = filteredTasks.filter(t => getDueDateGroup(t.dueDate) === 'Today');
@@ -394,7 +400,7 @@ export default function TasksScreen({ navigation }: Props) {
       onPress={() => handleViewTask(task)}
       activeOpacity={0.7}
     >
-      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
+      <View style={[styles.priorityStrip, { backgroundColor: getProjectColor(task.projectId) }]} />
       <TouchableOpacity
         style={styles.checkbox}
         onPress={() => handleToggleDone(task)}
@@ -922,7 +928,7 @@ export default function TasksScreen({ navigation }: Props) {
               <Text style={[styles.groupByTitle, { color: colors.text }]}>Filters</Text>
               {hasActiveFilters && (
                 <TouchableOpacity onPress={() => setFilters({ statuses: [], priorities: [], projects: [] })}>
-                  <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Clear All</Text>
+                  <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -931,20 +937,25 @@ export default function TasksScreen({ navigation }: Props) {
               <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
               <View style={styles.filterChips}>
                 {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
-                  const active = filters.statuses.includes(opt.key);
+                  const excluded = filters.statuses.includes(opt.key);
+                  const chipColor = opt.color || colors.accent;
                   return (
                     <TouchableOpacity
                       key={opt.key}
-                      style={[styles.filterChip, { borderColor: active ? (opt.color || colors.accent) : colors.border, backgroundColor: active ? (opt.color || colors.accent) + '20' : 'transparent' }]}
+                      style={[styles.filterChip, {
+                        borderColor: excluded ? colors.border : chipColor,
+                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                        opacity: excluded ? 0.45 : 1,
+                      }]}
                       onPress={() => {
                         setFilters(prev => ({
                           ...prev,
-                          statuses: active ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
+                          statuses: excluded ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
                         }));
                       }}
                     >
                       <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                      <Text style={[styles.filterChipText, { color: active ? (opt.color || colors.accent) : colors.text }]}>{opt.name}</Text>
+                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -953,20 +964,25 @@ export default function TasksScreen({ navigation }: Props) {
               <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
               <View style={styles.filterChips}>
                 {PRIORITY_ORDER.map(p => {
-                  const active = filters.priorities.includes(p);
+                  const excluded = filters.priorities.includes(p);
+                  const chipColor = getPriorityColor(p);
                   return (
                     <TouchableOpacity
                       key={p}
-                      style={[styles.filterChip, { borderColor: active ? getPriorityColor(p) : colors.border, backgroundColor: active ? getPriorityColor(p) + '20' : 'transparent' }]}
+                      style={[styles.filterChip, {
+                        borderColor: excluded ? colors.border : chipColor,
+                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                        opacity: excluded ? 0.45 : 1,
+                      }]}
                       onPress={() => {
                         setFilters(prev => ({
                           ...prev,
-                          priorities: active ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
+                          priorities: excluded ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
                         }));
                       }}
                     >
-                      <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                      <Text style={[styles.filterChipText, { color: active ? getPriorityColor(p) : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                      <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
+                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -975,19 +991,25 @@ export default function TasksScreen({ navigation }: Props) {
               <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
               <View style={styles.filterChips}>
                 {projects.map(proj => {
-                  const active = filters.projects.includes(proj.id);
+                  const excluded = filters.projects.includes(proj.id);
+                  const chipColor = proj.color || colors.accent;
                   return (
                     <TouchableOpacity
                       key={proj.id}
-                      style={[styles.filterChip, { borderColor: active ? colors.accent : colors.border, backgroundColor: active ? colors.accent + '20' : 'transparent' }]}
+                      style={[styles.filterChip, {
+                        borderColor: excluded ? colors.border : chipColor,
+                        backgroundColor: excluded ? 'transparent' : chipColor + '20',
+                        opacity: excluded ? 0.45 : 1,
+                      }]}
                       onPress={() => {
                         setFilters(prev => ({
                           ...prev,
-                          projects: active ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
+                          projects: excluded ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
                         }));
                       }}
                     >
-                      <Text style={[styles.filterChipText, { color: active ? colors.accent : colors.text }]}>{proj.name}</Text>
+                      <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
+                      <Text style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -1158,8 +1180,11 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   priorityStrip: {
-    width: 4,
-    alignSelf: 'stretch',
+    width: 6,
+    height: 36,
+    borderRadius: 3,
+    marginLeft: 8,
+    alignSelf: 'center',
   },
   checkbox: {
     paddingHorizontal: 10,
