@@ -1,10 +1,12 @@
-node_modules
+.git
+**/node_modules
 .DS_Store
 server/public
 vite.config.ts.*
 *.tar.gz
 dist
 .expo/
+attached_assets
 
 # Expo env files
 expo-mobile/.env

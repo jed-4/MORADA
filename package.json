@@ -90,6 +90,7 @@
     "date-fns": "^3.6.0",
     "drizzle-orm": "^0.39.1",
     "drizzle-zod": "^0.7.0",
+    "eas-cli": "^18.4.0",
     "embla-carousel-react": "^8.6.0",
     "expo": "~54.0.0",
     "expo-constants": "~17.0.0",

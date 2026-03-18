@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Component, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -30,6 +30,33 @@ import { insertContactSchema, type InsertContact, type PaymentTermsOption } from
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 
 const DEFAULT_GREY = "#64748b";
+
+class DialogErrorBoundary extends Component<
+  { children: ReactNode; onClose: () => void },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: { children: ReactNode; onClose: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message || "Unknown error" };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            The form could not be displayed. Please try closing and reopening the dialog.
+          </p>
+          <p className="text-xs text-destructive font-mono break-all">{this.state.error}</p>
+          <Button variant="outline" onClick={this.props.onClose}>Close</Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Helper to get initials from form values
 function getFormInitials(firstName?: string, lastName?: string, company?: string): string {
@@ -196,6 +223,7 @@ export default function AddContactDialog({
           <DialogTitle>Add Contact</DialogTitle>
         </DialogHeader>
 
+        <DialogErrorBoundary onClose={() => onOpenChange(false)}>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto space-y-6 pr-2">
@@ -877,6 +905,7 @@ export default function AddContactDialog({
             </div>
           </form>
         </Form>
+        </DialogErrorBoundary>
       </DialogContent>
     </Dialog>
   );
