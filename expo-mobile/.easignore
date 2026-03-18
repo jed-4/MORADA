@@ -7,3 +7,9 @@ dist/
 build/
 .expo/
 /tmp
+../docs
+../client
+../server
+../shared
+../attached_assets
+../.local
