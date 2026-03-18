@@ -697,7 +697,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                   />
                   <div className="flex-1 flex items-center gap-1 min-w-0">
                     <span className={cn("text-xs truncate", isCompanyRow ? "font-bold" : "font-medium")}>
-                      {isCompanyRow ? businessLabel : row.name}
+                      {row.name}
                     </span>
                     {row.id.startsWith("team:") && (
                       <span className="shrink-0 text-[9px] px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">

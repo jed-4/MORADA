@@ -16089,10 +16089,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ];
       
       if (startDate) {
-        conditions.push(gte(scheduleItems.endDate, new Date(startDate as string)));
+        // Include items whose endDate is null (undated parent items) or falls within range
+        conditions.push(or(isNull(scheduleItems.endDate), gte(scheduleItems.endDate, new Date(startDate as string)))!);
       }
       if (endDate) {
-        conditions.push(lte(scheduleItems.startDate, new Date(endDate as string)));
+        // Include items whose startDate is null or falls within range
+        conditions.push(or(isNull(scheduleItems.startDate), lte(scheduleItems.startDate, new Date(endDate as string)))!);
       }
       
       const items = await db.select({

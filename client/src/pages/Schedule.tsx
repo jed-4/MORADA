@@ -507,16 +507,45 @@ export default function Schedule() {
     },
   });
 
-  // Sort schedule items by start date (re-assigns sortOrder values)
+  // Sort schedule items by start date (re-assigns sortOrder values, preserving hierarchy)
   const sortByDateMutation = useMutation({
     mutationFn: async () => {
       if (!schedule) throw new Error("No schedule");
-      const sorted = [...scheduleItems].sort((a, b) => {
-        const aDate = a.startDate ? new Date(a.startDate).getTime() : 0;
-        const bDate = b.startDate ? new Date(b.startDate).getTime() : 0;
-        return aDate - bDate;
-      });
-      const updates = sorted.map((item, idx) => ({ id: item.id, sortOrder: idx, parentItemId: item.parentItemId }));
+
+      // Helper: earliest start date among an item's own date or its children's dates
+      const effectiveDate = (item: ScheduleItem): number => {
+        if (item.startDate) return new Date(item.startDate).getTime();
+        const childDates = scheduleItems
+          .filter((c) => c.parentItemId === item.id && c.startDate)
+          .map((c) => new Date(c.startDate!).getTime());
+        return childDates.length ? Math.min(...childDates) : Infinity;
+      };
+
+      const updates: { id: string; sortOrder: number; parentItemId: string | null }[] = [];
+      let counter = 0;
+
+      // 1. Sort top-level parents by effective start date
+      const topLevel = scheduleItems
+        .filter((i) => !i.parentItemId)
+        .sort((a, b) => effectiveDate(a) - effectiveDate(b));
+
+      for (const parent of topLevel) {
+        updates.push({ id: parent.id, sortOrder: counter++, parentItemId: null });
+
+        // 2. Sort children under this parent by their own start date
+        const children = scheduleItems
+          .filter((c) => c.parentItemId === parent.id)
+          .sort((a, b) => {
+            const aDate = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+            const bDate = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+            return aDate - bDate;
+          });
+
+        for (const child of children) {
+          updates.push({ id: child.id, sortOrder: counter++, parentItemId: parent.id });
+        }
+      }
+
       const response = await fetch("/api/schedule-items/batch-sort", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

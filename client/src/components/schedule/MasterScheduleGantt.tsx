@@ -188,7 +188,7 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
           >
             {hasStart && hasEnd ? (
               <div
-                className="absolute rounded-sm"
+                className="absolute rounded-sm overflow-hidden"
                 style={{
                   left: barLeft,
                   width: barWidth,
@@ -204,6 +204,12 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
                 {showRightArrow && (
                   <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-[8px] text-white/80 font-bold">▶</span>
                 )}
+                <span
+                  className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium whitespace-nowrap overflow-hidden"
+                  style={{ color: barBorder }}
+                >
+                  {item.name}
+                </span>
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center px-2">
