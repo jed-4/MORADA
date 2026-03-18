@@ -16432,8 +16432,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Non-critical - continue without color/name
           }
         } else if (!updateData.assignedToId) {
-          updateData.assignedToColor = null;
-          updateData.assignedToName = null;
+          // Only wipe assignedToName if the original item was not already company-assigned.
+          // Company-assigned items have assignedToId = null with assignedToName set.
+          // If we clear it here, the item disappears from the company workload row.
+          const wasAlreadyCompanyAssigned = !originalItem?.assignedToId && !!originalItem?.assignedToName;
+          if (!wasAlreadyCompanyAssigned) {
+            updateData.assignedToColor = null;
+            updateData.assignedToName = null;
+          } else {
+            // Preserve the company name; only clear color (it's re-set from the schedule anyway)
+            updateData.assignedToColor = null;
+            // Don't overwrite assignedToName — leave it as-is in the DB
+            delete updateData.assignedToName;
+          }
         }
       }
       
