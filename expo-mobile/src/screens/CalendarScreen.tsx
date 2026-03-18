@@ -302,6 +302,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewsModal, setShowViewsModal] = useState(false);
   const [showCreateViewModal, setShowCreateViewModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [newViewName, setNewViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
   const [allDayExpanded, setAllDayExpanded] = useState(false);
@@ -882,44 +883,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const canSaveFilters = currentView && !currentView.isDefault;
 
   const handleEventTap = (event: CalendarEvent) => {
-    if (event.type === 'task' && event.raw) {
-      const task = event.raw;
-      Alert.alert(
-        task.title,
-        [
-          `Status: ${task.status || 'N/A'}`,
-          `Due: ${task.dueDate ? formatDateShort(task.dueDate) : 'N/A'}`,
-          event.projectName ? `Project: ${event.projectName}` : null,
-        ].filter(Boolean).join('\n'),
-        [{ text: 'OK' }]
-      );
-    } else if (event.type === 'schedule' && event.raw) {
-      const item = event.raw;
-      Alert.alert(
-        item.name,
-        [
-          `Status: ${item.status || 'N/A'}`,
-          `Start: ${formatDateShort(item.startDate)}`,
-          `End: ${formatDateShort(item.endDate)}`,
-          event.projectName ? `Project: ${event.projectName}` : null,
-        ].filter(Boolean).join('\n'),
-        [{ text: 'OK' }]
-      );
-    } else if (event.type === 'timesheet' && event.raw) {
-      const ts = event.raw;
-      const hours = parseFloat(ts.duration ?? '0');
-      Alert.alert(
-        event.title,
-        [
-          event.projectName ? `Project: ${event.projectName}` : null,
-          `Hours: ${hours % 1 === 0 ? hours : hours.toFixed(1)}`,
-          ts.description ? `Notes: ${ts.description}` : null,
-        ].filter(Boolean).join('\n'),
-        [{ text: 'OK' }]
-      );
-    } else if (event.type === 'site_diary') {
-      Alert.alert(event.title, event.projectName ? `Project: ${event.projectName}` : '', [{ text: 'OK' }]);
-    }
+    setSelectedEvent(event);
   };
 
   const getEventTypeLabel = (type: string) => {
@@ -2043,6 +2007,109 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Event Detail Modal */}
+      <Modal visible={!!selectedEvent} animationType="slide" transparent onRequestClose={() => setSelectedEvent(null)}>
+        <View style={styles.evtModalOverlay}>
+          <View style={[styles.evtModalSheet, { backgroundColor: colors.card }]}>
+            {selectedEvent && (() => {
+              const ev = selectedEvent;
+              const raw = ev.raw;
+              return (
+                <>
+                  {/* Coloured accent strip at top */}
+                  <View style={[styles.evtModalAccent, { backgroundColor: ev.color }]} />
+
+                  <View style={[styles.evtModalHeader, { borderBottomColor: colors.border }]}>
+                    <TouchableOpacity onPress={() => setSelectedEvent(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close" size={24} color={colors.secondary} />
+                    </TouchableOpacity>
+                    <View style={[styles.evtTypeBadge, { backgroundColor: ev.color + '25' }]}>
+                      <Text style={[styles.evtTypeBadgeText, { color: ev.color }]}>{getEventTypeLabel(ev.type)}</Text>
+                    </View>
+                    <View style={{ width: 32 }} />
+                  </View>
+
+                  <ScrollView style={styles.evtModalBody} contentContainerStyle={{ paddingBottom: 40 }}>
+                    <Text style={[styles.evtModalTitle, { color: colors.text }]}>{ev.title}</Text>
+
+                    {/* Status badge */}
+                    {ev.status && (
+                      <View style={styles.evtBadgeRow}>
+                        <View style={[styles.evtBadge, { backgroundColor: (ev.statusColor || ev.color) + '20' }]}>
+                          <Text style={[styles.evtBadgeText, { color: ev.statusColor || ev.color }]}>
+                            {ev.type === 'schedule'
+                              ? (SCHEDULE_STATUS_LABELS[ev.status] || ev.status)
+                              : ev.status.charAt(0).toUpperCase() + ev.status.slice(1).replace(/_/g, ' ')}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Project */}
+                    {ev.projectName ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="briefcase-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{ev.projectName}</Text>
+                      </View>
+                    ) : null}
+
+                    {/* Date / time */}
+                    {ev.type === 'schedule' && raw ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
+                          {formatDateShort(raw.startDate)}{raw.endDate && raw.endDate !== raw.startDate ? ` → ${formatDateShort(raw.endDate)}` : ''}
+                        </Text>
+                      </View>
+                    ) : ev.type === 'task' && raw?.dueDate ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{formatDateShort(raw.dueDate)}</Text>
+                      </View>
+                    ) : ev.date ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>{formatDateShort(ev.date)}</Text>
+                      </View>
+                    ) : null}
+
+                    {/* Time range */}
+                    {ev.startTime ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="time-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
+                          {ev.startTime}{ev.endTime ? ` – ${ev.endTime}` : ''}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Timesheet hours */}
+                    {ev.type === 'timesheet' && raw?.duration ? (
+                      <View style={styles.evtField}>
+                        <Ionicons name="hourglass-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.evtFieldText, { color: colors.text }]}>
+                          {(() => { const h = parseFloat(raw.duration ?? '0'); return `${h % 1 === 0 ? h : h.toFixed(1)} hrs`; })()}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Notes / description */}
+                    {(raw?.description || raw?.contentText || raw?.content) ? (
+                      <View style={[styles.evtSection, { borderTopColor: colors.border }]}>
+                        <Text style={[styles.evtSectionLabel, { color: colors.secondary }]}>Notes</Text>
+                        <Text style={[styles.evtSectionText, { color: colors.text }]}>
+                          {raw.description || raw.contentText || raw.content}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </ScrollView>
+                </>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2307,5 +2374,92 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+  },
+
+  // Event detail modal
+  evtModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  evtModalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+    maxHeight: '80%',
+  },
+  evtModalAccent: {
+    height: 4,
+  },
+  evtModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  evtTypeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  evtTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  evtModalBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  evtModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 12,
+    lineHeight: 26,
+  },
+  evtBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  evtBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  evtBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  evtField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  evtFieldText: {
+    fontSize: 15,
+    flex: 1,
+  },
+  evtSection: {
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 16,
+    marginBottom: 12,
+  },
+  evtSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  evtSectionText: {
+    fontSize: 15,
+    lineHeight: 22,
   },
 });
