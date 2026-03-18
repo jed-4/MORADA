@@ -311,7 +311,6 @@ export default function MasterScheduleGantt() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
-  const hasAutoFit = useRef(false);
 
   const windowEnd = addWeeks(windowStart, windowWeeks);
   const totalDays = windowWeeks * 7;
@@ -331,8 +330,18 @@ export default function MasterScheduleGantt() {
     },
   });
 
-  const visibleProjects = useMemo(() => projects.filter((p) => p.isVisible), [projects]);
-  const hiddenCount = projects.length - visibleProjects.length;
+  const allVisibleProjects = useMemo(() => projects.filter((p) => p.isVisible), [projects]);
+  const hiddenCount = projects.length - allVisibleProjects.length;
+
+  const visibleProjects = useMemo(() => {
+    return allVisibleProjects.filter((p) => {
+      const dates = getProjectDates(p);
+      if (!dates.start && !dates.end) return true; // keep projects with no dates
+      const projectStart = dates.start ?? dates.end!;
+      const projectEnd = dates.end ?? dates.start!;
+      return projectStart < windowEnd && projectEnd >= windowStart;
+    });
+  }, [allVisibleProjects, windowStart, windowEnd]);
 
   // ResizeObserver: track right panel width to keep pixelsPerDay responsive
   useEffect(() => {
@@ -348,19 +357,6 @@ export default function MasterScheduleGantt() {
     return () => obs.disconnect();
   }, []);
 
-  // Auto-fit the window to the earliest project start date on first data load
-  useEffect(() => {
-    if (hasAutoFit.current || visibleProjects.length === 0) return;
-    const earliest = visibleProjects.reduce<Date | null>((min, p) => {
-      const dates = getProjectDates(p);
-      if (!dates.start) return min;
-      return min === null || dates.start < min ? dates.start : min;
-    }, null);
-    if (earliest) {
-      setWindowStart(startOfWeek(earliest, { weekStartsOn: 1 }));
-      hasAutoFit.current = true;
-    }
-  }, [visibleProjects]);
 
   const getPos = useCallback((date: Date) => {
     return differenceInDays(date, windowStart) * pixelsPerDay;
@@ -577,7 +573,7 @@ export default function MasterScheduleGantt() {
           {/* Timeline body */}
           <div
             ref={timelineRef}
-            className="flex-1 overflow-auto"
+            className="flex-1 overflow-hidden"
             onScroll={handleSyncScroll}
           >
             <div className="relative" style={{ width: totalWidth }}>

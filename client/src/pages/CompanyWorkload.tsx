@@ -128,8 +128,13 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
   const [hideUnassigned, setHideUnassigned] = useState(false);
+  const [showBusiness, setShowBusiness] = useState(true);
+  const [showSuppliers, setShowSuppliers] = useState(true);
   const [hidePreconstructionSchedule, setHidePreconstructionSchedule] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
+  const businessLabel = user?.companyNickname || "Business";
 
   const toggleRowExpanded = useCallback((id: string) => {
     setExpandedRows((prev) => {
@@ -166,12 +171,15 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   );
 
   const workloadUrl = useMemo(() => {
+    // Fetch a wide window (1 year back, 2 years forward) so all assigned items are included
+    const fetchStart = addDays(new Date(), -365);
+    const fetchEnd = addDays(new Date(), 730);
     const params = new URLSearchParams({
-      startDate: rangeStart.toISOString(),
-      endDate: rangeEnd.toISOString(),
+      startDate: fetchStart.toISOString(),
+      endDate: fetchEnd.toISOString(),
     });
     return `/api/schedule-items/workload?${params}`;
-  }, [rangeStart, rangeEnd]);
+  }, []);
 
   const { data: items = [], isLoading } = useQuery<WorkloadItem[]>({
     queryKey: [workloadUrl],
@@ -251,15 +259,17 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
 
   const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0) + (hidePreconstructionSchedule ? 1 : 0);
 
-  const { contactRows, unassignedRow } = useMemo(() => {
+  const { companyRow, contactRows, unassignedRow } = useMemo(() => {
     const contactMap = new Map<string, ContactRow>();
     const unassigned: WorkloadItem[] = [];
 
     for (const item of items) {
       if (item.status === "completed" || item.status === "cancelled") continue;
-      if (item.type === "parent") continue;
       if (hiddenProjects.has(item.projectId)) continue;
       if (hidePreconstructionSchedule && item.scheduleCategory === "preconstruction") continue;
+
+      // Only skip parent items when they are unassigned (assigned parent items are valid workload)
+      if (item.type === "parent" && !item.assignedToId && !item.assignedToName) continue;
 
       if (!item.assignedToId && !item.assignedToName) {
         unassigned.push(item);
@@ -287,8 +297,19 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       row.items.push(item);
     }
 
-    const sorted = Array.from(contactMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    // Separate company row (assignedToId starts with 'company:') from supplier/people rows
+    let companyRow: ContactRow | null = null;
+    const supplierRows: ContactRow[] = [];
+    for (const row of contactMap.values()) {
+      if (row.id.startsWith("company:")) {
+        companyRow = row;
+      } else {
+        supplierRows.push(row);
+      }
+    }
+    const sorted = supplierRows.sort((a, b) => a.name.localeCompare(b.name));
     return {
+      companyRow,
       contactRows: sorted,
       unassignedRow: unassigned.length > 0 ? { id: "__unassigned__", name: "Unassigned", color: "#9ca3af", items: unassigned } : null,
     };
@@ -316,10 +337,15 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   }, [items, teams, hiddenTeams, hiddenProjects, hidePreconstructionSchedule]);
 
   const allRows = useMemo(() => {
-    const rows: ContactRow[] = [...teamRows, ...contactRows];
+    const rows: ContactRow[] = [];
+    // Company row always at top (when visible)
+    if (companyRow && showBusiness) rows.push(companyRow);
+    // Supplier/people rows (teams + individual contacts)
+    if (showSuppliers) rows.push(...teamRows, ...contactRows);
+    // Unassigned at bottom
     if (unassignedRow && !hideUnassigned) rows.push(unassignedRow);
     return rows;
-  }, [teamRows, contactRows, unassignedRow, hideUnassigned]);
+  }, [companyRow, teamRows, contactRows, unassignedRow, hideUnassigned, showBusiness, showSuppliers]);
 
   const dayOffsets = useMemo(() => {
     const offsets: number[] = [];
@@ -464,6 +490,27 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
               </button>
             </div>
           )}
+          {/* Business / Suppliers / Unassigned toggles */}
+          <div className="flex items-center border rounded-md overflow-hidden">
+            <button
+              className={`h-7 px-2.5 text-xs ${showBusiness ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
+              onClick={() => setShowBusiness((v) => !v)}
+            >
+              {businessLabel}
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs border-l ${showSuppliers ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
+              onClick={() => setShowSuppliers((v) => !v)}
+            >
+              Suppliers
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs border-l ${!hideUnassigned ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
+              onClick={() => setHideUnassigned((v) => !v)}
+            >
+              Unassigned
+            </button>
+          </div>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" size="icon" className="h-7 w-7 relative">
@@ -613,65 +660,76 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             </div>
           </div>
 
-          {allRows.map((row) => {
+          {allRows.map((row, rowIdx) => {
             const barData = rowBarLayouts.get(row.id);
             const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
             const isExpanded = expandedRows.has(row.id);
             const hasMultipleItems = row.items.length > 1;
+            const isCompanyRow = row.id.startsWith("company:");
+            // Half-row gap separator after the company row
+            const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("company:");
             return (
-              <div
-                key={row.id}
-                style={{ height: rowHeight }}
-                className="flex items-start px-2 gap-1.5 border-b border-border/30 pt-2"
-              >
-                {hasMultipleItems ? (
-                  <button
-                    className="shrink-0 mt-px p-0.5 rounded hover-elevate"
-                    onClick={() => toggleRowExpanded(row.id)}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                    ) : (
-                      <ChevronRightIcon className="w-3 h-3 text-muted-foreground" />
-                    )}
-                  </button>
-                ) : (
-                  <div className="w-4 shrink-0" />
-                )}
+              <div key={row.id}>
                 <div
-                  className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
-                  style={{ backgroundColor: row.color }}
-                />
-                <div className="flex-1 flex items-center gap-1 min-w-0">
-                  <span className="text-xs font-medium truncate">
-                    {row.name}
-                  </span>
-                  {row.id.startsWith("team:") && (
-                    <span className="shrink-0 text-[9px] px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">
-                      Team
-                    </span>
+                  style={{ height: rowHeight }}
+                  className={cn(
+                    "flex items-start px-2 gap-1.5 border-b pt-2",
+                    isCompanyRow ? "border-border/60 bg-muted/30" : "border-border/30"
                   )}
+                >
+                  {hasMultipleItems ? (
+                    <button
+                      className="shrink-0 mt-px p-0.5 rounded hover-elevate"
+                      onClick={() => toggleRowExpanded(row.id)}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRightIcon className="w-3 h-3 text-muted-foreground" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="w-4 shrink-0" />
+                  )}
+                  <div
+                    className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                    style={{ backgroundColor: row.color }}
+                  />
+                  <div className="flex-1 flex items-center gap-1 min-w-0">
+                    <span className={cn("text-xs truncate", isCompanyRow ? "font-bold" : "font-medium")}>
+                      {isCompanyRow ? businessLabel : row.name}
+                    </span>
+                    {row.id.startsWith("team:") && (
+                      <span className="shrink-0 text-[9px] px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">
+                        Team
+                      </span>
+                    )}
+                  </div>
+                  {assigneeOverloads.get(row.id)?.isOverloaded && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="shrink-0">
+                          <AlertTriangle className={cn(
+                            "w-3.5 h-3.5",
+                            (assigneeOverloads.get(row.id)?.maxConcurrent ?? 0) >= OVERLOAD_THRESHOLD + 2
+                              ? "text-red-500"
+                              : "text-amber-500"
+                          )} />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
+                        Up to {assigneeOverloads.get(row.id)?.maxConcurrent} concurrent items
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {row.items.length}
+                  </span>
                 </div>
-                {assigneeOverloads.get(row.id)?.isOverloaded && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="shrink-0">
-                        <AlertTriangle className={cn(
-                          "w-3.5 h-3.5",
-                          (assigneeOverloads.get(row.id)?.maxConcurrent ?? 0) >= OVERLOAD_THRESHOLD + 2
-                            ? "text-red-500"
-                            : "text-amber-500"
-                        )} />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
-                      Up to {assigneeOverloads.get(row.id)?.maxConcurrent} concurrent items
-                    </TooltipContent>
-                  </Tooltip>
+                {/* Half-row gap after company row */}
+                {isLastBeforeSuppliers && (
+                  <div style={{ height: MIN_ROW_HEIGHT / 2 }} className="border-b border-border/20" />
                 )}
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  {row.items.length}
-                </span>
               </div>
             );
           })}
@@ -756,11 +814,13 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                 );
               })()}
 
-              {allRows.map((row) => {
+              {allRows.map((row, rowIdx) => {
                 const barData = rowBarLayouts.get(row.id);
                 const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
                 const layouts = barData?.layouts || [];
                 const isExpanded = expandedRows.has(row.id);
+                const isCompanyRow = row.id.startsWith("company:");
+                const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("company:");
 
                 const sortedItemsForExpanded = isExpanded
                   ? [...row.items].sort((a, b) => {
@@ -774,9 +834,9 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                 sortedItemsForExpanded.forEach((item, idx) => expandedItemIndexMap.set(item.id, idx));
 
                 return (
+                  <div key={row.id}>
                   <div
-                    key={row.id}
-                    className="relative border-b border-border/10"
+                    className={cn("relative border-b", isCompanyRow ? "border-border/40 bg-muted/10" : "border-border/10")}
                     style={{ height: rowHeight }}
                   >
                     {days.map((day, dayIdx) => {
@@ -860,8 +920,14 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                       );
                     })}
                   </div>
+                  {/* Half-row gap after company row in timeline */}
+                  {isLastBeforeSuppliers && (
+                    <div style={{ height: MIN_ROW_HEIGHT / 2 }} className="border-b border-border/20" />
+                  )}
+                  </div>
                 );
               })}
+
             </div>
           </div>
         </div>
