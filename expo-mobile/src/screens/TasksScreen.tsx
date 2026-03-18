@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -142,6 +143,7 @@ export default function TasksScreen({ navigation }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -483,7 +485,7 @@ export default function TasksScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
+      <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50', paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
           style={styles.headerBackBtn}
           onPress={() => navigation.goBack()}
@@ -1019,7 +1021,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 56,
     paddingBottom: 14,
     borderBottomWidth: 0,
     gap: 8,
