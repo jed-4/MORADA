@@ -65,6 +65,15 @@ interface ChecklistItem {
   status: 'pending' | 'completed' | 'na';
 }
 
+interface SiteDiaryEntry {
+  id: string;
+  title?: string;
+  entryDateTime?: string;
+  weather?: { condition?: string; temp?: number } | null;
+  notes?: string;
+  createdByName?: string;
+}
+
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
@@ -91,6 +100,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const [checklistItems, setChecklistItems] = useState<Record<string, ChecklistItem[]>>({});
   const [loadingChecklistItems, setLoadingChecklistItems] = useState<Record<string, boolean>>({});
   const [collapsedChecklistGroups, setCollapsedChecklistGroups] = useState<Record<string, boolean>>({});
+  const [siteDiaryEntries, setSiteDiaryEntries] = useState<SiteDiaryEntry[]>([]);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
@@ -98,17 +108,19 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectData, tasksData, scheduleData, collapsedPrefs, checklistData] = await Promise.all([
+      const [projectData, tasksData, scheduleData, collapsedPrefs, checklistData, diaryData] = await Promise.all([
         apiFetch<Project>(`/api/projects/${projectId}`),
         apiFetch<Task[]>(`/api/projects/${projectId}/tasks`).catch(() => []),
         apiFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule-items`).catch(() => []),
         apiFetch<any>('/api/user-view-preferences/mobile-project-detail-collapsed').catch(() => null),
         apiFetch<ChecklistInstance[]>(`/api/checklist-instances?projectId=${projectId}`).catch(() => []),
+        apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
       ]);
       setProject(projectData);
       setTasks(tasksData || []);
       setScheduleItems(scheduleData || []);
       setChecklistInstances(checklistData || []);
+      setSiteDiaryEntries((diaryData || []).slice(0, 8));
       if (collapsedPrefs?.preferences) {
         setCollapsed(prev => ({ ...prev, ...collapsedPrefs.preferences }));
       }
@@ -174,12 +186,56 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
     return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(amount);
   };
 
-  const categoryTiles: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; count: number }[] = [
-    { key: 'tasks', icon: 'checkbox-outline', label: 'Tasks', count: tasks.length },
-    { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', count: scheduleItems.length },
-    { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', count: 0 },
-    { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', count: 0 },
-    { key: 'budget', icon: 'cash-outline', label: 'Budget', count: 0 },
+  const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getTomorrowStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const dateOnlyStr = (dateStr?: string) => {
+    if (!dateStr) return '';
+    return dateStr.slice(0, 10);
+  };
+
+  const todayStr = getTodayStr();
+  const tomorrowStr = getTomorrowStr();
+
+  const todayTasks = tasks.filter(t => dateOnlyStr(t.dueDate) === todayStr);
+
+  const nearScheduleItems = scheduleItems.filter(item => {
+    const start = dateOnlyStr(item.startDate);
+    const end = dateOnlyStr(item.endDate) || start;
+    return (start <= tomorrowStr && end >= todayStr);
+  });
+
+  const getWeatherIcon = (condition?: string): keyof typeof Ionicons.glyphMap => {
+    if (!condition) return 'partly-sunny-outline';
+    const c = condition.toLowerCase();
+    if (c.includes('rain') || c.includes('shower')) return 'rainy-outline';
+    if (c.includes('storm') || c.includes('thunder')) return 'thunderstorm-outline';
+    if (c.includes('cloud') || c.includes('overcast')) return 'cloudy-outline';
+    if (c.includes('sun') || c.includes('clear') || c.includes('fine')) return 'sunny-outline';
+    if (c.includes('wind')) return 'flag-outline';
+    if (c.includes('snow')) return 'snow-outline';
+    return 'partly-sunny-outline';
+  };
+
+  const formatDiaryDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+
+  const categoryTiles: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; showCount: boolean; count?: number }[] = [
+    { key: 'tasks', icon: 'checkbox-outline', label: 'Tasks', showCount: true, count: tasks.length },
+    { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', showCount: false },
+    { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
+    { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
   ];
 
   const handleTileTap = (key: string) => {
@@ -331,7 +387,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
               onPress={() => handleTileTap(tile.key)}
               activeOpacity={0.7}
             >
-              {tile.count > 0 && (
+              {tile.showCount && tile.count != null && tile.count > 0 && (
                 <View style={[styles.tileBadge, { backgroundColor: colors.accent }]}>
                   <Text style={styles.tileBadgeText}>{tile.count}</Text>
                 </View>
@@ -409,83 +465,143 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         </View>
 
         <View style={styles.section}>
-          {renderSectionHeader('Tasks', 'tasks', tasks.length)}
+          {renderSectionHeader('Tasks — Today', 'tasks', tasks.length)}
           {!collapsed.tasks && (
             <View>
-              {tasks.length === 0 ? (
+              {todayTasks.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="checkbox-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks for this project</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
                 </View>
               ) : (
-                tasks.slice(0, 10).map(task => (
+                todayTasks.map(task => (
                   <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(task.priority) }]} />
                     <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
                     {task.status && (
-                      <Text style={[styles.taskStatus, { color: colors.secondary }]}>{task.status}</Text>
+                      <Text style={[styles.taskStatus, { color: colors.secondary }]}>{task.status.replace(/_/g, ' ')}</Text>
                     )}
                   </View>
                 ))
-              )}
-              {tasks.length > 10 && (
-                <Text style={[styles.moreText, { color: colors.accent }]}>+{tasks.length - 10} more tasks</Text>
               )}
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          {renderSectionHeader('Schedule', 'schedule', scheduleItems.length)}
+          {renderSectionHeader('Schedule — Today & Tomorrow', 'schedule')}
           {!collapsed.schedule && (
             <View>
-              {scheduleItems.length === 0 ? (
+              {nearScheduleItems.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No schedule items</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>Nothing scheduled today or tomorrow</Text>
                 </View>
               ) : (
-                scheduleItems.slice(0, 10).map(item => (
+                nearScheduleItems.map(item => (
                   <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.scheduleContent}>
                       <Text style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
                       {item.startDate && (
                         <Text style={[styles.scheduleDate, { color: colors.secondary }]}>
                           {new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                          {item.endDate ? ` - ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
+                          {item.endDate ? ` – ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
                         </Text>
                       )}
                     </View>
                     {item.status && (
-                      <Text style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status}</Text>
+                      <Text style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
                     )}
                   </View>
                 ))
               )}
-              {scheduleItems.length > 10 && (
-                <Text style={[styles.moreText, { color: colors.accent }]}>+{scheduleItems.length - 10} more items</Text>
-              )}
+              <TouchableOpacity
+                style={[styles.viewAllBtn, { borderColor: colors.border }]}
+                onPress={() => navigation.navigate('Schedule', { projectId })}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+              </TouchableOpacity>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          {renderSectionHeader('Site Diary', 'siteDiary')}
-          {!collapsed.siteDiary && (
+          <View style={styles.sectionHeaderRow}>
+            <TouchableOpacity style={styles.sectionHeaderRowLeft} onPress={() => toggleSection('siteDiary')} activeOpacity={0.7}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Site Diary</Text>
+              <Ionicons name={collapsed.siteDiary ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.secondary} />
+            </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              style={[styles.sectionActionBtn, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' }]}
               onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
               activeOpacity={0.7}
             >
-              <View style={[styles.actionIconBg, { backgroundColor: colors.accent + '15' }]}>
-                <Ionicons name="book-outline" size={22} color={colors.accent} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={[styles.actionTitle, { color: colors.text }]}>Site Diary</Text>
-                <Text style={[styles.actionSub, { color: colors.secondary }]}>Record daily activities</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              <Ionicons name="add" size={14} color={colors.accent} />
+              <Text style={[styles.sectionActionBtnText, { color: colors.accent }]}>New Entry</Text>
             </TouchableOpacity>
+          </View>
+          {!collapsed.siteDiary && (
+            <View>
+              {siteDiaryEntries.length === 0 ? (
+                <TouchableOpacity
+                  style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="book-outline" size={28} color={colors.muted} />
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No diary entries yet</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.accent, fontSize: 12 }]}>Tap to add first entry</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.diaryCarouselRow}
+                    style={{ flexShrink: 0, flexGrow: 0 }}
+                  >
+                    {siteDiaryEntries.map(entry => (
+                      <TouchableOpacity
+                        key={entry.id}
+                        style={[styles.diaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.diaryCardDate, { color: colors.secondary }]}>
+                          {formatDiaryDate(entry.entryDateTime)}
+                        </Text>
+                        <Text style={[styles.diaryCardTitle, { color: colors.text }]} numberOfLines={2}>
+                          {entry.title || 'Site Diary Entry'}
+                        </Text>
+                        {entry.weather?.condition && (
+                          <View style={styles.diaryCardWeather}>
+                            <Ionicons name={getWeatherIcon(entry.weather.condition)} size={13} color={colors.secondary} />
+                            <Text style={[styles.diaryCardWeatherText, { color: colors.secondary }]}>
+                              {entry.weather.condition}{entry.weather.temp != null ? ` ${entry.weather.temp}°` : ''}
+                            </Text>
+                          </View>
+                        )}
+                        {entry.createdByName && (
+                          <Text style={[styles.diaryCardAuthor, { color: colors.muted }]} numberOfLines={1}>
+                            {entry.createdByName}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={[styles.diaryCardViewAll, { backgroundColor: colors.accent + '12', borderColor: colors.accent + '30' }]}
+                      onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="book-outline" size={22} color={colors.accent} />
+                      <Text style={[styles.diaryCardViewAllText, { color: colors.accent }]}>All Entries</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                </>
+              )}
+            </View>
           )}
         </View>
 
@@ -748,5 +864,98 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginTop: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    gap: 8,
+  },
+  sectionHeaderRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  sectionActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sectionActionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  viewAllBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  diaryCarouselRow: {
+    gap: 10,
+    paddingBottom: 4,
+    paddingRight: 4,
+  },
+  diaryCard: {
+    width: 160,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+    marginBottom: 4,
+  },
+  diaryCardDate: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  diaryCardTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  diaryCardWeather: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  diaryCardWeatherText: {
+    fontSize: 11,
+  },
+  diaryCardAuthor: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  diaryCardViewAll: {
+    width: 100,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+    marginBottom: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diaryCardViewAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

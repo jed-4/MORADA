@@ -1446,9 +1446,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
                   onPress={() => openDetailModal(entry)}
                 >
                   <View style={styles.entryRow}>
-                    <View style={[styles.creatorAvatar, { backgroundColor: getAvatarColor(entry.createdByName) }]}>
-                      <Text style={styles.creatorAvatarText}>{getInitials(entry.createdByName)}</Text>
-                    </View>
                     <View style={styles.entryContent}>
                       <View style={styles.entryTop}>
                         <Text style={[styles.entryTitle, { color: colors.text }]} numberOfLines={1}>
@@ -1553,11 +1550,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
                           onPress={() => openDetailModal(entry)}
                         >
                           <View style={styles.entryRow}>
-                            <View style={[styles.creatorAvatar, { backgroundColor: getAvatarColor(entry.createdByName) }]}>
-                              <Text style={styles.creatorAvatarText}>
-                                {getInitials(entry.createdByName)}
-                              </Text>
-                            </View>
                             <View style={styles.entryContent}>
                               <View style={styles.entryTop}>
                                 <Text style={[styles.entryTitle, { color: colors.text }]} numberOfLines={1}>
@@ -2301,19 +2293,6 @@ const styles = StyleSheet.create({
   },
   entryRow: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  creatorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  creatorAvatarText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
   },
   entryContent: {
     flex: 1,
