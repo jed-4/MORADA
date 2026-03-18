@@ -1,9 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,8 +20,6 @@ import {
   Trash2,
   FileText,
   FolderPlus,
-  Check,
-  X,
   Tag,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
@@ -106,55 +103,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   costCategories = [],
   dropIndicator,
 }) => {
-  const [isAddingLine, setIsAddingLine] = useState(false);
-  const [newItemName, setNewItemName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
-  // Focus input when adding line mode is activated
-  useEffect(() => {
-    if (isAddingLine && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isAddingLine]);
-
-  const handleStartAddLine = () => {
-    setIsAddingLine(true);
-    setNewItemName('');
-  };
-
-  const handleCancelAddLine = () => {
-    setIsAddingLine(false);
-    setNewItemName('');
-  };
-
-  const handleSaveNewLine = async () => {
-    if (!newItemName.trim() || !onInlineAddItem) {
-      handleCancelAddLine();
-      return;
-    }
-    
-    setIsSaving(true);
+  const handleAddLine = async () => {
+    if (!onInlineAddItem || isAdding) return;
+    setIsAdding(true);
     try {
-      await onInlineAddItem(group.id, newItemName.trim());
-      setNewItemName('');
-      // Keep input focused for adding more items
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
+      await onInlineAddItem(group.id, '');
     } catch (error) {
       console.error('Failed to add item:', error);
     } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSaveNewLine();
-    } else if (e.key === 'Escape') {
-      handleCancelAddLine();
+      setIsAdding(false);
     }
   };
 
@@ -439,7 +398,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             </div>
           )}
 
-          {/* Add Line row - shows inline input when adding, otherwise shows button */}
+          {/* Add Line row */}
           {!isLocked && !hideAddLines && (
             <div 
               role="row"
@@ -449,73 +408,24 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 width: `${tableWidth}px`,
                 minWidth: `${tableWidth}px`
               }}
-              className={`h-10 transition-colors border-b border-border/50 last:border-b-0 ${isAddingLine ? 'bg-muted/20' : 'hover-elevate'} group/addline`}
+              className="h-10 transition-colors border-b border-border/50 last:border-b-0 hover-elevate group/addline"
             >
               {/* Empty checkbox cell */}
               <div className="h-10 px-2 flex items-center" role="gridcell" />
-              
-              {isAddingLine ? (
-                <>
-                  {/* Inline input for new item name */}
-                  {visibleCols.map((column, idx) => {
-                    if (column.id === 'item') {
-                      return (
-                        <div key={column.id} className="h-10 px-2 flex items-center gap-2" role="gridcell">
-                          <Input
-                            ref={inputRef}
-                            value={newItemName}
-                            onChange={(e) => setNewItemName(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Enter item name..."
-                            className="h-8 text-sm flex-1"
-                            disabled={isSaving}
-                            data-testid={`input-new-item-name-${group.id}`}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-green-600"
-                            onClick={handleSaveNewLine}
-                            disabled={isSaving || !newItemName.trim()}
-                            data-testid={`button-save-new-item-${group.id}`}
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground"
-                            onClick={handleCancelAddLine}
-                            disabled={isSaving}
-                            data-testid={`button-cancel-new-item-${group.id}`}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      );
-                    }
-                    return <div key={column.id} className="h-10 px-2 flex items-center text-sm text-muted-foreground" role="gridcell" />;
-                  })}
-                  {/* Empty actions cell */}
-                  <div className="h-10 px-2 flex items-center" role="gridcell" />
-                </>
-              ) : (
-                <>
-                  {/* Add line button */}
-                  <div className="h-10 px-2 flex items-center col-span-1" role="gridcell">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-sm text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
-                      onClick={onInlineAddItem ? handleStartAddLine : () => onAddItemToGroup(group.id)}
-                      data-testid={`button-add-line-${group.id}`}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add Line
-                    </Button>
-                  </div>
-                </>
-              )}
+              {/* Add line button */}
+              <div className="h-10 px-2 flex items-center col-span-1" role="gridcell">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-sm text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
+                  onClick={onInlineAddItem ? handleAddLine : () => onAddItemToGroup(group.id)}
+                  disabled={isAdding}
+                  data-testid={`button-add-line-${group.id}`}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  {isAdding ? 'Adding...' : 'Add Line'}
+                </Button>
+              </div>
             </div>
           )}
 

@@ -3838,7 +3838,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
                 placeholder="None"
-                className="h-8"
+                triggerClassName="h-8 text-sm border-primary"
                 data-testid={`select-edit-costCode-${item.id}`}
               />
             </div>
