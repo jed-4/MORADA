@@ -2250,6 +2250,7 @@ export default function EstimateDetail() {
         const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
         setEditingValue(unitCostIncTax.toFixed(2));
         break;
+      case 'markup':
       case 'markupPercent':
         // Show markup percentage (10 = 10%)
         setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
@@ -2284,7 +2285,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent' || field === 'markup') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -2298,7 +2299,7 @@ export default function EstimateDetail() {
         } else if (field === 'unitCostIncTax') {
           const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
           setEditingValue(unitCostIncTax.toFixed(2));
-        } else if (field === 'markupPercent') {
+        } else if (field === 'markupPercent' || field === 'markup') {
           setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
         } else {
           setEditingValue((item as any)[field]);
@@ -2350,10 +2351,11 @@ export default function EstimateDetail() {
       // Save the back-calculated ex-tax value
       valueToSave = calculatedExTax;
       fieldToUpdate = 'unitCostExTax'; // Update the ex-tax field instead
-    } else if (field === 'markupPercent') {
+    } else if (field === 'markupPercent' || field === 'markup') {
       // Save markup as number (supports decimals like 12.5%)
       const markup = parseFloat(editingValue);
       valueToSave = Number.isNaN(markup) ? null : markup;
+      fieldToUpdate = 'markupPercent'; // always update the markupPercent field
       
       // Check if value actually changed
       if (valueToSave === (item.markupPercent ?? null)) {
@@ -2394,7 +2396,7 @@ export default function EstimateDetail() {
   };
 
   // Define editable fields in order for Tab navigation
-  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markupPercent', 'costCode', 'costCategoryId', 'description'];
+  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markup', 'costCode', 'costCategoryId', 'description'];
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
     if (e.key === "Enter") {
@@ -4451,8 +4453,8 @@ export default function EstimateDetail() {
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'markupPercent')}
-                onBlur={() => handleCellSave(item, 'markupPercent')}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'markup')}
+                onBlur={() => handleCellSave(item, 'markup')}
                 className="h-8 text-sm border-primary"
                 autoFocus
                 min="0"
@@ -4469,7 +4471,7 @@ export default function EstimateDetail() {
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
-              if (!isLocked) handleCellEdit(item, 'markupPercent');
+              if (!isLocked) handleCellEdit(item, 'markup');
             }}
             data-testid={`cell-markup-${item.id}`}
           >
