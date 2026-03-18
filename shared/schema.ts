@@ -3059,6 +3059,7 @@ export const schedules = pgTable("schedules", {
   scheduleCategory: text("schedule_category").notNull().default("construction"), // "construction" | "preconstruction"
   name: text("name").notNull().default("Project Schedule"),
   status: text("status").notNull().default("offline"), // "offline" | "online" | "locked"
+  isOnline: boolean("is_online").notNull().default(false), // visibility to external users (separate from lock state)
   description: text("description"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),

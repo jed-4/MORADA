@@ -90,6 +90,7 @@ import {
   Check,
   Flag,
   Loader2,
+  ArrowUpDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -447,7 +448,7 @@ export default function Schedule() {
     },
   });
 
-  // Update schedule status
+  // Update schedule lock status (does not affect online/offline visibility)
   const updateStatusMutation = useMutation({
     mutationFn: async (status: "offline" | "online" | "locked") => {
       if (!schedule) throw new Error("No schedule found");
@@ -460,13 +461,9 @@ export default function Schedule() {
       if (!response.ok) throw new Error("Failed to update status");
       return response.json() as Promise<ScheduleType>;
     },
-    onSuccess: (updatedSchedule) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
-      const statusLabels = { offline: "Offline", online: "Online", locked: "Locked" };
-      toast({
-        title: "Status updated",
-        description: `Schedule is now ${statusLabels[updatedSchedule.status as keyof typeof statusLabels]}.`,
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
     },
     onError: (error: Error) => {
       toast({
@@ -474,6 +471,66 @@ export default function Schedule() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  // Toggle schedule online/offline (visibility — separate from lock state)
+  const toggleOnlineMutation = useMutation({
+    mutationFn: async (isOnline: boolean) => {
+      if (!schedule) throw new Error("No schedule found");
+      const response = await fetch(`/api/schedules/${schedule.id}/online`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isOnline }),
+      });
+      if (!response.ok) throw new Error("Failed to update online status");
+      return response.json() as Promise<ScheduleType>;
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+      toast({
+        title: updated.isOnline ? "Schedule is Online" : "Schedule is Offline",
+        description: updated.isOnline
+          ? "External users with access can now see this schedule."
+          : "Schedule is hidden from external users.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update online status",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Sort schedule items by start date (re-assigns sortOrder values)
+  const sortByDateMutation = useMutation({
+    mutationFn: async () => {
+      if (!schedule) throw new Error("No schedule");
+      const sorted = [...scheduleItems].sort((a, b) => {
+        const aDate = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const bDate = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return aDate - bDate;
+      });
+      const updates = sorted.map((item, idx) => ({ id: item.id, sortOrder: idx, parentItemId: item.parentItemId }));
+      const response = await fetch("/api/schedule-items/batch-sort", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ updates }),
+      });
+      if (!response.ok) throw new Error("Failed to sort items");
+      return response.json();
+    },
+    onSuccess: () => {
+      invalidateScheduleItems();
+      toast({ title: "Sorted by date", description: "Schedule items have been re-ordered by start date." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sort failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1458,22 +1515,18 @@ export default function Schedule() {
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold">{pageTitle}</h2>
             
-            {/* Online/Offline indicator */}
+            {/* Online/Offline toggle (controls visibility, independent of lock state) */}
             <button
               onClick={() => {
-                if (schedule?.status === "locked") return;
-                if (schedule?.status === "offline") {
-                  updateStatusMutation.mutate("online");
-                } else {
-                  updateStatusMutation.mutate("offline");
-                }
+                if (toggleOnlineMutation.isPending) return;
+                toggleOnlineMutation.mutate(!schedule?.isOnline);
               }}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs text-muted-foreground ${schedule?.status === "locked" ? "opacity-50 cursor-not-allowed" : "hover-elevate active-elevate-2"}`}
-              disabled={schedule?.status === "locked"}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs text-muted-foreground hover-elevate active-elevate-2"
+              disabled={toggleOnlineMutation.isPending}
               data-testid="button-toggle-online"
             >
-              <div className={`w-1.5 h-1.5 rounded-full ${schedule?.status === "online" || schedule?.status === "locked" ? "bg-green-500" : "bg-muted-foreground"}`} />
-              <span>{schedule?.status === "online" || schedule?.status === "locked" ? "Online" : "Offline"}</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${schedule?.isOnline ? "bg-green-500" : "bg-muted-foreground"}`} />
+              <span>{schedule?.isOnline ? "Online" : "Offline"}</span>
             </button>
           </div>
 
@@ -1483,7 +1536,7 @@ export default function Schedule() {
             {schedule?.status === "locked" ? (
               <button
                 onClick={() => {
-                  updateStatusMutation.mutate("online");
+                  updateStatusMutation.mutate("offline");
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
                 data-testid="button-unlock-schedule"
@@ -1538,6 +1591,14 @@ export default function Schedule() {
                 <DropdownMenuItem onClick={() => setShowBaselineDialog(true)}>
                   <Bookmark className="w-4 h-4 mr-2" />
                   Create Baseline
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => sortByDateMutation.mutate()}
+                  disabled={schedule?.status === "locked" || sortByDateMutation.isPending || scheduleItems.length === 0}
+                >
+                  <ArrowUpDown className="w-4 h-4 mr-2" />
+                  {sortByDateMutation.isPending ? "Sorting..." : "Sort by Date"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem data-testid="button-settings" onClick={() => setShowWorkingDaysDialog(true)}>

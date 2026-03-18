@@ -28,7 +28,8 @@ interface BusinessProject {
   projectStatus: string;
   currentSystemPhase: string;
   scheduleStatus: string;
-  category: "scheduled" | "unscheduled" | "prospective";
+  isOnline: boolean;
+  category: "online" | "offline" | "prospective";
   projectStartDate: string | null;
   projectEndDate: string | null;
   itemStartDate: string | null;
@@ -211,7 +212,7 @@ export default function BusinessSchedule() {
         opacity: 0.7,
       };
     }
-    if (project.category === "unscheduled") {
+    if (project.category === "offline") {
       return {
         backgroundColor: "transparent",
         border: "2px dashed #d97706",
@@ -425,15 +426,15 @@ export default function BusinessSchedule() {
                             <div
                               className="w-full h-5 rounded-sm"
                               style={{
-                                backgroundColor: project.category === 'scheduled'
+                                backgroundColor: project.category === 'online'
                                   ? (project.color || '#3b82f6')
                                   : 'transparent',
-                                border: project.category === 'unscheduled'
+                                border: project.category === 'offline'
                                   ? '2px dashed #d97706'
                                   : project.category === 'prospective'
                                     ? '2px dotted #9ca3af'
                                     : 'none',
-                                opacity: project.category === 'scheduled' ? 0.75 : 0.6,
+                                opacity: project.category === 'online' ? 0.75 : 0.6,
                               }}
                             />
                           )}
@@ -524,22 +525,22 @@ export default function BusinessSchedule() {
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
               <div className="w-5 h-3 rounded-sm bg-blue-500" />
-              <span className="text-[10px] text-muted-foreground">Scheduled</span>
+              <span className="text-[10px] text-muted-foreground">Online</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <p className="text-xs">Projects with schedule items that have dates assigned</p>
+            <p className="text-xs">Schedule is published and visible to external users</p>
           </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
               <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
-              <span className="text-[10px] text-muted-foreground">Unscheduled</span>
+              <span className="text-[10px] text-muted-foreground">Offline</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <p className="text-xs">Projects without any scheduled items yet</p>
+            <p className="text-xs">Schedule is hidden from external users</p>
           </TooltipContent>
         </Tooltip>
         <Tooltip>
@@ -751,7 +752,7 @@ export default function BusinessSchedule() {
                       onContextMenu={(e) => handleContextMenu(e, project.id)}
                       data-testid={`bar-${project.id}`}
                     >
-                      {project.category === "scheduled" && (
+                      {project.category === "online" && (
                         <div className="absolute inset-0 flex items-center px-2 overflow-hidden">
                           {nameFitsInBar && (
                             <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
@@ -760,7 +761,7 @@ export default function BusinessSchedule() {
                           )}
                         </div>
                       )}
-                      {project.category !== "scheduled" && (
+                      {project.category !== "online" && (
                         <div className="absolute inset-0 flex items-center px-2 overflow-hidden">
                           {nameFitsInBar && (
                             <span className="text-[10px] font-medium text-muted-foreground truncate">

@@ -15991,6 +15991,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Toggle schedule online/offline (separate from lock state)
+  app.patch("/api/schedules/:id/online", requireAuth, async (req, res) => {
+    try {
+      const { isOnline } = req.body;
+      if (typeof isOnline !== "boolean") {
+        return res.status(400).json({ error: "isOnline must be a boolean" });
+      }
+      const schedule = await storage.updateScheduleOnline(req.params.id, isOnline);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to update schedule online status",
+        details: error.message
+      });
+    }
+  });
+
   app.delete("/api/schedules/:id", async (req, res) => {
     try {
       const success = await storage.deleteSchedule(req.params.id);
@@ -20625,11 +20645,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 
         const hasScheduleItems = !!itemBounds;
         const scheduleStatus = schedule?.status || "none";
+        const isOnline = schedule?.isOnline ?? false;
 
         let category: "scheduled" | "unscheduled" | "prospective" = "scheduled";
         if (project.currentSystemPhase === "lead") {
           category = "prospective";
-        } else if (!hasScheduleItems || scheduleStatus === "offline") {
+        } else if (!hasScheduleItems || !isOnline) {
           category = "unscheduled";
         }
 
@@ -20643,6 +20664,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           projectStatus: project.projectStatus,
           currentSystemPhase: project.currentSystemPhase,
           scheduleStatus,
+          isOnline,
           category,
           projectStartDate: project.startDate || null,
           projectEndDate: project.endDate || null,
@@ -20761,7 +20783,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         type: scheduleItems.type,
       }).from(scheduleItems)
         .where(eq(scheduleItems.scheduleId, schedule.id))
-        .orderBy(scheduleItems.startDate, scheduleItems.sortOrder);
+        .orderBy(scheduleItems.sortOrder);
 
       res.json(items);
     } catch (error: any) {

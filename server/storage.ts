@@ -836,6 +836,7 @@ export interface IStorage {
   updateSchedule(id: string, schedule: Partial<InsertSchedule>): Promise<Schedule | undefined>;
   deleteSchedule(id: string): Promise<boolean>;
   updateScheduleStatus(id: string, status: "offline" | "online" | "locked", userId?: string): Promise<Schedule | undefined>;
+  updateScheduleOnline(id: string, isOnline: boolean): Promise<Schedule | undefined>;
 
   // Schedule Items CRUD
   getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
@@ -5638,6 +5639,25 @@ export class DbStorage implements IStorage {
 
     // Always ensure required custom fields exist (idempotent)
     await this.ensureRequiredCustomFieldsExist();
+
+    // Backfill isOnline for existing schedules (idempotent)
+    // Schedules that were "online" or "locked" should be marked as online in the new column
+    await this.backfillScheduleIsOnline();
+  }
+
+  private async backfillScheduleIsOnline(): Promise<void> {
+    try {
+      await db.update(schema.schedules)
+        .set({ isOnline: true })
+        .where(
+          and(
+            eq(schema.schedules.isOnline, false),
+            inArray(schema.schedules.status, ["online", "locked"])
+          )
+        );
+    } catch (error) {
+      console.error("Error backfilling schedule isOnline:", error);
+    }
   }
 
   // Ensure all built-in permissions exist (idempotent upsert by key)
@@ -5679,7 +5699,10 @@ export class DbStorage implements IStorage {
       { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.budget", name: "Budget", description: "Manage budgets", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true }
+      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+
+      // Schedule visibility
+      { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published to external users", category: "projects", actions: ["view"], isBuiltIn: true }
     ];
 
     for (const permData of builtInPermissions) {
@@ -15104,13 +15127,26 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async updateScheduleOnline(id: string, isOnline: boolean): Promise<Schedule | undefined> {
+    try {
+      const result = await db.update(schema.schedules)
+        .set({ isOnline, updatedAt: new Date() })
+        .where(eq(schema.schedules.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateScheduleOnline:", error);
+      throw error;
+    }
+  }
+
   // Schedule Items CRUD
   async getScheduleItems(scheduleId: string): Promise<ScheduleItem[]> {
     try {
       return await db.select()
         .from(schema.scheduleItems)
         .where(eq(schema.scheduleItems.scheduleId, scheduleId))
-        .orderBy(asc(schema.scheduleItems.sortOrder), asc(schema.scheduleItems.startDate));
+        .orderBy(asc(schema.scheduleItems.sortOrder));
     } catch (error) {
       console.error("Database error in getScheduleItems:", error);
       throw error;
