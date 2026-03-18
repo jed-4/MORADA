@@ -206,12 +206,16 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const tomorrowStr = getTomorrowStr();
 
   const todayTasks = tasks.filter(t => dateOnlyStr(t.dueDate) === todayStr);
+  const tasksToShow = todayTasks.length > 0 ? todayTasks : tasks.slice(0, 10);
+  const tasksSectionTitle = todayTasks.length > 0 ? 'Tasks — Today' : 'Tasks';
 
   const nearScheduleItems = scheduleItems.filter(item => {
     const start = dateOnlyStr(item.startDate);
     const end = dateOnlyStr(item.endDate) || start;
     return (start <= tomorrowStr && end >= todayStr);
   });
+  const scheduleToShow = nearScheduleItems.length > 0 ? nearScheduleItems : scheduleItems.slice(0, 10);
+  const scheduleSectionTitle = nearScheduleItems.length > 0 ? 'Schedule — Today & Tomorrow' : 'Schedule';
 
   const getWeatherIcon = (condition?: string): keyof typeof Ionicons.glyphMap => {
     if (!condition) return 'partly-sunny-outline';
@@ -465,16 +469,16 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         </View>
 
         <View style={styles.section}>
-          {renderSectionHeader('Tasks — Today', 'tasks', tasks.length)}
+          {renderSectionHeader(tasksSectionTitle, 'tasks', tasks.length)}
           {!collapsed.tasks && (
             <View>
-              {todayTasks.length === 0 ? (
+              {tasksToShow.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="checkbox-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks for this project</Text>
                 </View>
               ) : (
-                todayTasks.map(task => (
+                tasksToShow.map(task => (
                   <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(task.priority) }]} />
                     <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
@@ -484,21 +488,24 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
                   </View>
                 ))
               )}
+              {tasks.length > 10 && tasksToShow.length === tasks.slice(0, 10).length && (
+                <Text style={[styles.moreText, { color: colors.accent }]}>+{tasks.length - 10} more tasks</Text>
+              )}
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          {renderSectionHeader('Schedule — Today & Tomorrow', 'schedule')}
+          {renderSectionHeader(scheduleSectionTitle, 'schedule')}
           {!collapsed.schedule && (
             <View>
-              {nearScheduleItems.length === 0 ? (
+              {scheduleToShow.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>Nothing scheduled today or tomorrow</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No schedule items</Text>
                 </View>
               ) : (
-                nearScheduleItems.map(item => (
+                scheduleToShow.map(item => (
                   <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.scheduleContent}>
                       <Text style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
