@@ -52,14 +52,16 @@ export function CostCodeSelect({
       });
     }
     
-    costCodes.forEach((code) => {
-      const categoryName = code.categoryId ? categoryMap.get(code.categoryId) : undefined;
-      opts.push({
-        value: code.id,
-        label: `${code.code} - ${code.title}`,
-        group: categoryName || (code.categoryId ? undefined : "Uncategorized"),
+    [...costCodes]
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' }))
+      .forEach((code) => {
+        const categoryName = code.categoryId ? categoryMap.get(code.categoryId) : undefined;
+        opts.push({
+          value: code.id,
+          label: `${code.code} - ${code.title}`,
+          group: categoryName || (code.categoryId ? undefined : "Uncategorized"),
+        });
       });
-    });
     
     return opts;
   }, [costCodes, allowNone, categoryMap]);
