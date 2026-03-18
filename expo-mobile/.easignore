@@ -13,3 +13,4 @@ build/
 ../shared
 ../attached_assets
 ../.local
+../.cache

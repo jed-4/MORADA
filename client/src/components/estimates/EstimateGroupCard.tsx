@@ -197,7 +197,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   // Use passed visibleCols for consistency with parent, fallback to filtering columns
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
-  const cellBase = "h-8 px-2 flex items-center text-xs overflow-hidden";
+  const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
   // Alternating background for visual differentiation between groups
   const isEvenGroup = groupIndex % 2 === 0;
@@ -221,7 +221,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-3 top-0 h-8 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          className="absolute -left-3 top-0 h-9 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
           data-testid={`drag-handle-group-${group.id}`}
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
@@ -240,11 +240,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="h-8 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
+        className="h-9 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
         data-testid={`row-group-${group.id}`}
       >
         {/* Checkbox */}
-        <div className="h-8 px-2 flex items-center" role="gridcell">
+        <div className="h-9 px-2 flex items-center" role="gridcell">
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -257,7 +257,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         {visibleCols.map(column => {
           if (column.id === 'item') {
             return (
-              <div key={column.id} className={`${cellBase} text-xs font-semibold`} role="gridcell">
+              <div key={column.id} className={`${cellBase} font-semibold`} role="gridcell">
                 <div className="flex items-center gap-2 min-w-0">
                   <Button
                     variant="ghost"
@@ -272,7 +272,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-xs truncate">{group.name}</span>
+                  <span className="font-semibold text-sm truncate">{group.name}</span>
                   {group.description && (
                     <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
                   )}
@@ -320,7 +320,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           return (
             <div
               key={column.id}
-              className={`${cellBase} text-xs font-semibold`}
+              className={`${cellBase} font-semibold`}
               role="gridcell"
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >
@@ -334,8 +334,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
+                size="icon"
                 data-testid={`button-group-menu-${group.id}`}
                 disabled={isLocked}
               >
@@ -468,14 +467,14 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                             onChange={(e) => setNewItemName(e.target.value)}
                             onKeyDown={handleKeyDown}
                             placeholder="Enter item name..."
-                            className="h-7 text-sm flex-1"
+                            className="h-8 text-sm flex-1"
                             disabled={isSaving}
                             data-testid={`input-new-item-name-${group.id}`}
                           />
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            className="text-green-600"
                             onClick={handleSaveNewLine}
                             disabled={isSaving || !newItemName.trim()}
                             data-testid={`button-save-new-item-${group.id}`}
@@ -485,7 +484,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            className="text-muted-foreground"
                             onClick={handleCancelAddLine}
                             disabled={isSaving}
                             data-testid={`button-cancel-new-item-${group.id}`}
@@ -507,7 +506,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
+                      className="h-8 px-2 text-sm text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
                       onClick={onInlineAddItem ? handleStartAddLine : () => onAddItemToGroup(group.id)}
                       data-testid={`button-add-line-${group.id}`}
                     >

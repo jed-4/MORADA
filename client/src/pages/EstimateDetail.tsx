@@ -3270,7 +3270,7 @@ export default function EstimateDetail() {
       name: name,
       groupId: groupId,
       type: 'Material',
-      quantity: 1,
+      quantity: 0,
       unitType: 'each',
       status: 'incomplete',
       unitCostExTax: 0,
@@ -3543,7 +3543,7 @@ export default function EstimateDetail() {
       // Parent item row - CSS Grid
       <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator} activeDragId={activeId}>
         {/* Checkbox cell */}
-        <div className="h-8 px-2 flex items-center" role="gridcell">
+        <div className="h-9 px-2 flex items-center" role="gridcell">
           <Checkbox
             checked={selectedItems.has(item.id)}
             onCheckedChange={() => handleToggleSelection(item.id)}
@@ -3558,13 +3558,12 @@ export default function EstimateDetail() {
           return React.cloneElement(cell as React.ReactElement, { key: `${item.id}-${column.id}` });
         })}
         {/* Actions cell */}
-        <div className="h-8 px-2 flex items-center" role="gridcell">
+        <div className="h-9 px-2 flex items-center" role="gridcell">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
-                size="sm" 
-                className="h-8 w-8 p-0" 
+                size="icon" 
                 data-testid={`button-actions-${item.id}`}
                 disabled={estimate?.isLocked}
               >
@@ -3663,7 +3662,7 @@ export default function EstimateDetail() {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
           <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
-            <div className="h-8 px-2 flex items-center" role="gridcell">
+            <div className="h-9 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
                 onCheckedChange={() => handleToggleSelection(subItem.id)}
@@ -3677,13 +3676,12 @@ export default function EstimateDetail() {
               const cell = renderCell(subItem, column.id);
               return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
             })}
-            <div className="h-8 px-2 flex items-center" role="gridcell">
+            <div className="h-9 px-2 flex items-center" role="gridcell">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="ghost" 
-                    size="sm" 
-                    className="h-8 w-8 p-0" 
+                    size="icon" 
                     data-testid={`button-actions-${subItem.id}`}
                     disabled={estimate?.isLocked}
                   >
@@ -3821,7 +3819,7 @@ export default function EstimateDetail() {
     const cellKey = `${item.id}-${columnId}`;
     
     // Common grid cell base class
-    const cellBase = "h-8 px-2 flex items-center text-xs overflow-hidden";
+    const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
 
     switch (columnId) {
       case 'costCode':
@@ -3840,7 +3838,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
                 placeholder="None"
-                className="h-7"
+                className="h-8"
                 data-testid={`select-edit-costCode-${item.id}`}
               />
             </div>
@@ -3879,7 +3877,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
               >
-                <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-costCategoryId-${item.id}`}>
+                <SelectTrigger className="h-8 text-sm" data-testid={`select-edit-costCategoryId-${item.id}`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -3924,7 +3922,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
               >
-                <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-type-${item.id}`}>
+                <SelectTrigger className="h-8 text-sm" data-testid={`select-edit-type-${item.id}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -3966,7 +3964,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
-                className="h-7 text-sm border-primary"
+                className="h-8 text-sm border-primary"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -4245,7 +4243,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
                 onBlur={() => handleCellSave(item, 'quantity')}
-                className="h-7 text-sm border-primary"
+                className="h-8 text-sm border-primary"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4329,7 +4327,7 @@ export default function EstimateDetail() {
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
               >
-                <SelectTrigger className="h-7 text-sm border-primary">
+                <SelectTrigger className="h-8 text-sm border-primary">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -4371,7 +4369,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
-                className="h-7 text-sm border-primary"
+                className="h-8 text-sm border-primary"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4407,7 +4405,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
-                className="h-7 text-sm border-primary"
+                className="h-8 text-sm border-primary"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4455,7 +4453,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'markupPercent')}
                 onBlur={() => handleCellSave(item, 'markupPercent')}
-                className="h-7 text-sm border-primary"
+                className="h-8 text-sm border-primary"
                 autoFocus
                 min="0"
                 step="1"
@@ -5376,7 +5374,7 @@ export default function EstimateDetail() {
                             }}
                           >
                             {/* Checkbox column */}
-                            <div className="h-8 px-2 flex items-center" role="columnheader">
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5390,9 +5388,9 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-8 px-2 flex items-center relative group/header"
+                                className="h-9 px-2 flex items-center relative group/header"
                               >
-                                <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
+                                <span className="truncate text-xs font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle - hidden on last column and on mobile */}
                                 {index < visibleCols.length - 1 && (
                                   <div
@@ -5409,8 +5407,8 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-8 px-2 flex items-center" role="columnheader">
-                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
                           
