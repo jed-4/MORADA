@@ -126,6 +126,7 @@ export default function Schedule() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [showLockConfirm, setShowLockConfirm] = useState(false);
+  const [showOfflineConfirm, setShowOfflineConfirm] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -1519,7 +1520,12 @@ export default function Schedule() {
             <button
               onClick={() => {
                 if (toggleOnlineMutation.isPending) return;
-                toggleOnlineMutation.mutate(!schedule?.isOnline);
+                if (schedule?.isOnline) {
+                  // Going offline — require confirmation
+                  setShowOfflineConfirm(true);
+                } else {
+                  toggleOnlineMutation.mutate(true);
+                }
               }}
               className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs text-muted-foreground hover-elevate active-elevate-2"
               disabled={toggleOnlineMutation.isPending}
@@ -2202,6 +2208,23 @@ export default function Schedule() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { updateStatusMutation.mutate("locked"); setShowLockConfirm(false); }}>
               Lock Schedule
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showOfflineConfirm} onOpenChange={setShowOfflineConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Take Schedule Offline?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will hide the schedule from external users. They will no longer be able to see it until you bring it back online.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { toggleOnlineMutation.mutate(false); setShowOfflineConfirm(false); }}>
+              Take Offline
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

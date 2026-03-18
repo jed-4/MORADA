@@ -154,7 +154,11 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
 
   return (
     <>
-      {items.map((item) => {
+      {items.filter((item) => {
+        // Skip bars that end before the visible window
+        if (item.endDate && new Date(item.endDate) < windowStart) return false;
+        return true;
+      }).map((item) => {
         const hasStart = !!item.startDate;
         const hasEnd = !!item.endDate;
         const isCompanyAssigned = !item.assignedToColor && !!item.assignedToName;
@@ -336,7 +340,7 @@ export default function MasterScheduleGantt() {
   const visibleProjects = useMemo(() => {
     return allVisibleProjects.filter((p) => {
       const dates = getProjectDates(p);
-      if (!dates.start && !dates.end) return true; // keep projects with no dates
+      if (!dates.start && !dates.end) return false; // hide projects with no dates
       const projectStart = dates.start ?? dates.end!;
       const projectEnd = dates.end ?? dates.start!;
       return projectStart < windowEnd && projectEnd >= windowStart;
@@ -573,7 +577,7 @@ export default function MasterScheduleGantt() {
           {/* Timeline body */}
           <div
             ref={timelineRef}
-            className="flex-1 overflow-hidden"
+            className="flex-1 overflow-x-hidden overflow-y-auto"
             onScroll={handleSyncScroll}
           >
             <div className="relative" style={{ width: totalWidth }}>

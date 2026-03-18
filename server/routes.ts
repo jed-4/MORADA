@@ -20647,11 +20647,11 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         const scheduleStatus = schedule?.status || "none";
         const isOnline = schedule?.isOnline ?? false;
 
-        let category: "scheduled" | "unscheduled" | "prospective" = "scheduled";
+        let category: "online" | "offline" | "prospective" = "online";
         if (project.currentSystemPhase === "lead") {
           category = "prospective";
         } else if (!hasScheduleItems || !isOnline) {
-          category = "unscheduled";
+          category = "offline";
         }
 
         const milestoneStartItem = bsp?.milestoneStartItemId ? milestoneItemDateMap.get(bsp.milestoneStartItemId) : null;

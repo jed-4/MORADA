@@ -297,11 +297,11 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       row.items.push(item);
     }
 
-    // Separate company row (assignedToId starts with 'company:') from supplier/people rows
+    // Separate company row (rowKey is "biz:CompanyName" when server nulls assignedToId) from supplier/people rows
     let companyRow: ContactRow | null = null;
     const supplierRows: ContactRow[] = [];
     for (const row of contactMap.values()) {
-      if (row.id.startsWith("company:")) {
+      if (row.id.startsWith("biz:")) {
         companyRow = row;
       } else {
         supplierRows.push(row);
@@ -665,9 +665,9 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
             const isExpanded = expandedRows.has(row.id);
             const hasMultipleItems = row.items.length > 1;
-            const isCompanyRow = row.id.startsWith("company:");
+            const isCompanyRow = row.id.startsWith("biz:");
             // Half-row gap separator after the company row
-            const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("company:");
+            const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("biz:");
             return (
               <div key={row.id}>
                 <div
@@ -819,8 +819,8 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                 const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
                 const layouts = barData?.layouts || [];
                 const isExpanded = expandedRows.has(row.id);
-                const isCompanyRow = row.id.startsWith("company:");
-                const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("company:");
+                const isCompanyRow = row.id.startsWith("biz:");
+                const isLastBeforeSuppliers = isCompanyRow && allRows[rowIdx + 1] && !allRows[rowIdx + 1].id.startsWith("biz:");
 
                 const sortedItemsForExpanded = isExpanded
                   ? [...row.items].sort((a, b) => {
