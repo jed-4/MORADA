@@ -5,7 +5,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   Plus,
@@ -34,22 +33,12 @@ function formatCurrency(val: number): string {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 2 }).format(val);
 }
 
-export default function LabourEstimate() {
-  const { projectId } = useParams<{ projectId: string }>();
-  const [, setLocation] = useLocation();
+export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ taskId: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const addRowRef = useRef<HTMLInputElement>(null);
-
-  usePageTitle({ pageName: "Labour Estimate" });
-
-  const { data: project } = useQuery<Project>({
-    queryKey: ["/api/projects", projectId],
-    queryFn: () => fetch(`/api/projects/${projectId}`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!projectId,
-  });
 
   const { data: estimate, isLoading: estimateLoading } = useQuery<LabourEstimate>({
     queryKey: ["/api/projects", projectId, "labour-estimate"],
@@ -166,30 +155,9 @@ export default function LabourEstimate() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50">
-          <div className="flex items-center gap-2 min-w-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 flex-shrink-0"
-              onClick={() => setLocation(`/projects/${projectId}/estimates`)}
-            >
-              <ArrowLeft className="w-3 h-3" />
-            </Button>
-            <div className="flex items-center gap-1.5 text-xs min-w-0">
-              <span className="text-muted-foreground flex-shrink-0">{project?.name || "Project"}</span>
-              <span className="text-muted-foreground flex-shrink-0">/</span>
-              <span className="font-semibold truncate">Labour Estimate</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main layout */}
-      <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex">
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Main layout — sidebar + task area */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left sidebar — categories */}
         <div className="w-56 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
@@ -400,52 +368,93 @@ export default function LabourEstimate() {
       </div>
 
       {/* Footer — labour rate + totals */}
-      <div className="mx-3 mb-3 rounded-md border border-border bg-card flex-shrink-0">
-        <div className="flex items-center justify-between px-4 py-2.5 gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Labour Rate</span>
-            {labourRateEdit ? (
-              <Input
-                autoFocus
-                value={labourRateVal}
-                onChange={e => setLabourRateVal(e.target.value)}
-                onBlur={() => {
+      <div className="flex items-center justify-between px-4 py-2.5 border-t border-border gap-4 flex-shrink-0 bg-card">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Labour Rate</span>
+          {labourRateEdit ? (
+            <Input
+              autoFocus
+              value={labourRateVal}
+              onChange={e => setLabourRateVal(e.target.value)}
+              onBlur={() => {
+                const val = parseFloat(labourRateVal);
+                if (!isNaN(val)) updateEstimateMutation.mutate({ labourRatePerHour: val });
+                setLabourRateEdit(false);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === 'Escape') {
                   const val = parseFloat(labourRateVal);
-                  if (!isNaN(val)) updateEstimateMutation.mutate({ labourRatePerHour: val });
+                  if (!isNaN(val) && e.key === 'Enter') updateEstimateMutation.mutate({ labourRatePerHour: val });
                   setLabourRateEdit(false);
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === 'Escape') {
-                    const val = parseFloat(labourRateVal);
-                    if (!isNaN(val) && e.key === 'Enter') updateEstimateMutation.mutate({ labourRatePerHour: val });
-                    setLabourRateEdit(false);
-                  }
-                }}
-                className="h-7 w-28 text-sm focus-visible:ring-0 border-primary"
-              />
-            ) : (
-              <button
-                onClick={() => { setLabourRateVal(String(estimate?.labourRatePerHour ?? 0)); setLabourRateEdit(true); }}
-                className="text-sm font-medium tabular-nums border-b border-dashed border-muted-foreground/40 hover:border-foreground transition-colors"
-              >
-                {formatCurrency(estimate?.labourRatePerHour ?? 0)}/hr
-              </button>
-            )}
-          </div>
+                }
+              }}
+              className="h-7 w-28 text-sm focus-visible:ring-0 border-primary"
+            />
+          ) : (
+            <button
+              onClick={() => { setLabourRateVal(String(estimate?.labourRatePerHour ?? 0)); setLabourRateEdit(true); }}
+              className="text-sm font-medium tabular-nums border-b border-dashed border-muted-foreground/40 hover:border-foreground transition-colors"
+            >
+              {formatCurrency(estimate?.labourRatePerHour ?? 0)}/hr
+            </button>
+          )}
+        </div>
 
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Category Hours:</span>
-              <span className="text-sm font-semibold tabular-nums">{totalHours.toFixed(2)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Category Labour Cost:</span>
-              <span className="text-base font-bold tabular-nums text-[#bba7db]">
-                {formatCurrency(totalCost)}
-              </span>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Category Hours:</span>
+            <span className="text-sm font-semibold tabular-nums">{totalHours.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Category Labour Cost:</span>
+            <span className="text-base font-bold tabular-nums text-[#bba7db]">
+              {formatCurrency(totalCost)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LabourEstimate() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const [, setLocation] = useLocation();
+
+  usePageTitle({ pageName: "Labour Estimate" });
+
+  const { data: project } = useQuery<Project>({
+    queryKey: ["/api/projects", projectId],
+    queryFn: () => fetch(`/api/projects/${projectId}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!projectId,
+  });
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={() => setLocation(`/projects/${projectId}/estimates`)}
+            >
+              <ArrowLeft className="w-3 h-3" />
+            </Button>
+            <div className="flex items-center gap-1.5 text-xs min-w-0">
+              <span className="text-muted-foreground flex-shrink-0">{project?.name || "Project"}</span>
+              <span className="text-muted-foreground flex-shrink-0">/</span>
+              <span className="font-semibold truncate">Labour Estimate</span>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Main panel — inherits remaining height */}
+      <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
+        {projectId && <LabourEstimatePanel projectId={projectId} />}
       </div>
     </div>
   );

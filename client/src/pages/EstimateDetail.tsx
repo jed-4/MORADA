@@ -130,6 +130,7 @@ import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/Es
 import { EstimateNotesPopover } from "@/components/estimates/EstimateNotesPopover";
 import { EstimateChecklistPopover } from "@/components/estimates/EstimateChecklistPopover";
 import EstimateEnotes from "@/components/estimates/EstimateEnotes";
+import { LabourEstimatePanel } from "@/pages/LabourEstimate";
 
 interface EstimateDetailParams {
   id?: string;
@@ -388,7 +389,7 @@ export default function EstimateDetail() {
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
-  const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes'>('estimate');
+  const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes' | 'labour'>('estimate');
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
@@ -5074,7 +5075,7 @@ export default function EstimateDetail() {
 
         {/* Tab navigation */}
         <div className="flex items-center border-b border-border/50 bg-background flex-shrink-0 px-3 gap-0">
-          {(['estimate', 'enotes'] as const).map(tab => (
+          {(['estimate', 'enotes', 'labour'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setEstimateTab(tab)}
@@ -5084,7 +5085,7 @@ export default function EstimateDetail() {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab === 'estimate' ? 'Estimate' : 'E-Notes'}
+              {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'E-Notes' : 'Labour'}
             </button>
           ))}
         </div>
@@ -5093,6 +5094,12 @@ export default function EstimateDetail() {
           <EstimateEnotes estimateId={effectiveEstimateId} />
         ) : estimateTab === 'enotes' ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access E-Notes.</div>
+        ) : null}
+
+        {estimateTab === 'labour' && project?.id ? (
+          <LabourEstimatePanel projectId={project.id} />
+        ) : estimateTab === 'labour' ? (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading project…</div>
         ) : null}
 
         {estimateTab === 'estimate' && <>
