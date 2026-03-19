@@ -25,7 +25,16 @@ import {
   GripVertical,
   BookOpen,
   FolderOpen,
+  MoreVertical,
+  Copy,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   DndContext,
   closestCenter,
@@ -66,17 +75,20 @@ function SortableCategoryItem({
   onSelect,
   onDelete,
   onStatusCycle,
+  onCopyToTemplate,
 }: {
   cat: CategoryWithHours;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onStatusCycle: () => void;
+  onCopyToTemplate: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   const cfg = STATUS_CONFIG[cat.status] ?? STATUS_CONFIG.not_complete;
   const StatusIcon = cfg.icon;
+  const isNotRequired = cat.status === 'not_required';
 
   return (
     <div
@@ -96,9 +108,9 @@ function SortableCategoryItem({
       </div>
 
       {/* Hours tally — narrow column with right border */}
-      <div className="w-10 flex-shrink-0 border-r border-border/40 mr-2 text-right pr-1.5 self-stretch flex items-center justify-end">
+      <div className="w-7 flex-shrink-0 border-r border-border/40 mr-2 text-right pr-1 self-stretch flex items-center justify-end">
         {cat.totalHours > 0 && (
-          <span className="text-[10px] tabular-nums text-muted-foreground/60">
+          <span className="text-xs tabular-nums font-medium text-muted-foreground/70">
             {Number.isInteger(cat.totalHours) ? cat.totalHours : cat.totalHours.toFixed(1)}
           </span>
         )}
@@ -124,17 +136,33 @@ function SortableCategoryItem({
         onKeyDown={e => { if (e.key === 'Enter') onSelect(); }}
         className="flex-1 min-w-0 py-2 pr-1 cursor-pointer"
       >
-        <span className="text-xs leading-snug truncate block">{cat.name}</span>
+        <span className={`text-xs leading-snug truncate block ${isNotRequired ? 'line-through text-muted-foreground/50' : ''}`}>
+          {cat.name}
+        </span>
       </div>
 
-      {/* Delete button */}
-      <button
-        onClick={e => { e.stopPropagation(); onDelete(); }}
-        className="flex-shrink-0 w-6 flex items-center justify-center opacity-0 group-hover/cat:opacity-100 transition-opacity text-muted-foreground hover:text-destructive mr-1"
-        title="Delete category"
-      >
-        <Trash2 className="w-3 h-3" />
-      </button>
+      {/* 3-dot menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            onClick={e => e.stopPropagation()}
+            className="flex-shrink-0 w-6 flex items-center justify-center opacity-0 group-hover/cat:opacity-100 transition-opacity text-muted-foreground mr-1"
+          >
+            <MoreVertical className="w-3 h-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={e => { e.stopPropagation(); onCopyToTemplate(); }}>
+            <Copy className="w-3.5 h-3.5 mr-2" />
+            Copy to Template
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={e => { e.stopPropagation(); onDelete(); }} className="text-destructive focus:text-destructive">
+            <Trash2 className="w-3.5 h-3.5 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -173,6 +201,7 @@ function SortableTaskRow({
   navigateCell: (taskId: string, field: 'description' | 'numMen' | 'hoursPerMan', dir: 'next' | 'prev' | 'down') => void;
   setEditingCell: (v: null) => void;
   onDelete: () => void;
+  onCopyToTemplate?: () => void;
   isTemplate?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
@@ -291,14 +320,28 @@ function SortableTaskRow({
         </span>
       </div>
 
-      {/* Delete */}
+      {/* 3-dot menu */}
       <div className="flex justify-center opacity-0 group-hover/row:opacity-100 transition-opacity">
-        <button
-          onClick={onDelete}
-          className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="h-5 w-5 flex items-center justify-center text-muted-foreground rounded">
+              <MoreVertical className="w-3 h-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            {!isTemplate && onCopyToTemplate && (
+              <DropdownMenuItem onClick={onCopyToTemplate}>
+                <Copy className="w-3.5 h-3.5 mr-2" />
+                Copy to Template
+              </DropdownMenuItem>
+            )}
+            {!isTemplate && onCopyToTemplate && <DropdownMenuSeparator />}
+            <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+              <Trash2 className="w-3.5 h-3.5 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -486,6 +529,32 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
       apiRequest(`/api/labour-task-templates/reorder`, "PATCH", { updates }),
     onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] }),
+  });
+
+  const copyTaskToTemplateMutation = useMutation({
+    mutationFn: (task: TaskLike) =>
+      apiRequest(`/api/labour-task-templates`, "POST", {
+        categoryName: selectedCat?.name ?? "",
+        description: task.description,
+        numMen: task.numMen,
+        hoursPerMan: task.hoursPerMan,
+        sortOrder: templateTasks.length,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] });
+      toast({ title: "Task copied to template" });
+    },
+    onError: () => toast({ title: "Failed to copy to template", variant: "destructive" }),
+  });
+
+  const copyCategoryToTemplateMutation = useMutation({
+    mutationFn: (cat: CategoryWithHours) =>
+      apiRequest(`/api/labour-estimate-categories/${cat.id}/copy-to-template`, "POST", { categoryName: cat.name }),
+    onSuccess: (_, cat) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", cat.name] });
+      toast({ title: `"${cat.name}" tasks copied to template` });
+    },
+    onError: () => toast({ title: "Failed to copy category to template", variant: "destructive" }),
   });
 
   // ── Cell editing ───────────────────────────────────────────────────────────
@@ -742,6 +811,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                     isSelected={(selectedCatId === cat.id) || (!selectedCatId && cat === categories[0])}
                     onSelect={() => setSelectedCatId(cat.id)}
                     onDelete={() => setConfirmDeleteCatId(cat.id)}
+                    onCopyToTemplate={() => copyCategoryToTemplateMutation.mutate(cat)}
                     onStatusCycle={() => {
                       const next = STATUS_CYCLE[cat.status] ?? "not_complete";
                       updateCategoryMutation.mutate({ catId: cat.id, data: { status: next } });
@@ -854,6 +924,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                       navigateCell={navigateCell}
                       setEditingCell={setEditingCell}
                       onDelete={() => setConfirmDeleteTaskId(task.id)}
+                      onCopyToTemplate={mode === 'project' ? () => copyTaskToTemplateMutation.mutate(task) : undefined}
                       isTemplate={mode === 'template'}
                     />
                   ))}

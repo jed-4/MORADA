@@ -44,6 +44,9 @@ import {
   Loader2,
   FileSpreadsheet,
   AlertCircle,
+  GripVertical,
+  StickyNote,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -75,11 +78,40 @@ interface ColumnMapping {
   markup: string;
 }
 
+interface LabourTemplate {
+  id: string;
+  categoryName: string;
+  description: string;
+  numMen: number;
+  hoursPerMan: number;
+  sortOrder: number;
+}
+
+interface EnoteTemplate {
+  id: string;
+  groupName: string;
+  categoryName: string;
+  brainstormNotes?: string;
+  sortOrder: number;
+}
+
 export default function EstimateTemplates() {
   const [, navigate] = useLocation();
+  const [activeTab, setActiveTab] = useState<'items' | 'labour' | 'enotes'>('items');
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EstimateTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // Labour Hours tab state
+  const [selectedLabourCat, setSelectedLabourCat] = useState<string>("");
+  const [newLabourCatInput, setNewLabourCatInput] = useState("");
+  const [editingLabourCell, setEditingLabourCell] = useState<{ id: string; field: string } | null>(null);
+  const [labourEditValue, setLabourEditValue] = useState("");
+  const [newLabourDesc, setNewLabourDesc] = useState("");
+  // E-Notes tab state
+  const [editingEnoteCell, setEditingEnoteCell] = useState<{ id: string; field: string } | null>(null);
+  const [enoteEditValue, setEnoteEditValue] = useState("");
+  const [newEnoteGroup, setNewEnoteGroup] = useState("General");
+  const [newEnoteCategory, setNewEnoteCategory] = useState("");
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -113,6 +145,89 @@ export default function EstimateTemplates() {
 
   const { data: templates = [], isLoading } = useQuery<EstimateTemplate[]>({
     queryKey: ["/api/estimate-templates"],
+  });
+
+  // Labour Hours tab queries
+  const { data: allLabourTemplates = [] } = useQuery<LabourTemplate[]>({
+    queryKey: ["/api/labour-task-templates", selectedLabourCat],
+    queryFn: () => fetch(`/api/labour-task-templates?categoryName=${encodeURIComponent(selectedLabourCat)}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!selectedLabourCat,
+  });
+
+  const addLabourTemplateMutation = useMutation({
+    mutationFn: (data: { description: string; categoryName: string; numMen?: number; hoursPerMan?: number }) =>
+      apiRequest("/api/labour-task-templates", "POST", { ...data, sortOrder: allLabourTemplates.length }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+    onError: () => toast({ title: "Failed to add template item", variant: "destructive" }),
+  });
+
+  const updateLabourTemplateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<LabourTemplate> }) =>
+      apiRequest(`/api/labour-task-templates/${id}`, "PATCH", data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] });
+      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat]);
+      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat], old =>
+        old?.map(t => t.id === id ? { ...t, ...data } : t) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedLabourCat], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+  });
+
+  const deleteLabourTemplateMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/labour-task-templates/${id}`, "DELETE"),
+    onMutate: async (id) => {
+      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat]);
+      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat], old =>
+        old?.filter(t => t.id !== id) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedLabourCat], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+  });
+
+  // E-Notes tab queries
+  const { data: enoteTemplates = [] } = useQuery<EnoteTemplate[]>({
+    queryKey: ["/api/enote-templates"],
+    enabled: activeTab === 'enotes',
+  });
+
+  const addEnoteTemplateMutation = useMutation({
+    mutationFn: (data: { groupName: string; categoryName: string; brainstormNotes?: string }) =>
+      apiRequest("/api/enote-templates", "POST", { ...data, sortOrder: enoteTemplates.length }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
+    onError: () => toast({ title: "Failed to add E-Note template", variant: "destructive" }),
+  });
+
+  const updateEnoteTemplateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<EnoteTemplate> }) =>
+      apiRequest(`/api/enote-templates/${id}`, "PATCH", data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/enote-templates"] });
+      const prev = queryClient.getQueryData<EnoteTemplate[]>(["/api/enote-templates"]);
+      queryClient.setQueryData<EnoteTemplate[]>(["/api/enote-templates"], old =>
+        old?.map(t => t.id === id ? { ...t, ...data } : t) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/enote-templates"], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
+  });
+
+  const deleteEnoteTemplateMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/enote-templates/${id}`, "DELETE"),
+    onMutate: async (id) => {
+      const prev = queryClient.getQueryData<EnoteTemplate[]>(["/api/enote-templates"]);
+      queryClient.setQueryData<EnoteTemplate[]>(["/api/enote-templates"], old =>
+        old?.filter(t => t.id !== id) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/enote-templates"], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
   });
 
   // Fetch cost codes for import matching
@@ -560,55 +675,268 @@ export default function EstimateTemplates() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Row 1 - Title & Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      {/* Row 1 - Title */}
+      <div className="h-9 bg-background flex items-center px-2 gap-4 flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Estimate Templates
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
-            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
-          </Badge>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setIsImportDialogOpen(true)}
-            data-testid="button-import-templates"
-          >
-            <Upload className="w-3 h-3" />
-            <span>Import</span>
-          </button>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleOpenAdd}
-            data-testid="button-add-template"
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Template</span>
-          </button>
         </div>
       </div>
 
-      {/* Row 2 - Search & Filters */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5 flex-1">
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+      {/* Tab navigation */}
+      <div className="h-9 bg-background flex items-center border-b border-border flex-shrink-0 px-2 gap-0">
+        {(['items', 'labour', 'enotes'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`h-9 px-4 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === tab ? 'border-[#bba7db] text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab === 'items' && <Calculator className="w-3 h-3" />}
+            {tab === 'labour' && <Clock className="w-3 h-3" />}
+            {tab === 'enotes' && <StickyNote className="w-3 h-3" />}
+            {tab === 'items' ? 'Estimate Items' : tab === 'labour' ? 'Labour Hours' : 'E-Notes'}
+          </button>
+        ))}
+        <div className="flex-1" />
+        {activeTab === 'items' && (
+          <div className="flex items-center gap-1.5">
+            <div className="relative w-40">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 pr-2 py-0 h-6 text-xs border"
+                data-testid="input-search-templates"
+              />
+            </div>
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setIsImportDialogOpen(true)}
+              data-testid="button-import-templates"
+            >
+              <Upload className="w-3 h-3" />
+              <span>Import</span>
+            </button>
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 active-elevate-2 flex items-center gap-0.5"
+              onClick={handleOpenAdd}
+              data-testid="button-add-template"
+            >
+              <Plus className="w-3 h-3" />
+              <span>New Template</span>
+            </button>
+          </div>
+        )}
+        {activeTab === 'labour' && (
+          <div className="flex items-center gap-1.5 pr-2">
             <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-              data-testid="input-search-templates"
+              placeholder="Category name…"
+              value={newLabourCatInput}
+              onChange={e => setNewLabourCatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && newLabourCatInput.trim()) { setSelectedLabourCat(newLabourCatInput.trim()); setNewLabourCatInput(""); } }}
+              className="h-6 text-xs w-44"
             />
+            <button
+              onClick={() => { if (newLabourCatInput.trim()) { setSelectedLabourCat(newLabourCatInput.trim()); setNewLabourCatInput(""); } }}
+              className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+            >
+              <Search className="w-3 h-3" />
+              <span>Load</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Labour Hours Tab */}
+      {activeTab === 'labour' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {!selectedLabourCat ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
+              <Clock className="w-8 h-8 text-muted-foreground/40" />
+              <p>Enter a category name above and press Load to manage its templates.</p>
+            </div>
+          ) : (
+            <>
+              <div className="px-4 pt-3 pb-1 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold">{selectedLabourCat}</h3>
+                  <span className="text-xs text-muted-foreground">{allLabourTemplates.length} items</span>
+                  <button onClick={() => setSelectedLabourCat("")} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+                    Change category
+                  </button>
+                </div>
+              </div>
+              {/* Column headers */}
+              <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-y border-border/50 flex-shrink-0"
+                style={{ gridTemplateColumns: "1fr 70px 80px 32px" }}>
+                <span>Description</span>
+                <span className="text-center">No. Men</span>
+                <span className="text-center">Hrs / Man</span>
+                <span />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {allLabourTemplates.map(t => (
+                  <div key={t.id} className="grid items-center border-b border-border/10 group/lrow min-h-[34px] px-4"
+                    style={{ gridTemplateColumns: "1fr 70px 80px 32px" }}>
+                    {/* Description */}
+                    <div className="pr-2 py-0.5">
+                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'description' ? (
+                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); } }}
+                          className="h-6 text-sm focus-visible:ring-0 border-primary" />
+                      ) : (
+                        <span className="text-sm cursor-pointer hover:text-foreground truncate block"
+                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'description' }); setLabourEditValue(t.description); }}>
+                          {t.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
+                        </span>
+                      )}
+                    </div>
+                    {/* No. Men */}
+                    <div className="flex justify-center">
+                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'numMen' ? (
+                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); } }}
+                          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-14" />
+                      ) : (
+                        <span className="text-sm cursor-pointer text-center w-full"
+                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'numMen' }); setLabourEditValue(String(t.numMen)); }}>
+                          {t.numMen}
+                        </span>
+                      )}
+                    </div>
+                    {/* Hrs/Man */}
+                    <div className="flex justify-center">
+                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'hoursPerMan' ? (
+                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); } }}
+                          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20" />
+                      ) : (
+                        <span className="text-sm cursor-pointer text-center w-full"
+                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'hoursPerMan' }); setLabourEditValue(String(t.hoursPerMan)); }}>
+                          {t.hoursPerMan}
+                        </span>
+                      )}
+                    </div>
+                    {/* Delete */}
+                    <div className="flex justify-center opacity-0 group-hover/lrow:opacity-100 transition-opacity">
+                      <button onClick={() => deleteLabourTemplateMutation.mutate(t.id)}
+                        className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Add row */}
+              <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
+                <Input placeholder="Add item…" value={newLabourDesc} onChange={e => setNewLabourDesc(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedLabourCat }); setNewLabourDesc(""); } }}
+                  className="h-7 text-sm flex-1" />
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
+                  onClick={() => { if (newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedLabourCat }); setNewLabourDesc(""); } }}>
+                  <Plus className="w-3 h-3 mr-1" />Add
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* E-Notes Tab */}
+      {activeTab === 'enotes' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Column headers */}
+          <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
+            style={{ gridTemplateColumns: "140px 1fr 1fr 32px" }}>
+            <span>Group</span>
+            <span>Category</span>
+            <span>Default Notes</span>
+            <span />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {enoteTemplates.length === 0 && (
+              <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+                No E-Notes templates yet. Add one below.
+              </div>
+            )}
+            {enoteTemplates.map(t => (
+              <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
+                style={{ gridTemplateColumns: "140px 1fr 1fr 32px" }}>
+                {/* Group */}
+                <div className="pr-2 py-0.5">
+                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'groupName' ? (
+                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
+                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { groupName: enoteEditValue } }); setEditingEnoteCell(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { groupName: enoteEditValue } }); setEditingEnoteCell(null); } }}
+                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                  ) : (
+                    <span className="text-xs cursor-pointer hover:text-foreground truncate block"
+                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'groupName' }); setEnoteEditValue(t.groupName); }}>
+                      {t.groupName}
+                    </span>
+                  )}
+                </div>
+                {/* Category */}
+                <div className="pr-2 py-0.5">
+                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
+                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
+                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); } }}
+                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                  ) : (
+                    <span className="text-xs cursor-pointer hover:text-foreground truncate block"
+                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'categoryName' }); setEnoteEditValue(t.categoryName); }}>
+                      {t.categoryName || <span className="italic text-muted-foreground">Click to edit…</span>}
+                    </span>
+                  )}
+                </div>
+                {/* Notes */}
+                <div className="pr-2 py-0.5">
+                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'brainstormNotes' ? (
+                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
+                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); } }}
+                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                  ) : (
+                    <span className="text-xs cursor-pointer hover:text-foreground truncate block text-muted-foreground"
+                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'brainstormNotes' }); setEnoteEditValue(t.brainstormNotes ?? ""); }}>
+                      {t.brainstormNotes || <span className="italic">Click to add notes…</span>}
+                    </span>
+                  )}
+                </div>
+                {/* Delete */}
+                <div className="flex justify-center opacity-0 group-hover/erow:opacity-100 transition-opacity">
+                  <button onClick={() => deleteEnoteTemplateMutation.mutate(t.id)}
+                    className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Add row */}
+          <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
+            <Input placeholder="Group" value={newEnoteGroup} onChange={e => setNewEnoteGroup(e.target.value)} className="h-7 text-xs w-28" />
+            <Input placeholder="Category name…" value={newEnoteCategory} onChange={e => setNewEnoteCategory(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: newEnoteGroup || "General", categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}
+              className="h-7 text-xs flex-1" />
+            <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
+              onClick={() => { if (newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: newEnoteGroup || "General", categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}>
+              <Plus className="w-3 h-3 mr-1" />Add
+            </Button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Templates List */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* Estimate Items Tab (existing content) */}
+      {activeTab === 'items' && <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             Loading templates...
@@ -738,7 +1066,7 @@ export default function EstimateTemplates() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Add/Edit Template Dialog */}
       <Dialog 

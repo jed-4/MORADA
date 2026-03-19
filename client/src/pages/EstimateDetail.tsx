@@ -4762,9 +4762,6 @@ export default function EstimateDetail() {
 
         {/* Right: Notes + Collapse summary + Options popover */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {effectiveEstimateId && project?.id && (
-            <EstimateChecklistPopover estimateId={effectiveEstimateId} projectId={project.id} />
-          )}
           {effectiveEstimateId && (
             <EstimateNotesPopover estimateId={effectiveEstimateId} />
           )}
@@ -5088,6 +5085,11 @@ export default function EstimateDetail() {
               {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'E-Notes' : 'Labour'}
             </button>
           ))}
+          {/* Spacer + Checklist bar */}
+          <div className="flex-1" />
+          {effectiveEstimateId && project?.id && (
+            <EstimateChecklistPopover estimateId={effectiveEstimateId} projectId={project.id} wide />
+          )}
         </div>
 
         <div className={estimateTab !== 'enotes' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>

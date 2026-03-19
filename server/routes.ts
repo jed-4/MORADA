@@ -4704,6 +4704,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/labour-estimate-categories/:catId/copy-to-template", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { categoryName } = req.body;
+      if (!categoryName) return res.status(400).json({ error: "categoryName required" });
+      const items = await storage.copyCategoryToTemplate(companyId, req.params.catId, categoryName);
+      res.status(201).json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to copy category to template" });
+    }
+  });
+
+  app.get("/api/enote-templates", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const templates = await storage.getEnoteTemplates(companyId);
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch enote templates" });
+    }
+  });
+
+  app.post("/api/enote-templates", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const template = await storage.createEnoteTemplate({ ...req.body, companyId });
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create enote template" });
+    }
+  });
+
+  app.patch("/api/enote-templates/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateEnoteTemplate(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update enote template" });
+    }
+  });
+
+  app.delete("/api/enote-templates/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEnoteTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete enote template" });
+    }
+  });
+
   app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);

@@ -347,6 +347,11 @@ export interface IStorage {
   deleteLabourTaskTemplate(id: string): Promise<boolean>;
   reorderLabourTaskTemplates(updates: { id: string; sortOrder: number }[]): Promise<void>;
   applyLabourTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]>;
+  copyCategoryToTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]>;
+  getEnoteTemplates(companyId: string): Promise<any[]>;
+  createEnoteTemplate(data: any): Promise<any>;
+  updateEnoteTemplate(id: string, data: Partial<any>): Promise<any>;
+  deleteEnoteTemplate(id: string): Promise<boolean>;
   
   // Estimate Items Duplication and Copying
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
@@ -9551,6 +9556,70 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in reorderLabourTaskTemplates:", error);
       throw error;
+    }
+  }
+
+  async copyCategoryToTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]> {
+    try {
+      const tasks = await db.select().from(schema.labourEstimateTasks)
+        .where(eq(schema.labourEstimateTasks.categoryId, categoryId))
+        .orderBy(schema.labourEstimateTasks.sortOrder);
+      if (tasks.length === 0) return [];
+      const templateItems = tasks.map((t, i) => ({
+        companyId,
+        categoryName,
+        description: t.description,
+        subHeading: t.subHeading,
+        numMen: t.numMen,
+        hoursPerMan: t.hoursPerMan,
+        sortOrder: i,
+      }));
+      const inserted = await db.insert(schema.labourTaskTemplates).values(templateItems).returning();
+      return inserted;
+    } catch (error) {
+      console.error("Database error in copyCategoryToTemplate:", error);
+      throw error;
+    }
+  }
+
+  async getEnoteTemplates(companyId: string): Promise<any[]> {
+    try {
+      return await db.select().from(schema.enoteTemplates)
+        .where(eq(schema.enoteTemplates.companyId, companyId))
+        .orderBy(schema.enoteTemplates.sortOrder);
+    } catch (error) {
+      console.error("Database error in getEnoteTemplates:", error);
+      return [];
+    }
+  }
+
+  async createEnoteTemplate(data: any): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.enoteTemplates).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createEnoteTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateEnoteTemplate(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [row] = await db.update(schema.enoteTemplates).set(data).where(eq(schema.enoteTemplates.id, id)).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateEnoteTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteEnoteTemplate(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.enoteTemplates).where(eq(schema.enoteTemplates.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEnoteTemplate:", error);
+      return false;
     }
   }
 

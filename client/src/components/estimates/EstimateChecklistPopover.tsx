@@ -43,6 +43,7 @@ interface ChecklistItem {
 interface EstimateChecklistPopoverProps {
   estimateId: string;
   projectId: string;
+  wide?: boolean;
 }
 
 function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; projectId: string }) {
@@ -221,7 +222,7 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
   );
 }
 
-export function EstimateChecklistPopover({ estimateId: _estimateId, projectId }: EstimateChecklistPopoverProps) {
+export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, wide }: EstimateChecklistPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
@@ -239,22 +240,41 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId }:
   const totalCompleted = instances.reduce((sum, i) => sum + (i.completedCount ?? 0), 0);
   const totalItems = instances.reduce((sum, i) => sum + (i.totalCount ?? 0), 0);
   const hasItems = totalItems > 0;
+  const firstName = instances[0]?.name ?? "Checklists";
+  const label = instances.length > 1 ? `${instances.length} Checklists` : firstName;
+  const progressPct = hasItems ? Math.round((totalCompleted / totalItems) * 100) : 0;
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button
-          className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
-          data-testid="button-estimate-checklist"
-          title="View estimate checklists"
-        >
-          <ClipboardList className="w-3 h-3" />
-          {hasItems && (
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-[8px] rounded-full flex items-center justify-center">
-              {totalCompleted > 9 ? "9+" : totalCompleted}
-            </span>
-          )}
-        </button>
+        {wide ? (
+          <button
+            className="h-8 flex items-center gap-2 px-3 border-l border-border/50 hover-elevate active-elevate-2 min-w-[160px] max-w-[260px]"
+            data-testid="button-estimate-checklist"
+            title="View estimate checklists"
+          >
+            <ClipboardList className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+            <span className="text-xs truncate flex-1 text-left text-muted-foreground">{label}</span>
+            {hasItems && (
+              <span className="text-[10px] tabular-nums text-muted-foreground flex-shrink-0 bg-muted rounded px-1">
+                {totalCompleted}/{totalItems}
+              </span>
+            )}
+          </button>
+        ) : (
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
+            data-testid="button-estimate-checklist"
+            title="View estimate checklists"
+          >
+            <ClipboardList className="w-3 h-3" />
+            {hasItems && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-[8px] rounded-full flex items-center justify-center">
+                {totalCompleted > 9 ? "9+" : totalCompleted}
+              </span>
+            )}
+          </button>
+        )}
       </PopoverTrigger>
       <PopoverContent className="w-88 p-0" align="end" style={{ width: "22rem" }}>
         <div className="p-3 border-b">

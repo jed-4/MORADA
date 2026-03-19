@@ -5749,3 +5749,16 @@ export const labourTaskTemplates = pgTable("labour_task_templates", {
 export const insertLabourTaskTemplateSchema = createInsertSchema(labourTaskTemplates).omit({ id: true });
 export type InsertLabourTaskTemplate = z.infer<typeof insertLabourTaskTemplateSchema>;
 export type LabourTaskTemplate = typeof labourTaskTemplates.$inferSelect;
+
+export const enoteTemplates = pgTable("enote_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  groupName: text("group_name").notNull().default("General"),
+  categoryName: text("category_name").notNull(),
+  brainstormNotes: text("brainstorm_notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertEnoteTemplateSchema = createInsertSchema(enoteTemplates).omit({ id: true });
+export type InsertEnoteTemplate = z.infer<typeof insertEnoteTemplateSchema>;
+export type EnoteTemplate = typeof enoteTemplates.$inferSelect;
