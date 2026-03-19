@@ -23,8 +23,6 @@ import {
   Circle,
   MinusCircle,
   GripVertical,
-  BookOpen,
-  FolderOpen,
   MoreVertical,
   Copy,
 } from "lucide-react";
@@ -352,7 +350,7 @@ function SortableTaskRow({
 
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
-  const [mode, setMode] = useState<'project' | 'template'>('project');
+  const mode = 'project' as const;
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ taskId: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -749,38 +747,17 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
         {/* Left sidebar — categories */}
         <div className="w-60 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
-          {/* Sidebar header with mode toggle */}
-          <div className="h-9 flex items-center justify-between pl-2 pr-1 border-b border-border/50 flex-shrink-0 gap-1">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setMode('project')}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                  mode === 'project' ? 'bg-[#bba7db]/20 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <FolderOpen className="w-3 h-3" />
-                <span>Project</span>
-              </button>
-              <button
-                onClick={() => setMode('template')}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                  mode === 'template' ? 'bg-[#bba7db]/20 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <BookOpen className="w-3 h-3" />
-                <span>Template</span>
-              </button>
-            </div>
-            {mode === 'project' && (
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => { setAddingCategory(true); setNewCatName(""); }}
-                title="Add category"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </Button>
-            )}
+          {/* Sidebar header */}
+          <div className="h-9 flex items-center justify-between pl-2 pr-1 border-b border-border/50 flex-shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">Categories</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => { setAddingCategory(true); setNewCatName(""); }}
+              title="Add category"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
           </div>
 
           {/* New category input */}
