@@ -322,6 +322,21 @@ export interface IStorage {
   getEstimateNotes(estimateId: string): Promise<EstimateNote[]>;
   createEstimateNote(note: InsertEstimateNote): Promise<EstimateNote>;
   deleteEstimateNote(id: string): Promise<boolean>;
+
+  // E-Notes (estimate scope checklist)
+  getEstimateEnotes(estimateId: string): Promise<any[]>;
+  updateEstimateEnote(id: string, data: Partial<any>): Promise<any>;
+
+  // Labour Estimates
+  getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined>;
+  createLabourEstimate(data: any): Promise<any>;
+  updateLabourEstimate(id: string, data: Partial<any>): Promise<any>;
+  getLabourEstimateCategories(labourEstimateId: string): Promise<any[]>;
+  updateLabourEstimateCategory(id: string, data: Partial<any>): Promise<any>;
+  getLabourEstimateTasks(categoryId: string): Promise<any[]>;
+  createLabourEstimateTask(data: any): Promise<any>;
+  updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any>;
+  deleteLabourEstimateTask(id: string): Promise<boolean>;
   
   // Estimate Items Duplication and Copying
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
@@ -9214,6 +9229,198 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteEstimateNote:", error);
+      return false;
+    }
+  }
+
+  // ── E-Notes ────────────────────────────────────────────────────────────────
+  private defaultEnoteCategories = [
+    { groupName: "Preliminaries", categories: ["Preliminaries", "Project Management", "Handover Inspection", "Job Specifications", "Site Supervision", "Travel & Accommodation", "Site Services", "Crane Hire", "Aluminium Scaffolding", "Edge Protection", "Set Out", "Surveyors"] },
+    { groupName: "Demolition", categories: ["Demolition", "Entry", "Living", "Dining", "Kitchen", "Rumpus", "Bed 1", "Bed 2", "Bed 3", "Bed 4", "Bath 1", "Bath 2", "Ensuite", "Laundry", "Garage", "Outdoor Area"] },
+    { groupName: "Site & Structure", categories: ["Work to Existing", "Excavation", "Concrete Works", "Structural Steel", "Sub-Floor", "Drainage"] },
+    { groupName: "Framing & Roofing", categories: ["Framing", "L1 Floor", "L1 Frame", "L2 Floor", "L2 Frame", "Roof Framing", "Roofing", "WRB Roof & Batten", "WRB Walls & Batten"] },
+    { groupName: "External", categories: ["External Linings", "Window Installation", "Eaves & Soffits", "Ventilation Detailing", "Passivhaus & Airtightness", "Brickwork", "External Cladding", "Decking & External Balustrades", "Fencing", "Driveways & Footpaths", "External Works", "Landscaping"] },
+    { groupName: "Internal", categories: ["Internal Carpentry", "Internal Linings", "Insulation", "Waterproofing", "Tiling", "Painting", "Flooring"] },
+    { groupName: "Fitout", categories: ["Fix Out", "Joinery", "Carpentry Fit Off", "Plumbing Fixtures", "Electrical Fitout", "Appliances"] },
+    { groupName: "Services", categories: ["Plumbing Rough-In", "Electrical Rough-In", "HVAC", "Solar"] },
+    { groupName: "Allowances", categories: ["General Allowances", "Provisional Sums", "Prime Cost Items", "Contingency"] },
+  ];
+
+  async getEstimateEnotes(estimateId: string): Promise<any[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(schema.estimateEnotes)
+        .where(eq(schema.estimateEnotes.estimateId, estimateId))
+        .orderBy(schema.estimateEnotes.sortOrder);
+
+      if (rows.length === 0) {
+        // Seed defaults
+        let order = 0;
+        const toInsert: any[] = [];
+        for (const group of this.defaultEnoteCategories) {
+          for (const cat of group.categories) {
+            toInsert.push({ estimateId, groupName: group.groupName, categoryName: cat, sortOrder: order++ });
+          }
+        }
+        const seeded = await db.insert(schema.estimateEnotes).values(toInsert).returning();
+        return seeded.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+      }
+      return rows;
+    } catch (error) {
+      console.error("Database error in getEstimateEnotes:", error);
+      return [];
+    }
+  }
+
+  async updateEstimateEnote(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [updated] = await db
+        .update(schema.estimateEnotes)
+        .set(data)
+        .where(eq(schema.estimateEnotes.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateEstimateEnote:", error);
+      throw error;
+    }
+  }
+
+  // ── Labour Estimates ────────────────────────────────────────────────────────
+  private defaultLabourCategories = [
+    "Preliminaries", "Project Management Off-site", "Project Management On-site",
+    "Site Establishment", "Set Out", "Demolition", "Works to Existing",
+    "Excavation", "Concrete Works", "Structural Steel", "Sub-Floor", "Framing",
+    "L1 Floor", "L1 Frame", "L2 Floor", "L2 Frame", "Roof Framing",
+    "Window Installation", "WRB Roof & Batten", "WRB Walls & Batten",
+    "Ventilation Detailing", "Passivhaus & Airtightness", "Eaves & Soffits",
+    "External Linings", "Internal Carpentry", "Internal Linings",
+    "Fix Out", "Carpentry Fit Off", "Decking & External Balustrades",
+    "Driveways & Footpaths", "Fencing", "External Works",
+    "General Allowances & Handover",
+  ];
+
+  async getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined> {
+    try {
+      const [row] = await db
+        .select()
+        .from(schema.labourEstimates)
+        .where(eq(schema.labourEstimates.projectId, projectId))
+        .limit(1);
+      return row;
+    } catch (error) {
+      console.error("Database error in getLabourEstimate:", error);
+      return undefined;
+    }
+  }
+
+  async createLabourEstimate(data: any): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.labourEstimates).values(data).returning();
+      // Seed default categories
+      const cats = this.defaultLabourCategories.map((name, i) => ({
+        labourEstimateId: row.id,
+        name,
+        sortOrder: i,
+        status: "not_complete",
+      }));
+      await db.insert(schema.labourEstimateCategories).values(cats);
+      return row;
+    } catch (error) {
+      console.error("Database error in createLabourEstimate:", error);
+      throw error;
+    }
+  }
+
+  async updateLabourEstimate(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [row] = await db
+        .update(schema.labourEstimates)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.labourEstimates.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateLabourEstimate:", error);
+      throw error;
+    }
+  }
+
+  async getLabourEstimateCategories(labourEstimateId: string): Promise<any[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.labourEstimateCategories)
+        .where(eq(schema.labourEstimateCategories.labourEstimateId, labourEstimateId))
+        .orderBy(schema.labourEstimateCategories.sortOrder);
+    } catch (error) {
+      console.error("Database error in getLabourEstimateCategories:", error);
+      return [];
+    }
+  }
+
+  async updateLabourEstimateCategory(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [row] = await db
+        .update(schema.labourEstimateCategories)
+        .set(data)
+        .where(eq(schema.labourEstimateCategories.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateLabourEstimateCategory:", error);
+      throw error;
+    }
+  }
+
+  async getLabourEstimateTasks(categoryId: string): Promise<any[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.labourEstimateTasks)
+        .where(eq(schema.labourEstimateTasks.categoryId, categoryId))
+        .orderBy(schema.labourEstimateTasks.sortOrder);
+    } catch (error) {
+      console.error("Database error in getLabourEstimateTasks:", error);
+      return [];
+    }
+  }
+
+  async createLabourEstimateTask(data: any): Promise<any> {
+    try {
+      const total = (data.numMen ?? 1) * (data.hoursPerMan ?? 0);
+      const [row] = await db.insert(schema.labourEstimateTasks).values({ ...data, totalHours: total }).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createLabourEstimateTask:", error);
+      throw error;
+    }
+  }
+
+  async updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const existing = await db.select().from(schema.labourEstimateTasks).where(eq(schema.labourEstimateTasks.id, id)).limit(1);
+      const merged = { ...existing[0], ...data };
+      const total = (merged.numMen ?? 1) * (merged.hoursPerMan ?? 0);
+      const [row] = await db
+        .update(schema.labourEstimateTasks)
+        .set({ ...data, totalHours: total })
+        .where(eq(schema.labourEstimateTasks.id, id))
+        .returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateLabourEstimateTask:", error);
+      throw error;
+    }
+  }
+
+  async deleteLabourEstimateTask(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.labourEstimateTasks).where(eq(schema.labourEstimateTasks.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteLabourEstimateTask:", error);
       return false;
     }
   }

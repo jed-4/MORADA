@@ -110,6 +110,7 @@ import ProjectChecklists from "@/pages/ProjectChecklists";
 import ChecklistInstanceDetail from "@/pages/ChecklistInstanceDetail";
 import ProjectFiles from "@/pages/ProjectFiles";
 import ProjectActivity from "@/pages/ProjectActivity";
+import LabourEstimate from "@/pages/LabourEstimate";
 
 function Router() {
   const { user } = useAuth();
@@ -189,6 +190,7 @@ function Router() {
       <Route path="/projects/:projectId/minutes/:id" component={MinuteDetail} />
       <Route path="/projects/:projectId/estimates/new" component={EstimateDetail} />
       <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
+      <Route path="/projects/:projectId/labour-estimate" component={LabourEstimate} />
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />

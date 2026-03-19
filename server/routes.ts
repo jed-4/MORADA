@@ -4528,6 +4528,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // E-NOTES ROUTES
+  // ============================================================
+
+  app.get("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getEstimateEnotes(req.params.id);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch e-notes" });
+    }
+  });
+
+  app.patch("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateEstimateEnote(req.params.categoryId, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update e-note" });
+    }
+  });
+
+  // ============================================================
+  // LABOUR ESTIMATE ROUTES
+  // ============================================================
+
+  app.get("/api/projects/:projectId/labour-estimate", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      let estimate = await storage.getLabourEstimate(req.params.projectId, user.companyId);
+      if (!estimate) {
+        estimate = await storage.createLabourEstimate({
+          projectId: req.params.projectId,
+          companyId: user.companyId,
+          title: "Labour Estimate",
+          labourRatePerHour: 0,
+        });
+      }
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch labour estimate" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/labour-estimate", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const estimate = await storage.createLabourEstimate({
+        projectId: req.params.projectId,
+        companyId: user.companyId,
+        title: req.body.title || "Labour Estimate",
+        labourRatePerHour: req.body.labourRatePerHour || 0,
+      });
+      res.status(201).json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create labour estimate" });
+    }
+  });
+
+  app.patch("/api/labour-estimates/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateLabourEstimate(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update labour estimate" });
+    }
+  });
+
+  app.get("/api/labour-estimates/:id/categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await storage.getLabourEstimateCategories(req.params.id);
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  });
+
+  app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update category" });
+    }
+  });
+
+  app.get("/api/labour-estimate-categories/:catId/tasks", requireAuth, async (req, res) => {
+    try {
+      const tasks = await storage.getLabourEstimateTasks(req.params.catId);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tasks" });
+    }
+  });
+
+  app.post("/api/labour-estimate-categories/:catId/tasks", requireAuth, async (req, res) => {
+    try {
+      const task = await storage.createLabourEstimateTask({
+        categoryId: req.params.catId,
+        description: req.body.description || "",
+        numMen: req.body.numMen ?? 1,
+        hoursPerMan: req.body.hoursPerMan ?? 0,
+        sortOrder: req.body.sortOrder ?? 0,
+      });
+      res.status(201).json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create task" });
+    }
+  });
+
+  app.patch("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateLabourEstimateTask(req.params.taskId, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  app.delete("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteLabourEstimateTask(req.params.taskId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete task" });
+    }
+  });
+
+  // ============================================================
   // SCOPE SECTION API ROUTES (Single Source of Truth)
   // ============================================================
 

@@ -482,8 +482,15 @@ export default function ProjectEstimates() {
           </Badge>
         </div>
 
-        {/* Right: New Estimate Button */}
+        {/* Right: Labour Estimate + New Estimate Buttons */}
         <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setLocation(`/projects/${projectId}/labour-estimate`)}
+            data-testid="button-labour-estimate"
+          >
+            <span>Labour Estimate</span>
+          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleNewEstimate}

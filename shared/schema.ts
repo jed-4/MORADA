@@ -5668,3 +5668,69 @@ export const insertBusinessScheduleProjectSchema = createInsertSchema(businessSc
 
 export type InsertBusinessScheduleProject = z.infer<typeof insertBusinessScheduleProjectSchema>;
 export type BusinessScheduleProject = typeof businessScheduleProjects.$inferSelect;
+
+// ─── E-Notes: per-estimate scope checklist ────────────────────────────────────
+export const estimateEnotes = pgTable("estimate_enotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  groupName: text("group_name").notNull(), // collapsible group label
+  categoryName: text("category_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  required: boolean("required"), // null = not reviewed, true = required, false = not required
+  brainstormNotes: text("brainstorm_notes"),
+  rfiRequired: boolean("rfi_required").notNull().default(false),
+  rfqRequired: boolean("rfq_required").notNull().default(false),
+  rfqDate: text("rfq_date"), // stored as ISO string
+  labourRequired: boolean("labour_required").notNull().default(false),
+  estimatorNotes: text("estimator_notes"),
+  completed: boolean("completed").notNull().default(false),
+  takeOffReview: boolean("take_off_review").notNull().default(false),
+  revisit: boolean("revisit").notNull().default(false),
+  revisitReason: text("revisit_reason"),
+});
+
+export const insertEstimateEnoteSchema = createInsertSchema(estimateEnotes).omit({ id: true });
+export type InsertEstimateEnote = z.infer<typeof insertEstimateEnoteSchema>;
+export type EstimateEnote = typeof estimateEnotes.$inferSelect;
+
+// ─── Labour Estimating ────────────────────────────────────────────────────────
+export const labourEstimates = pgTable("labour_estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default("Labour Estimate"),
+  labourRatePerHour: doublePrecision("labour_rate_per_hour").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLabourEstimateSchema = createInsertSchema(labourEstimates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLabourEstimate = z.infer<typeof insertLabourEstimateSchema>;
+export type LabourEstimate = typeof labourEstimates.$inferSelect;
+
+export const labourEstimateCategories = pgTable("labour_estimate_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  labourEstimateId: varchar("labour_estimate_id").notNull().references(() => labourEstimates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("not_complete"), // "not_required" | "not_complete" | "complete"
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLabourEstimateCategorySchema = createInsertSchema(labourEstimateCategories).omit({ id: true });
+export type InsertLabourEstimateCategory = z.infer<typeof insertLabourEstimateCategorySchema>;
+export type LabourEstimateCategory = typeof labourEstimateCategories.$inferSelect;
+
+export const labourEstimateTasks = pgTable("labour_estimate_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => labourEstimateCategories.id, { onDelete: "cascade" }),
+  description: text("description").notNull().default(""),
+  subHeading: text("sub_heading"),
+  numMen: doublePrecision("num_men").notNull().default(1),
+  hoursPerMan: doublePrecision("hours_per_man").notNull().default(0),
+  totalHours: doublePrecision("total_hours").notNull().default(0), // = numMen * hoursPerMan
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLabourEstimateTaskSchema = createInsertSchema(labourEstimateTasks).omit({ id: true });
+export type InsertLabourEstimateTask = z.infer<typeof insertLabourEstimateTaskSchema>;
+export type LabourEstimateTask = typeof labourEstimateTasks.$inferSelect;

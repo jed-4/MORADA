@@ -128,6 +128,7 @@ import { MultiUserSelect } from "@/components/MultiUserSelect";
 import { GridRow, GridCell, GridHeaderRow, GridHeaderCell } from "@/components/estimates/GridRow";
 import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/EstimateGridLayoutContext";
 import { EstimateNotesPopover } from "@/components/estimates/EstimateNotesPopover";
+import EstimateEnotes from "@/components/estimates/EstimateEnotes";
 
 interface EstimateDetailParams {
   id?: string;
@@ -386,6 +387,7 @@ export default function EstimateDetail() {
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
+  const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes'>('estimate');
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
@@ -5066,6 +5068,31 @@ export default function EstimateDetail() {
       {/* Main Content — outer card stays fixed, only table content scrolls horizontally */}
       <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
 
+        {/* Tab navigation */}
+        <div className="flex items-center border-b border-border/50 bg-background flex-shrink-0 px-3 gap-0">
+          {(['estimate', 'enotes'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setEstimateTab(tab)}
+              className={`h-8 px-4 text-xs font-medium border-b-2 transition-colors ${
+                estimateTab === tab
+                  ? 'border-[#bba7db] text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab === 'estimate' ? 'Estimate' : 'E-Notes'}
+            </button>
+          ))}
+        </div>
+
+        {estimateTab === 'enotes' && effectiveEstimateId && !isNewEstimate ? (
+          <EstimateEnotes estimateId={effectiveEstimateId} />
+        ) : estimateTab === 'enotes' ? (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access E-Notes.</div>
+        ) : null}
+
+        {estimateTab === 'estimate' && <>
+
         {/* Toolbar row — does NOT scroll horizontally */}
         <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0">
               {/* Left: Controls + Filter Chips */}
@@ -5479,6 +5506,7 @@ export default function EstimateDetail() {
             </div>{/* end table card */}
           </div>
         </div>
+        </>}
       </div>
 
       {/* Quick Totals Footer - Fixed at bottom outside scroll area */}
