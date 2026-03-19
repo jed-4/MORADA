@@ -341,6 +341,12 @@ export interface IStorage {
   updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any>;
   deleteLabourEstimateTask(id: string): Promise<boolean>;
   reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void>;
+  getLabourTaskTemplates(companyId: string, categoryName: string): Promise<any[]>;
+  createLabourTaskTemplate(data: any): Promise<any>;
+  updateLabourTaskTemplate(id: string, data: Partial<any>): Promise<any>;
+  deleteLabourTaskTemplate(id: string): Promise<boolean>;
+  reorderLabourTaskTemplates(updates: { id: string; sortOrder: number }[]): Promise<void>;
+  applyLabourTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]>;
   
   // Estimate Items Duplication and Copying
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
@@ -9490,6 +9496,85 @@ export class DbStorage implements IStorage {
       }
     } catch (error) {
       console.error("Database error in reorderLabourEstimateTasks:", error);
+      throw error;
+    }
+  }
+
+  async getLabourTaskTemplates(companyId: string, categoryName: string): Promise<any[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.labourTaskTemplates)
+        .where(and(eq(schema.labourTaskTemplates.companyId, companyId), eq(schema.labourTaskTemplates.categoryName, categoryName)))
+        .orderBy(schema.labourTaskTemplates.sortOrder);
+    } catch (error) {
+      console.error("Database error in getLabourTaskTemplates:", error);
+      return [];
+    }
+  }
+
+  async createLabourTaskTemplate(data: any): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.labourTaskTemplates).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createLabourTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateLabourTaskTemplate(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [row] = await db.update(schema.labourTaskTemplates).set(data).where(eq(schema.labourTaskTemplates.id, id)).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in updateLabourTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteLabourTaskTemplate(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.labourTaskTemplates).where(eq(schema.labourTaskTemplates.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteLabourTaskTemplate:", error);
+      return false;
+    }
+  }
+
+  async reorderLabourTaskTemplates(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    try {
+      for (const { id, sortOrder } of updates) {
+        await db.update(schema.labourTaskTemplates).set({ sortOrder }).where(eq(schema.labourTaskTemplates.id, id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderLabourTaskTemplates:", error);
+      throw error;
+    }
+  }
+
+  async applyLabourTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]> {
+    try {
+      const templates = await db
+        .select()
+        .from(schema.labourTaskTemplates)
+        .where(and(eq(schema.labourTaskTemplates.companyId, companyId), eq(schema.labourTaskTemplates.categoryName, categoryName)))
+        .orderBy(schema.labourTaskTemplates.sortOrder);
+      if (templates.length === 0) return [];
+      const tasks = templates.map((t, i) => ({
+        categoryId,
+        description: t.description,
+        subHeading: t.subHeading,
+        numMen: t.numMen,
+        hoursPerMan: t.hoursPerMan,
+        totalHours: t.numMen * t.hoursPerMan,
+        sortOrder: i,
+      }));
+      const inserted = await db.insert(schema.labourEstimateTasks).values(tasks).returning();
+      return inserted;
+    } catch (error) {
+      console.error("Database error in applyLabourTemplate:", error);
       throw error;
     }
   }

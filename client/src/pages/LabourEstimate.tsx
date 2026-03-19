@@ -6,14 +6,25 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Plus,
   Trash2,
   CheckCircle2,
   Circle,
   MinusCircle,
-  ChevronRight,
   GripVertical,
+  BookOpen,
+  FolderOpen,
 } from "lucide-react";
 import {
   DndContext,
@@ -45,13 +56,9 @@ const STATUS_CYCLE: Record<string, string> = {
   complete: "not_required",
 };
 
-function formatCurrency(val: number): string {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 2 }).format(val);
-}
-
 type CategoryWithHours = LabourEstimateCategory & { totalHours: number };
 
-// ─── Sortable category row ──────────────────────────────────────────────────
+// ─── Sortable category sidebar row ───────────────────────────────────────────
 
 function SortableCategoryItem({
   cat,
@@ -75,7 +82,7 @@ function SortableCategoryItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group/cat flex items-center border-l-2 transition-colors ${
+      className={`group/cat flex items-center border-l-2 transition-colors min-h-[32px] ${
         isSelected ? "bg-[#bba7db]/10 border-[#bba7db]" : "border-transparent hover-elevate"
       }`}
     >
@@ -83,35 +90,44 @@ function SortableCategoryItem({
       <div
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
+        className="flex-shrink-0 flex items-center justify-center w-5 h-8 cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60 transition-colors"
       >
         <GripVertical className="w-3 h-3" />
       </div>
 
-      {/* Hours column — narrow */}
-      <div className="w-10 flex-shrink-0 text-right pr-1.5">
+      {/* Hours tally — narrow column with right border */}
+      <div className="w-10 flex-shrink-0 border-r border-border/40 mr-2 text-right pr-1.5 self-stretch flex items-center justify-end">
         {cat.totalHours > 0 && (
-          <span className="text-[10px] tabular-nums text-muted-foreground/70">{cat.totalHours % 1 === 0 ? cat.totalHours : cat.totalHours.toFixed(1)}</span>
+          <span className="text-[10px] tabular-nums text-muted-foreground/60">
+            {Number.isInteger(cat.totalHours) ? cat.totalHours : cat.totalHours.toFixed(1)}
+          </span>
         )}
       </div>
 
-      {/* Clickable name area */}
-      <button
-        onClick={onSelect}
-        className="flex-1 min-w-0 flex items-center gap-1.5 py-2 pr-1 text-left"
+      {/* Status icon — click to cycle, stops propagation */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={e => { e.stopPropagation(); onStatusCycle(); }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onStatusCycle(); } }}
+        className="flex-shrink-0 mr-1.5 cursor-pointer"
+        title={cfg.label}
       >
-        <button
-          onClick={e => { e.stopPropagation(); onStatusCycle(); }}
-          className="flex-shrink-0"
-          title={cfg.label}
-        >
-          <StatusIcon className={`w-3.5 h-3.5 ${cfg.color}`} />
-        </button>
-        <span className="text-xs leading-snug truncate flex-1">{cat.name}</span>
-        {isSelected && <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
-      </button>
+        <StatusIcon className={`w-3.5 h-3.5 ${cfg.color}`} />
+      </div>
 
-      {/* Delete button — visible on hover */}
+      {/* Name — click to select */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={e => { if (e.key === 'Enter') onSelect(); }}
+        className="flex-1 min-w-0 py-2 pr-1 cursor-pointer"
+      >
+        <span className="text-xs leading-snug truncate block">{cat.name}</span>
+      </div>
+
+      {/* Delete button */}
       <button
         onClick={e => { e.stopPropagation(); onDelete(); }}
         className="flex-shrink-0 w-6 flex items-center justify-center opacity-0 group-hover/cat:opacity-100 transition-opacity text-muted-foreground hover:text-destructive mr-1"
@@ -123,7 +139,16 @@ function SortableCategoryItem({
   );
 }
 
-// ─── Sortable task row ───────────────────────────────────────────────────────
+// ─── Sortable task row (project tasks and template tasks share this) ──────────
+
+type TaskLike = {
+  id: string;
+  description: string;
+  subHeading?: string | null;
+  numMen: number;
+  hoursPerMan: number;
+  totalHours: number;
+};
 
 function SortableTaskRow({
   task,
@@ -136,20 +161,22 @@ function SortableTaskRow({
   navigateCell,
   setEditingCell,
   onDelete,
+  isTemplate,
 }: {
-  task: LabourEstimateTask;
+  task: TaskLike;
   editingCell: { taskId: string; field: string } | null;
   editValue: string;
   suppressBlurRef: React.MutableRefObject<boolean>;
   setEditValue: (v: string) => void;
   startEdit: (taskId: string, field: string, val: string | number | null) => void;
-  commitEdit: (task: LabourEstimateTask, field: 'description' | 'numMen' | 'hoursPerMan') => void;
+  commitEdit: (task: TaskLike, field: 'description' | 'numMen' | 'hoursPerMan') => void;
   navigateCell: (taskId: string, field: 'description' | 'numMen' | 'hoursPerMan', dir: 'next' | 'prev' | 'down') => void;
   setEditingCell: (v: null) => void;
   onDelete: () => void;
+  isTemplate?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+  const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
 
   const handleKeyDown = (field: 'description' | 'numMen' | 'hoursPerMan') => (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') { setEditingCell(null); return; }
@@ -178,12 +205,11 @@ function SortableTaskRow({
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" } as React.CSSProperties}
+      style={{ ...dndStyle, gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" } as React.CSSProperties}
       className={`grid items-center border-b border-border/10 group/row min-h-[34px] ${
         task.subHeading ? "bg-muted/30 font-medium" : ""
       }`}
     >
-      {/* Drag handle */}
       <div
         {...attributes}
         {...listeners}
@@ -229,9 +255,9 @@ function SortableTaskRow({
         ) : (
           <span
             className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => startEdit(task.id, 'numMen', task.numMen)}
+            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'numMen', task.numMen)}
           >
-            {task.numMen}
+            {task.subHeading ? "" : task.numMen}
           </span>
         )}
       </div>
@@ -251,17 +277,17 @@ function SortableTaskRow({
         ) : (
           <span
             className="text-sm cursor-pointer text-center hover:text-foreground w-full text-center"
-            onClick={() => startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
+            onClick={() => task.subHeading ? undefined : startEdit(task.id, 'hoursPerMan', task.hoursPerMan)}
           >
-            {task.hoursPerMan}
+            {task.subHeading ? "" : task.hoursPerMan}
           </span>
         )}
       </div>
 
-      {/* Total Hours */}
+      {/* Total / default hrs */}
       <div className="text-right pr-1">
         <span className="text-sm tabular-nums font-medium">
-          {task.subHeading ? "" : task.totalHours.toFixed(2)}
+          {task.subHeading ? "" : isTemplate ? `${task.hoursPerMan}h` : task.totalHours.toFixed(2)}
         </span>
       </div>
 
@@ -278,17 +304,19 @@ function SortableTaskRow({
   );
 }
 
-// ─── Main panel ──────────────────────────────────────────────────────────────
+// ─── Main panel ───────────────────────────────────────────────────────────────
 
 export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { toast } = useToast();
+  const [mode, setMode] = useState<'project' | 'template'>('project');
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ taskId: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [newRowDesc, setNewRowDesc] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState("");
-  const addRowRef = useRef<HTMLInputElement>(null);
+  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
+  const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const suppressBlurRef = useRef(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -311,16 +339,18 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const { data: tasks = [] } = useQuery<LabourEstimateTask[]>({
     queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"],
     queryFn: () => fetch(`/api/labour-estimate-categories/${effectiveCatId}/tasks`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!effectiveCatId,
+    enabled: !!effectiveCatId && mode === 'project',
   });
+
+  const { data: templateTasks = [] } = useQuery<TaskLike[]>({
+    queryKey: ["/api/labour-task-templates", selectedCat?.name],
+    queryFn: () => fetch(`/api/labour-task-templates?categoryName=${encodeURIComponent(selectedCat!.name)}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!selectedCat?.name && mode === 'template',
+  });
+
+  const activeTasks = mode === 'template' ? templateTasks : tasks;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
-
-  const updateEstimateMutation = useMutation({
-    mutationFn: (data: { labourRatePerHour?: number; title?: string }) =>
-      apiRequest(`/api/labour-estimates/${estimate!.id}`, "PATCH", data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-estimate"] }),
-  });
 
   const updateCategoryMutation = useMutation({
     mutationFn: ({ catId, data }: { catId: string; data: Partial<CategoryWithHours> }) =>
@@ -333,9 +363,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev);
-    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] }),
   });
 
@@ -359,9 +387,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       if (selectedCatId === catId) setSelectedCatId(null);
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev);
-    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] }),
   });
 
@@ -382,17 +408,15 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/labour-estimate-categories", effectiveCatId, "tasks"], ctx?.prev);
-    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimate-categories", effectiveCatId, "tasks"], ctx?.prev),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      // Only refresh category totals, not tasks — avoids reordering
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
     },
   });
 
   const addTaskMutation = useMutation({
-    mutationFn: (data: { description: string; numMen?: number; hoursPerMan?: number; subHeading?: string | null }) =>
+    mutationFn: (data: { description: string; sortOrder?: number }) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks`, "POST", data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
     onError: () => toast({ title: "Failed to add task", variant: "destructive" }),
@@ -400,13 +424,68 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId: string) => apiRequest(`/api/labour-estimate-tasks/${taskId}`, "DELETE"),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
   });
 
   const reorderTasksMutation = useMutation({
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/reorder`, "PATCH", { updates }),
     onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
+  });
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/apply-template`, "POST", { labourEstimateId: estimate!.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+      setMode('project');
+      toast({ title: "Template applied" });
+    },
+    onError: () => toast({ title: "No template tasks for this category", variant: "destructive" }),
+  });
+
+  // Template mutations
+  const addTemplateMutation = useMutation({
+    mutationFn: (data: { description: string; categoryName: string; sortOrder?: number }) =>
+      apiRequest(`/api/labour-task-templates`, "POST", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] }),
+  });
+
+  const updateTemplateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<TaskLike> }) =>
+      apiRequest(`/api/labour-task-templates/${id}`, "PATCH", data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] });
+      const prev = queryClient.getQueryData<TaskLike[]>(["/api/labour-task-templates", selectedCat?.name]);
+      queryClient.setQueryData<TaskLike[]>(["/api/labour-task-templates", selectedCat?.name], old =>
+        old?.map(t => t.id === id ? { ...t, ...data } : t) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedCat?.name], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] }),
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/labour-task-templates/${id}`, "DELETE"),
+    onMutate: async (id) => {
+      const prev = queryClient.getQueryData<TaskLike[]>(["/api/labour-task-templates", selectedCat?.name]);
+      queryClient.setQueryData<TaskLike[]>(["/api/labour-task-templates", selectedCat?.name], old =>
+        old?.filter(t => t.id !== id) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedCat?.name], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] }),
+  });
+
+  const reorderTemplatesMutation = useMutation({
+    mutationFn: (updates: { id: string; sortOrder: number }[]) =>
+      apiRequest(`/api/labour-task-templates/reorder`, "PATCH", { updates }),
+    onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedCat?.name] }),
   });
 
   // ── Cell editing ───────────────────────────────────────────────────────────
@@ -416,37 +495,40 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     setEditValue(String(val ?? ""));
   };
 
-  const commitEdit = useCallback((task: LabourEstimateTask, field: 'description' | 'numMen' | 'hoursPerMan') => {
+  const commitEdit = useCallback((task: TaskLike, field: 'description' | 'numMen' | 'hoursPerMan') => {
     if (!editingCell || editingCell.taskId !== task.id || editingCell.field !== field) return;
-    let parsed: string | number = editValue;
-    if (field === 'numMen' || field === 'hoursPerMan') {
-      parsed = parseFloat(editValue) || 0;
-      const numMen = field === 'numMen' ? parsed as number : task.numMen;
-      const hoursPerMan = field === 'hoursPerMan' ? parsed as number : task.hoursPerMan;
-      const totalHours = numMen * hoursPerMan;
-      updateTaskMutation.mutate({ taskId: task.id, data: { [field]: parsed, totalHours } });
-    } else {
-      updateTaskMutation.mutate({ taskId: task.id, data: { description: String(editValue) } });
-    }
     setEditingCell(null);
-  }, [editingCell, editValue, updateTaskMutation]);
+    if (mode === 'template') {
+      const data: Partial<TaskLike> = {};
+      if (field === 'description') data.description = editValue;
+      else if (field === 'numMen') data.numMen = parseFloat(editValue) || 0;
+      else data.hoursPerMan = parseFloat(editValue) || 0;
+      updateTemplateMutation.mutate({ id: task.id, data });
+    } else {
+      if (field === 'numMen' || field === 'hoursPerMan') {
+        const parsed = parseFloat(editValue) || 0;
+        const numMen = field === 'numMen' ? parsed : (task as LabourEstimateTask).numMen;
+        const hoursPerMan = field === 'hoursPerMan' ? parsed : task.hoursPerMan;
+        const totalHours = numMen * hoursPerMan;
+        updateTaskMutation.mutate({ taskId: task.id, data: { [field]: parsed, totalHours } });
+      } else {
+        updateTaskMutation.mutate({ taskId: task.id, data: { description: editValue } });
+      }
+    }
+  }, [editingCell, editValue, mode, updateTaskMutation, updateTemplateMutation]);
 
   const FIELD_ORDER = ['description', 'numMen', 'hoursPerMan'] as const;
   type EditField = typeof FIELD_ORDER[number];
 
-  const getFieldValue = (t: LabourEstimateTask, f: EditField): string | number => {
+  const getFieldValue = (t: TaskLike, f: EditField): string | number => {
     if (f === 'description') return t.description;
     if (f === 'numMen') return t.numMen;
     return t.hoursPerMan;
   };
 
-  const navigateCell = useCallback((
-    currentTaskId: string,
-    currentField: EditField,
-    dir: 'next' | 'prev' | 'down'
-  ) => {
-    const allTasks = tasks;
-    const taskIdx = allTasks.findIndex(t => t.id === currentTaskId);
+  const navigateCell = useCallback((currentTaskId: string, currentField: EditField, dir: 'next' | 'prev' | 'down') => {
+    const all = activeTasks;
+    const taskIdx = all.findIndex(t => t.id === currentTaskId);
     const fieldIdx = FIELD_ORDER.indexOf(currentField);
     let nextTaskIdx = taskIdx;
     let nextFieldIdx = fieldIdx;
@@ -454,49 +536,37 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     if (dir === 'next') {
       if (fieldIdx < FIELD_ORDER.length - 1) {
         nextFieldIdx = fieldIdx + 1;
-        while (nextTaskIdx < allTasks.length && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
-          nextTaskIdx++;
-          nextFieldIdx = 0;
+        while (nextTaskIdx < all.length && all[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
+          nextTaskIdx++; nextFieldIdx = 0;
         }
       } else {
-        nextTaskIdx = taskIdx + 1;
-        nextFieldIdx = 0;
+        nextTaskIdx = taskIdx + 1; nextFieldIdx = 0;
       }
     } else if (dir === 'prev') {
       if (fieldIdx > 0) {
         nextFieldIdx = fieldIdx - 1;
-        while (nextTaskIdx >= 0 && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
-          nextFieldIdx = 0;
-        }
+        while (nextTaskIdx >= 0 && all[nextTaskIdx]?.subHeading && nextFieldIdx > 0) nextFieldIdx = 0;
       } else {
-        nextTaskIdx = taskIdx - 1;
-        nextFieldIdx = FIELD_ORDER.length - 1;
-        while (nextTaskIdx >= 0 && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
-          nextFieldIdx = 0;
-        }
+        nextTaskIdx = taskIdx - 1; nextFieldIdx = FIELD_ORDER.length - 1;
+        while (nextTaskIdx >= 0 && all[nextTaskIdx]?.subHeading && nextFieldIdx > 0) nextFieldIdx = 0;
       }
-    } else if (dir === 'down') {
+    } else {
       nextTaskIdx = taskIdx + 1;
-      while (nextTaskIdx < allTasks.length && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
-        nextTaskIdx++;
-      }
+      while (nextTaskIdx < all.length && all[nextTaskIdx]?.subHeading && nextFieldIdx > 0) nextTaskIdx++;
     }
 
-    if (nextTaskIdx < 0 || nextTaskIdx >= allTasks.length) return;
-    const nextTask = allTasks[nextTaskIdx];
-    const nextField = FIELD_ORDER[nextFieldIdx];
-    startEdit(nextTask.id, nextField, getFieldValue(nextTask, nextField));
+    if (nextTaskIdx < 0 || nextTaskIdx >= all.length) return;
+    const nextTask = all[nextTaskIdx];
+    startEdit(nextTask.id, FIELD_ORDER[nextFieldIdx], getFieldValue(nextTask, FIELD_ORDER[nextFieldIdx]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
+  }, [activeTasks]);
 
-  // ── Drag end handlers ──────────────────────────────────────────────────────
+  // ── DnD handlers ──────────────────────────────────────────────────────────
 
   const handleCategoryDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = categories.findIndex(c => c.id === active.id);
-    const newIndex = categories.findIndex(c => c.id === over.id);
-    const reordered = arrayMove(categories, oldIndex, newIndex);
+    const reordered = arrayMove(categories, categories.findIndex(c => c.id === active.id), categories.findIndex(c => c.id === over.id));
     queryClient.setQueryData<CategoryWithHours[]>(["/api/labour-estimates", estimate?.id, "categories"], reordered);
     reorderCategoriesMutation.mutate(reordered.map((c, i) => ({ id: c.id, sortOrder: i })));
   };
@@ -504,18 +574,29 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const handleTaskDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = tasks.findIndex(t => t.id === active.id);
-    const newIndex = tasks.findIndex(t => t.id === over.id);
-    const reordered = arrayMove(tasks, oldIndex, newIndex);
+    const reordered = arrayMove(tasks, tasks.findIndex(t => t.id === active.id), tasks.findIndex(t => t.id === over.id));
     queryClient.setQueryData<LabourEstimateTask[]>(["/api/labour-estimate-categories", effectiveCatId, "tasks"], reordered);
     reorderTasksMutation.mutate(reordered.map((t, i) => ({ id: t.id, sortOrder: i })));
+  };
+
+  const handleTemplateDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const reordered = arrayMove(templateTasks, templateTasks.findIndex(t => t.id === active.id), templateTasks.findIndex(t => t.id === over.id));
+    queryClient.setQueryData<TaskLike[]>(["/api/labour-task-templates", selectedCat?.name], reordered);
+    reorderTemplatesMutation.mutate(reordered.map((t, i) => ({ id: t.id, sortOrder: i })));
   };
 
   // ── Add row ────────────────────────────────────────────────────────────────
 
   const addRow = () => {
-    if (!newRowDesc.trim() && !selectedCat) return;
-    addTaskMutation.mutate({ description: newRowDesc.trim() });
+    if (!selectedCat) return;
+    const desc = newRowDesc.trim();
+    if (mode === 'template') {
+      addTemplateMutation.mutate({ description: desc, categoryName: selectedCat.name, sortOrder: templateTasks.length });
+    } else {
+      addTaskMutation.mutate({ description: desc, sortOrder: tasks.length });
+    }
     setNewRowDesc("");
   };
 
@@ -527,13 +608,9 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     setAddingCategory(false);
   };
 
-  // ── Derived values ─────────────────────────────────────────────────────────
-
-  const [labourRateEdit, setLabourRateEdit] = useState(false);
-  const [labourRateVal, setLabourRateVal] = useState("");
+  // ── Derived ────────────────────────────────────────────────────────────────
 
   const totalHours = tasks.reduce((sum, t) => sum + t.totalHours, 0);
-  const totalCost = totalHours * (estimate?.labourRatePerHour ?? 0);
 
   if (estimateLoading) {
     return (
@@ -543,27 +620,101 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     );
   }
 
+  // Name of cat to confirm deletion
+  const catToDeleteName = categories.find(c => c.id === confirmDeleteCatId)?.name;
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
+
+      {/* Delete category confirmation */}
+      <AlertDialog open={!!confirmDeleteCatId} onOpenChange={open => !open && setConfirmDeleteCatId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Category</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete "<strong>{catToDeleteName}</strong>" and all its tasks? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (confirmDeleteCatId) deleteCategoryMutation.mutate(confirmDeleteCatId); setConfirmDeleteCatId(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete task confirmation */}
+      <AlertDialog open={!!confirmDeleteTaskId} onOpenChange={open => !open && setConfirmDeleteTaskId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {mode === 'template' ? 'Template Item' : 'Task'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this {mode === 'template' ? 'template item' : 'task'}? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeleteTaskId) {
+                  if (mode === 'template') deleteTemplateMutation.mutate(confirmDeleteTaskId);
+                  else deleteTaskMutation.mutate(confirmDeleteTaskId);
+                }
+                setConfirmDeleteTaskId(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Main layout — sidebar + task area */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left sidebar — categories */}
         <div className="w-60 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
-          <div className="h-9 flex items-center justify-between pl-5 pr-2 border-b border-border/50 flex-shrink-0">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Categories</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => { setAddingCategory(true); setNewCatName(""); }}
-              title="Add category"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
+          {/* Sidebar header with mode toggle */}
+          <div className="h-9 flex items-center justify-between pl-2 pr-1 border-b border-border/50 flex-shrink-0 gap-1">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setMode('project')}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
+                  mode === 'project' ? 'bg-[#bba7db]/20 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <FolderOpen className="w-3 h-3" />
+                <span>Project</span>
+              </button>
+              <button
+                onClick={() => setMode('template')}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
+                  mode === 'template' ? 'bg-[#bba7db]/20 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <BookOpen className="w-3 h-3" />
+                <span>Template</span>
+              </button>
+            </div>
+            {mode === 'project' && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => { setAddingCategory(true); setNewCatName(""); }}
+                title="Add category"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
+            )}
           </div>
 
           {/* New category input */}
-          {addingCategory && (
+          {addingCategory && mode === 'project' && (
             <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border/30 flex-shrink-0">
               <Input
                 autoFocus
@@ -580,7 +731,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {/* Sortable category list */}
+          {/* Category list */}
           <div className="flex-1 overflow-y-auto">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
               <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
@@ -590,7 +741,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                     cat={cat}
                     isSelected={(selectedCatId === cat.id) || (!selectedCatId && cat === categories[0])}
                     onSelect={() => setSelectedCatId(cat.id)}
-                    onDelete={() => deleteCategoryMutation.mutate(cat.id)}
+                    onDelete={() => setConfirmDeleteCatId(cat.id)}
                     onStatusCycle={() => {
                       const next = STATUS_CYCLE[cat.status] ?? "not_complete";
                       updateCategoryMutation.mutate({ catId: cat.id, data: { status: next } });
@@ -602,52 +753,74 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           </div>
 
           {/* Status legend */}
-          <div className="border-t border-border/50 px-3 py-2 space-y-1 flex-shrink-0">
-            {Object.entries(STATUS_CONFIG).map(([status, { label, icon: Icon, color }]) => {
-              const count = categories.filter(c => c.status === status).length;
-              return count > 0 ? (
-                <div key={status} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <Icon className={`w-3 h-3 ${color}`} />
-                  <span>{count} {label}</span>
-                </div>
-              ) : null;
-            })}
-          </div>
+          {mode === 'project' && (
+            <div className="border-t border-border/50 px-3 py-2 space-y-1 flex-shrink-0">
+              {Object.entries(STATUS_CONFIG).map(([status, { label, icon: Icon, color }]) => {
+                const count = categories.filter(c => c.status === status).length;
+                return count > 0 ? (
+                  <div key={status} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <Icon className={`w-3 h-3 ${color}`} />
+                    <span>{count} {label}</span>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right panel — tasks */}
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Category header + status toggle */}
+          {/* Category header */}
           {selectedCat && (
-            <div className="h-9 flex items-center justify-between px-4 border-b border-border/50 bg-background flex-shrink-0">
-              <span className="text-sm font-semibold truncate">{selectedCat.name}</span>
-              <button
-                onClick={() => {
-                  const next = STATUS_CYCLE[selectedCat.status] ?? "not_complete";
-                  updateCategoryMutation.mutate({ catId: selectedCat.id, data: { status: next } });
-                }}
-                className="flex items-center gap-1.5 text-xs border rounded-md px-2 h-6 hover-elevate active-elevate-2"
-              >
-                {(() => {
-                  const cfg = STATUS_CONFIG[selectedCat.status] ?? STATUS_CONFIG.not_complete;
-                  const Icon = cfg.icon;
-                  return <><Icon className={`w-3 h-3 ${cfg.color}`} /><span>{cfg.label}</span></>;
-                })()}
-              </button>
+            <div className="h-9 flex items-center justify-between px-4 border-b border-border/50 bg-background flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold truncate">{selectedCat.name}</span>
+                {mode === 'template' && (
+                  <span className="text-[10px] text-muted-foreground border border-border/50 rounded px-1.5 py-0.5">Template</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {mode === 'template' && (
+                  <button
+                    onClick={() => applyTemplateMutation.mutate()}
+                    disabled={applyTemplateMutation.isPending || templateTasks.length === 0}
+                    className="flex items-center gap-1.5 text-xs border rounded-md px-2 h-6 hover-elevate active-elevate-2 disabled:opacity-40"
+                    title="Apply this template to the project category"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Apply to Project</span>
+                  </button>
+                )}
+                {mode === 'project' && (
+                  <button
+                    onClick={() => {
+                      const next = STATUS_CYCLE[selectedCat.status] ?? "not_complete";
+                      updateCategoryMutation.mutate({ catId: selectedCat.id, data: { status: next } });
+                    }}
+                    className="flex items-center gap-1.5 text-xs border rounded-md px-2 h-6 hover-elevate active-elevate-2"
+                  >
+                    {(() => {
+                      const cfg = STATUS_CONFIG[selectedCat.status] ?? STATUS_CONFIG.not_complete;
+                      const Icon = cfg.icon;
+                      return <><Icon className={`w-3 h-3 ${cfg.color}`} /><span>{cfg.label}</span></>;
+                    })()}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Column headers */}
           <div
-            className="grid text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 px-0 py-1.5 flex-shrink-0"
+            className="grid text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
             style={{ gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" }}
           >
             <span />
-            <span className="pl-0">Description</span>
+            <span>Description</span>
             <span className="text-center">No. Men</span>
             <span className="text-center">Hrs / Man</span>
-            <span className="text-right pr-1">Total Hrs</span>
+            <span className="text-right pr-1">{mode === 'template' ? 'Default' : 'Total Hrs'}</span>
             <span />
           </div>
 
@@ -655,16 +828,20 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           <div className="flex-1 overflow-y-auto">
             {!selectedCat ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                Select a category to view tasks.
+                Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
               </div>
-            ) : tasks.length === 0 ? (
+            ) : activeTasks.length === 0 ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                No tasks yet. Add a row below.
+                No {mode === 'template' ? 'template items' : 'tasks'} yet. Add one below.
               </div>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTaskDragEnd}>
-                <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                  {tasks.map(task => (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={mode === 'template' ? handleTemplateDragEnd : handleTaskDragEnd}
+              >
+                <SortableContext items={activeTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  {activeTasks.map(task => (
                     <SortableTaskRow
                       key={task.id}
                       task={task}
@@ -676,7 +853,8 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                       commitEdit={commitEdit}
                       navigateCell={navigateCell}
                       setEditingCell={setEditingCell}
-                      onDelete={() => deleteTaskMutation.mutate(task.id)}
+                      onDelete={() => setConfirmDeleteTaskId(task.id)}
+                      isTemplate={mode === 'template'}
                     />
                   ))}
                 </SortableContext>
@@ -684,26 +862,25 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {/* Add row input */}
+          {/* Add row */}
           {selectedCat && (
             <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
               <Input
-                ref={addRowRef}
-                placeholder="Add item…"
+                placeholder={mode === 'template' ? "Add template item…" : "Add item…"}
                 value={newRowDesc}
                 onChange={e => setNewRowDesc(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') addRow(); }}
                 className="h-7 text-sm flex-1"
               />
-              <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={addRow} disabled={addTaskMutation.isPending}>
+              <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={addRow} disabled={addTaskMutation.isPending || addTemplateMutation.isPending}>
                 <Plus className="w-3 h-3 mr-1" />
                 Add
               </Button>
             </div>
           )}
 
-          {/* Category summary */}
-          {selectedCat && tasks.length > 0 && (
+          {/* Hours summary (project mode only) */}
+          {mode === 'project' && selectedCat && tasks.length > 0 && (
             <div className="flex items-center justify-end gap-3 px-4 py-2 bg-muted/20 border-t border-border/50 text-xs flex-shrink-0">
               <span className="text-muted-foreground">{selectedCat.name}</span>
               <span className="font-medium tabular-nums">{totalHours.toFixed(2)} hrs</span>
@@ -711,56 +888,11 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           )}
         </div>
       </div>
-
-      {/* Footer — labour rate + totals */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-t border-border gap-4 flex-shrink-0 bg-card">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Labour Rate</span>
-          {labourRateEdit ? (
-            <Input
-              autoFocus
-              value={labourRateVal}
-              onChange={e => setLabourRateVal(e.target.value)}
-              onBlur={() => {
-                const val = parseFloat(labourRateVal);
-                if (!isNaN(val)) updateEstimateMutation.mutate({ labourRatePerHour: val });
-                setLabourRateEdit(false);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === 'Escape') {
-                  const val = parseFloat(labourRateVal);
-                  if (!isNaN(val) && e.key === 'Enter') updateEstimateMutation.mutate({ labourRatePerHour: val });
-                  setLabourRateEdit(false);
-                }
-              }}
-              className="h-7 w-28 text-sm focus-visible:ring-0 border-primary"
-            />
-          ) : (
-            <button
-              onClick={() => { setLabourRateVal(String(estimate?.labourRatePerHour ?? 0)); setLabourRateEdit(true); }}
-              className="text-sm font-medium tabular-nums border-b border-dashed border-muted-foreground/40 hover:border-foreground transition-colors"
-            >
-              {formatCurrency(estimate?.labourRatePerHour ?? 0)}/hr
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Category Hours:</span>
-            <span className="text-sm font-semibold tabular-nums">{totalHours.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Category Labour Cost:</span>
-            <span className="text-base font-bold tabular-nums text-[#bba7db]">
-              {formatCurrency(totalCost)}
-            </span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
+
+// ─── Standalone page wrapper ──────────────────────────────────────────────────
 
 export default function LabourEstimate() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -776,9 +908,8 @@ export default function LabourEstimate() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50">
+        <div className="h-9 flex items-center px-3 border-b border-border/50">
           <div className="flex items-center gap-2 min-w-0">
             <Button
               variant="ghost"
@@ -796,8 +927,6 @@ export default function LabourEstimate() {
           </div>
         </div>
       </div>
-
-      {/* Main panel — inherits remaining height */}
       <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
         {projectId && <LabourEstimatePanel projectId={projectId} />}
       </div>

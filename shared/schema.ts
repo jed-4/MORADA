@@ -5734,3 +5734,18 @@ export const labourEstimateTasks = pgTable("labour_estimate_tasks", {
 export const insertLabourEstimateTaskSchema = createInsertSchema(labourEstimateTasks).omit({ id: true });
 export type InsertLabourEstimateTask = z.infer<typeof insertLabourEstimateTaskSchema>;
 export type LabourEstimateTask = typeof labourEstimateTasks.$inferSelect;
+
+export const labourTaskTemplates = pgTable("labour_task_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  categoryName: text("category_name").notNull(),
+  description: text("description").notNull().default(""),
+  subHeading: text("sub_heading"),
+  numMen: doublePrecision("num_men").notNull().default(1),
+  hoursPerMan: doublePrecision("hours_per_man").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLabourTaskTemplateSchema = createInsertSchema(labourTaskTemplates).omit({ id: true });
+export type InsertLabourTaskTemplate = z.infer<typeof insertLabourTaskTemplateSchema>;
+export type LabourTaskTemplate = typeof labourTaskTemplates.$inferSelect;

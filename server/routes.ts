@@ -4640,6 +4640,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/labour-estimate-categories/:catId/apply-template", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const [cat] = await storage.getLabourEstimateCategories(req.body.labourEstimateId).then(cats => cats.filter(c => c.id === req.params.catId));
+      if (!cat) return res.status(404).json({ error: "Category not found" });
+      const tasks = await storage.applyLabourTemplate(companyId, req.params.catId, cat.name);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to apply template" });
+    }
+  });
+
+  app.get("/api/labour-task-templates", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const categoryName = req.query.categoryName as string;
+      if (!categoryName) return res.status(400).json({ error: "categoryName required" });
+      const templates = await storage.getLabourTaskTemplates(companyId, categoryName);
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.post("/api/labour-task-templates", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const template = await storage.createLabourTaskTemplate({ ...req.body, companyId });
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create template" });
+    }
+  });
+
+  app.patch("/api/labour-task-templates/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateLabourTaskTemplate(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update template" });
+    }
+  });
+
+  app.delete("/api/labour-task-templates/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteLabourTaskTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  });
+
+  app.patch("/api/labour-task-templates/reorder", requireAuth, async (req, res) => {
+    try {
+      await storage.reorderLabourTaskTemplates(req.body.updates);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder templates" });
+    }
+  });
+
   app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);
