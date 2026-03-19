@@ -60,6 +60,24 @@ import { SiGoogle } from "react-icons/si";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User as UserType, FieldCategoryWithOptions } from "@shared/schema";
 
+// Deterministic color from a seed string (matches BusinessCalendar logic)
+function deterministicProjectColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  const adjustedHue = hue < 20 || hue > 340 ? (hue + 120) % 360 : hue;
+  const s = 0.55, l = 0.48;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + adjustedHue / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
   const normalized = { ...filters };
@@ -359,6 +377,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         // Skip if task belongs to an inactive template
         if (template && !template.isActive) return;
 
+        const taskProjectColor = project?.color || (task.projectId ? deterministicProjectColor(task.projectId) : undefined);
         events.push({
           id: task.id,
           title: task.title,
@@ -368,7 +387,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           endTime: task.endTime,
           type: "task",
           projectId: task.projectId,
-          projectColor: project?.color,
+          projectName: project?.name || null,
+          projectColor: taskProjectColor,
+          color: taskProjectColor,
           status: task.status,
           isCompleted: task.status === "completed" || task.status === "done",
           description: task.content,
@@ -382,6 +403,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     scheduleItems.forEach((item: any) => {
       const itemStartDate = item.startDate ? new Date(item.startDate) : null;
       if (!itemStartDate) return;
+      const projectColor = item.projectColor || (item.projectId ? deterministicProjectColor(item.projectId) : undefined);
       events.push({
         id: item.id,
         title: item.name || item.title || "Schedule Item",
@@ -391,6 +413,12 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         endTime: item.endTime,
         type: "schedule",
         description: item.description,
+        projectId: item.projectId,
+        projectName: item.projectName,
+        projectColor,
+        color: projectColor,
+        status: item.status,
+        isCompleted: item.status === "completed",
       });
     });
 
