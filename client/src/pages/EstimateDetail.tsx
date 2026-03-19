@@ -3966,7 +3966,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
-                className="h-8 text-sm border-primary"
+                className="h-8 text-sm border-primary focus-visible:ring-0"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -4245,7 +4245,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
                 onBlur={() => handleCellSave(item, 'quantity')}
-                className="h-8 text-sm border-primary"
+                className="h-8 text-sm border-primary focus-visible:ring-0"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4329,7 +4329,7 @@ export default function EstimateDetail() {
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
               >
-                <SelectTrigger className="h-8 text-sm border-primary">
+                <SelectTrigger className="h-8 text-sm border-primary focus-visible:ring-0">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -4371,7 +4371,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
-                className="h-8 text-sm border-primary"
+                className="h-8 text-sm border-primary focus-visible:ring-0"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4407,7 +4407,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
-                className="h-8 text-sm border-primary"
+                className="h-8 text-sm border-primary focus-visible:ring-0"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4455,7 +4455,7 @@ export default function EstimateDetail() {
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'markup')}
                 onBlur={() => handleCellSave(item, 'markup')}
-                className="h-8 text-sm border-primary"
+                className="h-8 text-sm border-primary focus-visible:ring-0"
                 autoFocus
                 min="0"
                 step="1"
