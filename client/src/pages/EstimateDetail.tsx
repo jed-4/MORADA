@@ -5090,19 +5090,23 @@ export default function EstimateDetail() {
           ))}
         </div>
 
-        {estimateTab === 'enotes' && effectiveEstimateId && !isNewEstimate ? (
-          <EstimateEnotes estimateId={effectiveEstimateId} />
-        ) : estimateTab === 'enotes' ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access E-Notes.</div>
-        ) : null}
+        <div className={estimateTab !== 'enotes' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
+          {effectiveEstimateId && !isNewEstimate ? (
+            <EstimateEnotes estimateId={effectiveEstimateId} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Save the estimate first to access E-Notes.</div>
+          )}
+        </div>
 
-        {estimateTab === 'labour' && project?.id ? (
-          <LabourEstimatePanel projectId={project.id} />
-        ) : estimateTab === 'labour' ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading project…</div>
-        ) : null}
+        <div className={estimateTab !== 'labour' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
+          {project?.id ? (
+            <LabourEstimatePanel projectId={project.id} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading project…</div>
+          )}
+        </div>
 
-        {estimateTab === 'estimate' && <>
+        <div className={estimateTab !== 'estimate' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
 
         {/* Toolbar row — does NOT scroll horizontally */}
         <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0">
@@ -5517,7 +5521,7 @@ export default function EstimateDetail() {
             </div>{/* end table card */}
           </div>
         </div>
-        </>}
+        </div>
       </div>
 
       {/* Quick Totals Footer - Fixed at bottom outside scroll area */}

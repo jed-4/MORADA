@@ -133,6 +133,66 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     setEditingCell(null);
   }, [editingCell, editValue, updateTaskMutation]);
 
+  const FIELD_ORDER = ['description', 'numMen', 'hoursPerMan'] as const;
+  type EditField = typeof FIELD_ORDER[number];
+
+  const getFieldValue = (t: LabourEstimateTask, f: EditField): string | number => {
+    if (f === 'description') return t.description;
+    if (f === 'numMen') return t.numMen;
+    return t.hoursPerMan;
+  };
+
+  const navigateCell = useCallback((
+    currentTaskId: string,
+    currentField: EditField,
+    dir: 'next' | 'prev' | 'down'
+  ) => {
+    const allTasks = tasks;
+    const taskIdx = allTasks.findIndex(t => t.id === currentTaskId);
+    const fieldIdx = FIELD_ORDER.indexOf(currentField);
+    let nextTaskIdx = taskIdx;
+    let nextFieldIdx = fieldIdx;
+
+    if (dir === 'next') {
+      if (fieldIdx < FIELD_ORDER.length - 1) {
+        nextFieldIdx = fieldIdx + 1;
+        // Skip numMen/hoursPerMan for subheading rows
+        while (nextTaskIdx < allTasks.length && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
+          nextTaskIdx++;
+          nextFieldIdx = 0;
+        }
+      } else {
+        nextTaskIdx = taskIdx + 1;
+        nextFieldIdx = 0;
+      }
+    } else if (dir === 'prev') {
+      if (fieldIdx > 0) {
+        nextFieldIdx = fieldIdx - 1;
+        while (nextTaskIdx >= 0 && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
+          nextFieldIdx = 0;
+        }
+      } else {
+        nextTaskIdx = taskIdx - 1;
+        nextFieldIdx = FIELD_ORDER.length - 1;
+        while (nextTaskIdx >= 0 && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
+          nextFieldIdx = 0;
+        }
+      }
+    } else if (dir === 'down') {
+      nextTaskIdx = taskIdx + 1;
+      // For numeric fields, skip subheading rows
+      while (nextTaskIdx < allTasks.length && allTasks[nextTaskIdx]?.subHeading && nextFieldIdx > 0) {
+        nextTaskIdx++;
+      }
+    }
+
+    if (nextTaskIdx < 0 || nextTaskIdx >= allTasks.length) return;
+    const nextTask = allTasks[nextTaskIdx];
+    const nextField = FIELD_ORDER[nextFieldIdx];
+    startEdit(nextTask.id, nextField, getFieldValue(nextTask, nextField));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
   const [newRowDesc, setNewRowDesc] = useState("");
   const addRow = () => {
     if (!newRowDesc.trim() && newRowDesc !== "") return;
@@ -262,8 +322,13 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                         autoFocus
                         value={editValue}
                         onChange={e => setEditValue(e.target.value)}
+                        onFocus={e => e.target.select()}
                         onBlur={() => commitEdit(task, 'description')}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(task, 'description'); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') { setEditingCell(null); return; }
+                          if (e.key === 'Enter') { e.preventDefault(); commitEdit(task, 'description'); navigateCell(task.id, 'description', 'down'); return; }
+                          if (e.key === 'Tab') { e.preventDefault(); commitEdit(task, 'description'); navigateCell(task.id, 'description', e.shiftKey ? 'prev' : 'next'); }
+                        }}
                         className="h-6 text-sm focus-visible:ring-0 border-primary"
                       />
                     ) : (
@@ -283,8 +348,13 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                         autoFocus
                         value={editValue}
                         onChange={e => setEditValue(e.target.value)}
+                        onFocus={e => e.target.select()}
                         onBlur={() => commitEdit(task, 'numMen')}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(task, 'numMen'); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') { setEditingCell(null); return; }
+                          if (e.key === 'Enter') { e.preventDefault(); commitEdit(task, 'numMen'); navigateCell(task.id, 'numMen', 'down'); return; }
+                          if (e.key === 'Tab') { e.preventDefault(); commitEdit(task, 'numMen'); navigateCell(task.id, 'numMen', e.shiftKey ? 'prev' : 'next'); }
+                        }}
                         className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-16"
                       />
                     ) : (
@@ -304,8 +374,13 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                         autoFocus
                         value={editValue}
                         onChange={e => setEditValue(e.target.value)}
+                        onFocus={e => e.target.select()}
                         onBlur={() => commitEdit(task, 'hoursPerMan')}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(task, 'hoursPerMan'); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') { setEditingCell(null); return; }
+                          if (e.key === 'Enter') { e.preventDefault(); commitEdit(task, 'hoursPerMan'); navigateCell(task.id, 'hoursPerMan', 'down'); return; }
+                          if (e.key === 'Tab') { e.preventDefault(); commitEdit(task, 'hoursPerMan'); navigateCell(task.id, 'hoursPerMan', e.shiftKey ? 'prev' : 'next'); }
+                        }}
                         className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20"
                       />
                     ) : (
