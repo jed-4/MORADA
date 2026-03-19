@@ -189,6 +189,7 @@ function SortableTaskRow({
   navigateCell,
   setEditingCell,
   onDelete,
+  onCopyToTemplate,
   isTemplate,
 }: {
   task: TaskLike;
