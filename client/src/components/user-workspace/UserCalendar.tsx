@@ -78,6 +78,9 @@ function deterministicProjectColor(seed: string): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
+// Module-level constant — never changes, so safe as a useEffect dependency
+const DEFAULT_EVENT_TYPES = ["task", "schedule", "google-calendar"];
+
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
   const normalized = { ...filters };
@@ -103,11 +106,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const { effectiveTimezone } = useTimezone();
   
-  // Initialize with all event types selected by default (including google-calendar)
-  const defaultEventTypes = ["task", "schedule", "google-calendar"];
-  
   const [filters, setFilters] = useState<CalendarFiltersType>({
-    eventTypes: defaultEventTypes,
+    eventTypes: DEFAULT_EVENT_TYPES,
   });
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
@@ -328,7 +328,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         name: "All Events",
         calendarType: "personal",
         filters: {
-          eventTypes: defaultEventTypes,
+          eventTypes: DEFAULT_EVENT_TYPES,
         },
       });
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
@@ -348,7 +348,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         const normalizedFilters = normalizeFilterDates(view.filters as CalendarFiltersType);
         // If view doesn't have eventTypes defined, use default (all selected)
         if (!normalizedFilters.eventTypes) {
-          normalizedFilters.eventTypes = defaultEventTypes;
+          normalizedFilters.eventTypes = DEFAULT_EVENT_TYPES;
         } else {
           if (!normalizedFilters.eventTypes.includes("google-calendar")) {
             // Ensure google-calendar is always included in eventTypes
@@ -362,7 +362,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         setFilters(normalizedFilters);
       }
     }
-  }, [selectedViewId, savedViews, defaultEventTypes]);
+  }, [selectedViewId, savedViews, DEFAULT_EVENT_TYPES]);
 
   // Convert tasks, schedule items, and Google Calendar events to calendar events
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -863,7 +863,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                           disabled={type.disabled}
                           onCheckedChange={() => {
                             if (type.disabled) return;
-                            const current = filters.eventTypes || defaultEventTypes;
+                            const current = filters.eventTypes || DEFAULT_EVENT_TYPES;
                             const updated = current.includes(type.key)
                               ? current.filter(t => t !== type.key)
                               : [...current, type.key];
