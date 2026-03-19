@@ -128,6 +128,7 @@ import { MultiUserSelect } from "@/components/MultiUserSelect";
 import { GridRow, GridCell, GridHeaderRow, GridHeaderCell } from "@/components/estimates/GridRow";
 import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/EstimateGridLayoutContext";
 import { EstimateNotesPopover } from "@/components/estimates/EstimateNotesPopover";
+import { EstimateChecklistPopover } from "@/components/estimates/EstimateChecklistPopover";
 import EstimateEnotes from "@/components/estimates/EstimateEnotes";
 
 interface EstimateDetailParams {
@@ -4760,6 +4761,9 @@ export default function EstimateDetail() {
 
         {/* Right: Notes + Collapse summary + Options popover */}
         <div className="flex items-center gap-1 flex-shrink-0">
+          {effectiveEstimateId && project?.id && (
+            <EstimateChecklistPopover estimateId={effectiveEstimateId} projectId={project.id} />
+          )}
           {effectiveEstimateId && (
             <EstimateNotesPopover estimateId={effectiveEstimateId} />
           )}
