@@ -4604,6 +4604,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/labour-estimates/:id/categories", requireAuth, async (req, res) => {
+    try {
+      const category = await storage.createLabourEstimateCategory(req.params.id, req.body.name || "New Category");
+      res.status(201).json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create category" });
+    }
+  });
+
+  app.delete("/api/labour-estimate-categories/:catId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteLabourEstimateCategory(req.params.catId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete category" });
+    }
+  });
+
+  app.patch("/api/labour-estimates/:id/categories/reorder", requireAuth, async (req, res) => {
+    try {
+      await storage.reorderLabourEstimateCategories(req.body.updates);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder categories" });
+    }
+  });
+
+  app.patch("/api/labour-estimate-categories/:catId/tasks/reorder", requireAuth, async (req, res) => {
+    try {
+      await storage.reorderLabourEstimateTasks(req.body.updates);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder tasks" });
+    }
+  });
+
   app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);

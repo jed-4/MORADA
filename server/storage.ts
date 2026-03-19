@@ -332,11 +332,15 @@ export interface IStorage {
   createLabourEstimate(data: any): Promise<any>;
   updateLabourEstimate(id: string, data: Partial<any>): Promise<any>;
   getLabourEstimateCategories(labourEstimateId: string): Promise<any[]>;
+  createLabourEstimateCategory(labourEstimateId: string, name: string): Promise<any>;
   updateLabourEstimateCategory(id: string, data: Partial<any>): Promise<any>;
+  deleteLabourEstimateCategory(id: string): Promise<boolean>;
+  reorderLabourEstimateCategories(updates: { id: string; sortOrder: number }[]): Promise<void>;
   getLabourEstimateTasks(categoryId: string): Promise<any[]>;
   createLabourEstimateTask(data: any): Promise<any>;
   updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any>;
   deleteLabourEstimateTask(id: string): Promise<boolean>;
+  reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void>;
   
   // Estimate Items Duplication and Copying
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
@@ -9349,14 +9353,68 @@ export class DbStorage implements IStorage {
 
   async getLabourEstimateCategories(labourEstimateId: string): Promise<any[]> {
     try {
-      return await db
+      const categories = await db
         .select()
         .from(schema.labourEstimateCategories)
         .where(eq(schema.labourEstimateCategories.labourEstimateId, labourEstimateId))
         .orderBy(schema.labourEstimateCategories.sortOrder);
+      if (categories.length === 0) return [];
+      const catIds = categories.map(c => c.id);
+      const tasks = await db
+        .select({ categoryId: schema.labourEstimateTasks.categoryId, totalHours: schema.labourEstimateTasks.totalHours })
+        .from(schema.labourEstimateTasks)
+        .where(inArray(schema.labourEstimateTasks.categoryId, catIds));
+      const hoursByCat: Record<string, number> = {};
+      for (const t of tasks) {
+        hoursByCat[t.categoryId] = (hoursByCat[t.categoryId] ?? 0) + t.totalHours;
+      }
+      return categories.map(c => ({ ...c, totalHours: hoursByCat[c.id] ?? 0 }));
     } catch (error) {
       console.error("Database error in getLabourEstimateCategories:", error);
       return [];
+    }
+  }
+
+  async createLabourEstimateCategory(labourEstimateId: string, name: string): Promise<any> {
+    try {
+      const existing = await db
+        .select({ sortOrder: schema.labourEstimateCategories.sortOrder })
+        .from(schema.labourEstimateCategories)
+        .where(eq(schema.labourEstimateCategories.labourEstimateId, labourEstimateId))
+        .orderBy(desc(schema.labourEstimateCategories.sortOrder))
+        .limit(1);
+      const nextOrder = (existing[0]?.sortOrder ?? -1) + 1;
+      const [row] = await db.insert(schema.labourEstimateCategories).values({
+        labourEstimateId,
+        name,
+        status: "not_complete",
+        sortOrder: nextOrder,
+      }).returning();
+      return { ...row, totalHours: 0 };
+    } catch (error) {
+      console.error("Database error in createLabourEstimateCategory:", error);
+      throw error;
+    }
+  }
+
+  async deleteLabourEstimateCategory(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.labourEstimateCategories).where(eq(schema.labourEstimateCategories.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteLabourEstimateCategory:", error);
+      return false;
+    }
+  }
+
+  async reorderLabourEstimateCategories(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    try {
+      for (const { id, sortOrder } of updates) {
+        await db.update(schema.labourEstimateCategories).set({ sortOrder }).where(eq(schema.labourEstimateCategories.id, id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderLabourEstimateCategories:", error);
+      throw error;
     }
   }
 
@@ -9422,6 +9480,17 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteLabourEstimateTask:", error);
       return false;
+    }
+  }
+
+  async reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    try {
+      for (const { id, sortOrder } of updates) {
+        await db.update(schema.labourEstimateTasks).set({ sortOrder }).where(eq(schema.labourEstimateTasks.id, id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderLabourEstimateTasks:", error);
+      throw error;
     }
   }
 
