@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart } from "lucide-react";
+import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart, BarChart3 } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
 import BusinessTasks from "./BusinessTasks";
@@ -14,6 +14,7 @@ import Messages from "./Messages";
 import Notes from "./Notes";
 import BusinessSchedule from "./BusinessSchedule";
 import ComingSoonPage from "./ComingSoonPage";
+import BusinessMetrics from "./BusinessMetrics";
 import { useAuth } from "@/hooks/use-auth";
 
 const BUSINESS_TABS = [
@@ -30,6 +31,7 @@ const BUSINESS_TABS = [
   { id: "notes", label: "Notes", icon: FileText, path: "/business/notes" },
   { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
   { id: "team", label: "Team", icon: Users, path: "/business-team" },
+  { id: "metrics", label: "Metrics", icon: BarChart3, path: "/business/metrics" },
 ] as const;
 
 export default function Business() {
@@ -79,6 +81,8 @@ export default function Business() {
         return <ComingSoonPage section="business-leave" />;
       case "team":
         return <TeamManagement />;
+      case "metrics":
+        return <BusinessMetrics />;
       default:
         return <BusinessOverview />;
     }

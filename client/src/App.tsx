@@ -180,6 +180,7 @@ function Router() {
       <Route path="/business/messages" component={Business} />
       <Route path="/business/notes" component={Business} />
       <Route path="/business/leave" component={Business} />
+      <Route path="/business/metrics" component={Business} />
       <Route path="/my-calendar" component={PersonalCalendar} />
       <Route path="/systems" component={Systems} />
       <Route path="/business-team" component={Business} />

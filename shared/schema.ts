@@ -1035,6 +1035,43 @@ export const companySettings = pgTable("company_settings", {
   // e.g., { "task": true, "estimate": true, "bill": false, ... }
   activityTypesVisible: json("activity_types_visible").$type<Record<string, boolean>>(),
   
+  // ── Builder Compliance & Metrics ───────────────────────────────────────────
+  // Home Warranty Insurance / Domestic Building Insurance (DBI)
+  hwiExposureLimit: numeric("hwi_exposure_limit", { precision: 15, scale: 2 }), // Max $ exposure allowed by insurer
+  hwiInsurer: text("hwi_insurer"),
+  hwiPolicyNumber: text("hwi_policy_number"),
+  hwiExpiryDate: text("hwi_expiry_date"), // ISO date string
+
+  // Builder's Licence
+  builderLicenseNumber: text("builder_license_number"),
+  builderLicenseExpiry: text("builder_license_expiry"), // ISO date string
+  builderLicenseState: text("builder_license_state").default("VIC"), // e.g. VIC, NSW, QLD
+
+  // Public Liability Insurance
+  publicLiabilityInsurer: text("public_liability_insurer"),
+  publicLiabilityLimit: numeric("public_liability_limit", { precision: 15, scale: 2 }),
+  publicLiabilityExpiry: text("public_liability_expiry"), // ISO date string
+  publicLiabilityPolicyNumber: text("public_liability_policy_number"),
+
+  // Contract Works / Project Insurance
+  contractWorksInsurer: text("contract_works_insurer"),
+  contractWorksLimit: numeric("contract_works_limit", { precision: 15, scale: 2 }),
+  contractWorksExpiry: text("contract_works_expiry"), // ISO date string
+  contractWorksPolicyNumber: text("contract_works_policy_number"),
+
+  // Workers Compensation
+  workersCompInsurer: text("workers_comp_insurer"),
+  workersCompPolicyNumber: text("workers_comp_policy_number"),
+  workersCompExpiry: text("workers_comp_expiry"), // ISO date string
+
+  // Professional Indemnity
+  profIndemnityInsurer: text("prof_indemnity_insurer"),
+  profIndemnityLimit: numeric("prof_indemnity_limit", { precision: 15, scale: 2 }),
+  profIndemnityExpiry: text("prof_indemnity_expiry"), // ISO date string
+
+  // Financial Targets
+  annualRevenueTarget: numeric("annual_revenue_target", { precision: 15, scale: 2 }),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
