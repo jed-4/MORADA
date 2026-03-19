@@ -294,17 +294,19 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     },
   });
 
-  // Create default view if none exist
+  // Create default view if none exist; auto-select first view on load
   useEffect(() => {
     if (savedViews.length === 0 && !defaultViewCreationAttempted.current) {
       defaultViewCreationAttempted.current = true;
       createDefaultView();
+    } else if (savedViews.length > 0 && !selectedViewId) {
+      setSelectedViewId(savedViews[0].id);
     }
   }, [savedViews]);
 
   const createDefaultView = async () => {
     try {
-      await apiRequest("/api/calendar-views", "POST", {
+      const newView = await apiRequest("/api/calendar-views", "POST", {
         name: "All Events",
         calendarType: "personal",
         filters: {
@@ -312,6 +314,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         },
       });
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      if (newView?.id) {
+        setSelectedViewId(newView.id);
+      }
     } catch (error) {
       console.error("Failed to create default view:", error);
     }
@@ -565,7 +570,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     if (!newViewName.trim()) return;
     
     try {
-      await apiRequest("/api/calendar-views", "POST", {
+      const newView = await apiRequest("/api/calendar-views", "POST", {
         name: newViewName,
         calendarType: "personal",
         filters,
@@ -574,6 +579,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
       setShowCreateViewDialog(false);
       setNewViewName("");
+      if (newView?.id) {
+        setSelectedViewId(newView.id);
+      }
       toast({ title: "View Created", description: "Your new view has been saved." });
     } catch (error) {
       toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
