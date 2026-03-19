@@ -551,7 +551,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   // View management
   const currentView = savedViews.find((v: CalendarView) => v.id === selectedViewId);
-  const views = savedViews.filter((v: CalendarView) => v.isDefault || v.createdBy === user.id);
+  const views = savedViews.filter((v: CalendarView) => v.isDefault || v.userId === user.id);
 
   const handleViewSelect = (view: CalendarView) => {
     setSelectedViewId(view.id);

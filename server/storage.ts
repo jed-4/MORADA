@@ -341,7 +341,7 @@ export interface IStorage {
   updateLabourEstimateTask(id: string, data: Partial<any>): Promise<any>;
   deleteLabourEstimateTask(id: string): Promise<boolean>;
   reorderLabourEstimateTasks(updates: { id: string; sortOrder: number }[]): Promise<void>;
-  getLabourTaskTemplates(companyId: string, categoryName: string): Promise<any[]>;
+  getLabourTaskTemplates(companyId: string, categoryName?: string): Promise<any[]>;
   createLabourTaskTemplate(data: any): Promise<any>;
   updateLabourTaskTemplate(id: string, data: Partial<any>): Promise<any>;
   deleteLabourTaskTemplate(id: string): Promise<boolean>;
@@ -9505,13 +9505,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getLabourTaskTemplates(companyId: string, categoryName: string): Promise<any[]> {
+  async getLabourTaskTemplates(companyId: string, categoryName?: string): Promise<any[]> {
     try {
+      const conditions = [eq(schema.labourTaskTemplates.companyId, companyId)];
+      if (categoryName) conditions.push(eq(schema.labourTaskTemplates.categoryName, categoryName));
       return await db
         .select()
         .from(schema.labourTaskTemplates)
-        .where(and(eq(schema.labourTaskTemplates.companyId, companyId), eq(schema.labourTaskTemplates.categoryName, categoryName)))
-        .orderBy(schema.labourTaskTemplates.sortOrder);
+        .where(and(...conditions))
+        .orderBy(schema.labourTaskTemplates.categoryName, schema.labourTaskTemplates.sortOrder);
     } catch (error) {
       console.error("Database error in getLabourTaskTemplates:", error);
       return [];

@@ -5756,6 +5756,7 @@ export const enoteTemplates = pgTable("enote_templates", {
   groupName: text("group_name").notNull().default("General"),
   categoryName: text("category_name").notNull(),
   brainstormNotes: text("brainstorm_notes"),
+  isRequired: boolean("is_required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
 });
 

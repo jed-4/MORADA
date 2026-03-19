@@ -4657,8 +4657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = (req.user as any)?.companyId;
       if (!companyId) return res.status(401).json({ error: "No company" });
-      const categoryName = req.query.categoryName as string;
-      if (!categoryName) return res.status(400).json({ error: "categoryName required" });
+      const categoryName = req.query.categoryName as string | undefined;
       const templates = await storage.getLabourTaskTemplates(companyId, categoryName);
       res.json(templates);
     } catch (error) {

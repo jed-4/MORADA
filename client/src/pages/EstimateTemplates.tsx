@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,8 +82,18 @@ interface LabourTemplate {
   id: string;
   categoryName: string;
   description: string;
+  subHeading?: string;
   numMen: number;
   hoursPerMan: number;
+  sortOrder: number;
+}
+
+interface EnoteTemplateWithRequired {
+  id: string;
+  groupName: string;
+  categoryName: string;
+  brainstormNotes?: string;
+  isRequired: boolean;
   sortOrder: number;
 }
 
@@ -101,16 +111,18 @@ export default function EstimateTemplates() {
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EstimateTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // Shared group state (Labour + E-Notes)
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [newGroupName, setNewGroupName] = useState("");
   // Labour Hours tab state
-  const [selectedLabourCat, setSelectedLabourCat] = useState<string>("");
-  const [newLabourCatInput, setNewLabourCatInput] = useState("");
   const [editingLabourCell, setEditingLabourCell] = useState<{ id: string; field: string } | null>(null);
   const [labourEditValue, setLabourEditValue] = useState("");
   const [newLabourDesc, setNewLabourDesc] = useState("");
+  const [newLabourSubHeading, setNewLabourSubHeading] = useState("");
+  const [hiddenSubHeadings, setHiddenSubHeadings] = useState<Set<string>>(new Set());
   // E-Notes tab state
   const [editingEnoteCell, setEditingEnoteCell] = useState<{ id: string; field: string } | null>(null);
   const [enoteEditValue, setEnoteEditValue] = useState("");
-  const [newEnoteGroup, setNewEnoteGroup] = useState("General");
   const [newEnoteCategory, setNewEnoteCategory] = useState("");
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -147,17 +159,17 @@ export default function EstimateTemplates() {
     queryKey: ["/api/estimate-templates"],
   });
 
-  // Labour Hours tab queries
+  // Labour Hours tab queries — fetch all at once, filter client-side by selectedGroup
   const { data: allLabourTemplates = [] } = useQuery<LabourTemplate[]>({
-    queryKey: ["/api/labour-task-templates", selectedLabourCat],
-    queryFn: () => fetch(`/api/labour-task-templates?categoryName=${encodeURIComponent(selectedLabourCat)}`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!selectedLabourCat,
+    queryKey: ["/api/labour-task-templates"],
+    queryFn: () => fetch("/api/labour-task-templates", { credentials: "include" }).then(r => r.json()),
+    enabled: activeTab === 'labour' || activeTab === 'enotes',
   });
 
   const addLabourTemplateMutation = useMutation({
-    mutationFn: (data: { description: string; categoryName: string; numMen?: number; hoursPerMan?: number }) =>
-      apiRequest("/api/labour-task-templates", "POST", { ...data, sortOrder: allLabourTemplates.length }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+    mutationFn: (data: { description: string; categoryName: string; subHeading?: string; numMen?: number; hoursPerMan?: number }) =>
+      apiRequest("/api/labour-task-templates", "POST", { ...data, sortOrder: allLabourTemplates.filter(t => t.categoryName === data.categoryName).length }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] }),
     onError: () => toast({ title: "Failed to add template item", variant: "destructive" }),
   });
 
@@ -165,34 +177,34 @@ export default function EstimateTemplates() {
     mutationFn: ({ id, data }: { id: string; data: Partial<LabourTemplate> }) =>
       apiRequest(`/api/labour-task-templates/${id}`, "PATCH", data),
     onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] });
-      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat]);
-      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat], old =>
+      await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates"] });
+      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates"]);
+      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates"], old =>
         old?.map(t => t.id === id ? { ...t, ...data } : t) ?? []
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedLabourCat], ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates"], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] }),
   });
 
   const deleteLabourTemplateMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/labour-task-templates/${id}`, "DELETE"),
     onMutate: async (id) => {
-      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat]);
-      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates", selectedLabourCat], old =>
+      const prev = queryClient.getQueryData<LabourTemplate[]>(["/api/labour-task-templates"]);
+      queryClient.setQueryData<LabourTemplate[]>(["/api/labour-task-templates"], old =>
         old?.filter(t => t.id !== id) ?? []
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates", selectedLabourCat], ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates", selectedLabourCat] }),
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-task-templates"], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-task-templates"] }),
   });
 
-  // E-Notes tab queries
+  // E-Notes tab queries — always load so group panel works in both Labour and E-Notes
   const { data: enoteTemplates = [] } = useQuery<EnoteTemplate[]>({
     queryKey: ["/api/enote-templates"],
-    enabled: activeTab === 'enotes',
+    enabled: activeTab === 'labour' || activeTab === 'enotes',
   });
 
   const addEnoteTemplateMutation = useMutation({
@@ -229,6 +241,54 @@ export default function EstimateTemplates() {
     onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/enote-templates"], ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
   });
+
+  // Toggle required/not-required for all E-Note rows belonging to a group
+  const toggleGroupRequiredMutation = useMutation({
+    mutationFn: async ({ groupName, isRequired }: { groupName: string; isRequired: boolean }) => {
+      const groupItems = enoteTemplates.filter((t: any) => t.groupName === groupName);
+      await Promise.all(groupItems.map((t: any) => apiRequest(`/api/enote-templates/${t.id}`, "PATCH", { isRequired })));
+    },
+    onMutate: async ({ groupName, isRequired }) => {
+      const prev = queryClient.getQueryData<any[]>(["/api/enote-templates"]);
+      queryClient.setQueryData<any[]>(["/api/enote-templates"], old =>
+        old?.map(t => t.groupName === groupName ? { ...t, isRequired } : t) ?? []
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/enote-templates"], ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
+  });
+
+  // Derived: all distinct groups (from E-Notes + Labour) in sorted order
+  const { allGroups, labourOnlyGroups } = useMemo(() => {
+    const enoteGroupNames = new Set(enoteTemplates.map((t: any) => t.groupName));
+    const labourCats = [...new Set(allLabourTemplates.map(t => t.categoryName))].sort();
+    const enoteGroupsSorted = [...new Set(enoteTemplates.map((t: any) => t.groupName))].sort();
+    // Groups that exist in E-Notes (primary list)
+    const merged = [...enoteGroupsSorted];
+    // Add labour-only groups (not in E-Notes)
+    labourCats.forEach(cat => { if (!enoteGroupNames.has(cat)) merged.push(cat); });
+    return { allGroups: merged, labourOnlyGroups: new Set(labourCats.filter(c => !enoteGroupNames.has(c))) };
+  }, [enoteTemplates, allLabourTemplates]);
+
+  // Group required status (from E-Notes — first row in group)
+  const groupRequiredStatus = useMemo(() => {
+    const map = new Map<string, boolean>();
+    enoteTemplates.forEach((t: any) => {
+      if (!map.has(t.groupName)) map.set(t.groupName, t.isRequired !== false);
+    });
+    return map;
+  }, [enoteTemplates]);
+
+  // Items for the currently selected group
+  const groupLabourItems = useMemo(() =>
+    allLabourTemplates.filter(t => t.categoryName === selectedGroup),
+    [allLabourTemplates, selectedGroup]
+  );
+  const groupEnoteItems = useMemo(() =>
+    enoteTemplates.filter((t: any) => t.groupName === selectedGroup),
+    [enoteTemplates, selectedGroup]
+  );
 
   // Fetch cost codes for import matching
   const { data: costCodes = [] } = useQuery<CostCode[]>({
@@ -731,206 +791,368 @@ export default function EstimateTemplates() {
             </button>
           </div>
         )}
-        {activeTab === 'labour' && (
-          <div className="flex items-center gap-1.5 pr-2">
-            <Input
-              placeholder="Category name…"
-              value={newLabourCatInput}
-              onChange={e => setNewLabourCatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && newLabourCatInput.trim()) { setSelectedLabourCat(newLabourCatInput.trim()); setNewLabourCatInput(""); } }}
-              className="h-6 text-xs w-44"
-            />
-            <button
-              onClick={() => { if (newLabourCatInput.trim()) { setSelectedLabourCat(newLabourCatInput.trim()); setNewLabourCatInput(""); } }}
-              className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            >
-              <Search className="w-3 h-3" />
-              <span>Load</span>
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Labour Hours Tab */}
+      {/* Labour Hours Tab — split panel */}
       {activeTab === 'labour' && (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {!selectedLabourCat ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
-              <Clock className="w-8 h-8 text-muted-foreground/40" />
-              <p>Enter a category name above and press Load to manage its templates.</p>
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          {/* LEFT: Groups panel */}
+          <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
+            <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between flex-shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
             </div>
-          ) : (
-            <>
-              <div className="px-4 pt-3 pb-1 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">{selectedLabourCat}</h3>
-                  <span className="text-xs text-muted-foreground">{allLabourTemplates.length} items</span>
-                  <button onClick={() => setSelectedLabourCat("")} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
-                    Change category
+            <div className="flex-1 overflow-y-auto">
+              {allGroups.length === 0 && (
+                <div className="px-3 py-4 text-xs text-muted-foreground italic">No groups yet</div>
+              )}
+              {allGroups.map(group => {
+                const isSelected = selectedGroup === group;
+                const labourCount = allLabourTemplates.filter(t => t.categoryName === group).length;
+                const isRequired = groupRequiredStatus.get(group);
+                const hasEnotes = !labourOnlyGroups.has(group);
+                return (
+                  <button key={group} onClick={() => setSelectedGroup(group)}
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-[#bba7db]/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    <span className="text-xs font-medium truncate w-full">{group}</span>
+                    <div className="flex items-center gap-1.5">
+                      {labourCount > 0 && <span className="text-[10px] text-muted-foreground">{labourCount} item{labourCount !== 1 ? 's' : ''}</span>}
+                      {hasEnotes && isRequired !== undefined && (
+                        <span className={`text-[9px] px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-green-700 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                          {isRequired ? 'Required' : 'Not req.'}
+                        </span>
+                      )}
+                    </div>
                   </button>
+                );
+              })}
+            </div>
+            {/* Add new group */}
+            <div className="border-t border-border/50 p-2 flex-shrink-0 flex gap-1">
+              <Input placeholder="New group…" value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newGroupName.trim()) {
+                    addEnoteTemplateMutation.mutate({ groupName: newGroupName.trim(), categoryName: "" });
+                    setSelectedGroup(newGroupName.trim());
+                    setNewGroupName("");
+                  }
+                }}
+                className="h-6 text-xs flex-1" />
+              <button
+                onClick={() => {
+                  if (newGroupName.trim()) {
+                    addEnoteTemplateMutation.mutate({ groupName: newGroupName.trim(), categoryName: "" });
+                    setSelectedGroup(newGroupName.trim());
+                    setNewGroupName("");
+                  }
+                }}
+                className="h-6 w-6 flex items-center justify-center border rounded text-muted-foreground hover-elevate flex-shrink-0"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* RIGHT: Items for selected group */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {!selectedGroup ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
+                <Clock className="w-8 h-8 text-muted-foreground/40" />
+                <p className="text-xs">Select a group to manage its labour hours</p>
+              </div>
+            ) : (
+              <>
+                {/* Column headers */}
+                <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
+                  style={{ gridTemplateColumns: "1fr 90px 70px 80px 32px" }}>
+                  <span>Description</span>
+                  <span>Sub-Heading</span>
+                  <span className="text-center">No. Men</span>
+                  <span className="text-center">Hrs / Man</span>
+                  <span />
                 </div>
-              </div>
-              {/* Column headers */}
-              <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-y border-border/50 flex-shrink-0"
-                style={{ gridTemplateColumns: "1fr 70px 80px 32px" }}>
-                <span>Description</span>
-                <span className="text-center">No. Men</span>
-                <span className="text-center">Hrs / Man</span>
-                <span />
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {allLabourTemplates.map(t => (
-                  <div key={t.id} className="grid items-center border-b border-border/10 group/lrow min-h-[34px] px-4"
-                    style={{ gridTemplateColumns: "1fr 70px 80px 32px" }}>
-                    {/* Description */}
-                    <div className="pr-2 py-0.5">
-                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'description' ? (
-                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
-                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); } }}
-                          className="h-6 text-sm focus-visible:ring-0 border-primary" />
-                      ) : (
-                        <span className="text-sm cursor-pointer hover:text-foreground truncate block"
-                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'description' }); setLabourEditValue(t.description); }}>
-                          {t.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
-                        </span>
-                      )}
-                    </div>
-                    {/* No. Men */}
-                    <div className="flex justify-center">
-                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'numMen' ? (
-                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
-                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); } }}
-                          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-14" />
-                      ) : (
-                        <span className="text-sm cursor-pointer text-center w-full"
-                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'numMen' }); setLabourEditValue(String(t.numMen)); }}>
-                          {t.numMen}
-                        </span>
-                      )}
-                    </div>
-                    {/* Hrs/Man */}
-                    <div className="flex justify-center">
-                      {editingLabourCell?.id === t.id && editingLabourCell.field === 'hoursPerMan' ? (
-                        <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
-                          onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); } }}
-                          className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20" />
-                      ) : (
-                        <span className="text-sm cursor-pointer text-center w-full"
-                          onClick={() => { setEditingLabourCell({ id: t.id, field: 'hoursPerMan' }); setLabourEditValue(String(t.hoursPerMan)); }}>
-                          {t.hoursPerMan}
-                        </span>
-                      )}
-                    </div>
-                    {/* Delete */}
-                    <div className="flex justify-center opacity-0 group-hover/lrow:opacity-100 transition-opacity">
-                      <button onClick={() => deleteLabourTemplateMutation.mutate(t.id)}
-                        className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Add row */}
-              <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
-                <Input placeholder="Add item…" value={newLabourDesc} onChange={e => setNewLabourDesc(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedLabourCat }); setNewLabourDesc(""); } }}
-                  className="h-7 text-sm flex-1" />
-                <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
-                  onClick={() => { if (newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedLabourCat }); setNewLabourDesc(""); } }}>
-                  <Plus className="w-3 h-3 mr-1" />Add
-                </Button>
-              </div>
-            </>
-          )}
+                <div className="flex-1 overflow-y-auto">
+                  {(() => {
+                    const items = groupLabourItems;
+                    if (items.length === 0) return (
+                      <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
+                        No items yet — add one below
+                      </div>
+                    );
+                    // Group by subHeading to render separator rows
+                    const rendered: ReactNode[] = [];
+                    let lastSubHeading: string | null | undefined = undefined;
+                    items.forEach(t => {
+                      const sh = t.subHeading || "";
+                      if (sh !== lastSubHeading) {
+                        lastSubHeading = sh;
+                        if (sh) {
+                          rendered.push(
+                            <div key={`sh-${sh}`} className="flex items-center gap-2 px-4 py-1 bg-muted/40 border-b border-border/30">
+                              {editingLabourCell?.id === `sh-${sh}` ? (
+                                <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                                  onBlur={() => {
+                                    // rename all items in this subHeading
+                                    items.filter(i => i.subHeading === sh).forEach(i =>
+                                      updateLabourTemplateMutation.mutate({ id: i.id, data: { subHeading: labourEditValue } })
+                                    );
+                                    setEditingLabourCell(null);
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === 'Escape') {
+                                      if (e.key === 'Enter') {
+                                        items.filter(i => i.subHeading === sh).forEach(i =>
+                                          updateLabourTemplateMutation.mutate({ id: i.id, data: { subHeading: labourEditValue } })
+                                        );
+                                      }
+                                      setEditingLabourCell(null);
+                                    }
+                                  }}
+                                  className="h-5 text-xs focus-visible:ring-0 border-primary flex-1" />
+                              ) : (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground"
+                                  onClick={() => { setEditingLabourCell({ id: `sh-${sh}`, field: 'subHeading' }); setLabourEditValue(sh); }}>
+                                  {sh}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                      }
+                      rendered.push(
+                        <div key={t.id} className="grid items-center border-b border-border/10 group/lrow min-h-[34px] px-4"
+                          style={{ gridTemplateColumns: "1fr 90px 70px 80px 32px" }}>
+                          {/* Description */}
+                          <div className="pr-2 py-0.5">
+                            {editingLabourCell?.id === t.id && editingLabourCell.field === 'description' ? (
+                              <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                                onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { description: labourEditValue } }); setEditingLabourCell(null); } }}
+                                className="h-6 text-sm focus-visible:ring-0 border-primary" />
+                            ) : (
+                              <span className="text-sm cursor-pointer hover:text-foreground truncate block"
+                                onClick={() => { setEditingLabourCell({ id: t.id, field: 'description' }); setLabourEditValue(t.description); }}>
+                                {t.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
+                              </span>
+                            )}
+                          </div>
+                          {/* Sub-heading */}
+                          <div className="pr-2 py-0.5">
+                            {editingLabourCell?.id === t.id && editingLabourCell.field === 'subHeading' ? (
+                              <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                                onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { subHeading: labourEditValue || null } }); setEditingLabourCell(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { subHeading: labourEditValue || null } }); setEditingLabourCell(null); } }}
+                                className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                            ) : (
+                              <span className="text-xs cursor-pointer text-muted-foreground hover:text-foreground truncate block"
+                                onClick={() => { setEditingLabourCell({ id: t.id, field: 'subHeading' }); setLabourEditValue(t.subHeading || ""); }}>
+                                {t.subHeading || <span className="italic text-[10px]">—</span>}
+                              </span>
+                            )}
+                          </div>
+                          {/* No. Men */}
+                          <div className="flex justify-center">
+                            {editingLabourCell?.id === t.id && editingLabourCell.field === 'numMen' ? (
+                              <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                                onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { numMen: parseFloat(labourEditValue) || 1 } }); setEditingLabourCell(null); } }}
+                                className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-14" />
+                            ) : (
+                              <span className="text-sm cursor-pointer text-center w-full"
+                                onClick={() => { setEditingLabourCell({ id: t.id, field: 'numMen' }); setLabourEditValue(String(t.numMen)); }}>
+                                {t.numMen}
+                              </span>
+                            )}
+                          </div>
+                          {/* Hrs/Man */}
+                          <div className="flex justify-center">
+                            {editingLabourCell?.id === t.id && editingLabourCell.field === 'hoursPerMan' ? (
+                              <Input autoFocus value={labourEditValue} onChange={e => setLabourEditValue(e.target.value)}
+                                onBlur={() => { updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateLabourTemplateMutation.mutate({ id: t.id, data: { hoursPerMan: parseFloat(labourEditValue) || 0 } }); setEditingLabourCell(null); } }}
+                                className="h-6 text-sm text-center focus-visible:ring-0 border-primary w-20" />
+                            ) : (
+                              <span className="text-sm cursor-pointer text-center w-full"
+                                onClick={() => { setEditingLabourCell({ id: t.id, field: 'hoursPerMan' }); setLabourEditValue(String(t.hoursPerMan)); }}>
+                                {t.hoursPerMan}
+                              </span>
+                            )}
+                          </div>
+                          {/* Delete */}
+                          <div className="flex justify-center opacity-0 group-hover/lrow:opacity-100 transition-opacity">
+                            <button onClick={() => deleteLabourTemplateMutation.mutate(t.id)}
+                              className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    });
+                    return rendered;
+                  })()}
+                </div>
+                {/* Add row */}
+                <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
+                  <Input placeholder="Description…" value={newLabourDesc} onChange={e => setNewLabourDesc(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedGroup, subHeading: newLabourSubHeading || undefined }); setNewLabourDesc(""); } }}
+                    className="h-7 text-sm flex-1" />
+                  <Input placeholder="Sub-heading (optional)" value={newLabourSubHeading} onChange={e => setNewLabourSubHeading(e.target.value)}
+                    className="h-7 text-xs w-36" />
+                  <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
+                    onClick={() => { if (newLabourDesc.trim()) { addLabourTemplateMutation.mutate({ description: newLabourDesc.trim(), categoryName: selectedGroup, subHeading: newLabourSubHeading || undefined }); setNewLabourDesc(""); } }}>
+                    <Plus className="w-3 h-3 mr-1" />Add
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {/* E-Notes Tab */}
+      {/* E-Notes Tab — split panel mirroring Labour layout */}
       {activeTab === 'enotes' && (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Column headers */}
-          <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
-            style={{ gridTemplateColumns: "140px 1fr 1fr 32px" }}>
-            <span>Group</span>
-            <span>Category</span>
-            <span>Default Notes</span>
-            <span />
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {enoteTemplates.length === 0 && (
-              <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-                No E-Notes templates yet. Add one below.
-              </div>
-            )}
-            {enoteTemplates.map(t => (
-              <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
-                style={{ gridTemplateColumns: "140px 1fr 1fr 32px" }}>
-                {/* Group */}
-                <div className="pr-2 py-0.5">
-                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'groupName' ? (
-                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
-                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { groupName: enoteEditValue } }); setEditingEnoteCell(null); }}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { groupName: enoteEditValue } }); setEditingEnoteCell(null); } }}
-                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
-                  ) : (
-                    <span className="text-xs cursor-pointer hover:text-foreground truncate block"
-                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'groupName' }); setEnoteEditValue(t.groupName); }}>
-                      {t.groupName}
-                    </span>
-                  )}
-                </div>
-                {/* Category */}
-                <div className="pr-2 py-0.5">
-                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
-                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
-                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); }}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); } }}
-                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
-                  ) : (
-                    <span className="text-xs cursor-pointer hover:text-foreground truncate block"
-                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'categoryName' }); setEnoteEditValue(t.categoryName); }}>
-                      {t.categoryName || <span className="italic text-muted-foreground">Click to edit…</span>}
-                    </span>
-                  )}
-                </div>
-                {/* Notes */}
-                <div className="pr-2 py-0.5">
-                  {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'brainstormNotes' ? (
-                    <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
-                      onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); }}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); } }}
-                      className="h-6 text-xs focus-visible:ring-0 border-primary" />
-                  ) : (
-                    <span className="text-xs cursor-pointer hover:text-foreground truncate block text-muted-foreground"
-                      onClick={() => { setEditingEnoteCell({ id: t.id, field: 'brainstormNotes' }); setEnoteEditValue(t.brainstormNotes ?? ""); }}>
-                      {t.brainstormNotes || <span className="italic">Click to add notes…</span>}
-                    </span>
-                  )}
-                </div>
-                {/* Delete */}
-                <div className="flex justify-center opacity-0 group-hover/erow:opacity-100 transition-opacity">
-                  <button onClick={() => deleteEnoteTemplateMutation.mutate(t.id)}
-                    className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
-                    <Trash2 className="w-3 h-3" />
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          {/* LEFT: Groups panel */}
+          <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
+            <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between flex-shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {allGroups.length === 0 && (
+                <div className="px-3 py-4 text-xs text-muted-foreground italic">No groups yet</div>
+              )}
+              {allGroups.map(group => {
+                const isSelected = selectedGroup === group;
+                const enoteCount = enoteTemplates.filter((t: any) => t.groupName === group && t.categoryName).length;
+                const isRequired = groupRequiredStatus.get(group);
+                const hasEnotes = !labourOnlyGroups.has(group);
+                return (
+                  <button key={group} onClick={() => setSelectedGroup(group)}
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-[#bba7db]/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    <div className="flex items-center justify-between gap-1 w-full">
+                      <span className="text-xs font-medium truncate">{group}</span>
+                      {hasEnotes && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            toggleGroupRequiredMutation.mutate({ groupName: group, isRequired: !(isRequired !== false) });
+                          }}
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 border transition-colors ${
+                            isRequired !== false
+                              ? 'bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20'
+                              : 'bg-muted text-muted-foreground border-border'
+                          }`}
+                          title="Click to toggle Required/Not Required"
+                        >
+                          {isRequired !== false ? 'Required' : 'Not Req.'}
+                        </button>
+                      )}
+                    </div>
+                    {enoteCount > 0 && <span className="text-[10px] text-muted-foreground">{enoteCount} categor{enoteCount !== 1 ? 'ies' : 'y'}</span>}
                   </button>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
+            {/* Add new group */}
+            <div className="border-t border-border/50 p-2 flex-shrink-0 flex gap-1">
+              <Input placeholder="New group…" value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newGroupName.trim()) {
+                    addEnoteTemplateMutation.mutate({ groupName: newGroupName.trim(), categoryName: "" });
+                    setSelectedGroup(newGroupName.trim());
+                    setNewGroupName("");
+                  }
+                }}
+                className="h-6 text-xs flex-1" />
+              <button
+                onClick={() => {
+                  if (newGroupName.trim()) {
+                    addEnoteTemplateMutation.mutate({ groupName: newGroupName.trim(), categoryName: "" });
+                    setSelectedGroup(newGroupName.trim());
+                    setNewGroupName("");
+                  }
+                }}
+                className="h-6 w-6 flex items-center justify-center border rounded text-muted-foreground hover-elevate flex-shrink-0"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          {/* Add row */}
-          <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
-            <Input placeholder="Group" value={newEnoteGroup} onChange={e => setNewEnoteGroup(e.target.value)} className="h-7 text-xs w-28" />
-            <Input placeholder="Category name…" value={newEnoteCategory} onChange={e => setNewEnoteCategory(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: newEnoteGroup || "General", categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}
-              className="h-7 text-xs flex-1" />
-            <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
-              onClick={() => { if (newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: newEnoteGroup || "General", categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}>
-              <Plus className="w-3 h-3 mr-1" />Add
-            </Button>
+
+          {/* RIGHT: Categories for selected group */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {!selectedGroup ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground flex-col gap-2">
+                <StickyNote className="w-8 h-8 text-muted-foreground/40" />
+                <p className="text-xs">Select a group to manage its E-Notes categories</p>
+              </div>
+            ) : (
+              <>
+                {/* Column headers */}
+                <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
+                  style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                  <span>Category</span>
+                  <span>Default Notes</span>
+                  <span />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {groupEnoteItems.filter((t: any) => t.categoryName).length === 0 && (
+                    <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
+                      No categories yet — add one below
+                    </div>
+                  )}
+                  {groupEnoteItems.filter((t: any) => t.categoryName).map((t: any) => (
+                    <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
+                      style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
+                      {/* Category */}
+                      <div className="pr-2 py-0.5">
+                        {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
+                          <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
+                            onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { categoryName: enoteEditValue } }); setEditingEnoteCell(null); } }}
+                            className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                        ) : (
+                          <span className="text-sm cursor-pointer hover:text-foreground truncate block"
+                            onClick={() => { setEditingEnoteCell({ id: t.id, field: 'categoryName' }); setEnoteEditValue(t.categoryName); }}>
+                            {t.categoryName || <span className="italic text-muted-foreground text-xs">Click to edit…</span>}
+                          </span>
+                        )}
+                      </div>
+                      {/* Notes */}
+                      <div className="pr-2 py-0.5">
+                        {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'brainstormNotes' ? (
+                          <Input autoFocus value={enoteEditValue} onChange={e => setEnoteEditValue(e.target.value)}
+                            onBlur={() => { updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { if (e.key === 'Enter') updateEnoteTemplateMutation.mutate({ id: t.id, data: { brainstormNotes: enoteEditValue } }); setEditingEnoteCell(null); } }}
+                            className="h-6 text-xs focus-visible:ring-0 border-primary" />
+                        ) : (
+                          <span className="text-xs cursor-pointer hover:text-foreground truncate block text-muted-foreground"
+                            onClick={() => { setEditingEnoteCell({ id: t.id, field: 'brainstormNotes' }); setEnoteEditValue(t.brainstormNotes ?? ""); }}>
+                            {t.brainstormNotes || <span className="italic">Click to add notes…</span>}
+                          </span>
+                        )}
+                      </div>
+                      {/* Delete */}
+                      <div className="flex justify-center opacity-0 group-hover/erow:opacity-100 transition-opacity">
+                        <button onClick={() => deleteEnoteTemplateMutation.mutate(t.id)}
+                          className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Add row */}
+                <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
+                  <Input placeholder="Category name…" value={newEnoteCategory} onChange={e => setNewEnoteCategory(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: selectedGroup, categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}
+                    className="h-7 text-sm flex-1" />
+                  <Button size="sm" variant="outline" className="h-7 px-3 text-xs"
+                    onClick={() => { if (newEnoteCategory.trim()) { addEnoteTemplateMutation.mutate({ groupName: selectedGroup, categoryName: newEnoteCategory.trim() }); setNewEnoteCategory(""); } }}>
+                    <Plus className="w-3 h-3 mr-1" />Add
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
