@@ -567,6 +567,13 @@ export default function EstimateDetail() {
     enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
+  // E-Notes stats for the compact progress bar in the tab bar
+  const { data: enotesStats = [] } = useQuery<any[]>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "enotes"],
+    queryFn: () => fetch(`/api/estimates/${effectiveEstimateId}/enotes`, { credentials: "include" }).then(r => r.json()),
+    enabled: estimateTab === 'enotes' && !!effectiveEstimateId && !isNewEstimate,
+  });
+
   const getRevLabel = (v: number) => "Rev " + String.fromCharCode(64 + v);
 
   // Fetch PO links for estimate items (which items have linked purchase orders)
@@ -5085,8 +5092,18 @@ export default function EstimateDetail() {
               {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'E-Notes' : 'Labour'}
             </button>
           ))}
-          {/* Spacer + Checklist bar */}
+          {/* Spacer + E-Notes progress bar + Checklist bar */}
           <div className="flex-1" />
+          {estimateTab === 'enotes' && enotesStats.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
+              <span className="tabular-nums">{enotesStats.filter((r: any) => r.completed).length}/{enotesStats.length}</span>
+              <div className="w-20 bg-muted rounded-full h-1.5 overflow-hidden">
+                <div className="bg-[#bba7db] h-full rounded-full transition-all"
+                  style={{ width: `${(enotesStats.filter((r: any) => r.completed).length / enotesStats.length) * 100}%` }} />
+              </div>
+              <span className="text-[10px]">reviewed</span>
+            </div>
+          )}
           {effectiveEstimateId && project?.id && (
             <EstimateChecklistPopover estimateId={effectiveEstimateId} projectId={project.id} wide />
           )}

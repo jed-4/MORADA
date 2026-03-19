@@ -325,7 +325,9 @@ export interface IStorage {
 
   // E-Notes (estimate scope checklist)
   getEstimateEnotes(estimateId: string): Promise<any[]>;
+  createEstimateEnote(data: any): Promise<any>;
   updateEstimateEnote(id: string, data: Partial<any>): Promise<any>;
+  deleteEstimateEnote(id: string): Promise<boolean>;
 
   // Labour Estimates
   getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined>;
@@ -9288,6 +9290,16 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async createEstimateEnote(data: any): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.estimateEnotes).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createEstimateEnote:", error);
+      throw error;
+    }
+  }
+
   async updateEstimateEnote(id: string, data: Partial<any>): Promise<any> {
     try {
       const [updated] = await db
@@ -9299,6 +9311,16 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in updateEstimateEnote:", error);
       throw error;
+    }
+  }
+
+  async deleteEstimateEnote(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.estimateEnotes).where(eq(schema.estimateEnotes.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEstimateEnote:", error);
+      return false;
     }
   }
 

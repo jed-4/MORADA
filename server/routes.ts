@@ -4540,12 +4540,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/estimates/:id/enotes", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getEstimateEnotes(req.params.id);
+      const row = await storage.createEstimateEnote({
+        ...req.body,
+        estimateId: req.params.id,
+        sortOrder: existing.length,
+      });
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create e-note" });
+    }
+  });
+
   app.patch("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateEstimateEnote(req.params.categoryId, req.body);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update e-note" });
+    }
+  });
+
+  app.delete("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEstimateEnote(req.params.categoryId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete e-note" });
     }
   });
 
