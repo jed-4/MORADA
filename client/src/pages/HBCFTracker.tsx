@@ -1,25 +1,41 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface HbcfProject {
+interface HbcfRow {
   id: string;
   companyId: string;
+  projectId?: string | null;
   name: string;
   maxValue: string;
   statuses: Record<string, boolean>;
   color: string | null;
   sortOrder: number;
+}
+
+interface SystemProject {
+  id: string;
+  name: string;
+  color?: string | null;
+  contractCost?: number | null;
+  constructionNumber?: string | null;
+  jobNumber?: string | null;
+  currentSystemPhase?: string | null;
 }
 
 interface CompanySettings {
@@ -28,7 +44,7 @@ interface CompanySettings {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const PROJECT_COLORS = [
+const ROW_COLORS = [
   "#bba7db", "#60a5fa", "#34d399", "#fbbf24", "#f87171",
   "#a78bfa", "#38bdf8", "#4ade80", "#fb923c", "#e879f9",
 ];
@@ -43,11 +59,9 @@ function fmtFull(val: number) {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(val);
 }
 
-// Generate all Mondays for a given year
 function getWeeksForYear(year: number): Date[] {
   const dates: Date[] = [];
   const d = new Date(year, 0, 1);
-  // Advance to first Monday
   while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
   while (d.getFullYear() === year) {
     dates.push(new Date(d));
@@ -60,106 +74,151 @@ function toKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDateRow(d: Date): string {
-  return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-}
-
-function isCurrentWeek(d: Date): boolean {
+function currentMondayKey(): string {
   const now = new Date();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  const dCopy = new Date(d);
-  dCopy.setHours(0, 0, 0, 0);
-  return dCopy.getTime() === monday.getTime();
+  const d = new Date(now);
+  d.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
 }
 
-// ─── Inline name editor ───────────────────────────────────────────────────────
+// ─── Inline value editors ─────────────────────────────────────────────────────
 
-function InlineNameEdit({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function InlineName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1">
-        <Input
-          autoFocus
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter") { onSave(draft); setEditing(false); }
-            if (e.key === "Escape") { setDraft(value); setEditing(false); }
-          }}
-          className="h-6 text-xs w-28 px-1"
-        />
-        <button onClick={() => { onSave(draft); setEditing(false); }}><Check className="w-3 h-3 text-green-500" /></button>
-        <button onClick={() => { setDraft(value); setEditing(false); }}><X className="w-3 h-3 text-muted-foreground" /></button>
-      </div>
-    );
-  }
+  if (editing) return (
+    <div className="flex items-center gap-1 w-full">
+      <Input
+        autoFocus value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter") { onSave(draft); setEditing(false); }
+          if (e.key === "Escape") { setDraft(value); setEditing(false); }
+        }}
+        className="h-5 text-xs px-1 w-full"
+      />
+      <button onClick={() => { onSave(draft); setEditing(false); }}><Check className="w-3 h-3 text-green-500" /></button>
+      <button onClick={() => { setDraft(value); setEditing(false); }}><X className="w-3 h-3 text-muted-foreground" /></button>
+    </div>
+  );
+
   return (
     <button
       onClick={() => { setDraft(value); setEditing(true); }}
-      className="flex items-center gap-1 group/ne text-xs font-medium text-left w-full"
+      className="flex items-center gap-0.5 group/ne text-xs font-semibold text-left w-full min-w-0"
     >
       <span className="truncate">{value}</span>
-      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/ne:opacity-50 flex-shrink-0" />
+      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/ne:opacity-40 flex-shrink-0" />
+    </button>
+  );
+}
+
+function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+
+  if (editing) return (
+    <div className="flex items-center gap-0.5 w-full">
+      <span className="text-[10px] text-muted-foreground">$</span>
+      <Input
+        autoFocus type="number" value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => { onSave(parseFloat(draft) || 0); setEditing(false); }}
+        onKeyDown={e => {
+          if (e.key === "Enter") { onSave(parseFloat(draft) || 0); setEditing(false); }
+          if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
+        }}
+        className="h-5 text-[10px] px-1 w-full"
+      />
+    </div>
+  );
+
+  return (
+    <button
+      onClick={() => { setDraft(String(value)); setEditing(true); }}
+      className="flex items-center gap-0.5 group/ia text-[10px] text-muted-foreground hover:text-foreground w-full"
+    >
+      <span className="tabular-nums">{value > 0 ? fmt(value) : "Set amount…"}</span>
+      <Pencil className="w-2 h-2 opacity-0 group-hover/ia:opacity-40 flex-shrink-0" />
     </button>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+const LEFT_COL_W = 176; // px - sticky left column width
+const CELL_W = 56;       // px - each date cell
+
 export default function HBCFTracker() {
   const { toast } = useToast();
   const [year, setYear] = useState(new Date().getFullYear());
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectValue, setNewProjectValue] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to current week on load
-  const currentWeekRef = useRef<HTMLTableRowElement>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState("__none__");
+  const [newAmount, setNewAmount] = useState("");
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const nowColRef = useRef<HTMLTableCellElement>(null);
   const didScroll = useRef(false);
-
-  const scrollToNow = useCallback(() => {
-    if (!didScroll.current && currentWeekRef.current) {
-      currentWeekRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
-      didScroll.current = true;
-    }
-  }, []);
 
   const { data: settings = {} as CompanySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
   });
 
-  const { data: projects = [], isLoading } = useQuery<HbcfProject[]>({
+  const { data: rows = [], isLoading } = useQuery<HbcfRow[]>({
     queryKey: ["/api/hbcf-projects"],
     queryFn: () => fetch("/api/hbcf-projects", { credentials: "include" }).then(r => r.json()),
   });
 
+  const { data: systemProjects = [] } = useQuery<SystemProject[]>({
+    queryKey: ["/api/projects"],
+  });
+
   const limit = settings.hwiExposureLimit ? parseFloat(settings.hwiExposureLimit) : null;
-
   const weeks = useMemo(() => getWeeksForYear(year), [year]);
+  const nowKey = currentMondayKey();
 
-  // Toggle a cell (project × date)
+  // Auto-scroll to current week
+  useEffect(() => {
+    if (!didScroll.current && nowColRef.current && tableContainerRef.current) {
+      const container = tableContainerRef.current;
+      const cell = nowColRef.current;
+      const scrollLeft = cell.offsetLeft - LEFT_COL_W - container.clientWidth / 2 + CELL_W / 2;
+      container.scrollLeft = Math.max(0, scrollLeft);
+      didScroll.current = true;
+    }
+  }, [rows, weeks]);
+
+  // When year changes, reset scroll flag
+  useEffect(() => { didScroll.current = false; }, [year]);
+
+  // Month groups for header
+  const monthGroups = useMemo(() => {
+    const groups: { label: string; count: number }[] = [];
+    weeks.forEach(w => {
+      const label = w.toLocaleDateString("en-AU", { month: "short" });
+      const last = groups[groups.length - 1];
+      if (last?.label === label) last.count++;
+      else groups.push({ label, count: 1 });
+    });
+    return groups;
+  }, [weeks]);
+
+  // Toggle a cell
   const toggleMutation = useMutation({
-    mutationFn: ({ project, dateKey, active }: { project: HbcfProject; dateKey: string; active: boolean }) => {
-      const newStatuses = { ...project.statuses, [dateKey]: active };
-      // Clean up false values to keep the object lean
-      if (!active) delete newStatuses[dateKey];
-      return apiRequest(`/api/hbcf-projects/${project.id}`, "PATCH", { statuses: newStatuses });
+    mutationFn: ({ row, dateKey, active }: { row: HbcfRow; dateKey: string; active: boolean }) => {
+      const ns = { ...row.statuses };
+      if (active) ns[dateKey] = true; else delete ns[dateKey];
+      return apiRequest(`/api/hbcf-projects/${row.id}`, "PATCH", { statuses: ns });
     },
-    onMutate: async ({ project, dateKey, active }) => {
+    onMutate: async ({ row, dateKey, active }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfProject[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfProject[]>(["/api/hbcf-projects"], old =>
-        old?.map(p => {
-          if (p.id !== project.id) return p;
-          const newStatuses = { ...p.statuses };
-          if (active) newStatuses[dateKey] = true;
-          else delete newStatuses[dateKey];
-          return { ...p, statuses: newStatuses };
+      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
+      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old =>
+        old?.map(r => {
+          if (r.id !== row.id) return r;
+          const ns = { ...r.statuses };
+          if (active) ns[dateKey] = true; else delete ns[dateKey];
+          return { ...r, statuses: ns };
         }) ?? []
       );
       return { prev };
@@ -171,30 +230,27 @@ export default function HBCFTracker() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
   });
 
-  // Update project field (name or maxValue)
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<HbcfProject> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<HbcfRow> }) =>
       apiRequest(`/api/hbcf-projects/${id}`, "PATCH", data),
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfProject[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfProject[]>(["/api/hbcf-projects"], old =>
-        old?.map(p => p.id === id ? { ...p, ...data } : p) ?? []
+      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
+      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old =>
+        old?.map(r => r.id === id ? { ...r, ...data } : r) ?? []
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
-      queryClient.setQueryData(["/api/hbcf-projects"], ctx?.prev);
-    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/hbcf-projects"], ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<HbcfProject>) => apiRequest("/api/hbcf-projects", "POST", data),
+    mutationFn: (data: Partial<HbcfRow>) => apiRequest("/api/hbcf-projects", "POST", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] });
-      setNewProjectName("");
-      setNewProjectValue("");
+      setSelectedProjectId("__none__");
+      setNewAmount("");
     },
     onError: () => toast({ title: "Failed to add project", variant: "destructive" }),
   });
@@ -203,10 +259,8 @@ export default function HBCFTracker() {
     mutationFn: (id: string) => apiRequest(`/api/hbcf-projects/${id}`, "DELETE"),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["/api/hbcf-projects"] });
-      const prev = queryClient.getQueryData<HbcfProject[]>(["/api/hbcf-projects"]);
-      queryClient.setQueryData<HbcfProject[]>(["/api/hbcf-projects"], old =>
-        old?.filter(p => p.id !== id) ?? []
-      );
+      const prev = queryClient.getQueryData<HbcfRow[]>(["/api/hbcf-projects"]);
+      queryClient.setQueryData<HbcfRow[]>(["/api/hbcf-projects"], old => old?.filter(r => r.id !== id) ?? []);
       return { prev };
     },
     onError: (_e, _v, ctx) => {
@@ -216,42 +270,57 @@ export default function HBCFTracker() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/hbcf-projects"] }),
   });
 
-  const handleAddProject = () => {
-    const name = newProjectName.trim();
-    const val = parseFloat(newProjectValue.replace(/[^0-9.]/g, ""));
-    if (!name || isNaN(val)) return;
-    const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
-    createMutation.mutate({ name, maxValue: String(val), color, sortOrder: projects.length });
+  // Projects in tracker (by their linked projectId)
+  const trackedProjectIds = new Set(rows.map(r => r.projectId).filter(Boolean));
+
+  // Available system projects to add
+  const availableProjects = systemProjects.filter(
+    p => !trackedProjectIds.has(p.id) &&
+      (p.currentSystemPhase === "construction" || p.currentSystemPhase === "pre_construction" || p.currentSystemPhase === "post_construction" || !p.currentSystemPhase)
+  );
+
+  const selectedSysProject = selectedProjectId !== "__none__"
+    ? systemProjects.find(p => p.id === selectedProjectId)
+    : null;
+
+  const handleAdd = () => {
+    if (!selectedSysProject) return;
+    const val = parseFloat(newAmount.replace(/[^0-9.]/g, ""));
+    // Pre-fill from contract cost (stored in cents) if no amount given
+    const maxValue = !isNaN(val) && val > 0
+      ? val
+      : selectedSysProject.contractCost
+        ? selectedSysProject.contractCost / 100
+        : 0;
+    const color = selectedSysProject.color ?? ROW_COLORS[rows.length % ROW_COLORS.length];
+    createMutation.mutate({
+      projectId: selectedSysProject.id,
+      name: selectedSysProject.name,
+      maxValue: String(maxValue),
+      color,
+      sortOrder: rows.length,
+    });
   };
 
-  const handleToggle = (project: HbcfProject, dateKey: string) => {
-    const currentlyActive = !!project.statuses[dateKey];
-    toggleMutation.mutate({ project, dateKey, active: !currentlyActive });
-  };
+  // Column totals
+  const colTotal = (dateKey: string) =>
+    rows.reduce((sum, r) => sum + (r.statuses[dateKey] ? parseFloat(r.maxValue) || 0 : 0), 0);
 
-  // Active count + total for a given week
-  const weeklyTotal = (dateKey: string) =>
-    projects.reduce((sum, p) => sum + (p.statuses[dateKey] ? parseFloat(p.maxValue) || 0 : 0), 0);
-
-  // Colour coding for total cell
-  function totalClass(total: number): string {
-    if (!limit) return "text-foreground";
+  function totalStyle(total: number): { bg: string; text: string } {
+    if (total === 0) return { bg: "transparent", text: "var(--muted-foreground)" };
+    if (!limit) return { bg: "transparent", text: "inherit" };
     const pct = total / limit;
-    if (pct > 1) return "bg-red-500/20 text-red-700 dark:text-red-400 font-bold";
-    if (pct >= 0.8) return "bg-orange-500/15 text-orange-700 dark:text-orange-400 font-semibold";
-    if (total > 0) return "bg-green-500/10 text-green-700 dark:text-green-400";
-    return "text-muted-foreground";
+    if (pct > 1) return { bg: "rgba(239,68,68,0.15)", text: "rgb(185,28,28)" };
+    if (pct >= 0.8) return { bg: "rgba(249,115,22,0.12)", text: "rgb(154,52,18)" };
+    return { bg: "rgba(34,197,94,0.08)", text: "rgb(21,128,45)" };
   }
 
-  // Current peak HBCF value (max across all dates this year)
+  // Peak exposure
   const peakTotal = useMemo(() => {
     let peak = 0;
-    weeks.forEach(w => {
-      const t = weeklyTotal(toKey(w));
-      if (t > peak) peak = t;
-    });
+    weeks.forEach(w => { const t = colTotal(toKey(w)); if (t > peak) peak = t; });
     return peak;
-  }, [projects, weeks]);
+  }, [rows, weeks]);
 
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading HBCF tracker…</div>;
@@ -259,8 +328,8 @@ export default function HBCFTracker() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Summary bar */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-border/50 flex flex-wrap items-center gap-4">
+      {/* ── Summary bar ── */}
+      <div className="flex-shrink-0 px-4 py-2.5 border-b border-border/50 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-semibold">HBCF / DBI Limits Tracker</span>
@@ -269,26 +338,27 @@ export default function HBCFTracker() {
         <div className="flex items-center gap-3 flex-wrap">
           {limit ? (
             <>
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="text-xs flex items-center gap-1.5">
                 <span className="text-muted-foreground">Limit:</span>
                 <span className="font-semibold tabular-nums">{fmtFull(limit)}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-muted-foreground">Peak this year:</span>
-                <span className={`font-semibold tabular-nums ${limit && peakTotal > limit ? 'text-red-600 dark:text-red-400' : peakTotal / (limit || 1) >= 0.8 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
-                  {fmtFull(peakTotal)}
-                </span>
+              <div className="text-xs flex items-center gap-1.5">
+                <span className="text-muted-foreground">Peak {year}:</span>
+                <span className={`font-semibold tabular-nums ${
+                  peakTotal > limit ? "text-red-700 dark:text-red-400" :
+                  peakTotal / limit >= 0.8 ? "text-orange-700 dark:text-orange-400" :
+                  peakTotal > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground"
+                }`}>{fmtFull(peakTotal)}</span>
               </div>
-              {/* Mini progress bar */}
-              <div className="w-32 bg-muted rounded-full h-2 overflow-hidden">
+              <div className="w-28 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${peakTotal > limit ? 'bg-destructive' : peakTotal / limit >= 0.8 ? 'bg-orange-500' : 'bg-[#bba7db]'}`}
+                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-orange-500" : "bg-[#bba7db]"}`}
                   style={{ width: `${Math.min((peakTotal / limit) * 100, 100)}%` }}
                 />
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5" />
               Set your HWI exposure limit in the Compliance tab to enable colour coding
             </div>
@@ -297,199 +367,248 @@ export default function HBCFTracker() {
 
         {/* Year nav */}
         <div className="flex items-center gap-1 ml-auto">
-          <Button size="icon" variant="ghost" onClick={() => { setYear(y => y - 1); didScroll.current = false; }}>
+          <Button size="icon" variant="ghost" onClick={() => setYear(y => y - 1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <span className="text-sm font-semibold w-12 text-center tabular-nums">{year}</span>
-          <Button size="icon" variant="ghost" onClick={() => { setYear(y => y + 1); didScroll.current = false; }}>
+          <Button size="icon" variant="ghost" onClick={() => setYear(y => y + 1)}>
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto min-h-0" ref={scrollRef}>
-        {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-            <ShieldCheck className="w-12 h-12 text-muted-foreground/20" />
-            <p className="text-sm">No projects yet — add your first project below</p>
-          </div>
-        ) : (
-          <table className="w-full border-collapse text-xs" style={{ tableLayout: "fixed" }}>
-            <colgroup>
-              {/* Date col */}
-              <col style={{ width: "72px" }} />
-              {/* HBCF Active col */}
-              <col style={{ width: "96px" }} />
-              {/* Project cols */}
-              {projects.map(p => <col key={p.id} style={{ width: "92px" }} />)}
-            </colgroup>
-            <thead className="sticky top-0 z-20 bg-background">
-              {/* Project names header */}
-              <tr className="border-b border-border">
-                <th className="text-left px-2 py-1.5 text-muted-foreground font-medium text-[10px] uppercase tracking-wide bg-muted/30">Date</th>
-                <th className="text-right px-2 py-1.5 text-muted-foreground font-medium text-[10px] uppercase tracking-wide bg-muted/30">HBCF Active</th>
-                {projects.map(p => (
-                  <th key={p.id} className="px-2 py-1.5 bg-muted/30">
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-1 justify-between">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color ?? "#bba7db" }} />
-                          <InlineNameEdit
-                            value={p.name}
-                            onSave={v => updateMutation.mutate({ id: p.id, data: { name: v } })}
+      {/* ── Spreadsheet grid ── */}
+      <div className="flex-1 overflow-auto min-h-0" ref={tableContainerRef}>
+        <table
+          className="border-collapse text-xs"
+          style={{ tableLayout: "fixed", minWidth: `${LEFT_COL_W + weeks.length * CELL_W}px` }}
+        >
+          {/* Column widths */}
+          <colgroup>
+            <col style={{ width: `${LEFT_COL_W}px`, minWidth: `${LEFT_COL_W}px` }} />
+            {weeks.map(w => <col key={toKey(w)} style={{ width: `${CELL_W}px`, minWidth: `${CELL_W}px` }} />)}
+          </colgroup>
+
+          <thead className="sticky top-0 z-20">
+            {/* Month labels row */}
+            <tr className="border-b border-border/30">
+              <th
+                className="bg-muted/40 border-r border-border/30"
+                style={{ position: "sticky", left: 0, zIndex: 31, width: LEFT_COL_W }}
+              />
+              {monthGroups.map((mg, i) => (
+                <th
+                  key={i}
+                  colSpan={mg.count}
+                  className="text-left px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/40 border-r border-border/20"
+                >
+                  {mg.label}
+                </th>
+              ))}
+            </tr>
+
+            {/* Date labels row */}
+            <tr className="border-b border-border">
+              <th
+                className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-muted/30 border-r border-border/30"
+                style={{ position: "sticky", left: 0, zIndex: 31 }}
+              >
+                Project / HBCF Amount
+              </th>
+              {weeks.map(w => {
+                const key = toKey(w);
+                const isNow = key === nowKey;
+                const isFirstOfMonth = w.getDate() <= 7;
+                return (
+                  <th
+                    key={key}
+                    ref={isNow ? nowColRef : undefined}
+                    className={`py-1.5 text-center font-medium border-r border-border/10 ${
+                      isNow
+                        ? "bg-[#bba7db]/15 text-[#7c5cbf]"
+                        : "bg-muted/30 text-muted-foreground"
+                    }`}
+                  >
+                    <div className="flex flex-col items-center leading-none gap-0.5">
+                      <span className="text-[9px]">{w.toLocaleDateString("en-AU", { day: "numeric" })}</span>
+                      {isNow && <span className="w-1 h-1 rounded-full bg-[#bba7db]" />}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={1 + weeks.length} className="py-16 text-center text-muted-foreground text-sm">
+                  No projects yet — add one below
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, rowIdx) => {
+                const maxVal = parseFloat(row.maxValue) || 0;
+                const isEven = rowIdx % 2 === 0;
+                return (
+                  <tr
+                    key={row.id}
+                    className={`group/row border-b border-border/10 ${isEven ? "bg-background" : "bg-muted/5"}`}
+                  >
+                    {/* Sticky project cell */}
+                    <td
+                      className={`border-r border-border/20 py-1.5 px-2 ${isEven ? "bg-background" : "bg-muted/5"}`}
+                      style={{ position: "sticky", left: 0, zIndex: 10 }}
+                    >
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        {/* Color swatch */}
+                        <div
+                          className="w-2 h-full min-h-[28px] rounded-sm flex-shrink-0 mt-0.5"
+                          style={{ background: row.color ?? "#bba7db" }}
+                        />
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <InlineName
+                            value={row.name}
+                            onSave={v => updateMutation.mutate({ id: row.id, data: { name: v } })}
+                          />
+                          <InlineAmount
+                            value={maxVal}
+                            onSave={v => updateMutation.mutate({ id: row.id, data: { maxValue: String(v) } })}
                           />
                         </div>
                         <button
                           onClick={() => {
-                            if (confirm(`Remove "${p.name}" from HBCF tracker?`)) deleteMutation.mutate(p.id);
+                            if (confirm(`Remove "${row.name}" from tracker?`)) deleteMutation.mutate(row.id);
                           }}
-                          className="text-muted-foreground/30 hover:text-destructive transition-colors flex-shrink-0"
+                          className="text-muted-foreground/20 hover:text-destructive transition-colors flex-shrink-0 opacity-0 group-hover/row:opacity-100 mt-0.5"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
-                      {/* Editable max value */}
-                      <MaxValueEditor
-                        value={parseFloat(p.maxValue) || 0}
-                        onSave={v => updateMutation.mutate({ id: p.id, data: { maxValue: String(v) } })}
-                      />
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((week, idx) => {
-                const key = toKey(week);
-                const total = weeklyTotal(key);
-                const isNow = isCurrentWeek(week);
-                const isEven = idx % 2 === 0;
-                const month = week.toLocaleDateString("en-AU", { month: "short" });
-                const prevMonth = idx > 0 ? weeks[idx - 1].toLocaleDateString("en-AU", { month: "short" }) : null;
-                const isNewMonth = month !== prevMonth;
+                    </td>
 
-                return (
-                  <>
-                    {isNewMonth && (
-                      <tr key={`month-${key}`} className="bg-muted/40 border-t border-border/50">
-                        <td colSpan={2 + projects.length} className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                          {week.toLocaleDateString("en-AU", { month: "long", year: "numeric" })}
+                    {/* Date cells */}
+                    {weeks.map(w => {
+                      const key = toKey(w);
+                      const isActive = !!row.statuses[key];
+                      const isNow = key === nowKey;
+                      return (
+                        <td
+                          key={key}
+                          className={`px-0.5 py-0.5 text-center border-r border-border/10 ${isNow ? "bg-[#bba7db]/5" : ""}`}
+                        >
+                          <button
+                            onClick={() => toggleMutation.mutate({ row, dateKey: key, active: !isActive })}
+                            title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
+                            className={`w-full rounded-sm text-[9px] font-bold py-0.5 leading-4 transition-all ${
+                              isActive
+                                ? "text-white"
+                                : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50"
+                            }`}
+                            style={isActive ? { background: row.color ?? "#bba7db" } : undefined}
+                          >
+                            {isActive ? "ON" : "·"}
+                          </button>
                         </td>
-                      </tr>
-                    )}
-                    <tr
-                      key={key}
-                      ref={isNow ? currentWeekRef : undefined}
-                      className={`border-b border-border/10 ${isNow ? 'ring-1 ring-inset ring-[#bba7db]/50 bg-[#bba7db]/5' : isEven ? 'bg-background' : 'bg-muted/10'}`}
-                    >
-                      {/* Date */}
-                      <td className={`px-2 py-1 font-medium ${isNow ? 'text-[#bba7db]' : 'text-muted-foreground'} whitespace-nowrap`}>
-                        {isNow && <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#bba7db] mr-1 mb-0.5" />}
-                        {formatDateRow(week)}
-                      </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
 
-                      {/* HBCF Active total */}
-                      <td className={`px-2 py-1 text-right font-mono tabular-nums rounded-sm ${totalClass(total)}`}>
-                        {total > 0 ? fmt(total) : <span className="text-muted-foreground/30">—</span>}
-                      </td>
-
-                      {/* Project cells */}
-                      {projects.map(p => {
-                        const isActive = !!p.statuses[key];
-                        return (
-                          <td key={p.id} className="px-1 py-0.5 text-center">
-                            <button
-                              onClick={() => handleToggle(p, key)}
-                              className={`w-full rounded text-[10px] font-semibold py-0.5 transition-all ${
-                                isActive
-                                  ? 'text-white'
-                                  : 'bg-transparent text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/50'
-                              }`}
-                              style={isActive ? { background: p.color ?? "#bba7db" } : undefined}
-                              title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
-                            >
-                              {isActive ? "ACTIVE" : "—"}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  </>
+          {/* ── Totals row ── */}
+          <tfoot className="sticky bottom-0 z-20">
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/40 border-r border-border/30"
+                style={{ position: "sticky", left: 0, zIndex: 31 }}
+              >
+                HBCF Exposure
+              </td>
+              {weeks.map(w => {
+                const key = toKey(w);
+                const total = colTotal(key);
+                const isNow = key === nowKey;
+                const { bg, text } = totalStyle(total);
+                return (
+                  <td
+                    key={key}
+                    className={`text-center py-1.5 text-[9px] font-bold tabular-nums border-r border-border/10 transition-colors ${isNow ? "ring-1 ring-inset ring-[#bba7db]/40" : ""}`}
+                    style={{ background: bg, color: text }}
+                  >
+                    {total > 0 ? fmt(total) : <span className="text-muted-foreground/20">—</span>}
+                  </td>
                 );
               })}
-            </tbody>
-          </table>
-        )}
+            </tr>
+          </tfoot>
+        </table>
       </div>
 
-      {/* Add project row */}
-      <div className="flex-shrink-0 border-t border-border/50 px-4 py-2 flex items-center gap-2">
+      {/* ── Add project bar ── */}
+      <div className="flex-shrink-0 border-t border-border/50 px-4 py-2 flex flex-wrap items-center gap-2">
         <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        <Input
-          value={newProjectName}
-          onChange={e => setNewProjectName(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && newProjectValue) handleAddProject(); }}
-          placeholder="Project name (e.g. 22 Boanyo)"
-          className="h-7 text-xs flex-1"
-        />
-        <Input
-          value={newProjectValue}
-          onChange={e => setNewProjectValue(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && newProjectName) handleAddProject(); }}
-          placeholder="Max value (e.g. 480000)"
-          className="h-7 text-xs w-36"
-          type="number"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs gap-1 flex-shrink-0"
-          onClick={handleAddProject}
-          disabled={!newProjectName.trim() || !newProjectValue || createMutation.isPending}
-        >
-          <Plus className="w-3 h-3" />
-          Add
-        </Button>
+
+        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+          <SelectTrigger className="h-7 text-xs w-56">
+            <SelectValue placeholder="Select a project to add…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Select a project…</SelectItem>
+            {availableProjects.map(p => (
+              <SelectItem key={p.id} value={p.id}>
+                <div className="flex items-center gap-2">
+                  {p.color && (
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
+                  )}
+                  <span>{p.constructionNumber ? `${p.constructionNumber} — ` : ""}{p.name}</span>
+                </div>
+              </SelectItem>
+            ))}
+            {availableProjects.length === 0 && (
+              <SelectItem value="__empty__" disabled>No more projects to add</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+
+        {selectedSysProject && (
+          <>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">HBCF amount $</span>
+              <Input
+                type="number"
+                value={newAmount}
+                onChange={e => setNewAmount(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+                placeholder={
+                  selectedSysProject.contractCost
+                    ? `${Math.round(selectedSysProject.contractCost / 100).toLocaleString()} (contract)`
+                    : "e.g. 480000"
+                }
+                className="h-7 text-xs w-44"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 flex-shrink-0"
+              onClick={handleAdd}
+              disabled={createMutation.isPending}
+            >
+              <Plus className="w-3 h-3" />
+              Add to Tracker
+            </Button>
+          </>
+        )}
+
+        {rows.length === 0 && !selectedSysProject && (
+          <span className="text-xs text-muted-foreground">
+            Pick a project from the list to track its HBCF exposure
+          </span>
+        )}
       </div>
     </div>
   );
 }
-
-// ─── Max Value Inline Editor ──────────────────────────────────────────────────
-
-function MaxValueEditor({ value, onSave }: { value: number; onSave: (v: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(value));
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-0.5">
-        <span className="text-muted-foreground text-[10px]">$</span>
-        <Input
-          autoFocus
-          type="number"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={() => { onSave(parseFloat(draft) || 0); setEditing(false); }}
-          onKeyDown={e => {
-            if (e.key === "Enter") { onSave(parseFloat(draft) || 0); setEditing(false); }
-            if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
-          }}
-          className="h-5 text-[10px] px-1 w-20"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <button
-      onClick={() => { setDraft(String(value)); setEditing(true); }}
-      className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 group/mv"
-    >
-      <span className="tabular-nums">{fmt(value)}</span>
-      <Pencil className="w-2 h-2 opacity-0 group-hover/mv:opacity-50" />
-    </button>
-  );
-}
-

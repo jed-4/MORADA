@@ -5761,6 +5761,8 @@ export type LabourEstimateCategory = typeof labourEstimateCategories.$inferSelec
 export const hbcfProjects = pgTable("hbcf_projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Optional link to a system project
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   maxValue: numeric("max_value", { precision: 15, scale: 2 }).notNull().default("0"),
   // statuses: { "2026-01-05": true } where true = ACTIVE on that date
