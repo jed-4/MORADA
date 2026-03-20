@@ -329,6 +329,12 @@ export interface IStorage {
   updateEstimateEnote(id: string, data: Partial<any>): Promise<any>;
   deleteEstimateEnote(id: string): Promise<boolean>;
 
+  // HBCF Project Tracker
+  getHbcfProjects(companyId: string): Promise<any[]>;
+  createHbcfProject(data: any): Promise<any>;
+  updateHbcfProject(id: string, data: Partial<any>): Promise<any>;
+  deleteHbcfProject(id: string): Promise<boolean>;
+
   // Labour Estimates
   getLabourEstimate(projectId: string, companyId: string): Promise<any | undefined>;
   createLabourEstimate(data: any): Promise<any>;
@@ -9320,6 +9326,55 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteEstimateEnote:", error);
+      return false;
+    }
+  }
+
+  // ── HBCF Project Tracker ────────────────────────────────────────────────────
+
+  async getHbcfProjects(companyId: string): Promise<any[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.hbcfProjects)
+        .where(eq(schema.hbcfProjects.companyId, companyId))
+        .orderBy(schema.hbcfProjects.sortOrder, schema.hbcfProjects.createdAt);
+    } catch (error) {
+      console.error("Database error in getHbcfProjects:", error);
+      return [];
+    }
+  }
+
+  async createHbcfProject(data: any): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.hbcfProjects).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createHbcfProject:", error);
+      throw error;
+    }
+  }
+
+  async updateHbcfProject(id: string, data: Partial<any>): Promise<any> {
+    try {
+      const [updated] = await db
+        .update(schema.hbcfProjects)
+        .set(data)
+        .where(eq(schema.hbcfProjects.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateHbcfProject:", error);
+      throw error;
+    }
+  }
+
+  async deleteHbcfProject(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.hbcfProjects).where(eq(schema.hbcfProjects.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteHbcfProject:", error);
       return false;
     }
   }

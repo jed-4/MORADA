@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import {
   ShieldCheck, TrendingUp, Briefcase, BarChart3,
   AlertTriangle, CheckCircle2, Clock, Building2,
-  DollarSign, Pencil, Check, X, Info
+  DollarSign, Pencil, Check, X, Info, TableProperties
 } from "lucide-react";
+import HBCFTracker from "./HBCFTracker";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,11 +58,12 @@ interface Project {
   isBusiness?: boolean;
 }
 
-type TabId = "overview" | "compliance" | "financial" | "pipeline";
+type TabId = "overview" | "compliance" | "hbcf" | "financial" | "pipeline";
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "compliance", label: "Compliance", icon: ShieldCheck },
+  { id: "hbcf", label: "HBCF Limits", icon: TableProperties },
   { id: "financial", label: "Financial", icon: TrendingUp },
   { id: "pipeline", label: "Pipeline", icon: Briefcase },
 ];
@@ -686,6 +688,7 @@ export default function BusinessMetrics() {
     switch (activeTab) {
       case "overview": return <OverviewTab projects={projects} />;
       case "compliance": return <ComplianceTab settings={settings} onSave={handleSave} projects={projects} />;
+      case "hbcf": return null; // rendered outside scroll wrapper
       case "financial": return <FinancialTab settings={settings} onSave={handleSave} projects={projects} />;
       case "pipeline": return <PipelineTab projects={projects} />;
     }
@@ -716,9 +719,15 @@ export default function BusinessMetrics() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
-        {renderTab()}
-      </div>
+      {activeTab === "hbcf" ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <HBCFTracker />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-4">
+          {renderTab()}
+        </div>
+      )}
     </div>
   );
 }

@@ -12602,6 +12602,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── HBCF Project Tracker ────────────────────────────────────────────────────
+
+  app.get("/api/hbcf-projects", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rows = await storage.getHbcfProjects(user.companyId);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch HBCF projects" });
+    }
+  });
+
+  app.post("/api/hbcf-projects", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const row = await storage.createHbcfProject({ ...req.body, companyId: user.companyId });
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create HBCF project" });
+    }
+  });
+
+  app.patch("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateHbcfProject(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update HBCF project" });
+    }
+  });
+
+  app.delete("/api/hbcf-projects/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteHbcfProject(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete HBCF project" });
+    }
+  });
+
   app.patch("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
     try {
       const partialSchema = insertCompanySettingsSchema.partial();

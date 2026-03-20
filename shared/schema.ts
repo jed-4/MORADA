@@ -5757,6 +5757,21 @@ export const insertLabourEstimateCategorySchema = createInsertSchema(labourEstim
 export type InsertLabourEstimateCategory = z.infer<typeof insertLabourEstimateCategorySchema>;
 export type LabourEstimateCategory = typeof labourEstimateCategories.$inferSelect;
 
+// ── HBCF / DBI Project Tracker ──────────────────────────────────────────────
+export const hbcfProjects = pgTable("hbcf_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  maxValue: numeric("max_value", { precision: 15, scale: 2 }).notNull().default("0"),
+  // statuses: { "2026-01-05": true } where true = ACTIVE on that date
+  statuses: jsonb("statuses").$type<Record<string, boolean>>().default({}),
+  color: text("color"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type HbcfProject = typeof hbcfProjects.$inferSelect;
+export const insertHbcfProjectSchema = createInsertSchema(hbcfProjects).omit({ id: true, createdAt: true });
+
 export const labourEstimateTasks = pgTable("labour_estimate_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   categoryId: varchar("category_id").notNull().references(() => labourEstimateCategories.id, { onDelete: "cascade" }),
