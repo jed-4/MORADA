@@ -246,7 +246,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           <Button 
             size="sm" 
             variant="ghost" 
-            onClick={() => setLocation("/tasks")}
+            onClick={() => setLocation(currentProject?.id ? `/projects/${currentProject.id}/tasks` : "/tasks")}
             data-testid="tasks-widget-add"
           >
             <Plus className="h-3 w-3 mr-1" />

@@ -798,13 +798,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const ownedProjectIds = new Set(
             allProjects.filter(p => p.ownerId === userId).map(p => p.id)
           );
-          tasks = tasks.filter((task: any) =>
-            !task.projectId ||
-            accessibleProjectIds.has(task.projectId) ||
-            ownedProjectIds.has(task.projectId) ||
-            (task.assigneeIds || []).includes(userId) ||
-            task.assigneeId === userId
-          );
+          tasks = tasks.filter((task: any) => {
+            // Legacy format: filter by projectId field
+            if (task.projectId) {
+              return accessibleProjectIds.has(task.projectId) ||
+                ownedProjectIds.has(task.projectId) ||
+                (task.assigneeIds || []).includes(userId) ||
+                task.assigneeId === userId;
+            }
+            // New polymorphic format: filter by taskContextId when type is "project"
+            if (task.taskContextType === "project" && task.taskContextId) {
+              return accessibleProjectIds.has(task.taskContextId) ||
+                ownedProjectIds.has(task.taskContextId) ||
+                (task.assigneeIds || []).includes(userId) ||
+                task.assigneeId === userId;
+            }
+            // Business tasks or tasks with no project context — allow through
+            return true;
+          });
         }
       }
       
