@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   useColorScheme,
   Modal,
+  FlatList,
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +36,15 @@ interface Task {
   tags?: string[];
 }
 
+interface StatusOption {
+  key: string;
+  name: string;
+  color: string | null;
+  sortOrder: number;
+}
+
+type ViewMode = 'list' | 'board';
+
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
@@ -41,10 +52,10 @@ type Props = {
 
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
 const PRIORITY_LABELS: Record<string, string> = {
-  'urgent': 'Urgent',
-  'high': 'High',
-  'medium': 'Medium',
-  'low': 'Low',
+  urgent: 'Urgent',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
 };
 
 function getPriorityColor(priority?: string): string {
@@ -57,7 +68,6 @@ function getPriorityColor(priority?: string): string {
   }
 }
 
-// Fallback status color when field settings aren't loaded yet
 function getStatusColorFallback(status?: string): string {
   switch (status) {
     case 'todo': return '#94a3b8';
@@ -103,12 +113,13 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', inputBg: '#f1f5f9' };
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [statusOptions, setStatusOptions] = useState<{ key: string; name: string; color: string | null; sortOrder: number }[]>([]);
+  const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
-  // View/edit modal
+  // View / edit modal
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -118,9 +129,9 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [editDueDate, setEditDueDate] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   // Create modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -130,110 +141,96 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [creating, setCreating] = useState(false);
   const [showNewPriorityPicker, setShowNewPriorityPicker] = useState(false);
 
+  // ─── Derived helpers ────────────────────────────────────────────────────────
+
   const getStatusColor = useCallback((status?: string): string => {
-    if (statusOptions.length > 0) {
-      const opt = statusOptions.find(o => o.key === status);
-      if (opt?.color) return opt.color;
-    }
-    return getStatusColorFallback(status);
+    const opt = statusOptions.find(o => o.key === status);
+    return opt?.color || getStatusColorFallback(status);
   }, [statusOptions]);
 
   const getStatusLabel = useCallback((status?: string): string => {
-    if (statusOptions.length > 0) {
-      const opt = statusOptions.find(o => o.key === status);
-      if (opt) return opt.name;
-    }
-    return status?.replace(/_/g, ' ') || 'To Do';
+    const opt = statusOptions.find(o => o.key === status);
+    return opt ? opt.name : (status?.replace(/_/g, ' ') || 'To Do');
   }, [statusOptions]);
 
-  const defaultStatus = useMemo(() => statusOptions.length > 0 ? statusOptions[0].key : 'todo', [statusOptions]);
+  const defaultStatus = useMemo(
+    () => (statusOptions.length > 0 ? statusOptions[0].key : 'todo'),
+    [statusOptions],
+  );
 
-  const fetchTasks = useCallback(async () => {
+  const doneStatus = useMemo(
+    () => (statusOptions.length > 0 ? statusOptions[statusOptions.length - 1].key : 'done'),
+    [statusOptions],
+  );
+
+  const isTaskDone = useCallback((status?: string): boolean => {
+    if (statusOptions.length > 0) return status === doneStatus;
+    return status === 'done' || status === 'completed';
+  }, [statusOptions, doneStatus]);
+
+  // ─── Data loading ────────────────────────────────────────────────────────────
+
+  const fetchData = useCallback(async () => {
     try {
-      const [data, statusData] = await Promise.all([
-        apiFetch<Task[]>(`/api/tasks?projectId=${projectId}`),
-        apiFetch<{ options: { key: string; name: string; color: string | null; sortOrder: number }[] }>(
-          '/api/field-categories/by-key/task.status'
-        ).catch(() => ({ options: [] })),
+      const [tasksData, statusData] = await Promise.all([
+        apiFetch<Task[]>(`/api/tasks?projectId=${projectId}`).catch(() => []),
+        apiFetch<{ options: StatusOption[] }>('/api/field-categories/by-key/task.status').catch(() => ({ options: [] })),
       ]);
-      setTasks((data || []).filter(t => t.type === 'task'));
+      setTasks((tasksData || []).filter(t => t.type === 'task'));
       const opts = (statusData?.options || []).sort((a, b) => a.sortOrder - b.sortOrder);
       if (opts.length > 0) setStatusOptions(opts);
     } catch (e) {
       console.error('Failed to fetch project tasks:', e);
-      setTasks([]);
     } finally {
       setLoading(false);
     }
   }, [projectId]);
 
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchTasks();
+    await fetchData();
     setRefreshing(false);
-  }, [fetchTasks]);
+  }, [fetchData]);
+
+  // ─── Grouped tasks ───────────────────────────────────────────────────────────
 
   const groupedTasks = useMemo(() => {
-    const groups: { key: string; label: string; color: string; tasks: Task[] }[] = [];
+    const opts: StatusOption[] = statusOptions.length > 0
+      ? statusOptions
+      : [
+          { key: 'todo', name: 'To Do', color: '#94a3b8', sortOrder: 0 },
+          { key: 'in_progress', name: 'In Progress', color: '#3b82f6', sortOrder: 1 },
+          { key: 'done', name: 'Done', color: '#22c55e', sortOrder: 2 },
+        ];
 
-    if (statusOptions.length > 0) {
-      // Use field-settings order
-      for (const opt of statusOptions) {
-        const items = tasks.filter(t => (t.status || defaultStatus) === opt.key);
-        groups.push({
-          key: opt.key,
-          label: opt.name,
-          color: opt.color || '#94a3b8',
-          tasks: items,
-        });
-      }
-      // Catch tasks with statuses not in field settings
-      const knownKeys = new Set(statusOptions.map(o => o.key));
-      const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
-      if (others.length > 0) {
-        groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
-      }
-    } else {
-      // Fallback: group by hardcoded order
-      const fallbackOrder = ['todo', 'in_progress', 'in-progress', 'done', 'completed'];
-      const seen = new Set<string>();
-      for (const s of fallbackOrder) {
-        const normalised = s === 'in-progress' ? 'in_progress' : s;
-        if (seen.has(normalised)) continue;
-        seen.add(normalised);
-        const items = tasks.filter(t => {
-          const ts = t.status || 'todo';
-          return ts === normalised || ts === (normalised === 'in_progress' ? 'in-progress' : normalised);
-        });
-        if (items.length > 0) {
-          groups.push({ key: normalised, label: normalised.replace(/_/g, ' '), color: getStatusColorFallback(normalised), tasks: items });
-        }
-      }
+    const knownKeys = new Set(opts.map(o => o.key));
+    const groups = opts.map(opt => ({
+      key: opt.key,
+      label: opt.name,
+      color: opt.color || '#94a3b8',
+      tasks: tasks.filter(t => (t.status || defaultStatus) === opt.key),
+    }));
+
+    // Catch tasks with unknown statuses
+    const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
+    if (others.length > 0) {
+      groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
     }
 
-    return groups.filter(g => g.tasks.length > 0);
+    return groups;
   }, [tasks, statusOptions, defaultStatus]);
+
+  // ─── Actions ─────────────────────────────────────────────────────────────────
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const isTaskDone = useCallback((status?: string): boolean => {
-    if (statusOptions.length > 0) {
-      // Last status option is treated as "done"
-      return status === statusOptions[statusOptions.length - 1].key;
-    }
-    return status === 'done' || status === 'completed';
-  }, [statusOptions]);
-
   const handleToggleDone = async (task: Task) => {
     const done = isTaskDone(task.status);
-    const doneStatus = statusOptions.length > 0 ? statusOptions[statusOptions.length - 1].key : 'done';
-    const undoStatus = statusOptions.length > 0 ? statusOptions[0].key : 'todo';
-    const newStatus = done ? undoStatus : doneStatus;
-    // Optimistic update
+    const newStatus = done ? defaultStatus : doneStatus;
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try {
       await apiRequest(`/api/tasks/${task.id}`, 'PATCH', { status: newStatus });
@@ -252,7 +249,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const openEditTask = () => {
     if (!selectedTask) return;
     setEditTitle(selectedTask.title || '');
-    setEditStatus(selectedTask.status || 'todo');
+    setEditStatus(selectedTask.status || defaultStatus);
     setEditPriority(selectedTask.priority || 'medium');
     setEditDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : '');
     setEditDescription(selectedTask.contentText || selectedTask.content || '');
@@ -260,21 +257,20 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   };
 
   const handleSaveTask = async () => {
-    if (!selectedTask) return;
+    if (!selectedTask || !editTitle.trim()) return;
     setSaving(true);
     try {
-      const body: any = {
+      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', {
         title: editTitle.trim(),
         status: editStatus,
         priority: editPriority,
         content: editDescription,
         dueDate: editDueDate ? new Date(editDueDate).toISOString() : null,
-      };
-      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', body);
+      });
       setShowViewModal(false);
       setIsEditing(false);
       setSelectedTask(null);
-      await fetchTasks();
+      await fetchData();
     } catch {
       Alert.alert('Error', 'Failed to save task.');
     } finally {
@@ -287,13 +283,15 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     Alert.alert('Delete Task', 'Are you sure you want to delete this task?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive', onPress: async () => {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
           setDeleting(true);
           try {
             await apiRequest(`/api/tasks/${selectedTask.id}`, 'DELETE');
             setShowViewModal(false);
             setSelectedTask(null);
-            await fetchTasks();
+            await fetchData();
           } catch {
             Alert.alert('Error', 'Failed to delete task.');
           } finally {
@@ -322,7 +320,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
       setNewTitle('');
       setNewPriority('medium');
       setNewDueDate('');
-      await fetchTasks();
+      await fetchData();
     } catch {
       Alert.alert('Error', 'Failed to create task.');
     } finally {
@@ -330,9 +328,12 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     }
   };
 
+  // ─── Render helpers ──────────────────────────────────────────────────────────
+
   const renderTaskRow = (task: Task) => {
-    const isDone = isTaskDone(task.status);
-    const overdue = !isDone && isOverdue(task.dueDate);
+    const done = isTaskDone(task.status);
+    const overdue = !done && isOverdue(task.dueDate);
+    const statusColor = getStatusColor(task.status);
     return (
       <TouchableOpacity
         key={task.id}
@@ -348,36 +349,87 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         >
           <View style={[
             styles.checkCircle,
-            { borderColor: isDone ? '#22c55e' : colors.muted },
-            isDone && { backgroundColor: '#22c55e' },
+            { borderColor: done ? statusColor : colors.muted },
+            done ? { backgroundColor: statusColor } : null,
           ]}>
-            {isDone && <Ionicons name="checkmark" size={12} color="#fff" />}
+            {done && <Ionicons name="checkmark" size={12} color="#fff" />}
           </View>
         </TouchableOpacity>
         <View style={styles.taskContent}>
           <Text
-            style={[styles.taskTitle, { color: isDone ? colors.muted : colors.text }, isDone && styles.strikethrough]}
+            style={[
+              styles.taskTitle,
+              { color: done ? colors.muted : colors.text },
+              done ? styles.strikethrough : null,
+            ]}
             numberOfLines={1}
           >
             {task.title}
           </Text>
           <View style={styles.taskMeta}>
-            <View style={[styles.priorityPill, { backgroundColor: getPriorityColor(task.priority) + '20' }]}>
-              <Text style={[styles.priorityPillText, { color: getPriorityColor(task.priority) }]}>
-                {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
+            <View style={[styles.statusPill, { backgroundColor: statusColor + '20' }]}>
+              <Text style={[styles.statusPillText, { color: statusColor }]}>
+                {getStatusLabel(task.status)}
               </Text>
             </View>
-            {task.dueDate && (
+            {task.dueDate ? (
               <Text style={[styles.dueText, { color: overdue ? '#ef4444' : colors.secondary }]}>
                 {getRelativeDate(task.dueDate)}
               </Text>
-            )}
+            ) : null}
           </View>
         </View>
         <Ionicons name="chevron-forward" size={16} color={colors.muted} />
       </TouchableOpacity>
     );
   };
+
+  const renderBoardCard = (task: Task) => {
+    const overdue = isOverdue(task.dueDate);
+    return (
+      <TouchableOpacity
+        key={task.id}
+        style={[styles.boardCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => openViewTask(task)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.boardCardPriorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
+        <View style={styles.boardCardInner}>
+          <Text style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
+            {task.title}
+          </Text>
+          <View style={styles.boardCardMeta}>
+            <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) + '20' }]}>
+              <Text style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
+                {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
+              </Text>
+            </View>
+            {task.dueDate ? (
+              <Text style={[styles.boardCardDate, { color: overdue ? '#ef4444' : colors.secondary }]}>
+                {getRelativeDate(task.dueDate)}
+              </Text>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            style={styles.boardCardDoneBtn}
+            onPress={() => handleToggleDone(task)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={isTaskDone(task.status) ? 'checkbox' : 'square-outline'}
+              size={18}
+              color={isTaskDone(task.status) ? getStatusColor(task.status) : colors.muted}
+            />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const screenWidth = Dimensions.get('window').width;
+  const columnWidth = Math.max(screenWidth * 0.68, 240);
+
+  // ─── Loading ─────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -387,10 +439,27 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     );
   }
 
+  // ─── Status picker options (shared between edit and create) ──────────────────
+
+  const pickerStatusOptions: StatusOption[] = statusOptions.length > 0
+    ? statusOptions
+    : [
+        { key: 'todo', name: 'To Do', color: '#94a3b8', sortOrder: 0 },
+        { key: 'in_progress', name: 'In Progress', color: '#3b82f6', sortOrder: 1 },
+        { key: 'done', name: 'Done', color: '#22c55e', sortOrder: 2 },
+      ];
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
+
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: colors.accent + '25', borderBottomColor: colors.accent + '40' }]}>
+      <View style={[styles.header, {
+        paddingTop: insets.top + 12,
+        backgroundColor: colors.accent + '25',
+        borderBottomColor: colors.accent + '40',
+      }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
@@ -402,47 +471,95 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Tasks</Text>
           <Text style={[styles.headerSubtitle, { color: colors.secondary }]} numberOfLines={1}>{projectName}</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.addBtn, { backgroundColor: colors.accent }]}
-          onPress={() => { setNewTitle(''); setNewPriority('medium'); setNewDueDate(''); setShowCreateModal(true); }}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.headerIconBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
+            onPress={() => setViewMode(v => v === 'list' ? 'board' : 'list')}
+          >
+            <Ionicons name={viewMode === 'list' ? 'grid-outline' : 'list-outline'} size={18} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: colors.accent }]}
+            onPress={() => { setNewTitle(''); setNewPriority('medium'); setNewDueDate(''); setShowCreateModal(true); }}
+          >
+            <Ionicons name="add" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-      >
-        {tasks.length === 0 ? (
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="checkbox-outline" size={44} color={colors.muted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
-          </View>
-        ) : (
-          groupedTasks.map(group => (
-            <View key={group.key} style={styles.section}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(group.key)} activeOpacity={0.7}>
-                <View style={styles.sectionHeaderLeft}>
-                  <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>{group.label}</Text>
-                  <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                    <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
-                  </View>
-                </View>
-                <Ionicons
-                  name={collapsedSections[group.key] ? 'chevron-forward' : 'chevron-down'}
-                  size={18}
-                  color={colors.secondary}
-                />
-              </TouchableOpacity>
-              {!collapsedSections[group.key] && group.tasks.map(renderTaskRow)}
+      {/* List view */}
+      {viewMode === 'list' ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        >
+          {tasks.length === 0 ? (
+            <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="checkbox-outline" size={44} color={colors.muted} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
             </View>
-          ))
-        )}
-      </ScrollView>
+          ) : (
+            groupedTasks.map(group => (
+              <View key={group.key} style={styles.section}>
+                <TouchableOpacity
+                  style={styles.sectionHeader}
+                  onPress={() => toggleSection(group.key)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.sectionHeaderLeft}>
+                    <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>{group.label}</Text>
+                    <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
+                      <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
+                    </View>
+                  </View>
+                  <Ionicons
+                    name={collapsedSections[group.key] ? 'chevron-forward' : 'chevron-down'}
+                    size={18}
+                    color={colors.secondary}
+                  />
+                </TouchableOpacity>
+                {!collapsedSections[group.key] && group.tasks.map(t => renderTaskRow(t))}
+              </View>
+            ))
+          )}
+        </ScrollView>
+      ) : (
+        /* Board view */
+        <ScrollView
+          horizontal
+          style={styles.boardScroll}
+          contentContainerStyle={[styles.boardContent, { paddingBottom: insets.bottom + 24 }]}
+          showsHorizontalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        >
+          {groupedTasks.map(group => (
+            <View key={group.key} style={[styles.boardColumn, { width: columnWidth }]}>
+              <View style={[styles.boardColumnHeader, { borderBottomColor: group.color }]}>
+                <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
+                <Text style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
+                <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
+                  <Text style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
+                </View>
+              </View>
+              <FlatList
+                data={group.tasks}
+                keyExtractor={t => t.id}
+                renderItem={({ item }) => renderBoardCard(item)}
+                scrollEnabled={false}
+                contentContainerStyle={{ gap: 8 }}
+                ListEmptyComponent={
+                  <View style={[styles.boardEmptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
+                  </View>
+                }
+              />
+            </View>
+          ))}
+        </ScrollView>
+      )}
 
       {/* View / Edit Task Modal */}
       <Modal visible={showViewModal} animationType="slide" transparent>
@@ -466,7 +583,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
               </View>
 
               <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 40 }}>
-                {!isEditing && selectedTask && (
+                {!isEditing && selectedTask ? (
                   <>
                     <Text style={[styles.viewTitle, { color: colors.text }]}>{selectedTask.title}</Text>
                     <View style={styles.viewBadgeRow}>
@@ -481,14 +598,14 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         </Text>
                       </View>
                     </View>
-                    {selectedTask.dueDate && (
+                    {selectedTask.dueDate ? (
                       <View style={styles.viewField}>
                         <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
                         <Text style={[styles.viewFieldText, { color: colors.text }]}>
                           {new Date(selectedTask.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </Text>
                       </View>
-                    )}
+                    ) : null}
                     {(selectedTask.contentText || selectedTask.content) ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Description</Text>
@@ -497,7 +614,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         </Text>
                       </View>
                     ) : null}
-                    {(selectedTask.assigneeNames || []).length > 0 && (
+                    {(selectedTask.assigneeNames || []).length > 0 ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
                         {(selectedTask.assigneeNames || []).map((name: string, idx: number) => (
@@ -511,8 +628,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                           </View>
                         ))}
                       </View>
-                    )}
-                    {(selectedTask.checklist || []).length > 0 && (
+                    ) : null}
+                    {(selectedTask.checklist || []).length > 0 ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
                         {(selectedTask.checklist || []).map((item: any) => (
@@ -522,14 +639,18 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                               size={20}
                               color={item.completed ? '#22c55e' : colors.muted}
                             />
-                            <Text style={[styles.checklistText, { color: colors.text }, item.completed && { textDecorationLine: 'line-through', color: colors.muted }]}>
+                            <Text style={[
+                              styles.checklistText,
+                              { color: colors.text },
+                              item.completed ? { textDecorationLine: 'line-through', color: colors.muted } : null,
+                            ]}>
                               {item.text}
                             </Text>
                           </View>
                         ))}
                       </View>
-                    )}
-                    {(selectedTask.tags || []).length > 0 && (
+                    ) : null}
+                    {(selectedTask.tags || []).length > 0 ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
                         <View style={styles.tagsRow}>
@@ -540,7 +661,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                           ))}
                         </View>
                       </View>
-                    )}
+                    ) : null}
                     <TouchableOpacity
                       style={[styles.deleteBtn, { borderColor: '#ef444440' }]}
                       onPress={handleDeleteTask}
@@ -556,9 +677,9 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                       )}
                     </TouchableOpacity>
                   </>
-                )}
+                ) : null}
 
-                {isEditing && (
+                {isEditing ? (
                   <>
                     <View style={styles.editField}>
                       <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
@@ -629,11 +750,13 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         onPress={handleSaveTask}
                         disabled={saving}
                       >
-                        {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.editSaveText}>Save</Text>}
+                        {saving
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Text style={styles.editSaveText}>Save</Text>}
                       </TouchableOpacity>
                     </View>
                   </>
-                )}
+                ) : null}
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
@@ -645,18 +768,17 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowStatusPicker(false)}>
           <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
             <Text style={[styles.pickerTitle, { color: colors.text }]}>Status</Text>
-            {(statusOptions.length > 0
-              ? statusOptions
-              : [{ key: 'todo', name: 'To Do', color: '#94a3b8', sortOrder: 0 }, { key: 'in_progress', name: 'In Progress', color: '#3b82f6', sortOrder: 1 }, { key: 'done', name: 'Done', color: '#22c55e', sortOrder: 2 }]
-            ).map(opt => (
+            {pickerStatusOptions.map(opt => (
               <TouchableOpacity
                 key={opt.key}
-                style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
+                style={[styles.pickerOption, editStatus === opt.key ? { backgroundColor: colors.accent + '15' } : null]}
                 onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
               >
                 <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>{opt.name}</Text>
-                {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
+                  {opt.name}
+                </Text>
+                {editStatus === opt.key ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
               </TouchableOpacity>
             ))}
           </View>
@@ -671,12 +793,14 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
             {PRIORITY_ORDER.map(p => (
               <TouchableOpacity
                 key={p}
-                style={[styles.pickerOption, editPriority === p && { backgroundColor: colors.accent + '15' }]}
+                style={[styles.pickerOption, editPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
                 onPress={() => { setEditPriority(p); setShowPriorityPicker(false); }}
               >
                 <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
-                {editPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
+                  {PRIORITY_LABELS[p]}
+                </Text>
+                {editPriority === p ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
               </TouchableOpacity>
             ))}
           </View>
@@ -694,11 +818,9 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
                 <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>New Task</Text>
                 <TouchableOpacity onPress={handleCreateTask} disabled={!newTitle.trim() || creating}>
-                  {creating ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Text style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>
-                  )}
+                  {creating
+                    ? <ActivityIndicator size="small" color={colors.accent} />
+                    : <Text style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>}
                 </TouchableOpacity>
               </View>
               <View style={styles.createBody}>
@@ -718,7 +840,9 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     onPress={() => setShowNewPriorityPicker(true)}
                   >
                     <View style={[styles.selectDot, { backgroundColor: getPriorityColor(newPriority) }]} />
-                    <Text style={[styles.createMetaChipText, { color: getPriorityColor(newPriority) }]}>{PRIORITY_LABELS[newPriority]}</Text>
+                    <Text style={[styles.createMetaChipText, { color: getPriorityColor(newPriority) }]}>
+                      {PRIORITY_LABELS[newPriority]}
+                    </Text>
                     <Ionicons name="chevron-down" size={14} color={getPriorityColor(newPriority)} />
                   </TouchableOpacity>
                   <View style={[styles.createMetaChip, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
@@ -747,12 +871,14 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
             {PRIORITY_ORDER.map(p => (
               <TouchableOpacity
                 key={p}
-                style={[styles.pickerOption, newPriority === p && { backgroundColor: colors.accent + '15' }]}
+                style={[styles.pickerOption, newPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
                 onPress={() => { setNewPriority(p); setShowNewPriorityPicker(false); }}
               >
                 <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                <Text style={[styles.pickerOptionText, { color: newPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
-                {newPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                <Text style={[styles.pickerOptionText, { color: newPriority === p ? colors.accent : colors.text }]}>
+                  {PRIORITY_LABELS[p]}
+                </Text>
+                {newPriority === p ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
               </TouchableOpacity>
             ))}
           </View>
@@ -765,25 +891,38 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    gap: 12,
+    gap: 10,
   },
   backBtn: { padding: 2 },
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: 17, fontWeight: '700' },
   headerSubtitle: { fontSize: 12, marginTop: 1 },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  addBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // List view
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 12 },
   emptyState: {
@@ -796,6 +935,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 17, fontWeight: '600' },
   emptySubtitle: { fontSize: 14 },
+
   section: { gap: 6 },
   sectionHeader: {
     flexDirection: 'row',
@@ -809,6 +949,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '600' },
   sectionCount: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
   sectionCountText: { fontSize: 12, fontWeight: '600' },
+
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -833,31 +974,49 @@ const styles = StyleSheet.create({
   taskTitle: { fontSize: 14, fontWeight: '500' },
   strikethrough: { textDecorationLine: 'line-through' },
   taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  priorityPill: {
+  statusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  statusPillText: { fontSize: 11, fontWeight: '600' },
+  dueText: { fontSize: 12 },
+
+  // Board view
+  boardScroll: { flex: 1 },
+  boardContent: { padding: 16, gap: 12, flexDirection: 'row', alignItems: 'flex-start' },
+  boardColumn: { gap: 8 },
+  boardColumnHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
+    gap: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 2,
+    marginBottom: 4,
   },
-  priorityPillText: { fontSize: 11, fontWeight: '600' },
-  dueText: { fontSize: 12 },
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+  boardColumnTitle: { fontSize: 13, fontWeight: '700', flex: 1 },
+  boardCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
+  boardCardPriorityStrip: { height: 3, width: '100%' },
+  boardCardInner: { padding: 12, gap: 8 },
+  boardCardTitle: { fontSize: 14, fontWeight: '500', lineHeight: 20 },
+  boardCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  priorityBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  priorityBadgeText: { fontSize: 11, fontWeight: '600' },
+  boardCardDate: { fontSize: 12 },
+  boardCardDoneBtn: { alignSelf: 'flex-start' },
+  boardEmptyCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+  },
+  boardEmptyText: { fontSize: 13 },
+
+  // Modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContainer: { justifyContent: 'flex-end' },
-  modalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  createSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
+  modalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  createSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -868,8 +1027,10 @@ const styles = StyleSheet.create({
   },
   modalHeaderTitle: { fontSize: 16, fontWeight: '700' },
   modalBody: { paddingHorizontal: 20, paddingTop: 20 },
+
+  // View mode
   viewTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
-  viewBadgeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  viewBadgeRow: { flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
   viewBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   viewBadgeText: { fontSize: 13, fontWeight: '600' },
   viewField: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
@@ -886,108 +1047,35 @@ const styles = StyleSheet.create({
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tagBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   tagText: { fontSize: 13, fontWeight: '500' },
-  deleteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 24,
-    marginBottom: 8,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, marginBottom: 8, paddingVertical: 12, borderRadius: 10, borderWidth: 1 },
   deleteBtnText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
+
+  // Edit mode
   editField: { marginBottom: 16 },
   editLabel: { fontSize: 12, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  editInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  editSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
+  editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  editSelect: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
   editSelectText: { flex: 1, fontSize: 15 },
   selectDot: { width: 10, height: 10, borderRadius: 5 },
-  editTextArea: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    minHeight: 100,
-  },
+  editTextArea: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, minHeight: 100 },
   editActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  editCancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
+  editCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   editCancelText: { fontSize: 15, fontWeight: '600' },
-  editSaveBtn: {
-    flex: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
+  editSaveBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   editSaveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
   // Pickers
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  pickerSheet: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  pickerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  pickerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 32 },
+  pickerSheet: { borderRadius: 16, overflow: 'hidden' },
+  pickerTitle: { fontSize: 14, fontWeight: '700', paddingHorizontal: 16, paddingVertical: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  pickerOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   pickerOptionText: { flex: 1, fontSize: 15 },
+
   // Create modal
   createBody: { padding: 20 },
-  createTitleInput: {
-    fontSize: 18,
-    fontWeight: '600',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    marginBottom: 16,
-  },
+  createTitleInput: { fontSize: 18, fontWeight: '600', paddingVertical: 8, borderBottomWidth: 1, marginBottom: 16 },
   createMeta: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  createMetaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
+  createMetaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   createMetaChipText: { fontSize: 13, fontWeight: '600' },
   dueDateInput: { fontSize: 13, minWidth: 130 },
 });
