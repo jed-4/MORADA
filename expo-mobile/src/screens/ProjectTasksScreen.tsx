@@ -93,6 +93,24 @@ function getRelativeDate(dateStr?: string): string {
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 }
 
+function stripHtml(html?: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function isOverdue(dateStr?: string): boolean {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -331,6 +349,22 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
       Alert.alert('Error', 'Failed to create task.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleToggleChecklistItem = async (itemId: string) => {
+    if (!selectedTask) return;
+    const updated = (selectedTask.checklist || []).map((item: any) =>
+      item.id === itemId ? { ...item, completed: !item.completed } : item,
+    );
+    const updatedTask = { ...selectedTask, checklist: updated };
+    setSelectedTask(updatedTask);
+    try {
+      await apiRequest(`/api/tasks/${selectedTask.id}`, 'PATCH', { checklist: updated });
+      setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, checklist: updated } : t));
+    } catch {
+      setSelectedTask(selectedTask);
+      Alert.alert('Error', 'Failed to update checklist item.');
     }
   };
 
@@ -612,14 +646,15 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         </Text>
                       </View>
                     ) : null}
-                    {(selectedTask.contentText || selectedTask.content) ? (
-                      <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Description</Text>
-                        <Text style={[styles.viewDescription, { color: colors.text }]}>
-                          {selectedTask.contentText || selectedTask.content}
-                        </Text>
-                      </View>
-                    ) : null}
+                    {(() => {
+                      const desc = stripHtml(selectedTask.contentText || selectedTask.content);
+                      return desc ? (
+                        <View style={styles.viewSection}>
+                          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Description</Text>
+                          <Text style={[styles.viewDescription, { color: colors.text }]}>{desc}</Text>
+                        </View>
+                      ) : null;
+                    })()}
                     {(selectedTask.assigneeNames || []).length > 0 ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
@@ -637,22 +672,32 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     ) : null}
                     {(selectedTask.checklist || []).length > 0 ? (
                       <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
+                        <View style={styles.checklistHeader}>
+                          <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Checklist</Text>
+                          <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+                            {(selectedTask.checklist || []).filter((i: any) => i.completed).length}/{(selectedTask.checklist || []).length}
+                          </Text>
+                        </View>
                         {(selectedTask.checklist || []).map((item: any) => (
-                          <View key={item.id} style={styles.checklistRow}>
+                          <TouchableOpacity
+                            key={item.id}
+                            style={styles.checklistRow}
+                            onPress={() => handleToggleChecklistItem(item.id)}
+                            activeOpacity={0.6}
+                          >
                             <Ionicons
                               name={item.completed ? 'checkbox' : 'square-outline'}
-                              size={20}
+                              size={22}
                               color={item.completed ? '#22c55e' : colors.muted}
                             />
                             <Text style={[
                               styles.checklistText,
-                              { color: colors.text },
-                              item.completed ? { textDecorationLine: 'line-through', color: colors.muted } : null,
+                              { color: item.completed ? colors.muted : colors.text },
+                              item.completed ? { textDecorationLine: 'line-through' } : null,
                             ]}>
                               {item.text}
                             </Text>
-                          </View>
+                          </TouchableOpacity>
                         ))}
                       </View>
                     ) : null}
@@ -1097,8 +1142,10 @@ const styles = StyleSheet.create({
   assigneeAvatar: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   assigneeAvatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   assigneeName: { fontSize: 14 },
-  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  checklistText: { fontSize: 14 },
+  checklistHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  checklistProgress: { fontSize: 12, fontWeight: '600' },
+  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  checklistText: { fontSize: 14, flex: 1 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tagBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   tagText: { fontSize: 13, fontWeight: '500' },
