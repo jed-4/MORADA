@@ -136,9 +136,12 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   // Create modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newStatus, setNewStatus] = useState('');
   const [newPriority, setNewPriority] = useState('medium');
   const [newDueDate, setNewDueDate] = useState('');
+  const [newDescription, setNewDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showNewStatusPicker, setShowNewStatusPicker] = useState(false);
   const [showNewPriorityPicker, setShowNewPriorityPicker] = useState(false);
 
   // ─── Derived helpers ────────────────────────────────────────────────────────
@@ -310,7 +313,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         type: 'task',
         title: newTitle.trim(),
         priority: newPriority,
-        status: defaultStatus,
+        status: newStatus || defaultStatus,
+        content: newDescription,
         dueDate: newDueDate ? new Date(newDueDate).toISOString() : undefined,
         projectId,
         taskContextType: 'project',
@@ -318,8 +322,10 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
       });
       setShowCreateModal(false);
       setNewTitle('');
+      setNewStatus('');
       setNewPriority('medium');
       setNewDueDate('');
+      setNewDescription('');
       await fetchData();
     } catch {
       Alert.alert('Error', 'Failed to create task.');
@@ -480,7 +486,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: colors.accent }]}
-            onPress={() => { setNewTitle(''); setNewPriority('medium'); setNewDueDate(''); setShowCreateModal(true); }}
+            onPress={() => { setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription(''); setShowCreateModal(true); }}
           >
             <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>
@@ -811,7 +817,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
       <Modal visible={showCreateModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-            <View style={[styles.createSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => setShowCreateModal(false)}>
                   <Ionicons name="close" size={24} color={colors.secondary} />
@@ -823,44 +829,93 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     : <Text style={{ color: newTitle.trim() ? colors.accent : colors.muted, fontWeight: '600', fontSize: 15 }}>Add</Text>}
                 </TouchableOpacity>
               </View>
-              <View style={styles.createBody}>
-                <TextInput
-                  style={[styles.createTitleInput, { color: colors.text, borderBottomColor: colors.border }]}
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                  placeholder="Task title"
-                  placeholderTextColor={colors.muted}
-                  autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={handleCreateTask}
-                />
-                <View style={styles.createMeta}>
+              <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 40 }}>
+                <View style={styles.editField}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
+                  <TextInput
+                    style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                    value={newTitle}
+                    onChangeText={setNewTitle}
+                    placeholder="Task title"
+                    placeholderTextColor={colors.muted}
+                    autoFocus
+                  />
+                </View>
+                <View style={styles.editField}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
                   <TouchableOpacity
-                    style={[styles.createMetaChip, { backgroundColor: getPriorityColor(newPriority) + '20', borderColor: getPriorityColor(newPriority) + '40' }]}
+                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowNewStatusPicker(true)}
+                  >
+                    <View style={[styles.selectDot, { backgroundColor: getStatusColor(newStatus || defaultStatus) }]} />
+                    <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(newStatus || defaultStatus)}</Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.editField}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowNewPriorityPicker(true)}
                   >
                     <View style={[styles.selectDot, { backgroundColor: getPriorityColor(newPriority) }]} />
-                    <Text style={[styles.createMetaChipText, { color: getPriorityColor(newPriority) }]}>
-                      {PRIORITY_LABELS[newPriority]}
-                    </Text>
-                    <Ionicons name="chevron-down" size={14} color={getPriorityColor(newPriority)} />
+                    <Text style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[newPriority] || newPriority}</Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
                   </TouchableOpacity>
-                  <View style={[styles.createMetaChip, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    <Ionicons name="calendar-outline" size={14} color={colors.secondary} />
-                    <TextInput
-                      style={[styles.dueDateInput, { color: colors.text }]}
-                      value={newDueDate}
-                      onChangeText={setNewDueDate}
-                      placeholder="Due date (YYYY-MM-DD)"
-                      placeholderTextColor={colors.muted}
-                      keyboardType="numbers-and-punctuation"
-                    />
-                  </View>
                 </View>
-              </View>
+                <View style={styles.editField}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date (YYYY-MM-DD)</Text>
+                  <TextInput
+                    style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                    value={newDueDate}
+                    onChangeText={setNewDueDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+                <View style={styles.editField}>
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
+                  <TextInput
+                    style={[styles.editTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                    value={newDescription}
+                    onChangeText={setNewDescription}
+                    placeholder="Add a description..."
+                    placeholderTextColor={colors.muted}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </View>
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </View>
+      </Modal>
+
+      {/* New task status picker */}
+      <Modal visible={showNewStatusPicker} transparent animationType="fade">
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowNewStatusPicker(false)}>
+          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
+            <Text style={[styles.pickerTitle, { color: colors.text }]}>Status</Text>
+            {pickerStatusOptions.map(opt => {
+              const active = (newStatus || defaultStatus) === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.pickerOption, active ? { backgroundColor: colors.accent + '15' } : null]}
+                  onPress={() => { setNewStatus(opt.key); setShowNewStatusPicker(false); }}
+                >
+                  <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                  <Text style={[styles.pickerOptionText, { color: active ? colors.accent : colors.text }]}>
+                    {opt.name}
+                  </Text>
+                  {active ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* New task priority picker */}
@@ -1016,7 +1071,7 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContainer: { justifyContent: 'flex-end' },
   modalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
-  createSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1071,11 +1126,4 @@ const styles = StyleSheet.create({
   pickerOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   pickerOptionText: { flex: 1, fontSize: 15 },
 
-  // Create modal
-  createBody: { padding: 20 },
-  createTitleInput: { fontSize: 18, fontWeight: '600', paddingVertical: 8, borderBottomWidth: 1, marginBottom: 16 },
-  createMeta: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  createMetaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
-  createMetaChipText: { fontSize: 13, fontWeight: '600' },
-  dueDateInput: { fontSize: 13, minWidth: 130 },
 });
