@@ -151,6 +151,13 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
 
+  // Filter
+  const [hideDone, setHideDone] = useState(true);
+
+  // Edit checklist
+  const [editChecklist, setEditChecklist] = useState<{ id: string; text: string; completed: boolean }[]>([]);
+  const [editChecklistInput, setEditChecklistInput] = useState('');
+
   // Create modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -158,6 +165,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [newPriority, setNewPriority] = useState('medium');
   const [newDueDate, setNewDueDate] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newChecklist, setNewChecklist] = useState<{ id: string; text: string; completed: boolean }[]>([]);
+  const [newChecklistInput, setNewChecklistInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [showNewStatusPicker, setShowNewStatusPicker] = useState(false);
   const [showNewPriorityPicker, setShowNewPriorityPicker] = useState(false);
@@ -226,8 +235,10 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
           { key: 'done', name: 'Done', color: '#22c55e', sortOrder: 2 },
         ];
 
+    const visibleOpts = hideDone ? opts.filter(o => o.key !== doneStatus) : opts;
     const knownKeys = new Set(opts.map(o => o.key));
-    const groups = opts.map(opt => ({
+
+    const groups = visibleOpts.map(opt => ({
       key: opt.key,
       label: opt.name,
       color: opt.color || '#94a3b8',
@@ -235,13 +246,15 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     }));
 
     // Catch tasks with unknown statuses
-    const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
-    if (others.length > 0) {
-      groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
+    if (!hideDone) {
+      const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
+      if (others.length > 0) {
+        groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
+      }
     }
 
     return groups;
-  }, [tasks, statusOptions, defaultStatus]);
+  }, [tasks, statusOptions, defaultStatus, hideDone, doneStatus]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
@@ -274,6 +287,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     setEditPriority(selectedTask.priority || 'medium');
     setEditDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : '');
     setEditDescription(selectedTask.contentText || selectedTask.content || '');
+    setEditChecklist(selectedTask.checklist ? [...selectedTask.checklist] : []);
+    setEditChecklistInput('');
     setIsEditing(true);
   };
 
@@ -287,6 +302,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         priority: editPriority,
         content: editDescription,
         dueDate: editDueDate ? new Date(editDueDate).toISOString() : null,
+        checklist: editChecklist,
       });
       setShowViewModal(false);
       setIsEditing(false);
@@ -334,6 +350,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         status: newStatus || defaultStatus,
         content: newDescription,
         dueDate: newDueDate ? new Date(newDueDate).toISOString() : undefined,
+        checklist: newChecklist,
         projectId,
         taskContextType: 'project',
         taskContextId: projectId,
@@ -344,6 +361,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
       setNewPriority('medium');
       setNewDueDate('');
       setNewDescription('');
+      setNewChecklist([]);
+      setNewChecklistInput('');
       await fetchData();
     } catch {
       Alert.alert('Error', 'Failed to create task.');
@@ -513,6 +532,15 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
+            style={[styles.headerIconBtn, {
+              borderColor: hideDone ? colors.accent + '60' : colors.border,
+              backgroundColor: hideDone ? colors.accent + '15' : 'transparent',
+            }]}
+            onPress={() => setHideDone(v => !v)}
+          >
+            <Ionicons name={hideDone ? 'eye-off-outline' : 'eye-outline'} size={18} color={hideDone ? colors.accent : colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.headerIconBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
             onPress={() => setViewMode(v => v === 'list' ? 'board' : 'list')}
           >
@@ -520,7 +548,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: colors.accent }]}
-            onPress={() => { setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription(''); setShowCreateModal(true); }}
+            onPress={() => { setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription(''); setNewChecklist([]); setNewChecklistInput(''); setShowCreateModal(true); }}
           >
             <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>
@@ -789,6 +817,53 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         textAlignVertical="top"
                       />
                     </View>
+                    <View style={styles.editField}>
+                      <View style={styles.checklistHeader}>
+                        <Text style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
+                        {editChecklist.length > 0 ? (
+                          <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+                            {editChecklist.filter(i => i.completed).length}/{editChecklist.length}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {editChecklist.map((item, idx) => (
+                        <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
+                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))}>
+                            <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
+                          </TouchableOpacity>
+                          <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
+                            {item.text}
+                          </Text>
+                          <TouchableOpacity onPress={() => setEditChecklist(prev => prev.filter((_, i) => i !== idx))}>
+                            <Ionicons name="close-circle-outline" size={20} color={colors.muted} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <View style={[styles.checklistAddRow, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
+                        <TextInput
+                          style={[styles.checklistAddInput, { color: colors.text }]}
+                          value={editChecklistInput}
+                          onChangeText={setEditChecklistInput}
+                          placeholder="Add item..."
+                          placeholderTextColor={colors.muted}
+                          returnKeyType="done"
+                          onSubmitEditing={() => {
+                            if (!editChecklistInput.trim()) return;
+                            setEditChecklist(prev => [...prev, { id: Date.now().toString(), text: editChecklistInput.trim(), completed: false }]);
+                            setEditChecklistInput('');
+                          }}
+                        />
+                        <TouchableOpacity
+                          onPress={() => {
+                            if (!editChecklistInput.trim()) return;
+                            setEditChecklist(prev => [...prev, { id: Date.now().toString(), text: editChecklistInput.trim(), completed: false }]);
+                            setEditChecklistInput('');
+                          }}
+                        >
+                          <Ionicons name="add-circle-outline" size={24} color={colors.accent} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                     <View style={styles.editActions}>
                       <TouchableOpacity
                         style={[styles.editCancelBtn, { borderColor: colors.border }]}
@@ -931,6 +1006,53 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     numberOfLines={4}
                     textAlignVertical="top"
                   />
+                </View>
+                <View style={styles.editField}>
+                  <View style={styles.checklistHeader}>
+                    <Text style={[styles.editLabel, { color: colors.secondary }]}>Checklist</Text>
+                    {newChecklist.length > 0 ? (
+                      <Text style={[styles.checklistProgress, { color: colors.muted }]}>
+                        {newChecklist.filter(i => i.completed).length}/{newChecklist.length}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {newChecklist.map((item, idx) => (
+                    <View key={item.id} style={[styles.editChecklistRow, { borderColor: colors.border }]}>
+                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.map((it, i) => i === idx ? { ...it, completed: !it.completed } : it))}>
+                        <Ionicons name={item.completed ? 'checkbox' : 'square-outline'} size={22} color={item.completed ? '#22c55e' : colors.muted} />
+                      </TouchableOpacity>
+                      <Text style={[styles.editChecklistItemText, { color: item.completed ? colors.muted : colors.text }, item.completed ? { textDecorationLine: 'line-through' } as any : null]} numberOfLines={2}>
+                        {item.text}
+                      </Text>
+                      <TouchableOpacity onPress={() => setNewChecklist(prev => prev.filter((_, i) => i !== idx))}>
+                        <Ionicons name="close-circle-outline" size={20} color={colors.muted} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <View style={[styles.checklistAddRow, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
+                    <TextInput
+                      style={[styles.checklistAddInput, { color: colors.text }]}
+                      value={newChecklistInput}
+                      onChangeText={setNewChecklistInput}
+                      placeholder="Add item..."
+                      placeholderTextColor={colors.muted}
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (!newChecklistInput.trim()) return;
+                        setNewChecklist(prev => [...prev, { id: Date.now().toString(), text: newChecklistInput.trim(), completed: false }]);
+                        setNewChecklistInput('');
+                      }}
+                    />
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (!newChecklistInput.trim()) return;
+                        setNewChecklist(prev => [...prev, { id: Date.now().toString(), text: newChecklistInput.trim(), completed: false }]);
+                        setNewChecklistInput('');
+                      }}
+                    >
+                      <Ionicons name="add-circle-outline" size={24} color={colors.accent} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </ScrollView>
             </View>
@@ -1146,6 +1268,10 @@ const styles = StyleSheet.create({
   checklistProgress: { fontSize: 12, fontWeight: '600' },
   checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   checklistText: { fontSize: 14, flex: 1 },
+  editChecklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  editChecklistItemText: { flex: 1, fontSize: 14 },
+  checklistAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 6 },
+  checklistAddInput: { flex: 1, fontSize: 14, paddingVertical: 4 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tagBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   tagText: { fontSize: 13, fontWeight: '500' },

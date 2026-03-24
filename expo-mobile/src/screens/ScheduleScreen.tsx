@@ -1909,6 +1909,17 @@ export default function ScheduleScreen({ navigation, route }: Props) {
           ))}
         </View>
 
+        <TouchableOpacity
+          style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
+          onPress={() => setShowProjectPicker(true)}
+        >
+          <Ionicons name="folder-outline" size={15} color={colors.accent} />
+          <Text style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
+            {getSelectedProjectLabel()}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={colors.secondary} />
+        </TouchableOpacity>
+
         {viewMode === 'gantt' && (
           <View style={{ position: 'relative', zIndex: 200 }}>
             <TouchableOpacity
@@ -1990,6 +2001,8 @@ const styles = StyleSheet.create({
 
   header: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerMenuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8 },
+  projectSelectorBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 8, maxWidth: 160 },
+  projectSelectorText: { flex: 1, fontSize: 13, fontWeight: '500' },
 
   viewToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
