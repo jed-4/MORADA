@@ -13,6 +13,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
+import ProjectTasksScreen from '../screens/ProjectTasksScreen';
 import TasksScreen from '../screens/TasksScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
@@ -75,6 +76,11 @@ function ProjectsStack() {
       />
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
+      <Stack.Screen
+        name="ProjectTasks"
+        component={ProjectTasksScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }

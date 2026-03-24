@@ -110,14 +110,14 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
     try {
       const [projectData, tasksData, scheduleData, collapsedPrefs, checklistData, diaryData] = await Promise.all([
         apiFetch<Project>(`/api/projects/${projectId}`),
-        apiFetch<Task[]>(`/api/projects/${projectId}/tasks`).catch(() => []),
+        apiFetch<Task[]>(`/api/tasks?projectId=${projectId}`).catch(() => []),
         apiFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule-items`).catch(() => []),
         apiFetch<any>('/api/user-view-preferences/mobile-project-detail-collapsed').catch(() => null),
         apiFetch<ChecklistInstance[]>(`/api/checklist-instances?projectId=${projectId}`).catch(() => []),
         apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
       ]);
       setProject(projectData);
-      setTasks(tasksData || []);
+      setTasks((tasksData || []).filter((t: Task) => t.type === 'task'));
       setScheduleItems(scheduleData || []);
       setChecklistInstances(checklistData || []);
       setSiteDiaryEntries((diaryData || []).slice(0, 8));
@@ -253,6 +253,9 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         break;
       case 'checklists':
         navigation.navigate('Checklists', { projectId });
+        break;
+      case 'tasks':
+        navigation.navigate('ProjectTasks', { projectId, projectName: project.name });
         break;
       default:
         if (collapsed[key]) {
@@ -488,9 +491,14 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
                   </View>
                 ))
               )}
-              {tasks.length > 10 && tasksToShow.length === tasks.slice(0, 10).length && (
-                <Text style={[styles.moreText, { color: colors.accent }]}>+{tasks.length - 10} more tasks</Text>
-              )}
+              <TouchableOpacity
+                style={[styles.viewAllBtn, { borderColor: colors.border }]}
+                onPress={() => navigation.navigate('ProjectTasks', { projectId, projectName: project.name })}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View All Tasks</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+              </TouchableOpacity>
             </View>
           )}
         </View>
