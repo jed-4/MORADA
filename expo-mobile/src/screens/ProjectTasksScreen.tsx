@@ -39,16 +39,6 @@ type Props = {
   route: RouteProp<any>;
 };
 
-const STATUS_ORDER = ['todo', 'in_progress', 'in-progress', 'done', 'completed'];
-
-const STATUS_LABELS: Record<string, string> = {
-  'todo': 'To Do',
-  'in_progress': 'In Progress',
-  'in-progress': 'In Progress',
-  'done': 'Done',
-  'completed': 'Completed',
-};
-
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'];
 const PRIORITY_LABELS: Record<string, string> = {
   'urgent': 'Urgent',
@@ -67,7 +57,8 @@ function getPriorityColor(priority?: string): string {
   }
 }
 
-function getStatusColor(status?: string): string {
+// Fallback status color when field settings aren't loaded yet
+function getStatusColorFallback(status?: string): string {
   switch (status) {
     case 'todo': return '#94a3b8';
     case 'in_progress':
@@ -112,6 +103,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', inputBg: '#f1f5f9' };
 
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [statusOptions, setStatusOptions] = useState<{ key: string; name: string; color: string | null; sortOrder: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -138,10 +130,35 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [creating, setCreating] = useState(false);
   const [showNewPriorityPicker, setShowNewPriorityPicker] = useState(false);
 
+  const getStatusColor = useCallback((status?: string): string => {
+    if (statusOptions.length > 0) {
+      const opt = statusOptions.find(o => o.key === status);
+      if (opt?.color) return opt.color;
+    }
+    return getStatusColorFallback(status);
+  }, [statusOptions]);
+
+  const getStatusLabel = useCallback((status?: string): string => {
+    if (statusOptions.length > 0) {
+      const opt = statusOptions.find(o => o.key === status);
+      if (opt) return opt.name;
+    }
+    return status?.replace(/_/g, ' ') || 'To Do';
+  }, [statusOptions]);
+
+  const defaultStatus = useMemo(() => statusOptions.length > 0 ? statusOptions[0].key : 'todo', [statusOptions]);
+
   const fetchTasks = useCallback(async () => {
     try {
-      const data = await apiFetch<Task[]>(`/api/tasks?projectId=${projectId}`);
+      const [data, statusData] = await Promise.all([
+        apiFetch<Task[]>(`/api/tasks?projectId=${projectId}`),
+        apiFetch<{ options: { key: string; name: string; color: string | null; sortOrder: number }[] }>(
+          '/api/field-categories/by-key/task.status'
+        ).catch(() => ({ options: [] })),
+      ]);
       setTasks((data || []).filter(t => t.type === 'task'));
+      const opts = (statusData?.options || []).sort((a, b) => a.sortOrder - b.sortOrder);
+      if (opts.length > 0) setStatusOptions(opts);
     } catch (e) {
       console.error('Failed to fetch project tasks:', e);
       setTasks([]);
@@ -160,41 +177,62 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
 
   const groupedTasks = useMemo(() => {
     const groups: { key: string; label: string; color: string; tasks: Task[] }[] = [];
-    const seen = new Set<string>();
-    for (const statusKey of STATUS_ORDER) {
-      if (seen.has(statusKey)) continue;
-      // Normalise in_progress / in-progress
-      const normalised = statusKey === 'in-progress' ? 'in_progress' : statusKey;
-      if (seen.has(normalised)) continue;
-      seen.add(normalised);
-      const items = tasks.filter(t => {
-        const s = t.status || 'todo';
-        return s === normalised || s === (normalised === 'in_progress' ? 'in-progress' : normalised);
-      });
-      if (items.length === 0) continue;
-      groups.push({
-        key: normalised,
-        label: STATUS_LABELS[normalised] || normalised,
-        color: getStatusColor(normalised),
-        tasks: items,
-      });
+
+    if (statusOptions.length > 0) {
+      // Use field-settings order
+      for (const opt of statusOptions) {
+        const items = tasks.filter(t => (t.status || defaultStatus) === opt.key);
+        groups.push({
+          key: opt.key,
+          label: opt.name,
+          color: opt.color || '#94a3b8',
+          tasks: items,
+        });
+      }
+      // Catch tasks with statuses not in field settings
+      const knownKeys = new Set(statusOptions.map(o => o.key));
+      const others = tasks.filter(t => !knownKeys.has(t.status || defaultStatus));
+      if (others.length > 0) {
+        groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
+      }
+    } else {
+      // Fallback: group by hardcoded order
+      const fallbackOrder = ['todo', 'in_progress', 'in-progress', 'done', 'completed'];
+      const seen = new Set<string>();
+      for (const s of fallbackOrder) {
+        const normalised = s === 'in-progress' ? 'in_progress' : s;
+        if (seen.has(normalised)) continue;
+        seen.add(normalised);
+        const items = tasks.filter(t => {
+          const ts = t.status || 'todo';
+          return ts === normalised || ts === (normalised === 'in_progress' ? 'in-progress' : normalised);
+        });
+        if (items.length > 0) {
+          groups.push({ key: normalised, label: normalised.replace(/_/g, ' '), color: getStatusColorFallback(normalised), tasks: items });
+        }
+      }
     }
-    // Catch any unknown statuses
-    const handled = new Set(STATUS_ORDER.concat(['in_progress']));
-    const others = tasks.filter(t => !handled.has(t.status || 'todo'));
-    if (others.length > 0) {
-      groups.push({ key: 'other', label: 'Other', color: '#94a3b8', tasks: others });
-    }
-    return groups;
-  }, [tasks]);
+
+    return groups.filter(g => g.tasks.length > 0);
+  }, [tasks, statusOptions, defaultStatus]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const isTaskDone = useCallback((status?: string): boolean => {
+    if (statusOptions.length > 0) {
+      // Last status option is treated as "done"
+      return status === statusOptions[statusOptions.length - 1].key;
+    }
+    return status === 'done' || status === 'completed';
+  }, [statusOptions]);
+
   const handleToggleDone = async (task: Task) => {
-    const isDone = task.status === 'done' || task.status === 'completed';
-    const newStatus = isDone ? 'todo' : 'done';
+    const done = isTaskDone(task.status);
+    const doneStatus = statusOptions.length > 0 ? statusOptions[statusOptions.length - 1].key : 'done';
+    const undoStatus = statusOptions.length > 0 ? statusOptions[0].key : 'todo';
+    const newStatus = done ? undoStatus : doneStatus;
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try {
@@ -274,7 +312,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         type: 'task',
         title: newTitle.trim(),
         priority: newPriority,
-        status: 'todo',
+        status: defaultStatus,
         dueDate: newDueDate ? new Date(newDueDate).toISOString() : undefined,
         projectId,
         taskContextType: 'project',
@@ -293,7 +331,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   };
 
   const renderTaskRow = (task: Task) => {
-    const isDone = task.status === 'done' || task.status === 'completed';
+    const isDone = isTaskDone(task.status);
     const overdue = !isDone && isOverdue(task.dueDate);
     return (
       <TouchableOpacity
@@ -434,7 +472,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     <View style={styles.viewBadgeRow}>
                       <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
                         <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
-                          {STATUS_LABELS[selectedTask.status || 'todo'] || selectedTask.status}
+                          {getStatusLabel(selectedTask.status)}
                         </Text>
                       </View>
                       <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
@@ -540,7 +578,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                         onPress={() => setShowStatusPicker(true)}
                       >
                         <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                        <Text style={[styles.editSelectText, { color: colors.text }]}>{STATUS_LABELS[editStatus] || editStatus}</Text>
+                        <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(editStatus)}</Text>
                         <Ionicons name="chevron-down" size={16} color={colors.secondary} />
                       </TouchableOpacity>
                     </View>
@@ -607,15 +645,18 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowStatusPicker(false)}>
           <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
             <Text style={[styles.pickerTitle, { color: colors.text }]}>Status</Text>
-            {['todo', 'in_progress', 'done'].map(s => (
+            {(statusOptions.length > 0
+              ? statusOptions
+              : [{ key: 'todo', name: 'To Do', color: '#94a3b8', sortOrder: 0 }, { key: 'in_progress', name: 'In Progress', color: '#3b82f6', sortOrder: 1 }, { key: 'done', name: 'Done', color: '#22c55e', sortOrder: 2 }]
+            ).map(opt => (
               <TouchableOpacity
-                key={s}
-                style={[styles.pickerOption, editStatus === s && { backgroundColor: colors.accent + '15' }]}
-                onPress={() => { setEditStatus(s); setShowStatusPicker(false); }}
+                key={opt.key}
+                style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
+                onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
               >
-                <View style={[styles.selectDot, { backgroundColor: getStatusColor(s) }]} />
-                <Text style={[styles.pickerOptionText, { color: editStatus === s ? colors.accent : colors.text }]}>{STATUS_LABELS[s]}</Text>
-                {editStatus === s && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>{opt.name}</Text>
+                {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
               </TouchableOpacity>
             ))}
           </View>
