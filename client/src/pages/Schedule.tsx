@@ -669,61 +669,73 @@ export default function Schedule() {
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
       }
 
-      // ── Dependency cascade on date edit ────────────────────────────────────
-      // variables._originalStart/_originalEnd are injected at call-site below
       const origStart: Date | null = variables._originalStart ?? null;
-      const newStartStr = updatedItem.startDate;
-      const newEndStr = updatedItem.endDate;
-      if (origStart && newStartStr && newEndStr) {
-        const newStart = new Date(newStartStr as any);
-        newStart.setHours(0, 0, 0, 0);
-        const origS = new Date(origStart);
-        origS.setHours(0, 0, 0, 0);
+      if (origStart && updatedItem.startDate) {
+        const toMidnight = (d: Date | string) => {
+          const r = new Date(d);
+          r.setHours(0, 0, 0, 0);
+          return r;
+        };
+        const newStart = toMidnight(updatedItem.startDate as string);
+        const origS = toMidnight(origStart);
         const deltaDays = Math.round((newStart.getTime() - origS.getTime()) / 86400000);
 
         if (deltaDays !== 0) {
-          const currentItems: ScheduleItem[] = queryClient.getQueryData<ScheduleItem[]>(
-            schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`]
-          ) ?? scheduleItems;
+          const currentItems: ScheduleItem[] =
+            queryClient.getQueryData<ScheduleItem[]>(
+              schedule?.id
+                ? [`/api/schedules/${schedule.id}/items`]
+                : [`/api/projects/${projectId}/schedule-items`]
+            ) ?? scheduleItems;
 
-          // Collect all downstream successors (BFS)
-          const getAllDownstream = (rootId: number | string): ScheduleItem[] => {
+          const getDeps = (item: ScheduleItem): Array<{ id: number | string; type: string; lag: number }> =>
+            ((item.dependencies ?? []) as Array<{ id: number | string; type?: string; lag?: number }>).map(d => ({
+              id: d.id,
+              type: d.type ?? 'FS',
+              lag: d.lag ?? 0,
+            }));
+
+          const getAllDownstreamSuccessors = (rootId: number | string): ScheduleItem[] => {
             const visited = new Set<number | string>();
             const result: ScheduleItem[] = [];
             const queue: Array<number | string> = [rootId];
             visited.add(rootId);
             while (queue.length > 0) {
               const cur = queue.shift()!;
-              const succs = currentItems.filter(it =>
-                (it.dependencies as any[] || []).some((d: any) => String(d.id) === String(cur))
-              );
-              for (const s of succs) {
-                if (!visited.has(s.id)) {
-                  visited.add(s.id);
-                  result.push(s);
-                  queue.push(s.id);
+              for (const it of currentItems) {
+                if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(cur))) {
+                  visited.add(it.id);
+                  result.push(it);
+                  queue.push(it.id);
                 }
               }
             }
             return result;
           };
 
-          // Collect direct children recursively
           const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
             const children: ScheduleItem[] = [];
             for (const ci of currentItems) {
-              if (ci.parentItemId === parentId) {
-                children.push(ci);
-                children.push(...getChildrenRecursive(ci.id));
+              if (String(ci.parentItemId) === String(parentId)) {
+                children.push(ci, ...getChildrenRecursive(ci.id));
               }
             }
             return children;
           };
 
-          const dependentItems = getAllDownstream(updatedItem.id);
+          const shiftByCalendarDays = (item: ScheduleItem): { startDate: string; endDate: string } => {
+            const s = toMidnight(item.startDate as string);
+            const e = toMidnight(item.endDate as string);
+            const ns = new Date(s);
+            ns.setDate(ns.getDate() + deltaDays);
+            const ne = new Date(e);
+            ne.setDate(ne.getDate() + deltaDays);
+            return { startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
+          };
+
+          const dependentItems = getAllDownstreamSuccessors(updatedItem.id);
           const childItems = getChildrenRecursive(updatedItem.id);
 
-          // Collect children of dependent items not already in dependentItems
           const depChildIds = new Set<number | string>();
           const depChildItems: ScheduleItem[] = [];
           for (const di of dependentItems) {
@@ -735,35 +747,23 @@ export default function Schedule() {
             }
           }
 
-          // Shift by calendar days (preserving the item's duration exactly)
-          const shiftItemByCalendarDays = (item: ScheduleItem) => {
-            const s = new Date(item.startDate as any);
-            s.setHours(0, 0, 0, 0);
-            const e = new Date(item.endDate as any);
-            e.setHours(0, 0, 0, 0);
-            const newS = new Date(s);
-            newS.setDate(newS.getDate() + deltaDays);
-            const newE = new Date(e);
-            newE.setDate(newE.getDate() + deltaDays);
-            return {
-              startDate: newS.toISOString().split('T')[0],
-              endDate: newE.toISOString().split('T')[0],
-            };
+          const patchItem = (id: number | string, dates: { startDate: string; endDate: string }) => {
+            apiRequest(`/api/schedule-items/${id}`, "PATCH", dates).then(() => {}).catch(() => {});
           };
 
-          const itemsToShift = [
-            ...childItems.filter(c => !dependentItems.some(d => d.id === c.id)),
-            ...dependentItems,
-            ...depChildItems,
-          ];
-
-          for (const item of itemsToShift) {
-            const { startDate, endDate } = shiftItemByCalendarDays(item);
-            apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { startDate, endDate }).catch(() => {});
+          for (const child of childItems) {
+            if (!dependentItems.some(d => d.id === child.id)) {
+              patchItem(child.id, shiftByCalendarDays(child));
+            }
+          }
+          for (const dep of dependentItems) {
+            patchItem(dep.id, shiftByCalendarDays(dep));
+          }
+          for (const dc of depChildItems) {
+            patchItem(dc.id, shiftByCalendarDays(dc));
           }
         }
       }
-      // ── End cascade ────────────────────────────────────────────────────────
 
       invalidateScheduleItems();
       setShowItemDialog(false);
