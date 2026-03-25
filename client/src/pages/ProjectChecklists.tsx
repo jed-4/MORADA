@@ -1012,7 +1012,15 @@ export default function ProjectChecklists() {
                     <span className="text-sm font-medium flex-1 flex items-center gap-1.5">
                       {instance.name}
                       {instance.visibility === "assignee_only" && (
-                        <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Lock
+                              className="h-3 w-3 text-muted-foreground flex-shrink-0"
+                              data-testid={`lock-icon-${instance.id}`}
+                            />
+                          </TooltipTrigger>
+                          <TooltipContent>Visible to assignee only</TooltipContent>
+                        </Tooltip>
                       )}
                     </span>
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">

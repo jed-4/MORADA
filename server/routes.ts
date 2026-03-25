@@ -15011,12 +15011,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/checklist-instances/:id", async (req, res) => {
     try {
+      const currentUser = req.user as any;
+      const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin;
+
       const validationResult = insertChecklistInstanceSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
+      }
+
+      // Only admins or the instance creator/assignee can change visibility
+      if (validationResult.data.visibility !== undefined && !isAdmin) {
+        const existing = await storage.getChecklistInstance(req.params.id);
+        if (!existing) {
+          return res.status(404).json({ error: "Checklist instance not found" });
+        }
+        const userId = currentUser ? String(currentUser.id) : null;
+        if (existing.createdBy !== userId && existing.assigneeId !== userId) {
+          return res.status(403).json({ error: "Only admins, the creator, or the assignee can change visibility" });
+        }
       }
 
       const instance = await storage.updateChecklistInstance(req.params.id, validationResult.data);
