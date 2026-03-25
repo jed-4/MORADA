@@ -32,13 +32,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Lock } from "lucide-react";
+import { Globe, Loader2, Lock } from "lucide-react";
 
 type FormData = {
   name: string;
   description?: string;
   type: string;
   visibleToRoles: string[];
+  defaultVisibility: "everyone" | "assignee_only";
 };
 
 export function ChecklistTemplateFormDialog({
@@ -89,6 +90,7 @@ export function ChecklistTemplateFormDialog({
         : z.string().min(1, "Type is required"),
       description: z.string().optional(),
       visibleToRoles: z.array(z.string()).default([]),
+      defaultVisibility: z.enum(["everyone", "assignee_only"]).default("everyone"),
     }),
     [validTypeKeys]
   );
@@ -100,6 +102,7 @@ export function ChecklistTemplateFormDialog({
       description: template?.description || "",
       type: template?.type || "",
       visibleToRoles: (template?.visibleToRoles as string[]) || [],
+      defaultVisibility: (template?.defaultVisibility as "everyone" | "assignee_only") || "everyone",
     },
   });
 
@@ -118,6 +121,7 @@ export function ChecklistTemplateFormDialog({
         description: template?.description || "",
         type: template?.type || defaultType || "",
         visibleToRoles: (template?.visibleToRoles as string[]) || [],
+        defaultVisibility: (template?.defaultVisibility as "everyone" | "assignee_only") || "everyone",
       });
     } else {
       form.reset({
@@ -125,6 +129,7 @@ export function ChecklistTemplateFormDialog({
         description: "",
         type: defaultType || "",
         visibleToRoles: [],
+        defaultVisibility: "everyone",
       });
     }
   }, [open, template, form, defaultType]);
@@ -136,6 +141,7 @@ export function ChecklistTemplateFormDialog({
         description: data.description,
         type: data.type,
         visibleToRoles: data.visibleToRoles,
+        defaultVisibility: data.defaultVisibility,
       });
       return result;
     },
@@ -166,6 +172,7 @@ export function ChecklistTemplateFormDialog({
         description: data.description,
         type: data.type,
         visibleToRoles: data.visibleToRoles,
+        defaultVisibility: data.defaultVisibility,
       });
       return result;
     },
@@ -270,6 +277,55 @@ export function ChecklistTemplateFormDialog({
                       data-testid="input-template-description"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Default Visibility for new instances */}
+            <FormField
+              control={form.control}
+              name="defaultVisibility"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Default Visibility for New Groups</FormLabel>
+                  <div className="text-xs text-muted-foreground mb-2">
+                    When a group is created from this template, it will default to this visibility setting.
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => field.onChange("everyone")}
+                      className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                        field.value === "everyone"
+                          ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                          : "border-border text-muted-foreground hover-elevate"
+                      }`}
+                      data-testid="default-visibility-everyone"
+                    >
+                      <Globe className="h-3.5 w-3.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium">Everyone</div>
+                        <div className="text-xs text-muted-foreground">Visible to all project members</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => field.onChange("assignee_only")}
+                      className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                        field.value === "assignee_only"
+                          ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                          : "border-border text-muted-foreground hover-elevate"
+                      }`}
+                      data-testid="default-visibility-assignee-only"
+                    >
+                      <Lock className="h-3.5 w-3.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium">Assignee Only</div>
+                        <div className="text-xs text-muted-foreground">Only visible to the assignee</div>
+                      </div>
+                    </button>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

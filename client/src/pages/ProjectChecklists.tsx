@@ -560,6 +560,7 @@ export default function ProjectChecklists() {
         name: template.name,
         description: template.description || "",
         selectedGroupIds: [],
+        visibility: ((template as any).defaultVisibility as "everyone" | "assignee_only") || "everyone",
       });
     }
   };
