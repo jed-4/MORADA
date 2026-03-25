@@ -77,15 +77,17 @@ function NotePopover({
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
-            if (e.key === "Escape") handleOpenChange(false);
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleOpenChange(false);
+            if (e.key === "Escape" || e.key === "Enter") {
+              e.preventDefault();
+              handleOpenChange(false);
+            }
           }}
           placeholder={placeholder}
           className="min-h-[80px] text-xs resize-none"
           rows={4}
         />
         <div className="flex justify-between items-center mt-1.5">
-          <span className="text-[10px] text-muted-foreground">⌘+Enter to save</span>
+          <span className="text-[10px] text-muted-foreground">Enter or click Save</span>
           <Button size="sm" className="h-6 text-xs px-2" onClick={() => handleOpenChange(false)}>
             Save
           </Button>
