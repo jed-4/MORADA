@@ -4889,6 +4889,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/enote-template-sets", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const sets = await storage.getEnoteTemplateSets(companyId);
+      res.json(sets);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch enote template sets" });
+    }
+  });
+
+  app.post("/api/enote-template-sets", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { name } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Name required" });
+      const set = await storage.createEnoteTemplateSet({ companyId, name: name.trim() });
+      res.status(201).json(set);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create enote template set" });
+    }
+  });
+
+  app.patch("/api/enote-template-sets/:id", requireAuth, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Name required" });
+      const set = await storage.renameEnoteTemplateSet(req.params.id, name.trim());
+      res.json(set);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to rename enote template set" });
+    }
+  });
+
+  app.delete("/api/enote-template-sets/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEnoteTemplateSet(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete enote template set" });
+    }
+  });
+
+  app.get("/api/enote-template-sets/:id/rows", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getEnoteTemplateSetRows(req.params.id);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch template set rows" });
+    }
+  });
+
+  app.post("/api/estimates/:id/save-as-enote-template", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { name } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Template name required" });
+      const templateSet = await storage.saveEstimateAsEnoteTemplate(req.params.id, companyId, name.trim());
+      res.status(201).json(templateSet);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save as enote template" });
+    }
+  });
+
+  app.post("/api/estimates/:id/apply-enote-template/:templateSetId", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const { replaceExisting } = req.body;
+      const rows = await storage.applyEnoteTemplateSetToEstimate(req.params.templateSetId, req.params.id, companyId, !!replaceExisting);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to apply enote template" });
+    }
+  });
+
   app.patch("/api/labour-estimates/:id/categories/:catId", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateLabourEstimateCategory(req.params.catId, req.body);

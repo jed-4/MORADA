@@ -47,7 +47,12 @@ import {
   X,
   Download,
   Upload,
+  BookTemplate,
+  Save,
+  Loader2,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface EnoteRow {
   id: string;
@@ -499,6 +504,13 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const [attachmentPanelRow, setAttachmentPanelRow] = useState<EnoteRow | null>(null);
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
 
+  // ── Template dialog state ─────────────────────────────────────────────────
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [applyTemplateOpen, setApplyTemplateOpen] = useState(false);
+  const [selectedTemplateSetId, setSelectedTemplateSetId] = useState<string>("");
+  const [applyReplaceExisting, setApplyReplaceExisting] = useState<"replace" | "merge">("replace");
+
   // ── Column preferences (visibility, order, widths) ────────────────────────
   const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(estimateId));
 
@@ -692,6 +704,35 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const update = useCallback((id: string, data: Partial<EnoteRow>) => {
     updateMutation.mutate({ id, data });
   }, [updateMutation]);
+
+  // ── Template queries & mutations ───────────────────────────────────────────
+  const { data: templateSets = [] } = useQuery<Array<{ id: string; name: string; createdAt: string }>>({
+    queryKey: ["/api/enote-template-sets"],
+  });
+
+  const saveAsTemplateMutation = useMutation({
+    mutationFn: (name: string) =>
+      apiRequest(`/api/estimates/${estimateId}/save-as-enote-template`, "POST", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+      toast({ title: "Template saved", description: `"${saveTemplateName}" saved as E-Notes template` });
+      setSaveTemplateOpen(false);
+      setSaveTemplateName("");
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: ({ templateSetId, replaceExisting }: { templateSetId: string; replaceExisting: boolean }) =>
+      apiRequest(`/api/estimates/${estimateId}/apply-enote-template/${templateSetId}`, "POST", { replaceExisting }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "enotes"] });
+      toast({ title: "Template applied" });
+      setApplyTemplateOpen(false);
+      setSelectedTemplateSetId("");
+    },
+    onError: () => toast({ title: "Apply failed", variant: "destructive" }),
+  });
 
   const commitEdit = (row: EnoteRow, field: "rfqDate") => {
     if (editingCell?.id === row.id && editingCell?.field === field) {
@@ -915,7 +956,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
           ) : (
             <>
               {/* Filter + Column management bar */}
-              <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-background">
+              <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-background flex-wrap">
                 <button
                   onClick={() => setHideNotRequired(v => !v)}
                   className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
@@ -936,6 +977,33 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   onMoveUp={moveColUp}
                   onMoveDown={moveColDown}
                 />
+
+                <div className="flex-1" />
+
+                <button
+                  onClick={() => {
+                    setSelectedTemplateSetId(templateSets[0]?.id ?? "");
+                    setApplyTemplateOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
+                  title="Apply a saved template to this estimate"
+                  disabled={templateSets.length === 0}
+                >
+                  <BookTemplate className="w-3 h-3" />
+                  Apply Template
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSaveTemplateName("");
+                    setSaveTemplateOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
+                  title="Save this estimate's E-Notes layout as a template"
+                >
+                  <Save className="w-3 h-3" />
+                  Save as Template
+                </button>
               </div>
 
               {/* Column header */}
@@ -1115,6 +1183,117 @@ export default function EstimateEnotes({ estimateId }: Props) {
           }
         />
       )}
+
+      {/* Save as Template Dialog */}
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Save as E-Notes Template</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Save this estimate's E-Notes categories as a named template that can be reused across other estimates.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Template name</Label>
+              <Input
+                autoFocus
+                placeholder="e.g. Standard Residential Build"
+                value={saveTemplateName}
+                onChange={e => setSaveTemplateName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && saveTemplateName.trim() && !saveAsTemplateMutation.isPending) {
+                    saveAsTemplateMutation.mutate(saveTemplateName.trim());
+                  }
+                }}
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setSaveTemplateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!saveTemplateName.trim() || saveAsTemplateMutation.isPending}
+              onClick={() => saveAsTemplateMutation.mutate(saveTemplateName.trim())}
+            >
+              {saveAsTemplateMutation.isPending ? (
+                <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</>
+              ) : (
+                <><Save className="w-3 h-3 mr-1.5" />Save Template</>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apply Template Dialog */}
+      <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Apply E-Notes Template</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Select template</Label>
+              <Select value={selectedTemplateSetId} onValueChange={setSelectedTemplateSetId}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Choose a template…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templateSets.map(ts => (
+                    <SelectItem key={ts.id} value={ts.id}>{ts.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Apply mode</Label>
+              <RadioGroup
+                value={applyReplaceExisting}
+                onValueChange={v => setApplyReplaceExisting(v as "replace" | "merge")}
+                className="space-y-1.5"
+              >
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem value="replace" id="apply-replace" className="mt-0.5" />
+                  <div>
+                    <Label htmlFor="apply-replace" className="text-sm cursor-pointer font-medium">Replace existing</Label>
+                    <p className="text-[11px] text-muted-foreground">Remove all current E-Notes rows first, then apply template</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem value="merge" id="apply-merge" className="mt-0.5" />
+                  <div>
+                    <Label htmlFor="apply-merge" className="text-sm cursor-pointer font-medium">Merge (append)</Label>
+                    <p className="text-[11px] text-muted-foreground">Keep existing rows and add template rows below them</p>
+                  </div>
+                </div>
+              </RadioGroup>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!selectedTemplateSetId || applyTemplateMutation.isPending}
+              onClick={() => applyTemplateMutation.mutate({
+                templateSetId: selectedTemplateSetId,
+                replaceExisting: applyReplaceExisting === "replace",
+              })}
+            >
+              {applyTemplateMutation.isPending ? (
+                <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Applying…</>
+              ) : (
+                <><BookTemplate className="w-3 h-3 mr-1.5" />Apply Template</>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

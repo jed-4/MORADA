@@ -56,6 +56,7 @@ Preferred communication style: Simple, everyday language.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
+- **E-Notes Template System**: Named template sets (enoteTemplateSets table) allowing estimates to be saved as reusable E-Notes templates, with "Save as Template" and "Apply Template" flows (replace or merge) in EstimateEnotes.tsx. Template sets are managed in EstimateTemplates.tsx E-Notes tab.
 - **Purchase Orders System**: Create POs from estimate items via bulk selection with GST mode (inclusive/exclusive/gst_free), delivery details (reference, attention, contact, address, instructions), print/PDF with delivery instructions, send to supplier with status locking, receive goods workflow, duplicate PO, and delete. Shopping cart icons on estimate items indicate linked POs.
 - **AI Bill Reader**: OpenAI GPT-4o vision-based invoice/bill extraction replacing Mindee OCR. Extracts supplier, dates, reference, line items, quantities, unit prices, tax, and totals from uploaded images/PDFs. Auto-fills bill form fields.
 - **Xero Integration**: OAuth2 connection flow with token storage and auto-refresh. Bills with "Send to Xero" checkbox push to Xero as AP invoices on save. Xero connection management in Business Settings > Integrations.

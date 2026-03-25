@@ -9784,6 +9784,111 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getEnoteTemplateSets(companyId: string): Promise<any[]> {
+    try {
+      return await db.select().from(schema.enoteTemplateSets)
+        .where(eq(schema.enoteTemplateSets.companyId, companyId))
+        .orderBy(schema.enoteTemplateSets.createdAt);
+    } catch (error) {
+      console.error("Database error in getEnoteTemplateSets:", error);
+      return [];
+    }
+  }
+
+  async createEnoteTemplateSet(data: { companyId: string; name: string }): Promise<any> {
+    try {
+      const [row] = await db.insert(schema.enoteTemplateSets).values(data).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in createEnoteTemplateSet:", error);
+      throw error;
+    }
+  }
+
+  async renameEnoteTemplateSet(id: string, name: string): Promise<any> {
+    try {
+      const [row] = await db.update(schema.enoteTemplateSets).set({ name }).where(eq(schema.enoteTemplateSets.id, id)).returning();
+      return row;
+    } catch (error) {
+      console.error("Database error in renameEnoteTemplateSet:", error);
+      throw error;
+    }
+  }
+
+  async deleteEnoteTemplateSet(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.enoteTemplates).where(eq(schema.enoteTemplates.templateSetId, id));
+      await db.delete(schema.enoteTemplateSets).where(eq(schema.enoteTemplateSets.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEnoteTemplateSet:", error);
+      return false;
+    }
+  }
+
+  async getEnoteTemplateSetRows(templateSetId: string): Promise<any[]> {
+    try {
+      return await db.select().from(schema.enoteTemplates)
+        .where(eq(schema.enoteTemplates.templateSetId, templateSetId))
+        .orderBy(schema.enoteTemplates.sortOrder);
+    } catch (error) {
+      console.error("Database error in getEnoteTemplateSetRows:", error);
+      return [];
+    }
+  }
+
+  async saveEstimateAsEnoteTemplate(estimateId: string, companyId: string, templateName: string): Promise<any> {
+    try {
+      const [templateSet] = await db.insert(schema.enoteTemplateSets).values({ companyId, name: templateName }).returning();
+      const enotes = await db.select().from(schema.estimateEnotes)
+        .where(eq(schema.estimateEnotes.estimateId, estimateId))
+        .orderBy(schema.estimateEnotes.sortOrder);
+      if (enotes.length > 0) {
+        const rows = enotes.map((e: any, i: number) => ({
+          companyId,
+          groupName: e.groupName,
+          categoryName: e.categoryName,
+          brainstormNotes: e.brainstormNotes ?? null,
+          isRequired: e.required ?? false,
+          sortOrder: i,
+          templateSetId: templateSet.id,
+        }));
+        await db.insert(schema.enoteTemplates).values(rows);
+      }
+      return templateSet;
+    } catch (error) {
+      console.error("Database error in saveEstimateAsEnoteTemplate:", error);
+      throw error;
+    }
+  }
+
+  async applyEnoteTemplateSetToEstimate(templateSetId: string, estimateId: string, companyId: string, replaceExisting: boolean): Promise<any[]> {
+    try {
+      const templateRows = await db.select().from(schema.enoteTemplates)
+        .where(eq(schema.enoteTemplates.templateSetId, templateSetId))
+        .orderBy(schema.enoteTemplates.sortOrder);
+      if (templateRows.length === 0) return [];
+      if (replaceExisting) {
+        await db.delete(schema.estimateEnotes).where(eq(schema.estimateEnotes.estimateId, estimateId));
+      }
+      const newRows = templateRows.map((t: any, i: number) => ({
+        estimateId,
+        groupName: t.groupName,
+        categoryName: t.categoryName,
+        brainstormNotes: t.brainstormNotes ?? null,
+        required: t.isRequired,
+        sortOrder: i,
+        completed: false,
+        status: "pending",
+      }));
+      const inserted = await db.insert(schema.estimateEnotes).values(newRows).returning();
+      return inserted;
+    } catch (error) {
+      console.error("Database error in applyEnoteTemplateSetToEstimate:", error);
+      throw error;
+    }
+  }
+
   async applyLabourTemplate(companyId: string, categoryId: string, categoryName: string): Promise<any[]> {
     try {
       const templates = await db

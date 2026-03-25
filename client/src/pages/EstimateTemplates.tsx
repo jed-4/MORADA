@@ -259,6 +259,25 @@ export default function EstimateTemplates() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] }),
   });
 
+  // ── Named Template Sets (saved from estimates) ──────────────────────────────
+  const { data: enoteTemplateSets = [] } = useQuery<Array<{ id: string; name: string; createdAt: string }>>({
+    queryKey: ["/api/enote-template-sets"],
+  });
+  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  const [editingSetName, setEditingSetName] = useState("");
+  const renameSetMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiRequest(`/api/enote-template-sets/${id}`, "PATCH", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+      setEditingSetId(null);
+    },
+  });
+  const deleteSetMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/enote-template-sets/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] }),
+  });
+
   // Derived: all distinct groups (from E-Notes + Labour) in sorted order
   const { allGroups, labourOnlyGroups } = useMemo(() => {
     const enoteGroupNames = new Set(enoteTemplates.map((t: any) => t.groupName));
@@ -1010,7 +1029,8 @@ export default function EstimateTemplates() {
 
       {/* E-Notes Tab — split panel mirroring Labour layout */}
       {activeTab === 'enotes' && (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div className="flex-1 flex min-h-0 overflow-hidden flex-col">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* LEFT: Groups panel */}
           <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
             <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between flex-shrink-0">
@@ -1154,6 +1174,61 @@ export default function EstimateTemplates() {
               </>
             )}
           </div>
+          </div>
+
+          {/* Named Template Sets section */}
+          {enoteTemplateSets.length > 0 && (
+            <div className="flex-shrink-0 border-t border-border bg-muted/10">
+              <div className="px-4 py-2 flex items-center gap-2 border-b border-border/50">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Saved Templates</span>
+                <span className="text-[10px] text-muted-foreground">({enoteTemplateSets.length})</span>
+              </div>
+              <div className="max-h-48 overflow-y-auto divide-y divide-border/10">
+                {enoteTemplateSets.map(set => (
+                  <div key={set.id} className="flex items-center gap-2 px-4 py-2 group/setrow hover-elevate">
+                    {editingSetId === set.id ? (
+                      <Input
+                        autoFocus
+                        value={editingSetName}
+                        onChange={e => setEditingSetName(e.target.value)}
+                        onBlur={() => {
+                          if (editingSetName.trim()) {
+                            renameSetMutation.mutate({ id: set.id, name: editingSetName.trim() });
+                          } else {
+                            setEditingSetId(null);
+                          }
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && editingSetName.trim()) {
+                            renameSetMutation.mutate({ id: set.id, name: editingSetName.trim() });
+                          } else if (e.key === "Escape") {
+                            setEditingSetId(null);
+                          }
+                        }}
+                        className="h-6 text-xs flex-1 focus-visible:ring-0 border-primary"
+                      />
+                    ) : (
+                      <span
+                        className="text-sm flex-1 cursor-pointer hover:text-foreground truncate"
+                        onClick={() => { setEditingSetId(set.id); setEditingSetName(set.name); }}
+                      >
+                        {set.name}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground opacity-0 group-hover/setrow:opacity-100 flex-shrink-0">
+                      {format(new Date(set.createdAt), "d MMM yyyy")}
+                    </span>
+                    <button
+                      onClick={() => deleteSetMutation.mutate(set.id)}
+                      className="opacity-0 group-hover/setrow:opacity-100 h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-destructive rounded flex-shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

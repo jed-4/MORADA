@@ -5831,8 +5831,20 @@ export const enoteTemplates = pgTable("enote_templates", {
   brainstormNotes: text("brainstorm_notes"),
   isRequired: boolean("is_required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  templateSetId: varchar("template_set_id"),
 });
 
 export const insertEnoteTemplateSchema = createInsertSchema(enoteTemplates).omit({ id: true });
 export type InsertEnoteTemplate = z.infer<typeof insertEnoteTemplateSchema>;
 export type EnoteTemplate = typeof enoteTemplates.$inferSelect;
+
+export const enoteTemplateSets = pgTable("enote_template_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEnoteTemplateSetSchema = createInsertSchema(enoteTemplateSets).omit({ id: true, createdAt: true });
+export type InsertEnoteTemplateSet = z.infer<typeof insertEnoteTemplateSetSchema>;
+export type EnoteTemplateSet = typeof enoteTemplateSets.$inferSelect;
