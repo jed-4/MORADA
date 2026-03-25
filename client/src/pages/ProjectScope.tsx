@@ -2441,14 +2441,16 @@ export default function ProjectScope() {
   // Check if all stages are expanded
   const allStagesExpanded = scopeStages.length > 0 && scopeStages.every(stage => stageExpanded[stage.name]);
 
-  // Returns items for a stage, filtered by role visibility AND active UI type chips
+  // Returns items for a stage, filtered by role visibility AND active UI type chips.
+  // The guard uses scopeItemTypeDefs.length (all company definitions) so that a user
+  // whose role has zero visible types correctly sees NO items (not all items).
   const getItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
       .filter(item => {
         const type = item.itemType || 'scope';
-        // Role visibility filter
-        if (visibleTypeDefs.length > 0) {
+        // Role visibility filter (only active when company has type definitions configured)
+        if (scopeItemTypeDefs.length > 0) {
           const def = visibleTypeDefs.find(d => d.name.toLowerCase() === type.toLowerCase());
           if (!def && !isAdmin) return false;
         }
@@ -2458,13 +2460,15 @@ export default function ProjectScope() {
       .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
   };
 
-  // Returns items for PDF export — applies role visibility only (ignores UI chip toggles so all visible types export)
+  // Returns items for PDF export — applies role visibility only (ignores UI chip toggles so all
+  // role-permitted types export). Guard uses scopeItemTypeDefs.length so a zero-visible-types
+  // role correctly exports nothing rather than bypassing the filter.
   const getPdfItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
       .filter(item => {
         const type = item.itemType || 'scope';
-        if (visibleTypeDefs.length > 0) {
+        if (scopeItemTypeDefs.length > 0) {
           const def = visibleTypeDefs.find(d => d.name.toLowerCase() === type.toLowerCase());
           if (!def && !isAdmin) return false;
         }
@@ -2716,7 +2720,9 @@ export default function ProjectScope() {
       <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 bg-background">
         {/* Left: Type Filters — shows types visible to current role */}
         <div className="flex items-center gap-1 flex-wrap">
-          {(visibleTypeDefs.length > 0 ? visibleTypeDefs : SCOPE_TYPES.map(t => ({ id: t, name: t, displayOrder: 0, visibleToRoles: [], companyId: '', createdAt: new Date() }))).map((def) => {
+          {/* When company has type definitions, render only the role-visible ones (may be empty).
+              When no definitions are configured, fall back to the legacy SCOPE_TYPES list. */}
+          {(scopeItemTypeDefs.length > 0 ? visibleTypeDefs : SCOPE_TYPES.map(t => ({ id: t, name: t, displayOrder: 0, visibleToRoles: [], companyId: '', createdAt: new Date() }))).map((def) => {
             const type = def.name.toLowerCase();
             const isActive = activeTypeFilters.has(type);
             return (
@@ -3224,7 +3230,9 @@ export default function ProjectScope() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(visibleTypeDefs.length > 0
+                  {/* When company has type definitions, restrict to role-visible types (may be empty).
+                      When no definitions are configured, fall back to the legacy SCOPE_TYPES list. */}
+                  {(scopeItemTypeDefs.length > 0
                     ? visibleTypeDefs
                     : SCOPE_TYPES.map((t, i) => ({ id: t, name: t.charAt(0).toUpperCase() + t.slice(1), displayOrder: i, visibleToRoles: [], companyId: '', createdAt: new Date() }))
                   ).map(def => (
