@@ -21,6 +21,7 @@ import SiteDiaryListScreen from '../screens/SiteDiaryListScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ChecklistsScreen from '../screens/ChecklistsScreen';
+import ScopeScreen from '../screens/ScopeScreen';
 import MoreScreen from '../screens/MoreScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
@@ -76,6 +77,7 @@ function ProjectsStack() {
       />
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
+      <Stack.Screen name="Scope" component={ScopeScreen} options={{ title: 'Scope' }} />
       <Stack.Screen
         name="ProjectTasks"
         component={ProjectTasksScreen}

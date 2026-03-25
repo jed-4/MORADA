@@ -10,6 +10,8 @@ interface User {
   companyId?: string;
   companyNickname?: string;
   role?: string;
+  roleId?: string;
+  roleName?: string;
   profileImageUrl?: string;
 }
 

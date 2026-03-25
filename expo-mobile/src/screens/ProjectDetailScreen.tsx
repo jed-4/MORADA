@@ -238,6 +238,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const categoryTiles: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; showCount: boolean; count?: number }[] = [
     { key: 'tasks', icon: 'checkbox-outline', label: 'Tasks', showCount: true, count: tasks.length },
     { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', showCount: false },
+    { key: 'scope', icon: 'layers-outline', label: 'Scope', showCount: false },
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
   ];
@@ -253,6 +254,9 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         break;
       case 'checklists':
         navigation.navigate('Checklists', { projectId });
+        break;
+      case 'scope':
+        navigation.navigate('Scope', { projectId, projectName: project.name });
         break;
       case 'tasks':
         navigation.navigate('ProjectTasks', { projectId, projectName: project.name });
