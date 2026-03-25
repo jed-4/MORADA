@@ -12,6 +12,7 @@ interface User {
   role?: string;
   roleId?: string;
   roleName?: string;
+  userCategory?: string;
   profileImageUrl?: string;
 }
 

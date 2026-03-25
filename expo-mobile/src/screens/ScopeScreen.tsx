@@ -108,6 +108,8 @@ export default function ScopeScreen({ navigation, route }: Props) {
     roleName.toLowerCase().includes('owner') ||
     roleName.toLowerCase().includes('general manager');
   const currentRoleId = user?.roleId ?? null;
+  // Client users get read-only access; team members and suppliers can mark items complete
+  const canEdit = user?.userCategory !== 'client';
 
   const visibleTypeDefs = typeDefs.filter(def => {
     const roles = (def.visibleToRoles as string[]) ?? [];
@@ -168,6 +170,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
   };
 
   const toggleCompletion = async (item: ScopeItem) => {
+    if (!canEdit) return;
     const newVal = !item.isCompleted;
     setItems(prev => prev.map(i => (i.id === item.id ? { ...i, isCompleted: newVal } : i)));
     try {
@@ -230,8 +233,9 @@ export default function ScopeScreen({ navigation, route }: Props) {
             <View style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.itemRow}>
                 <TouchableOpacity
-                  style={styles.checkboxArea}
+                  style={[styles.checkboxArea, !canEdit && styles.disabled]}
                   onPress={() => toggleCompletion(item)}
+                  activeOpacity={canEdit ? 0.6 : 1}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <View style={[
@@ -388,6 +392,9 @@ const styles = StyleSheet.create({
   checkboxArea: {
     paddingTop: 2,
     marginRight: 10,
+  },
+  disabled: {
+    opacity: 0.6,
   },
   checkbox: {
     width: 20,
