@@ -206,16 +206,16 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const tomorrowStr = getTomorrowStr();
 
   const todayTasks = tasks.filter(t => dateOnlyStr(t.dueDate) === todayStr);
-  const tasksToShow = todayTasks.length > 0 ? todayTasks : tasks.slice(0, 10);
-  const tasksSectionTitle = todayTasks.length > 0 ? 'Tasks — Today' : 'Tasks';
+  const tasksToShow = todayTasks;
+  const tasksSectionTitle = 'Tasks — Today';
 
   const nearScheduleItems = scheduleItems.filter(item => {
     const start = dateOnlyStr(item.startDate);
     const end = dateOnlyStr(item.endDate) || start;
     return (start <= tomorrowStr && end >= todayStr);
   });
-  const scheduleToShow = nearScheduleItems.length > 0 ? nearScheduleItems : scheduleItems.slice(0, 10);
-  const scheduleSectionTitle = nearScheduleItems.length > 0 ? 'Schedule — Today & Tomorrow' : 'Schedule';
+  const scheduleToShow = nearScheduleItems;
+  const scheduleSectionTitle = 'Schedule — Today & Tomorrow';
 
   const getWeatherIcon = (condition?: string): keyof typeof Ionicons.glyphMap => {
     if (!condition) return 'partly-sunny-outline';
@@ -478,7 +478,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
               {tasksToShow.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="checkbox-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks for this project</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
                 </View>
               ) : (
                 tasksToShow.map(task => (
@@ -510,7 +510,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
               {scheduleToShow.length === 0 ? (
                 <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No schedule items</Text>
+                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
                 </View>
               ) : (
                 scheduleToShow.map(item => (

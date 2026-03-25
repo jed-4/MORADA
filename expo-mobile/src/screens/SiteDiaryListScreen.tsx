@@ -192,20 +192,6 @@ function countPhotos(entry: SiteDiaryEntry): number {
   return count;
 }
 
-function getInitials(name?: string): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return (parts[0][0] || '?').toUpperCase();
-}
-
-function getAvatarColor(name?: string): string {
-  const avatarColors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#6366f1'];
-  if (!name) return avatarColors[0];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return avatarColors[Math.abs(hash) % avatarColors.length];
-}
 
 const SWIPE_THRESHOLD = 50;
 const SCREEN_WIDTH = Dimensions.get('window').width;
