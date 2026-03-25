@@ -20,6 +20,7 @@ import {
   Plus,
   MessageSquare,
   Briefcase,
+  BookOpen,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -158,6 +159,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return <Briefcase className="h-4 w-4" />;
       case "schedule":
         return <Calendar className="h-4 w-4" />;
+      case "site_diary":
+        return <BookOpen className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
@@ -179,6 +182,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return "text-sky-600 bg-sky-50 dark:text-sky-400 dark:bg-sky-950";
       case "schedule":
         return "text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950";
+      case "site_diary":
+        return "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950";
       default:
         return "text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-950";
     }

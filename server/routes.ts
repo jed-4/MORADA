@@ -13429,6 +13429,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const entry = await storage.createSiteDiaryEntry(validationResult.data);
+
+      // Log activity
+      try {
+        if (req.user) {
+          const userName = req.user.firstName && req.user.lastName
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          await storage.createActivity({
+            projectId: entry.projectId,
+            userId: req.user.id,
+            userName,
+            activityType: "site_diary",
+            action: "created",
+            description: `${userName} created site diary '${entry.title}'`,
+            entityId: entry.id,
+            entityName: entry.title,
+            metadata: {}
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log site diary create activity:", activityError);
+      }
+
       res.status(201).json(entry);
     } catch (error: any) {
       res.status(500).json({ 
@@ -13468,6 +13491,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!entry) {
         return res.status(404).json({ error: "Entry not found" });
       }
+
+      // Log activity
+      try {
+        if (req.user) {
+          const userName = req.user.firstName && req.user.lastName
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          await storage.createActivity({
+            projectId: entry.projectId,
+            userId: req.user.id,
+            userName,
+            activityType: "site_diary",
+            action: "updated",
+            description: `${userName} updated site diary '${entry.title}'`,
+            entityId: entry.id,
+            entityName: entry.title,
+            metadata: {}
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log site diary update activity:", activityError);
+      }
+
       res.json(entry);
     } catch (error: any) {
       res.status(500).json({ 
@@ -13479,10 +13525,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/site-diary-entries/:id", requireAuth, requireTeamMember, requirePermission("projects.site_diary", "delete"), async (req, res) => {
     try {
+      // Fetch entry before deleting so we have metadata for the activity log
+      const entryToDelete = await storage.getSiteDiaryEntry(req.params.id);
+
       const success = await storage.deleteSiteDiaryEntry(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Entry not found" });
       }
+
+      // Log activity
+      try {
+        if (req.user && entryToDelete) {
+          const userName = req.user.firstName && req.user.lastName
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          await storage.createActivity({
+            projectId: entryToDelete.projectId,
+            userId: req.user.id,
+            userName,
+            activityType: "site_diary",
+            action: "deleted",
+            description: `${userName} deleted site diary '${entryToDelete.title}'`,
+            entityId: req.params.id,
+            entityName: entryToDelete.title,
+            metadata: {}
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log site diary delete activity:", activityError);
+      }
+
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ 

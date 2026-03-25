@@ -29,6 +29,7 @@ import {
   Plus,
   MessageSquare,
   Briefcase,
+  BookOpen,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import type { Activity, CompanySettings } from "@shared/schema";
@@ -125,6 +126,8 @@ export default function ProjectActivity() {
         return <Briefcase className="h-4 w-4" />;
       case "schedule":
         return <Calendar className="h-4 w-4" />;
+      case "site_diary":
+        return <BookOpen className="h-4 w-4" />;
       case "manual":
         return <MessageSquare className="h-4 w-4" />;
       default:
@@ -148,6 +151,8 @@ export default function ProjectActivity() {
         return "text-primary bg-primary/10";
       case "schedule":
         return "text-[#bba7db] bg-[#bba7db]/10";
+      case "site_diary":
+        return "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950";
       case "manual":
         return "text-[#bba7db] bg-[#bba7db]/10";
       default:
