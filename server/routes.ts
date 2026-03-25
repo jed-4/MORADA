@@ -5098,6 +5098,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/scope-item-types/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
+      if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds)) return res.status(400).json({ error: "orderedIds must be an array" });
+      await storage.reorderScopeItemTypeDefinitions(orderedIds);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reordering scope item types:", error);
+      res.status(500).json({ error: "Failed to reorder scope item types" });
+    }
+  });
+
   // Get a single scope item
   app.get("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {

@@ -40,6 +40,7 @@ import {
   DollarSign,
   Package,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -3597,6 +3598,23 @@ function ConfigureTypesDialog({ open, onOpenChange, typeDefs, allUserRoles }: Co
   const [newRoles, setNewRoles] = useState<string[]>([]);
   const [deletingTypeId, setDeletingTypeId] = useState<string | null>(null);
 
+  const reorderMutation = useMutation({
+    mutationFn: (orderedIds: string[]) =>
+      apiRequest('/api/scope-item-types/reorder', 'PATCH', { orderedIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
+    },
+    onError: () => toast({ title: 'Failed to reorder types', variant: 'destructive' }),
+  });
+
+  const moveType = (index: number, direction: 'up' | 'down') => {
+    const sorted = [...typeDefs];
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= sorted.length) return;
+    [sorted[index], sorted[newIndex]] = [sorted[newIndex], sorted[index]];
+    reorderMutation.mutate(sorted.map(d => d.id));
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: { name: string; visibleToRoles: string[]; displayOrder: number }) =>
       apiRequest('/api/scope-item-types', 'POST', data),
@@ -3655,7 +3673,7 @@ function ConfigureTypesDialog({ open, onOpenChange, typeDefs, allUserRoles }: Co
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-            {typeDefs.map(def => (
+            {typeDefs.map((def, index) => (
               <div key={def.id} className="border border-border/50 rounded-md p-3 space-y-2">
                 {editingId === def.id ? (
                   <>
@@ -3695,13 +3713,33 @@ function ConfigureTypesDialog({ open, onOpenChange, typeDefs, allUserRoles }: Co
                   </>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-sm">{def.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {((def.visibleToRoles as string[])?.length ?? 0) === 0
-                          ? 'Visible to everyone'
-                          : `Restricted to: ${(def.visibleToRoles as string[]).map(rid => allUserRoles.find(r => r.id === rid)?.name ?? rid).join(', ')}`}
-                      </p>
+                    <div className="flex items-center gap-1">
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => moveType(index, 'up')}
+                          disabled={index === 0 || reorderMutation.isPending}
+                          className="flex items-center justify-center text-muted-foreground hover-elevate active-elevate-2 disabled:opacity-30"
+                          data-testid={`button-move-up-type-${def.id}`}
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => moveType(index, 'down')}
+                          disabled={index === typeDefs.length - 1 || reorderMutation.isPending}
+                          className="flex items-center justify-center text-muted-foreground hover-elevate active-elevate-2 disabled:opacity-30"
+                          data-testid={`button-move-down-type-${def.id}`}
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{def.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {((def.visibleToRoles as string[])?.length ?? 0) === 0
+                            ? 'Visible to everyone'
+                            : `Restricted to: ${(def.visibleToRoles as string[]).map(rid => allUserRoles.find(r => r.id === rid)?.name ?? rid).join(', ')}`}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button size="icon" variant="ghost" onClick={() => startEdit(def)} data-testid={`button-edit-type-${def.id}`}>

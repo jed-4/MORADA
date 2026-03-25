@@ -3600,7 +3600,7 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   updatedAt: true,
 }).extend({
   contentType: z.enum(["text", "bullet", "table", "image"]).default("text"),
-  itemType: z.enum(["e-note", "scope", "note", "tool", "material", "proposal", "checklist"]).default("scope"),
+  itemType: z.string().min(1).default("scope"), // free-text to support custom type definitions
   stage: z.string().min(1, "Stage is required"),
   title: z.string().min(1, "Title is required"),
   gearList: z.array(z.object({

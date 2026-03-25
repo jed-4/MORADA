@@ -436,6 +436,7 @@ export interface IStorage {
   createScopeItemTypeDefinition(def: InsertScopeItemTypeDefinition): Promise<ScopeItemTypeDefinition>;
   updateScopeItemTypeDefinition(id: string, def: Partial<InsertScopeItemTypeDefinition>): Promise<ScopeItemTypeDefinition | undefined>;
   deleteScopeItemTypeDefinition(id: string): Promise<boolean>;
+  reorderScopeItemTypeDefinitions(orderedIds: string[]): Promise<void>;
   seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]>;
 
   // Scope Items CRUD (the DNA of every job)
@@ -10756,6 +10757,16 @@ export class DbStorage implements IStorage {
       console.error("Database error in deleteScopeItemTypeDefinition:", error);
       return false;
     }
+  }
+
+  async reorderScopeItemTypeDefinitions(orderedIds: string[]): Promise<void> {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        db.update(schema.scopeItemTypeDefinitions)
+          .set({ displayOrder: index })
+          .where(eq(schema.scopeItemTypeDefinitions.id, id))
+      )
+    );
   }
 
   async seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]> {
