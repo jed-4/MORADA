@@ -130,82 +130,100 @@ export function computeMoveCascade(params: {
   if (startOffset !== 0) {
     const snapDir: "forward" | "backward" = startOffset > 0 ? "forward" : "backward";
 
-    const dependentItems = getAllDownstreamSuccessors(movedItemId, allItems);
-    const childItems = getChildrenRecursive(movedItemId, allItems);
+    if (endOffset === 0) {
+      const ssSuccessors = getAllDownstreamSuccessors(
+        movedItemId,
+        allItems,
+        type => type === "SS",
+      );
+      for (const succ of ssSuccessors) {
+        const succStart = parseScheduleDate(succ.startDate as string);
+        const succEnd = parseScheduleDate(succ.endDate as string);
+        const succWorkDuration = countWD(succStart, succEnd, isNonWorking);
+        let succNewStart = addDays(succStart, startOffset);
+        succNewStart = snapWD(succNewStart, snapDir, isNonWorking);
+        const succNewEnd = addWD(succNewStart, succWorkDuration, isNonWorking);
+        recordUpdate({
+          id: succ.id,
+          startDate: format(succNewStart, "yyyy-MM-dd"),
+          endDate: format(succNewEnd, "yyyy-MM-dd"),
+        });
+      }
+    } else {
+      const dependentItems = getAllDownstreamSuccessors(movedItemId, allItems);
+      const childItems = getChildrenRecursive(movedItemId, allItems);
 
-    const depChildIds = new Set<number | string>();
-    const depChildItems: ScheduleItem[] = [];
-    for (const depItem of dependentItems) {
-      const children = getChildrenRecursive(depItem.id, allItems);
-      for (const child of children) {
-        if (!depChildIds.has(child.id) && !dependentItems.some(d => d.id === child.id)) {
-          depChildIds.add(child.id);
-          depChildItems.push(child);
+      const depChildIds = new Set<number | string>();
+      const depChildItems: ScheduleItem[] = [];
+      for (const depItem of dependentItems) {
+        for (const child of getChildrenRecursive(depItem.id, allItems)) {
+          if (!depChildIds.has(child.id) && !dependentItems.some(d => d.id === child.id)) {
+            depChildIds.add(child.id);
+            depChildItems.push(child);
+          }
         }
       }
-    }
 
-    const shiftDepItem = (depItem: ScheduleItem): CascadeUpdate => {
-      const depStart = parseScheduleDate(depItem.startDate as string);
-      const depEnd = parseScheduleDate(depItem.endDate as string);
-      const depWorkingDuration = countWD(depStart, depEnd, isNonWorking);
-      let depNewStart = addDays(depStart, startOffset);
-      depNewStart = snapWD(depNewStart, snapDir, isNonWorking);
-      const depNewEnd = addWD(depNewStart, depWorkingDuration, isNonWorking);
-      return {
-        id: depItem.id,
-        startDate: format(depNewStart, "yyyy-MM-dd"),
-        endDate: format(depNewEnd, "yyyy-MM-dd"),
+      const shiftDepItem = (depItem: ScheduleItem): CascadeUpdate => {
+        const depStart = parseScheduleDate(depItem.startDate as string);
+        const depEnd = parseScheduleDate(depItem.endDate as string);
+        const depWorkingDuration = countWD(depStart, depEnd, isNonWorking);
+        let depNewStart = addDays(depStart, startOffset);
+        depNewStart = snapWD(depNewStart, snapDir, isNonWorking);
+        const depNewEnd = addWD(depNewStart, depWorkingDuration, isNonWorking);
+        return {
+          id: depItem.id,
+          startDate: format(depNewStart, "yyyy-MM-dd"),
+          endDate: format(depNewEnd, "yyyy-MM-dd"),
+        };
       };
-    };
 
-    const shiftChildItem = (childItem: ScheduleItem): CascadeUpdate => {
-      const childStart = parseScheduleDate(childItem.startDate as string);
-      const childEnd = parseScheduleDate(childItem.endDate as string);
-      const relativeWD = countWD(origStartMidnight, childStart, isNonWorking);
-      const childWorkingDuration = countWD(childStart, childEnd, isNonWorking);
-      const depNewStart = addWD(newStartMidnight, relativeWD, isNonWorking);
-      const depNewEnd = addWD(depNewStart, childWorkingDuration, isNonWorking);
-      return {
-        id: childItem.id,
-        startDate: format(depNewStart, "yyyy-MM-dd"),
-        endDate: format(depNewEnd, "yyyy-MM-dd"),
+      const shiftChildItem = (childItem: ScheduleItem): CascadeUpdate => {
+        const childStart = parseScheduleDate(childItem.startDate as string);
+        const childEnd = parseScheduleDate(childItem.endDate as string);
+        const relativeWD = countWD(origStartMidnight, childStart, isNonWorking);
+        const childWorkingDuration = countWD(childStart, childEnd, isNonWorking);
+        const depNewStart = addWD(newStartMidnight, relativeWD, isNonWorking);
+        const depNewEnd = addWD(depNewStart, childWorkingDuration, isNonWorking);
+        return {
+          id: childItem.id,
+          startDate: format(depNewStart, "yyyy-MM-dd"),
+          endDate: format(depNewEnd, "yyyy-MM-dd"),
+        };
       };
-    };
 
-    for (const child of childItems) {
-      if (!dependentItems.some(d => d.id === child.id)) {
-        recordUpdate(shiftChildItem(child));
+      for (const child of childItems) {
+        if (!dependentItems.some(d => d.id === child.id)) {
+          recordUpdate(shiftChildItem(child));
+        }
       }
-    }
-    for (const depItem of dependentItems) {
-      recordUpdate(shiftDepItem(depItem));
-    }
-    for (const depChild of depChildItems) {
-      recordUpdate(shiftDepItem(depChild));
+      for (const depItem of dependentItems) {
+        recordUpdate(shiftDepItem(depItem));
+      }
+      for (const depChild of depChildItems) {
+        recordUpdate(shiftDepItem(depChild));
+      }
     }
   }
 
   if (endOffset !== 0) {
     const snapDir: "forward" | "backward" = endOffset > 0 ? "forward" : "backward";
-
-    const ffSfSuccessors = getAllDownstreamSuccessors(
+    const fsSuccessors = getAllDownstreamSuccessors(
       movedItemId,
       allItems,
-      type => type === "FF" || type === "SF",
+      type => type === "FS" || type === "FF" || type === "SF",
     );
-
-    for (const succ of ffSfSuccessors) {
+    for (const succ of fsSuccessors) {
       if (updatesMap.has(String(succ.id))) continue;
       const succStart = parseScheduleDate(succ.startDate as string);
       const succEnd = parseScheduleDate(succ.endDate as string);
       const succWorkDuration = countWD(succStart, succEnd, isNonWorking);
-      let succNewEnd = addDays(succEnd, endOffset);
-      succNewEnd = snapWD(succNewEnd, snapDir, isNonWorking);
-      const newSuccStart = addWD(succNewEnd, -succWorkDuration, isNonWorking);
+      let succNewStart = addDays(succStart, endOffset);
+      succNewStart = snapWD(succNewStart, snapDir, isNonWorking);
+      const succNewEnd = addWD(succNewStart, succWorkDuration, isNonWorking);
       recordUpdate({
         id: succ.id,
-        startDate: format(newSuccStart, "yyyy-MM-dd"),
+        startDate: format(succNewStart, "yyyy-MM-dd"),
         endDate: format(succNewEnd, "yyyy-MM-dd"),
       });
     }
