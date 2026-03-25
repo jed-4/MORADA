@@ -327,7 +327,7 @@ export interface IStorage {
   getEstimateEnotes(estimateId: string): Promise<any[]>;
   createEstimateEnote(data: any): Promise<any>;
   updateEstimateEnote(id: string, data: Partial<any>): Promise<any>;
-  deleteEstimateEnote(id: string): Promise<boolean>;
+  deleteEstimateEnote(id: string): Promise<{ success: boolean; reason?: string }>;
 
   // HBCF Project Tracker
   getHbcfProjects(companyId: string): Promise<any[]>;
@@ -9320,13 +9320,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteEstimateEnote(id: string): Promise<boolean> {
+  async deleteEstimateEnote(id: string): Promise<{ success: boolean; reason?: string }> {
     try {
+      const [row] = await db.select().from(schema.estimateEnotes).where(eq(schema.estimateEnotes.id, id));
+      if (!row) return { success: false, reason: "not_found" };
+      if (!row.isCustom) return { success: false, reason: "not_custom" };
       await db.delete(schema.estimateEnotes).where(eq(schema.estimateEnotes.id, id));
-      return true;
+      return { success: true };
     } catch (error) {
       console.error("Database error in deleteEstimateEnote:", error);
-      return false;
+      return { success: false, reason: "error" };
     }
   }
 

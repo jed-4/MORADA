@@ -4574,9 +4574,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/estimates/:id/enotes/rows", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getEstimateEnotes(req.params.id);
+      const { groupName } = req.body;
+      if (!groupName) return res.status(400).json({ error: "groupName is required" });
+      const row = await storage.createEstimateEnote({
+        estimateId: req.params.id,
+        groupName,
+        categoryName: "",
+        sortOrder: existing.length,
+        isCustom: true,
+      });
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add custom row" });
+    }
+  });
+
   app.delete("/api/estimates/:id/enotes/:categoryId", requireAuth, async (req, res) => {
     try {
-      await storage.deleteEstimateEnote(req.params.categoryId);
+      const result = await storage.deleteEstimateEnote(req.params.categoryId);
+      if (!result.success) {
+        if (result.reason === "not_found") return res.status(404).json({ error: "Row not found" });
+        if (result.reason === "not_custom") return res.status(403).json({ error: "Only custom rows can be deleted" });
+        return res.status(500).json({ error: "Failed to delete e-note" });
+      }
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete e-note" });

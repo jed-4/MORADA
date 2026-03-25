@@ -3,9 +3,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, MinusCircle, Plus, Trash2, StickyNote } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { CheckCircle2, Circle, MinusCircle, Plus, Trash2, StickyNote, EyeOff } from "lucide-react";
 
 interface EnoteRow {
   id: string;
@@ -21,10 +27,72 @@ interface EnoteRow {
   labourRequired: boolean;
   estimatorNotes: string | null;
   completed: boolean;
+  isCustom: boolean;
 }
 
 interface Props {
   estimateId: string;
+}
+
+function NotePopover({
+  value,
+  placeholder,
+  onSave,
+}: {
+  value: string | null;
+  placeholder: string;
+  onSave: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+
+  const handleOpenChange = (o: boolean) => {
+    if (!o) {
+      const trimmed = draft.trim();
+      if (trimmed !== (value ?? "")) {
+        onSave(trimmed);
+      }
+    } else {
+      setDraft(value ?? "");
+    }
+    setOpen(o);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <span
+          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center w-full"
+        >
+          {value ? (
+            <span className="truncate">{value}</span>
+          ) : (
+            <span className="opacity-30 italic">{placeholder}</span>
+          )}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-2" align="start" side="bottom">
+        <Textarea
+          autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Escape") handleOpenChange(false);
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleOpenChange(false);
+          }}
+          placeholder={placeholder}
+          className="min-h-[80px] text-xs resize-none"
+          rows={4}
+        />
+        <div className="flex justify-between items-center mt-1.5">
+          <span className="text-[10px] text-muted-foreground">⌘+Enter to save</span>
+          <Button size="sm" className="h-6 text-xs px-2" onClick={() => handleOpenChange(false)}>
+            Save
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export default function EstimateEnotes({ estimateId }: Props) {
@@ -34,6 +102,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const [editValue, setEditValue] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newItemName, setNewItemName] = useState("");
+  const [hideNotRequired, setHideNotRequired] = useState(false);
   const newCatInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,6 +136,13 @@ export default function EstimateEnotes({ estimateId }: Props) {
     onError: () => toast({ title: "Failed to add", variant: "destructive" }),
   });
 
+  const addCustomRowMutation = useMutation({
+    mutationFn: (groupName: string) =>
+      apiRequest(`/api/estimates/${estimateId}/enotes/rows`, "POST", { groupName }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "enotes"] }),
+    onError: () => toast({ title: "Failed to add row", variant: "destructive" }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest(`/api/estimates/${estimateId}/enotes/${id}`, "DELETE"),
@@ -89,12 +165,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
     updateMutation.mutate({ id, data });
   }, [updateMutation]);
 
-  const startEdit = (id: string, field: string, currentVal: string | null) => {
-    setEditingCell({ id, field });
-    setEditValue(currentVal ?? "");
-  };
-
-  const commitEdit = (row: EnoteRow, field: 'brainstormNotes' | 'estimatorNotes' | 'rfqDate') => {
+  const commitEdit = (row: EnoteRow, field: 'rfqDate') => {
     if (editingCell?.id === row.id && editingCell?.field === field) {
       const current = row[field] ?? "";
       if (editValue !== current) update(row.id, { [field]: editValue || null });
@@ -107,16 +178,14 @@ export default function EstimateEnotes({ estimateId }: Props) {
     update(row.id, { required: next });
   };
 
-  // Derive categories list (what was previously called "groups")
   const categoryNames = useMemo(() => [...new Set(enotes.map(r => r.groupName))], [enotes]);
-
-  // Auto-select first category when data loads
   const effectiveCategory = selectedCategory || categoryNames[0] || "";
 
-  // Items for the selected category (what was previously called "categoryName" rows)
-  const categoryItems = useMemo(() => enotes.filter(r => r.groupName === effectiveCategory), [enotes, effectiveCategory]);
+  const categoryItems = useMemo(() => {
+    const all = enotes.filter(r => r.groupName === effectiveCategory);
+    return hideNotRequired ? all.filter(r => r.required !== false) : all;
+  }, [enotes, effectiveCategory, hideNotRequired]);
 
-  // Add a new category (creates one placeholder item row with empty categoryName)
   const addCategory = () => {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
@@ -133,7 +202,6 @@ export default function EstimateEnotes({ estimateId }: Props) {
     });
   };
 
-  // Add a new item within the selected category
   const addItem = () => {
     const trimmed = newItemName.trim();
     if (!trimmed || !effectiveCategory) return;
@@ -158,7 +226,6 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Split panel body */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* LEFT: Categories panel */}
@@ -227,6 +294,22 @@ export default function EstimateEnotes({ estimateId }: Props) {
             </div>
           ) : (
             <>
+              {/* Filter bar */}
+              <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-background">
+                <button
+                  onClick={() => setHideNotRequired(v => !v)}
+                  className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
+                    hideNotRequired
+                      ? 'bg-primary/10 border-primary/30 text-primary'
+                      : 'border-border/50 text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="Toggle hide not-required rows"
+                >
+                  <EyeOff className="w-3 h-3" />
+                  Hide Not Required
+                </button>
+              </div>
+
               {/* Column header */}
               <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-[10px] font-medium text-muted-foreground uppercase tracking-wide select-none">
                 <div className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: '1fr 56px 1fr 44px 44px 96px 44px 1fr 56px 36px' }}>
@@ -247,7 +330,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
               <div className="flex-1 overflow-auto min-h-0">
                 {categoryItems.length === 0 ? (
                   <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
-                    No items in this category yet
+                    {hideNotRequired ? "All rows are hidden by the filter" : "No items in this category yet"}
                   </div>
                 ) : categoryItems.map(row => (
                   <div
@@ -256,32 +339,29 @@ export default function EstimateEnotes({ estimateId }: Props) {
                     style={{ gridTemplateColumns: '1fr 56px 1fr 44px 44px 96px 44px 1fr 56px 36px', minHeight: '34px' }}
                   >
                     {/* Item name */}
-                    <span className="text-sm truncate pr-2">{row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}</span>
+                    {row.isCustom ? (
+                      <Input
+                        value={row.categoryName}
+                        onChange={e => update(row.id, { categoryName: e.target.value })}
+                        placeholder="Item name…"
+                        className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent pr-2"
+                      />
+                    ) : (
+                      <span className="text-sm truncate pr-2">{row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}</span>
+                    )}
 
                     {/* Required toggle */}
                     <div className="flex justify-center" onClick={() => cycleRequired(row)}>
                       <RequiredIcon val={row.required} />
                     </div>
 
-                    {/* Brainstorm Notes */}
-                    <div className="pl-2 py-0.5">
-                      {editingCell?.id === row.id && editingCell.field === 'brainstormNotes' ? (
-                        <Input
-                          autoFocus
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          onBlur={() => commitEdit(row, 'brainstormNotes')}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(row, 'brainstormNotes'); }}
-                          className="h-6 text-xs focus-visible:ring-0 border-primary"
-                        />
-                      ) : (
-                        <span
-                          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center"
-                          onClick={() => startEdit(row.id, 'brainstormNotes', row.brainstormNotes)}
-                        >
-                          {row.brainstormNotes || <span className="opacity-30 italic">Add notes…</span>}
-                        </span>
-                      )}
+                    {/* Brainstorm Notes — popover */}
+                    <div className="pl-2 py-0.5 overflow-hidden">
+                      <NotePopover
+                        value={row.brainstormNotes}
+                        placeholder="Add notes…"
+                        onSave={v => update(row.id, { brainstormNotes: v || null })}
+                      />
                     </div>
 
                     {/* RFI */}
@@ -315,9 +395,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       ) : (
                         <span
                           className="text-xs text-muted-foreground cursor-pointer hover:text-foreground"
-                          onClick={() => startEdit(row.id, 'rfqDate', row.rfqDate)}
+                          onClick={() => { setEditingCell({ id: row.id, field: 'rfqDate' }); setEditValue(row.rfqDate ?? ""); }}
                         >
-                          {row.rfqDate || <span className="opacity-30">—</span>}
+                          {row.rfqDate ? row.rfqDate : <span className="opacity-30">—</span>}
                         </span>
                       )}
                     </div>
@@ -330,25 +410,13 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       />
                     </div>
 
-                    {/* Estimator Notes */}
-                    <div className="pl-2 py-0.5">
-                      {editingCell?.id === row.id && editingCell.field === 'estimatorNotes' ? (
-                        <Input
-                          autoFocus
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          onBlur={() => commitEdit(row, 'estimatorNotes')}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(row, 'estimatorNotes'); }}
-                          className="h-6 text-xs focus-visible:ring-0 border-primary"
-                        />
-                      ) : (
-                        <span
-                          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center"
-                          onClick={() => startEdit(row.id, 'estimatorNotes', row.estimatorNotes)}
-                        >
-                          {row.estimatorNotes || <span className="opacity-30 italic">Add notes…</span>}
-                        </span>
-                      )}
+                    {/* Estimator Notes — popover */}
+                    <div className="pl-2 py-0.5 overflow-hidden">
+                      <NotePopover
+                        value={row.estimatorNotes}
+                        placeholder="Add notes…"
+                        onSave={v => update(row.id, { estimatorNotes: v || null })}
+                      />
                     </div>
 
                     {/* Completed */}
@@ -359,28 +427,47 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       />
                     </div>
 
-                    {/* Delete */}
+                    {/* Delete — only for custom rows */}
                     <div className="flex justify-center">
-                      <button
-                        className="invisible group-hover/erow:visible text-muted-foreground/40 hover:text-destructive transition-colors"
-                        onClick={() => deleteMutation.mutate(row.id)}
-                        title="Delete item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {row.isCustom ? (
+                        <button
+                          className="invisible group-hover/erow:visible text-muted-foreground/40 hover:text-destructive transition-colors"
+                          onClick={() => deleteMutation.mutate(row.id)}
+                          title="Delete row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <span className="w-3.5 h-3.5" />
+                      )}
                     </div>
                   </div>
                 ))}
+
+                {/* Per-group add blank row button */}
+                {effectiveCategory && (
+                  <div className="px-3 py-1.5 flex">
+                    <button
+                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => addCustomRowMutation.mutate(effectiveCategory)}
+                      disabled={addCustomRowMutation.isPending}
+                      title="Add blank row to this group"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add blank row
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* Add item row */}
+              {/* Add named item row */}
               <div className="flex-shrink-0 border-t border-border/50 px-3 py-2 flex items-center gap-2">
                 <Input
                   ref={newItemInputRef}
                   value={newItemName}
                   onChange={e => setNewItemName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
-                  placeholder="Add item to this category…"
+                  placeholder="Add named item to this category…"
                   className="h-7 text-xs flex-1"
                 />
                 <Button
