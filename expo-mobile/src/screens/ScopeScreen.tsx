@@ -108,7 +108,9 @@ export default function ScopeScreen({ navigation, route }: Props) {
     roleName.toLowerCase().includes('owner') ||
     roleName.toLowerCase().includes('general manager');
   const currentRoleId = user?.roleId ?? null;
-  // Client users get read-only access; team members and suppliers can mark items complete
+  // Edit permission: team members and suppliers can mark items complete; clients are read-only.
+  // userCategory is the canonical permission signal for scope item completion throughout the app
+  // (team = internal staff, supplier = subcontractor, client = owner/purchaser, read-only only).
   const canEdit = user?.userCategory !== 'client';
 
   const visibleTypeDefs = typeDefs.filter(def => {
@@ -121,10 +123,16 @@ export default function ScopeScreen({ navigation, route }: Props) {
 
   const isItemVisible = useCallback(
     (item: ScopeItem): boolean => {
+      // No type definitions configured for this company — show all items
       if (typeDefs.length === 0) return true;
       const type = (item.itemType || 'scope').toLowerCase();
-      const def = visibleTypeDefs.find(d => d.name.toLowerCase() === type);
-      if (!def && !isAdmin) return false;
+      const allDef = typeDefs.find(d => d.name.toLowerCase() === type);
+      // Item has a type not present in company definitions (e.g. legacy/deleted type)
+      // Default to visible rather than hiding unexpectedly
+      if (!allDef) return true;
+      // Type exists but not visible to this role — hide for non-admins
+      const visibleDef = visibleTypeDefs.find(d => d.name.toLowerCase() === type);
+      if (!visibleDef && !isAdmin) return false;
       return true;
     },
     [typeDefs, visibleTypeDefs, isAdmin]
