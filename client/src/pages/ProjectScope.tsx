@@ -2441,21 +2441,34 @@ export default function ProjectScope() {
   // Check if all stages are expanded
   const allStagesExpanded = scopeStages.length > 0 && scopeStages.every(stage => stageExpanded[stage.name]);
 
+  // Returns items for a stage, filtered by role visibility AND active UI type chips
   const getItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
       .filter(item => {
         const type = item.itemType || 'scope';
-        // Role visibility filter: if custom type defs exist, hide items whose type is not visible to current role
+        // Role visibility filter
         if (visibleTypeDefs.length > 0) {
           const def = visibleTypeDefs.find(d => d.name.toLowerCase() === type.toLowerCase());
-          if (!def) {
-            // Type not visible to this role — hide it (unless admin)
-            if (!isAdmin) return false;
-          }
+          if (!def && !isAdmin) return false;
         }
-        // Active type filter chip
+        // Active type chip filter (UI toggle)
         return activeTypeFilters.has(type);
+      })
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  };
+
+  // Returns items for PDF export — applies role visibility only (ignores UI chip toggles so all visible types export)
+  const getPdfItemsByStage = (stageName: string) => {
+    return scopeItems
+      .filter(item => item.stage === stageName)
+      .filter(item => {
+        const type = item.itemType || 'scope';
+        if (visibleTypeDefs.length > 0) {
+          const def = visibleTypeDefs.find(d => d.name.toLowerCase() === type.toLowerCase());
+          if (!def && !isAdmin) return false;
+        }
+        return true;
       })
       .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
   };
@@ -2482,11 +2495,10 @@ export default function ProjectScope() {
     setCollapsedItems(newCollapsed);
   };
 
-  // Determine if current user is admin
-  const dbUser = (user as any)?.dbUser;
-  const roleName = dbUser?.roleName || '';
+  // Determine if current user is admin (roleName and roleId are top-level on User type)
+  const roleName = user?.roleName ?? '';
   const isAdmin = roleName.toLowerCase().includes('admin') || roleName.toLowerCase().includes('owner') || roleName.toLowerCase().includes('general manager');
-  const currentRoleId = dbUser?.roleId as string | null;
+  const currentRoleId = user?.roleId ?? null;
 
   // Compute visible type definitions for the current user
   const visibleTypeDefs = scopeItemTypeDefs.filter(def => {
@@ -3070,7 +3082,7 @@ export default function ProjectScope() {
               </div>
               <DialogFooter>
                 <PDFDownloadLink
-                  document={<ScopePDF stage={pdfStage} items={getItemsByStage(pdfStage)} hideClientCosts={hideClientCosts} />}
+                  document={<ScopePDF stage={pdfStage} items={getPdfItemsByStage(pdfStage)} hideClientCosts={hideClientCosts} />}
                   fileName={`scope-${pdfStage.toLowerCase()}${hideClientCosts ? '-client' : ''}.pdf`}
                 >
                   {({ loading }) => (
