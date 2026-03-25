@@ -2982,7 +2982,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             )}
 
             {/* Timeline Bars - minHeight ensures scroll area matches left panel (pb-20 = 80px matches left panel padding) */}
-            <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
+            <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT + 80}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 left-0 right-0 pointer-events-none z-0" style={{ height: `${orderedItems.length * ROW_HEIGHT}px` }}>
