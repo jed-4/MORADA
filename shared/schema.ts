@@ -5734,6 +5734,21 @@ export const insertEstimateEnoteSchema = createInsertSchema(estimateEnotes).omit
 export type InsertEstimateEnote = z.infer<typeof insertEstimateEnoteSchema>;
 export type EstimateEnote = typeof estimateEnotes.$inferSelect;
 
+// ─── E-Note Attachments ───────────────────────────────────────────────────────
+export const enoteAttachments = pgTable("enote_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enoteId: varchar("enote_id").notNull().references(() => estimateEnotes.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+
+export const insertEnoteAttachmentSchema = createInsertSchema(enoteAttachments).omit({ id: true, uploadedAt: true });
+export type InsertEnoteAttachment = z.infer<typeof insertEnoteAttachmentSchema>;
+export type EnoteAttachment = typeof enoteAttachments.$inferSelect;
+
 // ─── Labour Estimating ────────────────────────────────────────────────────────
 export const labourEstimates = pgTable("labour_estimates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

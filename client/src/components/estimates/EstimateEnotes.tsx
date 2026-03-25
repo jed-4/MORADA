@@ -7,6 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -15,6 +21,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Select,
@@ -34,6 +42,11 @@ import {
   Columns3,
   ChevronUp,
   ChevronDown,
+  Paperclip,
+  MoreHorizontal,
+  X,
+  Download,
+  Upload,
 } from "lucide-react";
 
 interface EnoteRow {
@@ -285,6 +298,184 @@ function ColumnsDropdown({
   );
 }
 
+// ─── Attachment types ─────────────────────────────────────────────────────────
+
+interface EnoteAttachment {
+  id: string;
+  enoteId: string;
+  fileName: string;
+  fileUrl: string;
+  fileSize: number;
+  mimeType: string;
+  uploadedAt: string;
+}
+
+// ─── AttachmentPanel ──────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImage(mimeType: string) {
+  return mimeType.startsWith("image/");
+}
+
+function AttachmentPanel({
+  row,
+  open,
+  onClose,
+  onCountChange,
+}: {
+  row: EnoteRow;
+  open: boolean;
+  onClose: () => void;
+  onCountChange: (rowId: string, count: number) => void;
+}) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  const { data: attachments = [], isLoading, refetch } = useQuery<EnoteAttachment[]>({
+    queryKey: ["/api/estimate-enotes", row.id, "attachments"],
+    queryFn: () => fetch(`/api/estimate-enotes/${row.id}/attachments`, { credentials: "include" }).then(r => r.json()),
+    enabled: open,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/enote-attachments/${id}`, "DELETE"),
+    onSuccess: () => {
+      refetch().then(r => {
+        onCountChange(row.id, (r.data as EnoteAttachment[] | undefined)?.length ?? 0);
+      });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const resp = await fetch(`/api/estimate-enotes/${row.id}/attachments`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!resp.ok) throw new Error("Upload failed");
+      const newAttachment = await resp.json();
+      queryClient.setQueryData<EnoteAttachment[]>(
+        ["/api/estimate-enotes", row.id, "attachments"],
+        old => [...(old ?? []), newAttachment]
+      );
+      onCountChange(row.id, (attachments.length ?? 0) + 1);
+    } catch {
+      toast({ title: "Upload failed", variant: "destructive" });
+    }
+    e.target.value = "";
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+        <DialogContent className="max-w-xl w-full">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-muted-foreground" />
+              Attachments — <span className="font-normal text-muted-foreground truncate max-w-[260px]">{row.categoryName || "Unnamed"}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Upload button */}
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="w-3.5 h-3.5" />
+              Upload File
+            </Button>
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+          </div>
+
+          {/* File list */}
+          {isLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : attachments.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground italic">No attachments yet</div>
+          ) : (
+            <div className="flex flex-col gap-1 max-h-[400px] overflow-y-auto pr-1">
+              {attachments.map(att => (
+                <div key={att.id} className="flex items-center gap-2 p-2 rounded-md border border-border/50 hover-elevate group">
+                  {/* Thumbnail or icon */}
+                  {isImage(att.mimeType) ? (
+                    <button
+                      className="w-10 h-10 flex-shrink-0 rounded overflow-hidden border border-border/30"
+                      onClick={() => setLightboxUrl(att.fileUrl)}
+                      title="Preview"
+                    >
+                      <img src={att.fileUrl} alt={att.fileName} className="w-full h-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="w-10 h-10 flex-shrink-0 rounded border border-border/30 bg-muted/50 flex items-center justify-center">
+                      <Paperclip className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+
+                  {/* Name + size */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{att.fileName}</p>
+                    <p className="text-[10px] text-muted-foreground">{formatBytes(att.fileSize)}</p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a
+                      href={att.fileUrl}
+                      download={att.fileName}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Download"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      className="text-muted-foreground/50 hover:text-destructive transition-colors"
+                      onClick={() => deleteMut.mutate(att.id)}
+                      title="Delete"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox */}
+      {lightboxUrl !== null && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Preview"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -303,6 +494,10 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const [hideNotRequired, setHideNotRequired] = useState(false);
   const newCatInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Attachment panel state ────────────────────────────────────────────────
+  const [attachmentPanelRow, setAttachmentPanelRow] = useState<EnoteRow | null>(null);
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
 
   // ── Column preferences (visibility, order, widths) ────────────────────────
   const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(estimateId));
@@ -342,10 +537,10 @@ export default function EstimateEnotes({ estimateId }: Props) {
     return out;
   }, [colPrefs.widths]);
 
-  // Grid template: fixed "Item" column (1fr) + visible cols + fixed delete column (36px)
+  // Grid template: fixed "Item" column (1fr) + visible cols + fixed actions column (52px)
   const gridTemplate = useMemo(() => {
     const mid = visibleCols.map(c => `${colWidths[c.id]}px`).join(" ");
-    return `1fr ${mid} 36px`;
+    return `1fr ${mid} 52px`;
   }, [visibleCols, colWidths]);
 
   // ── Column resize ─────────────────────────────────────────────────────────
@@ -414,6 +609,17 @@ export default function EstimateEnotes({ estimateId }: Props) {
     queryKey: ["/api/estimates", estimateId, "enotes"],
     queryFn: () => fetch(`/api/estimates/${estimateId}/enotes`, { credentials: "include" }).then(r => r.json()),
   });
+
+  const { data: serverCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ["/api/estimates", estimateId, "enotes", "attachment-counts"],
+    queryFn: () => fetch(`/api/estimates/${estimateId}/enotes/attachment-counts`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  // Merge server counts with local overrides
+  const effectiveCounts = useMemo(
+    () => ({ ...serverCounts, ...attachmentCounts }),
+    [serverCounts, attachmentCounts]
+  );
 
   const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
     queryKey: ["/api/field-categories"],
@@ -772,51 +978,89 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   <div className="flex items-center justify-center h-24 text-xs text-muted-foreground italic">
                     {hideNotRequired ? "All rows are hidden by the filter" : "No items in this category yet"}
                   </div>
-                ) : categoryItems.map(row => (
-                  <div
-                    key={row.id}
-                    className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
-                      row.required === false ? "opacity-40" : ""
-                    } ${row.completed ? "bg-green-500/5" : ""}`}
-                    style={{ gridTemplateColumns: gridTemplate, minHeight: "34px" }}
-                  >
-                    {/* Fixed: Item name */}
-                    {row.isCustom ? (
-                      <Input
-                        value={row.categoryName}
-                        onChange={e => update(row.id, { categoryName: e.target.value })}
-                        placeholder="Item name…"
-                        className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent pr-2"
-                      />
-                    ) : (
-                      <span className="text-sm truncate pr-2">
-                        {row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}
-                      </span>
-                    )}
-
-                    {/* Dynamic visible columns */}
-                    {visibleCols.map(col => (
-                      <div key={col.id} className="overflow-hidden">
-                        {renderCell(col.id, row)}
+                ) : categoryItems.map(row => {
+                  const attCount = effectiveCounts[row.id] ?? 0;
+                  return (
+                    <div
+                      key={row.id}
+                      className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
+                        row.required === false ? "opacity-40" : ""
+                      } ${row.completed ? "bg-green-500/5" : ""}`}
+                      style={{ gridTemplateColumns: gridTemplate, minHeight: "34px" }}
+                    >
+                      {/* Fixed: Item name + attachment badge */}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {row.isCustom ? (
+                          <Input
+                            value={row.categoryName}
+                            onChange={e => update(row.id, { categoryName: e.target.value })}
+                            placeholder="Item name…"
+                            className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent min-w-0 flex-1"
+                          />
+                        ) : (
+                          <span className="text-sm truncate flex-1 min-w-0">
+                            {row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}
+                          </span>
+                        )}
+                        {attCount > 0 && (
+                          <button
+                            className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0"
+                            onClick={() => setAttachmentPanelRow(row)}
+                            title={`${attCount} attachment${attCount !== 1 ? "s" : ""}`}
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            <span>{attCount}</span>
+                          </button>
+                        )}
                       </div>
-                    ))}
 
-                    {/* Fixed: Delete — only for custom rows */}
-                    <div className="flex justify-center">
-                      {row.isCustom ? (
-                        <button
-                          className="invisible group-hover/erow:visible text-muted-foreground/40 hover:text-destructive transition-colors"
-                          onClick={() => deleteMutation.mutate(row.id)}
-                          title="Delete row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <span className="w-3.5 h-3.5" />
-                      )}
+                      {/* Dynamic visible columns */}
+                      {visibleCols.map(col => (
+                        <div key={col.id} className="overflow-hidden">
+                          {renderCell(col.id, row)}
+                        </div>
+                      ))}
+
+                      {/* Fixed: Actions column — 3-dot menu (hover-only) */}
+                      <div className="flex justify-center items-center">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="invisible group-hover/erow:visible text-muted-foreground/50 hover:text-foreground transition-colors p-0.5 rounded"
+                              title="Row options"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              className="flex items-center gap-2 text-xs"
+                              onSelect={() => setAttachmentPanelRow(row)}
+                            >
+                              <Paperclip className="w-3.5 h-3.5" />
+                              Attachments
+                              {attCount > 0 && (
+                                <span className="ml-auto text-[10px] text-muted-foreground">{attCount}</span>
+                              )}
+                            </DropdownMenuItem>
+                            {row.isCustom && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="flex items-center gap-2 text-xs text-destructive focus:text-destructive"
+                                  onSelect={() => deleteMutation.mutate(row.id)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Delete row
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* Per-group add blank row button */}
                 {effectiveCategory && (
@@ -859,6 +1103,18 @@ export default function EstimateEnotes({ estimateId }: Props) {
           )}
         </div>
       </div>
+
+      {/* Attachment panel */}
+      {attachmentPanelRow !== null && (
+        <AttachmentPanel
+          row={attachmentPanelRow}
+          open={attachmentPanelRow !== null}
+          onClose={() => setAttachmentPanelRow(null)}
+          onCountChange={(rowId, count) =>
+            setAttachmentCounts(prev => ({ ...prev, [rowId]: count }))
+          }
+        />
+      )}
     </div>
   );
 }

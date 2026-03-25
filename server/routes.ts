@@ -4620,6 +4620,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── E-Note Attachments ──────────────────────────────────────────────────────
+
+  // Multer for enote attachments (stored to local disk under uploads/enote-attachments/)
+  const _enoteAttachDir = 'uploads/enote-attachments';
+  try { (await import('fs')).mkdirSync(_enoteAttachDir, { recursive: true }); } catch (_) {}
+  const enoteAttachmentUpload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, _enoteAttachDir),
+      filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        const ext = file.originalname.split('.').pop() || 'bin';
+        cb(null, `${unique}.${ext}`);
+      },
+    }),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  });
+
+  app.get("/api/estimates/:id/enotes/attachment-counts", requireAuth, async (req, res) => {
+    try {
+      const counts = await storage.getEnoteAttachmentCounts(req.params.id);
+      res.json(counts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachment counts" });
+    }
+  });
+
+  app.get("/api/estimate-enotes/:rowId/attachments", requireAuth, async (req, res) => {
+    try {
+      const attachments = await storage.getEnoteAttachments(req.params.rowId);
+      res.json(attachments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachments" });
+    }
+  });
+
+  app.post("/api/estimate-enotes/:rowId/attachments", requireAuth, enoteAttachmentUpload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const fileUrl = `/uploads/enote-attachments/${req.file.filename}`;
+      const attachment = await storage.createEnoteAttachment({
+        enoteId: req.params.rowId,
+        fileName: req.file.originalname,
+        fileUrl,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+      });
+      res.status(201).json(attachment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to upload attachment" });
+    }
+  });
+
+  app.delete("/api/enote-attachments/:attachmentId", requireAuth, async (req, res) => {
+    try {
+      const ok = await storage.deleteEnoteAttachment(req.params.attachmentId);
+      if (!ok) return res.status(404).json({ error: "Attachment not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete attachment" });
+    }
+  });
+
   // ============================================================
   // LABOUR ESTIMATE ROUTES
   // ============================================================

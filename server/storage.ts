@@ -329,6 +329,12 @@ export interface IStorage {
   updateEstimateEnote(id: string, data: Partial<any>): Promise<any>;
   deleteEstimateEnote(id: string): Promise<{ success: boolean; reason?: string }>;
 
+  // E-Note Attachments
+  getEnoteAttachmentCounts(estimateId: string): Promise<Record<string, number>>;
+  getEnoteAttachments(enoteId: string): Promise<any[]>;
+  createEnoteAttachment(data: any): Promise<any>;
+  deleteEnoteAttachment(id: string): Promise<boolean>;
+
   // HBCF Project Tracker
   getHbcfProjects(companyId: string): Promise<any[]>;
   createHbcfProject(data: any): Promise<any>;
@@ -9346,6 +9352,63 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteEstimateEnote:", error);
       return { success: false, reason: "error" };
+    }
+  }
+
+  // ── E-Note Attachments ─────────────────────────────────────────────────────
+  async getEnoteAttachmentCounts(estimateId: string): Promise<Record<string, number>> {
+    try {
+      const rows = await db
+        .select({
+          enoteId: schema.enoteAttachments.enoteId,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(schema.enoteAttachments)
+        .innerJoin(schema.estimateEnotes, eq(schema.enoteAttachments.enoteId, schema.estimateEnotes.id))
+        .where(eq(schema.estimateEnotes.estimateId, estimateId))
+        .groupBy(schema.enoteAttachments.enoteId);
+      const result: Record<string, number> = {};
+      for (const r of rows) result[r.enoteId] = Number(r.count);
+      return result;
+    } catch (error) {
+      console.error("Database error in getEnoteAttachmentCounts:", error);
+      return {};
+    }
+  }
+
+  async getEnoteAttachments(enoteId: string): Promise<any[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.enoteAttachments)
+        .where(eq(schema.enoteAttachments.enoteId, enoteId))
+        .orderBy(schema.enoteAttachments.uploadedAt);
+    } catch (error) {
+      console.error("Database error in getEnoteAttachments:", error);
+      return [];
+    }
+  }
+
+  async createEnoteAttachment(data: any): Promise<any> {
+    try {
+      const [created] = await db
+        .insert(schema.enoteAttachments)
+        .values(data)
+        .returning();
+      return created;
+    } catch (error) {
+      console.error("Database error in createEnoteAttachment:", error);
+      throw error;
+    }
+  }
+
+  async deleteEnoteAttachment(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.enoteAttachments).where(eq(schema.enoteAttachments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEnoteAttachment:", error);
+      return false;
     }
   }
 
