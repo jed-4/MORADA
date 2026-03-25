@@ -14479,16 +14479,27 @@ export class DbStorage implements IStorage {
       const buildWhere = (projectFilter?: ReturnType<typeof eq>) => {
         const conditions = [];
         if (projectFilter) conditions.push(projectFilter);
-        // Visibility filter: hide assignee_only checklists from non-assignees (unless admin)
-        // NULL visibility is treated as 'everyone' for backwards compatibility with pre-migration rows
-        if (userId && !isAdmin) {
-          conditions.push(
-            or(
-              isNull(schema.checklistInstances.visibility),
-              eq(schema.checklistInstances.visibility, 'everyone'),
-              eq(schema.checklistInstances.assigneeId, userId)
-            )
-          );
+        // Visibility filter: hide assignee_only checklists from non-assignees (unless admin).
+        // NULL visibility treated as 'everyone' for backwards-compat with pre-migration rows.
+        if (!isAdmin) {
+          if (userId) {
+            // Authenticated non-admin: see 'everyone' instances + own assignee_only instances
+            conditions.push(
+              or(
+                isNull(schema.checklistInstances.visibility),
+                eq(schema.checklistInstances.visibility, 'everyone'),
+                eq(schema.checklistInstances.assigneeId, userId)
+              )
+            );
+          } else {
+            // No authenticated user: only show 'everyone' instances
+            conditions.push(
+              or(
+                isNull(schema.checklistInstances.visibility),
+                eq(schema.checklistInstances.visibility, 'everyone')
+              )
+            );
+          }
         }
         return conditions.length > 0 ? and(...conditions) : undefined;
       };

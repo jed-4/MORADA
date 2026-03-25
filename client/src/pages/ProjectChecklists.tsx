@@ -1043,6 +1043,7 @@ export default function ProjectChecklists() {
                           Activity Log
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          data-testid={`toggle-visibility-${instance.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             const newVisibility = instance.visibility === "assignee_only" ? "everyone" : "assignee_only";
