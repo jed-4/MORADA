@@ -433,10 +433,11 @@ export interface IStorage {
 
   // Scope Item Type Definitions CRUD
   getScopeItemTypeDefinitions(companyId: string): Promise<ScopeItemTypeDefinition[]>;
+  getScopeItemTypeDefinitionById(id: string): Promise<ScopeItemTypeDefinition | undefined>;
   createScopeItemTypeDefinition(def: InsertScopeItemTypeDefinition): Promise<ScopeItemTypeDefinition>;
   updateScopeItemTypeDefinition(id: string, def: Partial<InsertScopeItemTypeDefinition>): Promise<ScopeItemTypeDefinition | undefined>;
   deleteScopeItemTypeDefinition(id: string): Promise<boolean>;
-  reorderScopeItemTypeDefinitions(orderedIds: string[]): Promise<void>;
+  reorderScopeItemTypeDefinitions(orderedIds: string[], companyId: string): Promise<void>;
   seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]>;
 
   // Scope Items CRUD (the DNA of every job)
@@ -10759,12 +10760,25 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async reorderScopeItemTypeDefinitions(orderedIds: string[]): Promise<void> {
+  async getScopeItemTypeDefinitionById(id: string): Promise<ScopeItemTypeDefinition | undefined> {
+    const [def] = await db.select().from(schema.scopeItemTypeDefinitions)
+      .where(eq(schema.scopeItemTypeDefinitions.id, id))
+      .limit(1);
+    return def;
+  }
+
+  async reorderScopeItemTypeDefinitions(orderedIds: string[], companyId: string): Promise<void> {
+    // Only update IDs that belong to the specified company (prevents cross-tenant IDOR)
     await Promise.all(
       orderedIds.map((id, index) =>
         db.update(schema.scopeItemTypeDefinitions)
           .set({ displayOrder: index })
-          .where(eq(schema.scopeItemTypeDefinitions.id, id))
+          .where(
+            and(
+              eq(schema.scopeItemTypeDefinitions.id, id),
+              eq(schema.scopeItemTypeDefinitions.companyId, companyId)
+            )
+          )
       )
     );
   }

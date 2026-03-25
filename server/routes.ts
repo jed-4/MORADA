@@ -5070,8 +5070,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/scope-item-types/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
+      const companyId = user?.companyId;
       const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
       if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      // Company scoping: verify the type belongs to the user's company
+      const existing = await storage.getScopeItemTypeDefinitionById(req.params.id);
+      if (!existing || existing.companyId !== companyId) return res.status(404).json({ error: "Scope item type not found" });
       const patchSchema = insertScopeItemTypeDefinitionSchema.partial();
       const validation = patchSchema.safeParse(req.body);
       if (!validation.success) return res.status(400).json({ error: "Validation failed" });
@@ -5087,8 +5091,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/scope-item-types/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
+      const companyId = user?.companyId;
       const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
       if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      // Company scoping: verify the type belongs to the user's company
+      const existing = await storage.getScopeItemTypeDefinitionById(req.params.id);
+      if (!existing || existing.companyId !== companyId) return res.status(404).json({ error: "Scope item type not found" });
       const success = await storage.deleteScopeItemTypeDefinition(req.params.id);
       if (!success) return res.status(404).json({ error: "Scope item type not found" });
       res.status(204).send();
@@ -5101,11 +5109,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/scope-item-types/reorder", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
+      const companyId = user?.companyId;
       const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
       if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
       const { orderedIds } = req.body;
       if (!Array.isArray(orderedIds)) return res.status(400).json({ error: "orderedIds must be an array" });
-      await storage.reorderScopeItemTypeDefinitions(orderedIds);
+      // Company scoping: only reorder IDs that belong to this company
+      await storage.reorderScopeItemTypeDefinitions(orderedIds, companyId);
       res.json({ success: true });
     } catch (error) {
       console.error("Error reordering scope item types:", error);
