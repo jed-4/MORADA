@@ -654,11 +654,12 @@ export default function Schedule() {
   const updateItemMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!editingItem) throw new Error("No item selected");
+      const { _originalStart: _os, _originalEnd: _oe, ...body } = data;
       const response = await fetch(`/api/schedule-items/${editingItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error("Failed to update item");
       return response.json() as Promise<ScheduleItem>;
@@ -670,27 +671,29 @@ export default function Schedule() {
       }
 
       const origStart: Date | null = variables._originalStart ?? null;
-      const origEnd: Date | null = variables._originalEnd ?? null;
-      if ((origStart || origEnd) && updatedItem.startDate && updatedItem.endDate) {
+      if (origStart && updatedItem.startDate) {
         const toMidnight = (d: Date | string): Date => {
           const r = new Date(d);
           r.setHours(0, 0, 0, 0);
           return r;
         };
         const dayDiff = (a: Date, b: Date) => Math.round((a.getTime() - b.getTime()) / 86400000);
+        const snapToWorkDay = (d: Date, forward: boolean): Date => {
+          const r = new Date(d);
+          const step = forward ? 1 : -1;
+          while (isNonWorkingDay(r)) r.setDate(r.getDate() + step);
+          return r;
+        };
 
         const newStart = toMidnight(updatedItem.startDate as string);
-        const newEnd = toMidnight(updatedItem.endDate as string);
-        const deltaStart = origStart ? dayDiff(newStart, toMidnight(origStart)) : 0;
-        const deltaEnd = origEnd ? dayDiff(newEnd, toMidnight(origEnd)) : 0;
+        const deltaStart = dayDiff(newStart, toMidnight(origStart));
 
-        if (deltaStart !== 0 || deltaEnd !== 0) {
+        if (deltaStart !== 0) {
+          const cacheKey = schedule?.id
+            ? [`/api/schedules/${schedule.id}/items`]
+            : [`/api/projects/${projectId}/schedule-items`];
           const currentItems: ScheduleItem[] =
-            queryClient.getQueryData<ScheduleItem[]>(
-              schedule?.id
-                ? [`/api/schedules/${schedule.id}/items`]
-                : [`/api/projects/${projectId}/schedule-items`]
-            ) ?? scheduleItems;
+            queryClient.getQueryData<ScheduleItem[]>(cacheKey) ?? scheduleItems;
 
           type NormDep = { id: number | string; type: string; lag: number };
           const getDeps = (item: ScheduleItem): NormDep[] =>
@@ -710,43 +713,14 @@ export default function Schedule() {
             return children;
           };
 
-          const computeSuccessorDates = (
-            succ: ScheduleItem,
-            predId: number | string,
-          ): { startDate: string; endDate: string } | null => {
-            const dep = getDeps(succ).find(d => String(d.id) === String(predId));
-            if (!dep) return null;
-            const sStart = toMidnight(succ.startDate as string);
-            const sEnd = toMidnight(succ.endDate as string);
-            const durDays = dayDiff(sEnd, sStart);
-            let ns: Date;
-            let ne: Date;
-            if (dep.type === 'SS') {
-              ns = new Date(sStart);
-              ns.setDate(ns.getDate() + deltaStart);
-              ne = new Date(ns);
-              ne.setDate(ne.getDate() + durDays);
-            } else if (dep.type === 'FF') {
-              ne = new Date(sEnd);
-              ne.setDate(ne.getDate() + deltaEnd);
-              ns = new Date(ne);
-              ns.setDate(ns.getDate() - durDays);
-            } else if (dep.type === 'SF') {
-              ne = new Date(sEnd);
-              ne.setDate(ne.getDate() + deltaStart);
-              ns = new Date(ne);
-              ns.setDate(ns.getDate() - durDays);
-            } else {
-              // FS (default)
-              ns = new Date(sStart);
-              ns.setDate(ns.getDate() + deltaEnd);
-              ne = new Date(sEnd);
-              ne.setDate(ne.getDate() + deltaEnd);
-            }
-            return {
-              startDate: ns.toISOString().split('T')[0],
-              endDate: ne.toISOString().split('T')[0],
-            };
+          const shiftDates = (item: ScheduleItem, delta: number): { startDate: string; endDate: string } => {
+            const s = toMidnight(item.startDate as string);
+            const e = toMidnight(item.endDate as string);
+            const durDays = dayDiff(e, s);
+            const ns = snapToWorkDay(new Date(s.getTime() + delta * 86400000), delta >= 0);
+            const ne = new Date(ns);
+            ne.setDate(ne.getDate() + durDays);
+            return { startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
           };
 
           type QueueEntry = { item: ScheduleItem; predId: number | string };
@@ -762,8 +736,9 @@ export default function Schedule() {
           const successorUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
           while (queue.length > 0) {
             const { item, predId } = queue.shift()!;
-            const dates = computeSuccessorDates(item, predId);
-            if (dates) {
+            const dep = getDeps(item).find(d => String(d.id) === String(predId));
+            if (dep) {
+              const dates = shiftDates(item, deltaStart);
               successorUpdates.push({ id: item.id, ...dates });
               for (const it of currentItems) {
                 if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(item.id))) {
@@ -777,15 +752,7 @@ export default function Schedule() {
           const childItems = getChildrenRecursive(updatedItem.id);
           const childUpdates = childItems
             .filter(c => !successorUpdates.some(s => s.id === c.id))
-            .map(c => {
-              const cs = toMidnight(c.startDate as string);
-              const ce = toMidnight(c.endDate as string);
-              const ns = new Date(cs);
-              ns.setDate(ns.getDate() + deltaStart);
-              const ne = new Date(ce);
-              ne.setDate(ne.getDate() + deltaStart);
-              return { id: c.id, startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
-            });
+            .map(c => ({ id: c.id, ...shiftDates(c, deltaStart) }));
 
           const depChildUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
           const depChildIds = new Set<number | string>(
@@ -794,24 +761,25 @@ export default function Schedule() {
           for (const su of successorUpdates) {
             const suItem = currentItems.find(i => i.id === su.id);
             if (!suItem) continue;
-            const suOrigStart = toMidnight(suItem.startDate as string);
-            const suDeltaStart = dayDiff(toMidnight(su.startDate), suOrigStart);
+            const suDelta = dayDiff(toMidnight(su.startDate), toMidnight(suItem.startDate as string));
             for (const ch of getChildrenRecursive(su.id)) {
               if (!depChildIds.has(ch.id)) {
                 depChildIds.add(ch.id);
-                const cs = toMidnight(ch.startDate as string);
-                const ce = toMidnight(ch.endDate as string);
-                const ns = new Date(cs);
-                ns.setDate(ns.getDate() + suDeltaStart);
-                const ne = new Date(ce);
-                ne.setDate(ne.getDate() + suDeltaStart);
-                depChildUpdates.push({ id: ch.id, startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] });
+                depChildUpdates.push({ id: ch.id, ...shiftDates(ch, suDelta) });
               }
             }
           }
 
           const allUpdates = [...childUpdates, ...successorUpdates, ...depChildUpdates];
           if (allUpdates.length > 0) {
+            queryClient.setQueryData<ScheduleItem[]>(cacheKey, prev =>
+              prev
+                ? prev.map(it => {
+                    const u = allUpdates.find(a => a.id === it.id);
+                    return u ? { ...it, startDate: u.startDate, endDate: u.endDate } : it;
+                  })
+                : prev
+            );
             await Promise.all(
               allUpdates.map(u =>
                 apiRequest(`/api/schedule-items/${u.id}`, "PATCH", { startDate: u.startDate, endDate: u.endDate })
