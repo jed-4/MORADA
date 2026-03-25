@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { computeMoveCascade } from "@/lib/scheduleCascade";
 import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact, type CompanySettings } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
@@ -671,121 +672,40 @@ export default function Schedule() {
       }
 
       const origStart: Date | null = variables._originalStart ?? null;
-      if (origStart && updatedItem.startDate) {
-        const toMidnight = (d: Date | string): Date => {
-          const r = new Date(d);
-          r.setHours(0, 0, 0, 0);
-          return r;
-        };
-        const dayDiff = (a: Date, b: Date) => Math.round((a.getTime() - b.getTime()) / 86400000);
-        const snapToWorkDay = (d: Date, forward: boolean): Date => {
-          const r = new Date(d);
-          const step = forward ? 1 : -1;
-          while (isNonWorkingDay(r)) r.setDate(r.getDate() + step);
-          return r;
-        };
+      const origEnd: Date | null = variables._originalEnd ?? null;
+      if ((origStart || origEnd) && updatedItem.startDate && updatedItem.endDate) {
+        const effectiveOrigStart = origStart ?? new Date(updatedItem.startDate as string);
+        const effectiveOrigEnd = origEnd ?? new Date(updatedItem.endDate as string);
+        const cacheKey = schedule?.id
+          ? [`/api/schedules/${schedule.id}/items`]
+          : [`/api/projects/${projectId}/schedule-items`];
+        const currentItems: ScheduleItem[] =
+          queryClient.getQueryData<ScheduleItem[]>(cacheKey) ?? scheduleItems;
 
-        const newStart = toMidnight(updatedItem.startDate as string);
-        const deltaStart = dayDiff(newStart, toMidnight(origStart));
+        const cascadeUpdates = computeMoveCascade({
+          movedItemId: updatedItem.id,
+          originalStart: effectiveOrigStart,
+          originalEnd: effectiveOrigEnd,
+          newStart: new Date(updatedItem.startDate as string),
+          newEnd: new Date(updatedItem.endDate as string),
+          allItems: currentItems,
+          isNonWorking: isNonWorkingDay,
+        });
 
-        if (deltaStart !== 0) {
-          const cacheKey = schedule?.id
-            ? [`/api/schedules/${schedule.id}/items`]
-            : [`/api/projects/${projectId}/schedule-items`];
-          const currentItems: ScheduleItem[] =
-            queryClient.getQueryData<ScheduleItem[]>(cacheKey) ?? scheduleItems;
-
-          type NormDep = { id: number | string; type: string; lag: number };
-          const getDeps = (item: ScheduleItem): NormDep[] =>
-            ((item.dependencies ?? []) as Array<{ id: number | string; type?: string; lag?: number }>).map(d => ({
-              id: d.id,
-              type: d.type ?? 'FS',
-              lag: d.lag ?? 0,
-            }));
-
-          const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
-            const children: ScheduleItem[] = [];
-            for (const ci of currentItems) {
-              if (String(ci.parentItemId) === String(parentId)) {
-                children.push(ci, ...getChildrenRecursive(ci.id));
-              }
-            }
-            return children;
-          };
-
-          const shiftDates = (item: ScheduleItem, delta: number): { startDate: string; endDate: string } => {
-            const s = toMidnight(item.startDate as string);
-            const e = toMidnight(item.endDate as string);
-            const durDays = dayDiff(e, s);
-            const ns = snapToWorkDay(new Date(s.getTime() + delta * 86400000), delta >= 0);
-            const ne = new Date(ns);
-            ne.setDate(ne.getDate() + durDays);
-            return { startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
-          };
-
-          type QueueEntry = { item: ScheduleItem; predId: number | string };
-          const visited = new Set<number | string>();
-          visited.add(updatedItem.id);
-          const queue: QueueEntry[] = [];
-          for (const it of currentItems) {
-            if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(updatedItem.id))) {
-              visited.add(it.id);
-              queue.push({ item: it, predId: updatedItem.id });
-            }
-          }
-          const successorUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
-          while (queue.length > 0) {
-            const { item, predId } = queue.shift()!;
-            const dep = getDeps(item).find(d => String(d.id) === String(predId));
-            if (dep) {
-              const dates = shiftDates(item, deltaStart);
-              successorUpdates.push({ id: item.id, ...dates });
-              for (const it of currentItems) {
-                if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(item.id))) {
-                  visited.add(it.id);
-                  queue.push({ item: it, predId: item.id });
-                }
-              }
-            }
-          }
-
-          const childItems = getChildrenRecursive(updatedItem.id);
-          const childUpdates = childItems
-            .filter(c => !successorUpdates.some(s => s.id === c.id))
-            .map(c => ({ id: c.id, ...shiftDates(c, deltaStart) }));
-
-          const depChildUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
-          const depChildIds = new Set<number | string>(
-            [...successorUpdates.map(s => s.id), ...childUpdates.map(c => c.id)],
+        if (cascadeUpdates.length > 0) {
+          queryClient.setQueryData<ScheduleItem[]>(cacheKey, prev =>
+            prev
+              ? prev.map(it => {
+                  const u = cascadeUpdates.find(a => a.id === it.id);
+                  return u ? { ...it, startDate: u.startDate, endDate: u.endDate } : it;
+                })
+              : prev
           );
-          for (const su of successorUpdates) {
-            const suItem = currentItems.find(i => i.id === su.id);
-            if (!suItem) continue;
-            const suDelta = dayDiff(toMidnight(su.startDate), toMidnight(suItem.startDate as string));
-            for (const ch of getChildrenRecursive(su.id)) {
-              if (!depChildIds.has(ch.id)) {
-                depChildIds.add(ch.id);
-                depChildUpdates.push({ id: ch.id, ...shiftDates(ch, suDelta) });
-              }
-            }
-          }
-
-          const allUpdates = [...childUpdates, ...successorUpdates, ...depChildUpdates];
-          if (allUpdates.length > 0) {
-            queryClient.setQueryData<ScheduleItem[]>(cacheKey, prev =>
-              prev
-                ? prev.map(it => {
-                    const u = allUpdates.find(a => a.id === it.id);
-                    return u ? { ...it, startDate: u.startDate, endDate: u.endDate } : it;
-                  })
-                : prev
-            );
-            await Promise.all(
-              allUpdates.map(u =>
-                apiRequest(`/api/schedule-items/${u.id}`, "PATCH", { startDate: u.startDate, endDate: u.endDate })
-              )
-            );
-          }
+          await Promise.all(
+            cascadeUpdates.map(u =>
+              apiRequest(`/api/schedule-items/${u.id}`, "PATCH", { startDate: u.startDate, endDate: u.endDate })
+            )
+          );
         }
       }
 

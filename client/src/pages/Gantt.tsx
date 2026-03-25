@@ -1,6 +1,7 @@
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { computeMoveCascade } from "@/lib/scheduleCascade";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1397,6 +1398,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
   const pixelsPerDayRef = useRef(pixelsPerDay);
   pixelsPerDayRef.current = pixelsPerDay;
+  const isNonWorkingDayRef = useRef(isNonWorkingDay);
+  isNonWorkingDayRef.current = isNonWorkingDay;
   const snapToWorkingDayRef = useRef(snapToWorkingDay);
   snapToWorkingDayRef.current = snapToWorkingDay;
   const countWorkingDaysRef = useRef(countWorkingDays);
@@ -1603,102 +1606,28 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       if (drag.type === 'move') {
         if (deltaDays !== 0) {
           const workingDuration = countWD(drag.originalStart, drag.originalEnd);
-          
+
           let newStart = addDays(drag.originalStart, deltaDays);
           const snapDir = deltaDays > 0 ? 'forward' : 'backward';
           newStart = snap(newStart, snapDir);
-          let newEnd = addWD(newStart, workingDuration);
-          
-          const totalOffset = differenceInDays(newStart, drag.originalStart);
-
-          const getAllDownstreamSuccessors = (rootId: number | string): ScheduleItem[] => {
-            const visited = new Set<number | string>();
-            const result: ScheduleItem[] = [];
-            const queue = [rootId];
-            visited.add(rootId);
-            while (queue.length > 0) {
-              const currentId = queue.shift()!;
-              const successors = currentItems.filter(item =>
-                item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))
-              );
-              for (const s of successors) {
-                if (!visited.has(s.id)) {
-                  visited.add(s.id);
-                  result.push(s);
-                  queue.push(s.id);
-                }
-              }
-            }
-            return result;
-          };
-
-          const dependentItems = getAllDownstreamSuccessors(drag.id);
-
-          const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
-            const children: ScheduleItem[] = [];
-            for (const ci of currentItems) {
-              if (ci.parentItemId === parentId) {
-                children.push(ci);
-                children.push(...getChildrenRecursive(ci.id));
-              }
-            }
-            return children;
-          };
-
-          const childItems = getChildrenRecursive(drag.id);
-
-          const depChildItems: ScheduleItem[] = [];
-          const depChildIds = new Set<number | string>();
-          for (const depItem of dependentItems) {
-            const children = getChildrenRecursive(depItem.id);
-            for (const child of children) {
-              if (!depChildIds.has(child.id) && !dependentItems.some(d => d.id === child.id)) {
-                depChildIds.add(child.id);
-                depChildItems.push(child);
-              }
-            }
-          }
-          
-          const snapDepItem = (depItem: ScheduleItem) => {
-            const depStart = parseLocalMidnight(depItem.startDate as any);
-            const depEnd = parseLocalMidnight(depItem.endDate as any);
-            const depWorkingDuration = countWD(depStart, depEnd);
-            let depNewStart = addDays(depStart, totalOffset);
-            depNewStart = snap(depNewStart, snapDir);
-            const depNewEnd = addWD(depNewStart, depWorkingDuration);
-            return { depNewStart, depNewEnd };
-          };
-
-          // For direct children of the dragged parent, preserve working-day-relative
-          // positions (not raw calendar-day offset) so crossing weekends doesn't
-          // alter the gap between the parent start and each child's start.
-          const snapChildItem = (childItem: ScheduleItem) => {
-            const childStart = parseLocalMidnight(childItem.startDate as any);
-            const childEnd = parseLocalMidnight(childItem.endDate as any);
-            const relativeWD = countWD(drag.originalStart, childStart);
-            const childWorkingDuration = countWD(childStart, childEnd);
-            const depNewStart = addWD(newStart, relativeWD);
-            const depNewEnd = addWD(depNewStart, childWorkingDuration);
-            return { depNewStart, depNewEnd };
-          };
+          const newEnd = addWD(newStart, workingDuration);
 
           updateCacheOptimistically(drag.id, newStart, newEnd);
-          
-          for (const child of childItems) {
-            if (!dependentItems.some(d => d.id === child.id)) {
-              const { depNewStart, depNewEnd } = snapChildItem(child);
-              updateCacheOptimistically(child.id, depNewStart, depNewEnd);
-            }
-          }
-          
-          for (const depItem of dependentItems) {
-            const { depNewStart, depNewEnd } = snapDepItem(depItem);
-            updateCacheOptimistically(depItem.id, depNewStart, depNewEnd);
-          }
 
-          for (const depChild of depChildItems) {
-            const { depNewStart, depNewEnd } = snapDepItem(depChild);
-            updateCacheOptimistically(depChild.id, depNewStart, depNewEnd);
+          const cascadeUpdates = computeMoveCascade({
+            movedItemId: drag.id,
+            originalStart: drag.originalStart,
+            originalEnd: drag.originalEnd,
+            newStart,
+            newEnd,
+            allItems: currentItems,
+            isNonWorking: isNonWorkingDayRef.current,
+          });
+
+          for (const u of cascadeUpdates) {
+            const parsedStart = parseLocalMidnight(u.startDate);
+            const parsedEnd = parseLocalMidnight(u.endDate);
+            updateCacheOptimistically(u.id, parsedStart, parsedEnd);
           }
 
           mutate.mutate({
@@ -1706,33 +1635,12 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             startDate: format(newStart, 'yyyy-MM-dd') as any,
             endDate: format(newEnd, 'yyyy-MM-dd') as any,
           });
-          
-          for (const child of childItems) {
-            if (!dependentItems.some(d => d.id === child.id)) {
-              const { depNewStart, depNewEnd } = snapChildItem(child);
-              mutate.mutate({
-                id: child.id,
-                startDate: format(depNewStart, 'yyyy-MM-dd') as any,
-                endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
-              });
-            }
-          }
-          
-          for (const depItem of dependentItems) {
-            const { depNewStart, depNewEnd } = snapDepItem(depItem);
-            mutate.mutate({
-              id: depItem.id,
-              startDate: format(depNewStart, 'yyyy-MM-dd') as any,
-              endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
-            });
-          }
 
-          for (const depChild of depChildItems) {
-            const { depNewStart, depNewEnd } = snapDepItem(depChild);
+          for (const u of cascadeUpdates) {
             mutate.mutate({
-              id: depChild.id,
-              startDate: format(depNewStart, 'yyyy-MM-dd') as any,
-              endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
+              id: u.id,
+              startDate: u.startDate as any,
+              endDate: u.endDate as any,
             });
           }
 
