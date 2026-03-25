@@ -2351,8 +2351,21 @@ export default function Schedule() {
                     const newStart = e.target.value;
                     const dur = parseInt(durationInput, 10);
                     if (newStart && formData.endDate) {
-                      setFormData({ ...formData, startDate: newStart });
-                      setDurationInput(countWorkingDays(new Date(newStart), new Date(formData.endDate)).toString());
+                      if (editingItem?.id && formData.startDate) {
+                        // Editing an existing item: shift end date by the same calendar-day
+                        // delta so working duration is preserved and FS successors cascade
+                        const oldStartMs = new Date(formData.startDate).getTime();
+                        const newStartMs = new Date(newStart).getTime();
+                        const calDeltaDays = Math.round((newStartMs - oldStartMs) / 86400000);
+                        const newEnd = new Date(formData.endDate);
+                        newEnd.setDate(newEnd.getDate() + calDeltaDays);
+                        const newEndStr = newEnd.toISOString().split('T')[0];
+                        setFormData({ ...formData, startDate: newStart, endDate: newEndStr });
+                        setDurationInput(countWorkingDays(new Date(newStart), newEnd).toString());
+                      } else {
+                        setFormData({ ...formData, startDate: newStart });
+                        setDurationInput(countWorkingDays(new Date(newStart), new Date(formData.endDate)).toString());
+                      }
                     } else if (newStart && !formData.endDate && !isNaN(dur) && dur > 0) {
                       const end = addWorkingDays(new Date(newStart), dur - 1);
                       setFormData({ ...formData, startDate: newStart, endDate: end.toISOString().split('T')[0] });
