@@ -427,7 +427,7 @@ export default function Schedule() {
         body: JSON.stringify({
           projectId,
           name: "Project Schedule",
-          status: "offline",
+          status: "online",
         }),
       });
       if (!response.ok) throw new Error("Failed to create schedule");
@@ -1571,7 +1571,7 @@ export default function Schedule() {
             {schedule?.status === "locked" ? (
               <button
                 onClick={() => {
-                  updateStatusMutation.mutate("offline");
+                  updateStatusMutation.mutate("online");
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
                 data-testid="button-unlock-schedule"

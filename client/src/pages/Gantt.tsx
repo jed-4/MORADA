@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -2367,12 +2367,6 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {schedule?.status === 'offline' && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-sm">
-          <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="text-amber-700 dark:text-amber-300">Schedule is offline — view only</span>
-        </div>
-      )}
       {pendingPredecessor !== null && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
           <span className="text-blue-700 dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
@@ -2551,7 +2545,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 >
                     {/* Task name column */}
                     <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
-                      {schedule?.status !== 'offline' && (
+                      {schedule?.status !== 'locked' && (
                       <div 
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         style={rowDragItemId && rowDragItemId !== item.id ? { pointerEvents: 'none' } : undefined}
@@ -2824,7 +2818,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" data-testid={`menu-${item.id}`}>
-                          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+                          {schedule?.status !== 'locked' && (
                             <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid="menu-edit">
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
@@ -2834,7 +2828,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                             <Eye className="mr-2 h-4 w-4" />
                             View
                           </DropdownMenuItem>
-                          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+                          {schedule?.status !== 'locked' && (
                             <>
                               <DropdownMenuItem onClick={() => handleDuplicateItem(item)} data-testid="menu-duplicate">
                                 <Copy className="mr-2 h-4 w-4" />
@@ -2860,7 +2854,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                 <Link className="mr-2 h-4 w-4" />
                                 Link Dependency
                               </DropdownMenuItem>
-                              {schedule?.status !== 'locked' && schedule?.status !== 'offline' && !hasChildren && (
+                              {!hasChildren && (
                               <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
                                 {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
@@ -3151,7 +3145,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         transition: dragging?.id === item.id || (dragging?.type === 'move' && draggingCascadeIds.has(item.id)) ? 'none' : 'opacity 0.2s',
                       }}
                     >
-                      {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+                      {schedule?.status !== 'locked' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -3239,9 +3233,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         
                         {!hasChildren && (item.duration ?? 1) >= 4 && (
                         <div
-                          className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
+                          className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'locked' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
                           onMouseDown={(e) => {
-                            if (schedule?.status === 'offline') return;
+                            if (schedule?.status === 'locked') return;
                             e.stopPropagation();
                             e.preventDefault();
                             const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
@@ -3262,10 +3256,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         >
                           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
                           <div 
-                            className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'offline' ? '' : 'cursor-ew-resize hover:scale-125'}`}
+                            className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'locked' ? '' : 'cursor-ew-resize hover:scale-125'}`}
                             style={{ left: `${displayProgress}%` }}
                             onMouseDown={(e) => {
-                              if (schedule?.status === 'offline') return;
+                              if (schedule?.status === 'locked') return;
                               e.stopPropagation();
                               e.preventDefault();
                               const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
@@ -3285,7 +3279,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         )}
                       </div>
                       
-                      {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+                      {schedule?.status !== 'locked' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -3897,7 +3891,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             onClick={() => setContextMenu(null)}
           />
           
-          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+          {schedule?.status !== 'locked' && (
             <button
               className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
               onClick={() => {
@@ -3928,7 +3922,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             View Details
           </button>
           
-          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
+          {schedule?.status !== 'locked' && (
             <>
               <button
                 className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
