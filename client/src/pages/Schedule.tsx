@@ -2352,16 +2352,14 @@ export default function Schedule() {
                     const dur = parseInt(durationInput, 10);
                     if (newStart && formData.endDate) {
                       if (editingItem?.id && formData.startDate) {
-                        // Editing an existing item: shift end date by the same calendar-day
-                        // delta so working duration is preserved and FS successors cascade
-                        const oldStartMs = new Date(formData.startDate).getTime();
-                        const newStartMs = new Date(newStart).getTime();
-                        const calDeltaDays = Math.round((newStartMs - oldStartMs) / 86400000);
-                        const newEnd = new Date(formData.endDate);
-                        newEnd.setDate(newEnd.getDate() + calDeltaDays);
+                        // Editing an existing item: preserve working-day duration and
+                        // shift end date by the same working-day span from the new start
+                        // so that endOffset stays non-zero and FS successors cascade
+                        const workingDays = countWorkingDays(new Date(formData.startDate), new Date(formData.endDate));
+                        const newEnd = addWorkingDays(new Date(newStart), workingDays - 1);
                         const newEndStr = newEnd.toISOString().split('T')[0];
                         setFormData({ ...formData, startDate: newStart, endDate: newEndStr });
-                        setDurationInput(countWorkingDays(new Date(newStart), newEnd).toString());
+                        setDurationInput(workingDays.toString());
                       } else {
                         setFormData({ ...formData, startDate: newStart });
                         setDurationInput(countWorkingDays(new Date(newStart), new Date(formData.endDate)).toString());
