@@ -663,11 +663,108 @@ export default function Schedule() {
       if (!response.ok) throw new Error("Failed to update item");
       return response.json() as Promise<ScheduleItem>;
     },
-    onSuccess: async (updatedItem) => {
+    onSuccess: async (updatedItem, variables) => {
       if (taskLinkOffsetsLocal.length > 0) {
         await applyTaskOffsets(updatedItem, taskLinkOffsetsLocal);
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
       }
+
+      // ── Dependency cascade on date edit ────────────────────────────────────
+      // variables._originalStart/_originalEnd are injected at call-site below
+      const origStart: Date | null = variables._originalStart ?? null;
+      const newStartStr = updatedItem.startDate;
+      const newEndStr = updatedItem.endDate;
+      if (origStart && newStartStr && newEndStr) {
+        const newStart = new Date(newStartStr as any);
+        newStart.setHours(0, 0, 0, 0);
+        const origS = new Date(origStart);
+        origS.setHours(0, 0, 0, 0);
+        const deltaDays = Math.round((newStart.getTime() - origS.getTime()) / 86400000);
+
+        if (deltaDays !== 0) {
+          const currentItems: ScheduleItem[] = queryClient.getQueryData<ScheduleItem[]>(
+            schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`]
+          ) ?? scheduleItems;
+
+          // Collect all downstream successors (BFS)
+          const getAllDownstream = (rootId: number | string): ScheduleItem[] => {
+            const visited = new Set<number | string>();
+            const result: ScheduleItem[] = [];
+            const queue: Array<number | string> = [rootId];
+            visited.add(rootId);
+            while (queue.length > 0) {
+              const cur = queue.shift()!;
+              const succs = currentItems.filter(it =>
+                (it.dependencies as any[] || []).some((d: any) => String(d.id) === String(cur))
+              );
+              for (const s of succs) {
+                if (!visited.has(s.id)) {
+                  visited.add(s.id);
+                  result.push(s);
+                  queue.push(s.id);
+                }
+              }
+            }
+            return result;
+          };
+
+          // Collect direct children recursively
+          const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
+            const children: ScheduleItem[] = [];
+            for (const ci of currentItems) {
+              if (ci.parentItemId === parentId) {
+                children.push(ci);
+                children.push(...getChildrenRecursive(ci.id));
+              }
+            }
+            return children;
+          };
+
+          const dependentItems = getAllDownstream(updatedItem.id);
+          const childItems = getChildrenRecursive(updatedItem.id);
+
+          // Collect children of dependent items not already in dependentItems
+          const depChildIds = new Set<number | string>();
+          const depChildItems: ScheduleItem[] = [];
+          for (const di of dependentItems) {
+            for (const ch of getChildrenRecursive(di.id)) {
+              if (!depChildIds.has(ch.id) && !dependentItems.some(d => d.id === ch.id)) {
+                depChildIds.add(ch.id);
+                depChildItems.push(ch);
+              }
+            }
+          }
+
+          // Shift by calendar days (preserving the item's duration exactly)
+          const shiftItemByCalendarDays = (item: ScheduleItem) => {
+            const s = new Date(item.startDate as any);
+            s.setHours(0, 0, 0, 0);
+            const e = new Date(item.endDate as any);
+            e.setHours(0, 0, 0, 0);
+            const newS = new Date(s);
+            newS.setDate(newS.getDate() + deltaDays);
+            const newE = new Date(e);
+            newE.setDate(newE.getDate() + deltaDays);
+            return {
+              startDate: newS.toISOString().split('T')[0],
+              endDate: newE.toISOString().split('T')[0],
+            };
+          };
+
+          const itemsToShift = [
+            ...childItems.filter(c => !dependentItems.some(d => d.id === c.id)),
+            ...dependentItems,
+            ...depChildItems,
+          ];
+
+          for (const item of itemsToShift) {
+            const { startDate, endDate } = shiftItemByCalendarDays(item);
+            apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { startDate, endDate }).catch(() => {});
+          }
+        }
+      }
+      // ── End cascade ────────────────────────────────────────────────────────
+
       invalidateScheduleItems();
       setShowItemDialog(false);
       setEditingItem(null);
@@ -1223,6 +1320,10 @@ export default function Schedule() {
     };
 
     if (editingItem && editingItem.id) {
+      // Capture the original start date so the onSuccess cascade can compute delta
+      if (editingItem.startDate) {
+        data._originalStart = new Date(editingItem.startDate as any);
+      }
       updateItemMutation.mutate(data);
     } else {
       const deps = editingItem?.dependencies 
