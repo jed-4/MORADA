@@ -21,7 +21,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  pointerWithin,
+  closestCenter,
+  type CollisionDetection,
   useDroppable,
 } from "@dnd-kit/core";
 import {
@@ -254,6 +256,17 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       },
     })
   );
+
+  // Custom collision detection for Kanban board:
+  // pointerWithin first (follows the actual pointer, not card corners) which is
+  // critical for horizontal column layouts where closestCorners incorrectly keeps
+  // detecting the source column instead of the destination column.
+  // Falls back to closestCenter for edge cases (e.g. pointer between columns).
+  const collisionDetectionStrategy: CollisionDetection = useCallback((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) return pointerCollisions;
+    return closestCenter(args);
+  }, []);
 
   // Get dynamic status options
   const { statusOptions, getStatusInfo, isLoading: statusOptionsLoading, hasLoadedButNoOptions } = useTaskStatusOptions();
@@ -648,7 +661,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetectionStrategy}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -661,7 +674,6 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
             scrollbarWidth: 'thin', 
             scrollBehavior: 'smooth'
           }}>
-          <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
               const columnTasks = tasksByGroup[column.status] || [];
               
@@ -688,7 +700,6 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                 </div>
               );
             })}
-          </SortableContext>
         </div>
         
         {projectId && (
