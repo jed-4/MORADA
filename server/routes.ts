@@ -108,6 +108,7 @@ import {
   insertRfqFollowUpSchema,
   insertRfiSchema,
   insertScopeItemSchema,
+  insertScopeItemTypeDefinitionSchema,
   insertScopeStageSchema,
   insertScopeTemplateSchema,
   insertScopeGearPhotoSchema,
@@ -5030,6 +5031,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching scope items:", error);
       res.status(500).json({ error: "Failed to fetch scope items" });
+    }
+  });
+
+  // Scope Item Type Definitions CRUD
+  app.get("/api/scope-item-types", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      let defs = await storage.getScopeItemTypeDefinitions(companyId);
+      if (defs.length === 0) {
+        defs = await storage.seedDefaultScopeItemTypes(companyId);
+      }
+      res.json(defs);
+    } catch (error) {
+      console.error("Error fetching scope item types:", error);
+      res.status(500).json({ error: "Failed to fetch scope item types" });
+    }
+  });
+
+  app.post("/api/scope-item-types", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
+      if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const validation = insertScopeItemTypeDefinitionSchema.safeParse({ ...req.body, companyId });
+      if (!validation.success) return res.status(400).json({ error: "Validation failed" });
+      const def = await storage.createScopeItemTypeDefinition(validation.data);
+      res.status(201).json(def);
+    } catch (error) {
+      console.error("Error creating scope item type:", error);
+      res.status(500).json({ error: "Failed to create scope item type" });
+    }
+  });
+
+  app.patch("/api/scope-item-types/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
+      if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const patchSchema = insertScopeItemTypeDefinitionSchema.partial();
+      const validation = patchSchema.safeParse(req.body);
+      if (!validation.success) return res.status(400).json({ error: "Validation failed" });
+      const updated = await storage.updateScopeItemTypeDefinition(req.params.id, validation.data);
+      if (!updated) return res.status(404).json({ error: "Scope item type not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating scope item type:", error);
+      res.status(500).json({ error: "Failed to update scope item type" });
+    }
+  });
+
+  app.delete("/api/scope-item-types/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
+      if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const success = await storage.deleteScopeItemTypeDefinition(req.params.id);
+      if (!success) return res.status(404).json({ error: "Scope item type not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting scope item type:", error);
+      res.status(500).json({ error: "Failed to delete scope item type" });
     }
   });
 

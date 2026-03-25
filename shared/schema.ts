@@ -5848,3 +5848,19 @@ export const enoteTemplateSets = pgTable("enote_template_sets", {
 export const insertEnoteTemplateSetSchema = createInsertSchema(enoteTemplateSets).omit({ id: true, createdAt: true });
 export type InsertEnoteTemplateSet = z.infer<typeof insertEnoteTemplateSetSchema>;
 export type EnoteTemplateSet = typeof enoteTemplateSets.$inferSelect;
+
+// Scope Item Type Definitions — company-level custom type names and role visibility
+export const scopeItemTypeDefinitions = pgTable("scope_item_type_definitions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g. "Scope", "Proposal", "Costings"
+  displayOrder: integer("display_order").notNull().default(0),
+  visibleToRoles: jsonb("visible_to_roles").default([]), // Array of role IDs — empty means visible to everyone
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScopeItemTypeDefinitionSchema = createInsertSchema(scopeItemTypeDefinitions).omit({ id: true, createdAt: true }).extend({
+  visibleToRoles: z.array(z.string()).default([]),
+});
+export type InsertScopeItemTypeDefinition = z.infer<typeof insertScopeItemTypeDefinitionSchema>;
+export type ScopeItemTypeDefinition = typeof scopeItemTypeDefinitions.$inferSelect;

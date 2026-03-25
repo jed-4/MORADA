@@ -91,6 +91,7 @@ import {
   type ChannelMember, type InsertChannelMember,
   type Message, type InsertMessage,
   type ScopeItem, type InsertScopeItem,
+  type ScopeItemTypeDefinition, type InsertScopeItemTypeDefinition,
   type ScopeStage, type InsertScopeStage,
   type ScopeTemplate, type InsertScopeTemplate,
   type ScopeGearPhoto, type InsertScopeGearPhoto,
@@ -429,6 +430,13 @@ export interface IStorage {
     total: number;
     itemCount: number;
   }>;
+
+  // Scope Item Type Definitions CRUD
+  getScopeItemTypeDefinitions(companyId: string): Promise<ScopeItemTypeDefinition[]>;
+  createScopeItemTypeDefinition(def: InsertScopeItemTypeDefinition): Promise<ScopeItemTypeDefinition>;
+  updateScopeItemTypeDefinition(id: string, def: Partial<InsertScopeItemTypeDefinition>): Promise<ScopeItemTypeDefinition | undefined>;
+  deleteScopeItemTypeDefinition(id: string): Promise<boolean>;
+  seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]>;
 
   // Scope Items CRUD (the DNA of every job)
   getScopeItems(projectId: string): Promise<ScopeItem[]>;
@@ -10708,6 +10716,64 @@ export class DbStorage implements IStorage {
     }
   }
   
+  // Scope Item Type Definitions CRUD
+  async getScopeItemTypeDefinitions(companyId: string): Promise<ScopeItemTypeDefinition[]> {
+    try {
+      const defs = await db.select().from(schema.scopeItemTypeDefinitions)
+        .where(eq(schema.scopeItemTypeDefinitions.companyId, companyId))
+        .orderBy(asc(schema.scopeItemTypeDefinitions.displayOrder));
+      return defs;
+    } catch (error) {
+      console.error("Database error in getScopeItemTypeDefinitions:", error);
+      return [];
+    }
+  }
+
+  async createScopeItemTypeDefinition(def: InsertScopeItemTypeDefinition): Promise<ScopeItemTypeDefinition> {
+    const [created] = await db.insert(schema.scopeItemTypeDefinitions).values(def).returning();
+    return created;
+  }
+
+  async updateScopeItemTypeDefinition(id: string, def: Partial<InsertScopeItemTypeDefinition>): Promise<ScopeItemTypeDefinition | undefined> {
+    try {
+      const [updated] = await db.update(schema.scopeItemTypeDefinitions)
+        .set(def)
+        .where(eq(schema.scopeItemTypeDefinitions.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateScopeItemTypeDefinition:", error);
+      return undefined;
+    }
+  }
+
+  async deleteScopeItemTypeDefinition(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.scopeItemTypeDefinitions)
+        .where(eq(schema.scopeItemTypeDefinitions.id, id));
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      console.error("Database error in deleteScopeItemTypeDefinition:", error);
+      return false;
+    }
+  }
+
+  async seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]> {
+    const defaults = [
+      { name: 'Scope', displayOrder: 0 },
+      { name: 'Note', displayOrder: 1 },
+      { name: 'E-Note', displayOrder: 2 },
+      { name: 'Tool', displayOrder: 3 },
+      { name: 'Material', displayOrder: 4 },
+      { name: 'Proposal', displayOrder: 5 },
+      { name: 'Checklist', displayOrder: 6 },
+    ];
+    const inserted = await db.insert(schema.scopeItemTypeDefinitions)
+      .values(defaults.map(d => ({ ...d, companyId, visibleToRoles: [] })))
+      .returning();
+    return inserted;
+  }
+
   // Scope Items CRUD
   async getScopeItems(projectId: string): Promise<ScopeItem[]> {
     try {
