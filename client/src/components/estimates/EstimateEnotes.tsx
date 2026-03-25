@@ -11,7 +11,30 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CheckCircle2, Circle, MinusCircle, Plus, Trash2, StickyNote, EyeOff } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CheckCircle2,
+  Circle,
+  MinusCircle,
+  Plus,
+  Trash2,
+  StickyNote,
+  EyeOff,
+  Columns3,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 
 interface EnoteRow {
   id: string;
@@ -28,11 +51,63 @@ interface EnoteRow {
   estimatorNotes: string | null;
   completed: boolean;
   isCustom: boolean;
+  status: string | null;
 }
 
-interface Props {
-  estimateId: string;
+interface FieldOption {
+  id: string;
+  key: string;
+  name: string;
+  color: string;
+  isDefault?: boolean;
+  isCompleted?: boolean;
 }
+
+interface FieldCategory {
+  id: string;
+  key: string;
+  label: string;
+}
+
+// ─── Column definitions ───────────────────────────────────────────────────────
+
+interface ColDef {
+  id: string;
+  label: string;
+  defaultWidth: number;
+  minWidth: number;
+  visible: boolean;
+}
+
+const DEFAULT_COLUMNS: ColDef[] = [
+  { id: "required",       label: "Req?",            defaultWidth: 56,  minWidth: 44,  visible: true },
+  { id: "brainstorm",     label: "Brainstorm Notes", defaultWidth: 180, minWidth: 80,  visible: true },
+  { id: "rfi",            label: "RFI",              defaultWidth: 44,  minWidth: 40,  visible: true },
+  { id: "rfq",            label: "RFQ",              defaultWidth: 44,  minWidth: 40,  visible: true },
+  { id: "rfqDate",        label: "RFQ Date",         defaultWidth: 96,  minWidth: 70,  visible: true },
+  { id: "labour",         label: "Labour",           defaultWidth: 52,  minWidth: 44,  visible: true },
+  { id: "estimatorNotes", label: "Estimator Notes",  defaultWidth: 180, minWidth: 80,  visible: true },
+  { id: "status",         label: "Status",           defaultWidth: 120, minWidth: 90,  visible: true },
+  { id: "completed",      label: "Done",             defaultWidth: 52,  minWidth: 44,  visible: true },
+];
+
+type ColPrefs = { order: string[]; hidden: string[]; widths: Record<string, number> };
+
+function loadColPrefs(estimateId: string): ColPrefs {
+  try {
+    const raw = localStorage.getItem(`enotes_columns_${estimateId}`);
+    if (raw) return JSON.parse(raw) as ColPrefs;
+  } catch (_) {}
+  return { order: DEFAULT_COLUMNS.map(c => c.id), hidden: [], widths: {} };
+}
+
+function saveColPrefs(estimateId: string, prefs: ColPrefs) {
+  try {
+    localStorage.setItem(`enotes_columns_${estimateId}`, JSON.stringify(prefs));
+  } catch (_) {}
+}
+
+// ─── NotePopover ──────────────────────────────────────────────────────────────
 
 function NotePopover({
   value,
@@ -61,9 +136,7 @@ function NotePopover({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <span
-          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center w-full"
-        >
+        <span className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center w-full">
           {value ? (
             <span className="truncate">{value}</span>
           ) : (
@@ -97,8 +170,131 @@ function NotePopover({
   );
 }
 
+// ─── StatusPill ───────────────────────────────────────────────────────────────
+
+function StatusPill({
+  value,
+  options,
+  onChange,
+}: {
+  value: string | null;
+  options: FieldOption[];
+  onChange: (key: string | null) => void;
+}) {
+  const selected = options.find(o => o.key === value);
+
+  return (
+    <Select
+      value={value ?? "__none__"}
+      onValueChange={v => onChange(v === "__none__" ? null : v)}
+    >
+      <SelectTrigger
+        className="h-5 text-[11px] border-0 focus:ring-0 focus:ring-offset-0 px-1.5 rounded gap-0.5"
+        style={selected ? { backgroundColor: selected.color + "28", color: selected.color, borderColor: "transparent" } : { backgroundColor: "transparent" }}
+      >
+        <SelectValue placeholder={<span className="opacity-30 text-[10px]">—</span>} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__none__">
+          <span className="text-muted-foreground italic text-xs">Clear</span>
+        </SelectItem>
+        {options.map(opt => (
+          <SelectItem key={opt.key} value={opt.key}>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+              <span className="text-xs">{opt.name}</span>
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// ─── ColumnsDropdown ──────────────────────────────────────────────────────────
+
+function ColumnsDropdown({
+  columns,
+  hidden,
+  onToggle,
+  onMoveUp,
+  onMoveDown,
+}: {
+  columns: ColDef[];
+  hidden: string[];
+  onToggle: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
+          title="Manage columns"
+        >
+          <Columns3 className="w-3 h-3" />
+          Columns
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52 p-1" onCloseAutoFocus={e => e.preventDefault()}>
+        {columns.map((col, idx) => {
+          const isHidden = hidden.includes(col.id);
+          const isFirst = idx === 0;
+          const isLast = idx === columns.length - 1;
+          return (
+            <div
+              key={col.id}
+              className="flex items-center gap-2 px-2 py-1 rounded hover-elevate"
+            >
+              <Checkbox
+                id={`col-toggle-${col.id}`}
+                checked={!isHidden}
+                onCheckedChange={() => onToggle(col.id)}
+                className="flex-shrink-0"
+              />
+              <label
+                htmlFor={`col-toggle-${col.id}`}
+                className="flex-1 text-xs cursor-pointer select-none"
+              >
+                {col.label}
+              </label>
+              <div className="flex flex-col">
+                <button
+                  className="text-muted-foreground/50 hover:text-foreground disabled:opacity-20"
+                  onClick={() => onMoveUp(col.id)}
+                  disabled={isFirst}
+                  title="Move up"
+                >
+                  <ChevronUp className="w-3 h-3" />
+                </button>
+                <button
+                  className="text-muted-foreground/50 hover:text-foreground disabled:opacity-20"
+                  onClick={() => onMoveDown(col.id)}
+                  disabled={isLast}
+                  title="Move down"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+interface Props {
+  estimateId: string;
+}
+
 export default function EstimateEnotes({ estimateId }: Props) {
   const { toast } = useToast();
+
+  // ── Left-panel state ──────────────────────────────────────────────────────
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -108,11 +304,135 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const newCatInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Column preferences (visibility, order, widths) ────────────────────────
+  const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(estimateId));
+
+  const updateColPrefs = useCallback((updater: (prev: ColPrefs) => ColPrefs) => {
+    setColPrefs(prev => {
+      const next = updater(prev);
+      saveColPrefs(estimateId, next);
+      return next;
+    });
+  }, [estimateId]);
+
+  // Ordered + annotated column list (DEFAULT_COLUMNS reordered by colPrefs.order)
+  const orderedCols = useMemo<ColDef[]>(() => {
+    const byId = Object.fromEntries(DEFAULT_COLUMNS.map(c => [c.id, c]));
+    const result: ColDef[] = [];
+    for (const id of colPrefs.order) {
+      if (byId[id]) result.push(byId[id]);
+    }
+    // add any new columns not yet in prefs
+    for (const col of DEFAULT_COLUMNS) {
+      if (!result.find(c => c.id === col.id)) result.push(col);
+    }
+    return result;
+  }, [colPrefs.order]);
+
+  const visibleCols = useMemo(
+    () => orderedCols.filter(c => !colPrefs.hidden.includes(c.id)),
+    [orderedCols, colPrefs.hidden]
+  );
+
+  const colWidths = useMemo<Record<string, number>>(() => {
+    const out: Record<string, number> = {};
+    for (const col of DEFAULT_COLUMNS) {
+      out[col.id] = colPrefs.widths[col.id] ?? col.defaultWidth;
+    }
+    return out;
+  }, [colPrefs.widths]);
+
+  // Grid template: fixed "Item" column (1fr) + visible cols + fixed delete column (36px)
+  const gridTemplate = useMemo(() => {
+    const mid = visibleCols.map(c => `${colWidths[c.id]}px`).join(" ");
+    return `1fr ${mid} 36px`;
+  }, [visibleCols, colWidths]);
+
+  // ── Column resize ─────────────────────────────────────────────────────────
+  const resizingRef = useRef<{ colId: string; startX: number; startWidth: number } | null>(null);
+
+  const startResize = useCallback((colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startWidth = colWidths[colId];
+    resizingRef.current = { colId, startX: e.clientX, startWidth };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const { colId: id, startX, startWidth: sw } = resizingRef.current;
+      const col = DEFAULT_COLUMNS.find(c => c.id === id);
+      const minW = col?.minWidth ?? 40;
+      const newW = Math.max(minW, sw + ev.clientX - startX);
+      updateColPrefs(prev => ({
+        ...prev,
+        widths: { ...prev.widths, [id]: newW },
+      }));
+    };
+
+    const onUp = () => {
+      resizingRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [colWidths, updateColPrefs]);
+
+  // ── Toggle column visibility ──────────────────────────────────────────────
+  const toggleCol = useCallback((id: string) => {
+    updateColPrefs(prev => {
+      const hidden = prev.hidden.includes(id)
+        ? prev.hidden.filter(h => h !== id)
+        : [...prev.hidden, id];
+      return { ...prev, hidden };
+    });
+  }, [updateColPrefs]);
+
+  // ── Move column up/down ───────────────────────────────────────────────────
+  const moveColUp = useCallback((id: string) => {
+    updateColPrefs(prev => {
+      const order = [...prev.order];
+      const idx = order.indexOf(id);
+      if (idx <= 0) return prev;
+      [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
+      return { ...prev, order };
+    });
+  }, [updateColPrefs]);
+
+  const moveColDown = useCallback((id: string) => {
+    updateColPrefs(prev => {
+      const order = [...prev.order];
+      const idx = order.indexOf(id);
+      if (idx < 0 || idx >= order.length - 1) return prev;
+      [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
+      return { ...prev, order };
+    });
+  }, [updateColPrefs]);
+
+  // ── Data queries ──────────────────────────────────────────────────────────
   const { data: enotes = [], isLoading } = useQuery<EnoteRow[]>({
     queryKey: ["/api/estimates", estimateId, "enotes"],
     queryFn: () => fetch(`/api/estimates/${estimateId}/enotes`, { credentials: "include" }).then(r => r.json()),
   });
 
+  const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  const enoteStatusCategory = useMemo(
+    () => fieldCategories.find((c: FieldCategory) => c.key === "enote.status"),
+    [fieldCategories]
+  );
+
+  const { data: enoteStatusOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-options", enoteStatusCategory?.id],
+    enabled: !!enoteStatusCategory?.id,
+    queryFn: async () => {
+      return apiRequest(`/api/field-categories/${enoteStatusCategory!.id}/options`, "GET") as Promise<FieldOption[]>;
+    },
+  });
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<EnoteRow> }) =>
       apiRequest(`/api/estimates/${estimateId}/enotes/${id}`, "PATCH", data),
@@ -167,7 +487,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
     updateMutation.mutate({ id, data });
   }, [updateMutation]);
 
-  const commitEdit = (row: EnoteRow, field: 'rfqDate') => {
+  const commitEdit = (row: EnoteRow, field: "rfqDate") => {
     if (editingCell?.id === row.id && editingCell?.field === field) {
       const current = row[field] ?? "";
       if (editValue !== current) update(row.id, { [field]: editValue || null });
@@ -180,6 +500,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
     update(row.id, { required: next });
   };
 
+  // ── Derived data ───────────────────────────────────────────────────────────
   const categoryNames = useMemo(() => [...new Set(enotes.map(r => r.groupName))], [enotes]);
   const effectiveCategory = selectedCategory || categoryNames[0] || "";
 
@@ -218,6 +539,97 @@ export default function EstimateEnotes({ estimateId }: Props) {
     return <Circle className="w-4 h-4 text-muted-foreground/40 cursor-pointer flex-shrink-0" />;
   };
 
+  // ── Cell renderer per column id ────────────────────────────────────────────
+  const renderCell = (colId: string, row: EnoteRow) => {
+    switch (colId) {
+      case "required":
+        return (
+          <div className="flex justify-center" onClick={() => cycleRequired(row)}>
+            <RequiredIcon val={row.required} />
+          </div>
+        );
+      case "brainstorm":
+        return (
+          <div className="pl-2 py-0.5 overflow-hidden">
+            <NotePopover
+              value={row.brainstormNotes}
+              placeholder="Add notes…"
+              onSave={v => update(row.id, { brainstormNotes: v || null })}
+            />
+          </div>
+        );
+      case "rfi":
+        return (
+          <div className="flex justify-center">
+            <Checkbox checked={row.rfiRequired} onCheckedChange={v => update(row.id, { rfiRequired: !!v })} />
+          </div>
+        );
+      case "rfq":
+        return (
+          <div className="flex justify-center">
+            <Checkbox checked={row.rfqRequired} onCheckedChange={v => update(row.id, { rfqRequired: !!v })} />
+          </div>
+        );
+      case "rfqDate":
+        return (
+          <div className="pl-1">
+            {editingCell?.id === row.id && editingCell.field === "rfqDate" ? (
+              <Input
+                autoFocus
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(row, "rfqDate")}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(row, "rfqDate"); }}
+                className="h-6 text-xs focus-visible:ring-0 border-primary"
+                placeholder="dd/mm/yy"
+              />
+            ) : (
+              <span
+                className="text-xs text-muted-foreground cursor-pointer hover:text-foreground"
+                onClick={() => { setEditingCell({ id: row.id, field: "rfqDate" }); setEditValue(row.rfqDate ?? ""); }}
+              >
+                {row.rfqDate ? row.rfqDate : <span className="opacity-30">—</span>}
+              </span>
+            )}
+          </div>
+        );
+      case "labour":
+        return (
+          <div className="flex justify-center">
+            <Checkbox checked={row.labourRequired} onCheckedChange={v => update(row.id, { labourRequired: !!v })} />
+          </div>
+        );
+      case "estimatorNotes":
+        return (
+          <div className="pl-2 py-0.5 overflow-hidden">
+            <NotePopover
+              value={row.estimatorNotes}
+              placeholder="Add notes…"
+              onSave={v => update(row.id, { estimatorNotes: v || null })}
+            />
+          </div>
+        );
+      case "status":
+        return (
+          <div className="px-1">
+            <StatusPill
+              value={row.status}
+              options={enoteStatusOptions}
+              onChange={key => update(row.id, { status: key })}
+            />
+          </div>
+        );
+      case "completed":
+        return (
+          <div className="flex justify-center">
+            <Checkbox checked={row.completed} onCheckedChange={v => update(row.id, { completed: !!v })} />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-muted-foreground text-sm">
@@ -248,7 +660,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${
-                    isSelected ? 'bg-[#bba7db]/15 text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    isSelected ? "bg-[#bba7db]/15 text-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <span className="text-xs font-medium truncate w-full">{cat}</span>
@@ -271,7 +683,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
               ref={newCatInputRef}
               value={newCategoryName}
               onChange={e => setNewCategoryName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addCategory(); }}
+              onKeyDown={e => { if (e.key === "Enter") addCategory(); }}
               placeholder="New category…"
               className="h-7 text-xs"
             />
@@ -296,34 +708,60 @@ export default function EstimateEnotes({ estimateId }: Props) {
             </div>
           ) : (
             <>
-              {/* Filter bar */}
+              {/* Filter + Column management bar */}
               <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-background">
                 <button
                   onClick={() => setHideNotRequired(v => !v)}
                   className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
                     hideNotRequired
-                      ? 'bg-primary/10 border-primary/30 text-primary'
-                      : 'border-border/50 text-muted-foreground hover:text-foreground'
+                      ? "bg-primary/10 border-primary/30 text-primary"
+                      : "border-border/50 text-muted-foreground hover:text-foreground"
                   }`}
                   title="Toggle hide not-required rows"
                 >
                   <EyeOff className="w-3 h-3" />
                   Hide Not Required
                 </button>
+
+                <ColumnsDropdown
+                  columns={orderedCols}
+                  hidden={colPrefs.hidden}
+                  onToggle={toggleCol}
+                  onMoveUp={moveColUp}
+                  onMoveDown={moveColDown}
+                />
               </div>
 
               {/* Column header */}
-              <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-[10px] font-medium text-muted-foreground uppercase tracking-wide select-none">
-                <div className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: '1fr 56px 1fr 44px 44px 96px 44px 1fr 56px 36px' }}>
+              <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-[10px] font-medium text-muted-foreground uppercase tracking-wide select-none overflow-hidden">
+                <div
+                  className="grid items-center px-3 py-1.5"
+                  style={{ gridTemplateColumns: gridTemplate }}
+                >
+                  {/* Fixed: Item */}
                   <span>Item</span>
-                  <span className="text-center">Req?</span>
-                  <span className="pl-2">Brainstorm Notes</span>
-                  <span className="text-center">RFI</span>
-                  <span className="text-center">RFQ</span>
-                  <span className="pl-1">RFQ Date</span>
-                  <span className="text-center">Labour</span>
-                  <span className="pl-2">Estimator Notes</span>
-                  <span className="text-center">Done</span>
+
+                  {/* Dynamic visible columns */}
+                  {visibleCols.map((col, idx) => {
+                    const isCenter = ["required", "rfi", "rfq", "labour", "completed"].includes(col.id);
+                    return (
+                      <div key={col.id} className="relative flex items-center">
+                        <span className={`flex-1 truncate ${isCenter ? "text-center" : "pl-1"}`}>
+                          {col.label}
+                        </span>
+                        {/* Resize handle — appears on hover between columns */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
+                          onMouseDown={e => startResize(col.id, e)}
+                          title="Drag to resize"
+                        >
+                          <div className="w-px h-full bg-border/0 group-hover/resize:bg-border/60 transition-colors" />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Fixed: delete placeholder */}
                   <span />
                 </div>
               </div>
@@ -337,10 +775,12 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 ) : categoryItems.map(row => (
                   <div
                     key={row.id}
-                    className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${row.required === false ? 'opacity-40' : ''} ${row.completed ? 'bg-green-500/5' : ''}`}
-                    style={{ gridTemplateColumns: '1fr 56px 1fr 44px 44px 96px 44px 1fr 56px 36px', minHeight: '34px' }}
+                    className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
+                      row.required === false ? "opacity-40" : ""
+                    } ${row.completed ? "bg-green-500/5" : ""}`}
+                    style={{ gridTemplateColumns: gridTemplate, minHeight: "34px" }}
                   >
-                    {/* Item name */}
+                    {/* Fixed: Item name */}
                     {row.isCustom ? (
                       <Input
                         value={row.categoryName}
@@ -349,87 +789,19 @@ export default function EstimateEnotes({ estimateId }: Props) {
                         className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent pr-2"
                       />
                     ) : (
-                      <span className="text-sm truncate pr-2">{row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}</span>
+                      <span className="text-sm truncate pr-2">
+                        {row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}
+                      </span>
                     )}
 
-                    {/* Required toggle */}
-                    <div className="flex justify-center" onClick={() => cycleRequired(row)}>
-                      <RequiredIcon val={row.required} />
-                    </div>
+                    {/* Dynamic visible columns */}
+                    {visibleCols.map(col => (
+                      <div key={col.id} className="overflow-hidden">
+                        {renderCell(col.id, row)}
+                      </div>
+                    ))}
 
-                    {/* Brainstorm Notes — popover */}
-                    <div className="pl-2 py-0.5 overflow-hidden">
-                      <NotePopover
-                        value={row.brainstormNotes}
-                        placeholder="Add notes…"
-                        onSave={v => update(row.id, { brainstormNotes: v || null })}
-                      />
-                    </div>
-
-                    {/* RFI */}
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={row.rfiRequired}
-                        onCheckedChange={v => update(row.id, { rfiRequired: !!v })}
-                      />
-                    </div>
-
-                    {/* RFQ */}
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={row.rfqRequired}
-                        onCheckedChange={v => update(row.id, { rfqRequired: !!v })}
-                      />
-                    </div>
-
-                    {/* RFQ Date */}
-                    <div className="pl-1">
-                      {editingCell?.id === row.id && editingCell.field === 'rfqDate' ? (
-                        <Input
-                          autoFocus
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          onBlur={() => commitEdit(row, 'rfqDate')}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') commitEdit(row, 'rfqDate'); }}
-                          className="h-6 text-xs focus-visible:ring-0 border-primary"
-                          placeholder="dd/mm/yy"
-                        />
-                      ) : (
-                        <span
-                          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground"
-                          onClick={() => { setEditingCell({ id: row.id, field: 'rfqDate' }); setEditValue(row.rfqDate ?? ""); }}
-                        >
-                          {row.rfqDate ? row.rfqDate : <span className="opacity-30">—</span>}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Labour */}
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={row.labourRequired}
-                        onCheckedChange={v => update(row.id, { labourRequired: !!v })}
-                      />
-                    </div>
-
-                    {/* Estimator Notes — popover */}
-                    <div className="pl-2 py-0.5 overflow-hidden">
-                      <NotePopover
-                        value={row.estimatorNotes}
-                        placeholder="Add notes…"
-                        onSave={v => update(row.id, { estimatorNotes: v || null })}
-                      />
-                    </div>
-
-                    {/* Completed */}
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={row.completed}
-                        onCheckedChange={v => update(row.id, { completed: !!v })}
-                      />
-                    </div>
-
-                    {/* Delete — only for custom rows */}
+                    {/* Fixed: Delete — only for custom rows */}
                     <div className="flex justify-center">
                       {row.isCustom ? (
                         <button
@@ -468,7 +840,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   ref={newItemInputRef}
                   value={newItemName}
                   onChange={e => setNewItemName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
+                  onKeyDown={e => { if (e.key === "Enter") addItem(); }}
                   placeholder="Add named item to this category…"
                   className="h-7 text-xs flex-1"
                 />

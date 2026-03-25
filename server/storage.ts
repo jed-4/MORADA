@@ -5927,6 +5927,16 @@ export class DbStorage implements IStorage {
         isActive: true,
         sortOrder: 15,
       },
+      {
+        id: 'cat-enote-status',
+        key: 'enote.status',
+        label: 'E-Notes Status',
+        entity: 'enote',
+        description: 'Status options for E-Notes rows',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 16,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
@@ -6134,6 +6144,12 @@ export class DbStorage implements IStorage {
           { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#06B6D4', isDefault: false, sortOrder: 3 },
           { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#10B981', isDefault: false, sortOrder: 4 },
           { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#EC4899', isDefault: false, sortOrder: 5 },
+        ];
+      case 'enote.status':
+        return [
+          { id: 'opt-enote-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-enote-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-enote-status-complete', categoryId, key: 'complete', name: 'Complete', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
         ];
       default:
         return [];

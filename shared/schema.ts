@@ -5727,6 +5727,7 @@ export const estimateEnotes = pgTable("estimate_enotes", {
   revisit: boolean("revisit").notNull().default(false),
   revisitReason: text("revisit_reason"),
   isCustom: boolean("is_custom").notNull().default(false),
+  status: text("status"),
 });
 
 export const insertEstimateEnoteSchema = createInsertSchema(estimateEnotes).omit({ id: true });
