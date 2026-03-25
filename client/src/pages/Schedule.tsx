@@ -670,17 +670,21 @@ export default function Schedule() {
       }
 
       const origStart: Date | null = variables._originalStart ?? null;
-      if (origStart && updatedItem.startDate) {
-        const toMidnight = (d: Date | string) => {
+      const origEnd: Date | null = variables._originalEnd ?? null;
+      if ((origStart || origEnd) && updatedItem.startDate && updatedItem.endDate) {
+        const toMidnight = (d: Date | string): Date => {
           const r = new Date(d);
           r.setHours(0, 0, 0, 0);
           return r;
         };
-        const newStart = toMidnight(updatedItem.startDate as string);
-        const origS = toMidnight(origStart);
-        const deltaDays = Math.round((newStart.getTime() - origS.getTime()) / 86400000);
+        const dayDiff = (a: Date, b: Date) => Math.round((a.getTime() - b.getTime()) / 86400000);
 
-        if (deltaDays !== 0) {
+        const newStart = toMidnight(updatedItem.startDate as string);
+        const newEnd = toMidnight(updatedItem.endDate as string);
+        const deltaStart = origStart ? dayDiff(newStart, toMidnight(origStart)) : 0;
+        const deltaEnd = origEnd ? dayDiff(newEnd, toMidnight(origEnd)) : 0;
+
+        if (deltaStart !== 0 || deltaEnd !== 0) {
           const currentItems: ScheduleItem[] =
             queryClient.getQueryData<ScheduleItem[]>(
               schedule?.id
@@ -688,30 +692,13 @@ export default function Schedule() {
                 : [`/api/projects/${projectId}/schedule-items`]
             ) ?? scheduleItems;
 
-          const getDeps = (item: ScheduleItem): Array<{ id: number | string; type: string; lag: number }> =>
+          type NormDep = { id: number | string; type: string; lag: number };
+          const getDeps = (item: ScheduleItem): NormDep[] =>
             ((item.dependencies ?? []) as Array<{ id: number | string; type?: string; lag?: number }>).map(d => ({
               id: d.id,
               type: d.type ?? 'FS',
               lag: d.lag ?? 0,
             }));
-
-          const getAllDownstreamSuccessors = (rootId: number | string): ScheduleItem[] => {
-            const visited = new Set<number | string>();
-            const result: ScheduleItem[] = [];
-            const queue: Array<number | string> = [rootId];
-            visited.add(rootId);
-            while (queue.length > 0) {
-              const cur = queue.shift()!;
-              for (const it of currentItems) {
-                if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(cur))) {
-                  visited.add(it.id);
-                  result.push(it);
-                  queue.push(it.id);
-                }
-              }
-            }
-            return result;
-          };
 
           const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
             const children: ScheduleItem[] = [];
@@ -723,44 +710,113 @@ export default function Schedule() {
             return children;
           };
 
-          const shiftByCalendarDays = (item: ScheduleItem): { startDate: string; endDate: string } => {
-            const s = toMidnight(item.startDate as string);
-            const e = toMidnight(item.endDate as string);
-            const ns = new Date(s);
-            ns.setDate(ns.getDate() + deltaDays);
-            const ne = new Date(e);
-            ne.setDate(ne.getDate() + deltaDays);
-            return { startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
+          const computeSuccessorDates = (
+            succ: ScheduleItem,
+            predId: number | string,
+          ): { startDate: string; endDate: string } | null => {
+            const dep = getDeps(succ).find(d => String(d.id) === String(predId));
+            if (!dep) return null;
+            const sStart = toMidnight(succ.startDate as string);
+            const sEnd = toMidnight(succ.endDate as string);
+            const durDays = dayDiff(sEnd, sStart);
+            let ns: Date;
+            let ne: Date;
+            if (dep.type === 'SS') {
+              ns = new Date(sStart);
+              ns.setDate(ns.getDate() + deltaStart);
+              ne = new Date(ns);
+              ne.setDate(ne.getDate() + durDays);
+            } else if (dep.type === 'FF') {
+              ne = new Date(sEnd);
+              ne.setDate(ne.getDate() + deltaEnd);
+              ns = new Date(ne);
+              ns.setDate(ns.getDate() - durDays);
+            } else if (dep.type === 'SF') {
+              ne = new Date(sEnd);
+              ne.setDate(ne.getDate() + deltaStart);
+              ns = new Date(ne);
+              ns.setDate(ns.getDate() - durDays);
+            } else {
+              // FS (default)
+              ns = new Date(sStart);
+              ns.setDate(ns.getDate() + deltaEnd);
+              ne = new Date(sEnd);
+              ne.setDate(ne.getDate() + deltaEnd);
+            }
+            return {
+              startDate: ns.toISOString().split('T')[0],
+              endDate: ne.toISOString().split('T')[0],
+            };
           };
 
-          const dependentItems = getAllDownstreamSuccessors(updatedItem.id);
-          const childItems = getChildrenRecursive(updatedItem.id);
-
-          const depChildIds = new Set<number | string>();
-          const depChildItems: ScheduleItem[] = [];
-          for (const di of dependentItems) {
-            for (const ch of getChildrenRecursive(di.id)) {
-              if (!depChildIds.has(ch.id) && !dependentItems.some(d => d.id === ch.id)) {
-                depChildIds.add(ch.id);
-                depChildItems.push(ch);
+          type QueueEntry = { item: ScheduleItem; predId: number | string };
+          const visited = new Set<number | string>();
+          visited.add(updatedItem.id);
+          const queue: QueueEntry[] = [];
+          for (const it of currentItems) {
+            if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(updatedItem.id))) {
+              visited.add(it.id);
+              queue.push({ item: it, predId: updatedItem.id });
+            }
+          }
+          const successorUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
+          while (queue.length > 0) {
+            const { item, predId } = queue.shift()!;
+            const dates = computeSuccessorDates(item, predId);
+            if (dates) {
+              successorUpdates.push({ id: item.id, ...dates });
+              for (const it of currentItems) {
+                if (!visited.has(it.id) && getDeps(it).some(d => String(d.id) === String(item.id))) {
+                  visited.add(it.id);
+                  queue.push({ item: it, predId: item.id });
+                }
               }
             }
           }
 
-          const patchItem = (id: number | string, dates: { startDate: string; endDate: string }) => {
-            apiRequest(`/api/schedule-items/${id}`, "PATCH", dates).then(() => {}).catch(() => {});
-          };
+          const childItems = getChildrenRecursive(updatedItem.id);
+          const childUpdates = childItems
+            .filter(c => !successorUpdates.some(s => s.id === c.id))
+            .map(c => {
+              const cs = toMidnight(c.startDate as string);
+              const ce = toMidnight(c.endDate as string);
+              const ns = new Date(cs);
+              ns.setDate(ns.getDate() + deltaStart);
+              const ne = new Date(ce);
+              ne.setDate(ne.getDate() + deltaStart);
+              return { id: c.id, startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] };
+            });
 
-          for (const child of childItems) {
-            if (!dependentItems.some(d => d.id === child.id)) {
-              patchItem(child.id, shiftByCalendarDays(child));
+          const depChildUpdates: Array<{ id: number | string; startDate: string; endDate: string }> = [];
+          const depChildIds = new Set<number | string>(
+            [...successorUpdates.map(s => s.id), ...childUpdates.map(c => c.id)],
+          );
+          for (const su of successorUpdates) {
+            const suItem = currentItems.find(i => i.id === su.id);
+            if (!suItem) continue;
+            const suOrigStart = toMidnight(suItem.startDate as string);
+            const suDeltaStart = dayDiff(toMidnight(su.startDate), suOrigStart);
+            for (const ch of getChildrenRecursive(su.id)) {
+              if (!depChildIds.has(ch.id)) {
+                depChildIds.add(ch.id);
+                const cs = toMidnight(ch.startDate as string);
+                const ce = toMidnight(ch.endDate as string);
+                const ns = new Date(cs);
+                ns.setDate(ns.getDate() + suDeltaStart);
+                const ne = new Date(ce);
+                ne.setDate(ne.getDate() + suDeltaStart);
+                depChildUpdates.push({ id: ch.id, startDate: ns.toISOString().split('T')[0], endDate: ne.toISOString().split('T')[0] });
+              }
             }
           }
-          for (const dep of dependentItems) {
-            patchItem(dep.id, shiftByCalendarDays(dep));
-          }
-          for (const dc of depChildItems) {
-            patchItem(dc.id, shiftByCalendarDays(dc));
+
+          const allUpdates = [...childUpdates, ...successorUpdates, ...depChildUpdates];
+          if (allUpdates.length > 0) {
+            await Promise.all(
+              allUpdates.map(u =>
+                apiRequest(`/api/schedule-items/${u.id}`, "PATCH", { startDate: u.startDate, endDate: u.endDate })
+              )
+            );
           }
         }
       }
@@ -1320,9 +1376,11 @@ export default function Schedule() {
     };
 
     if (editingItem && editingItem.id) {
-      // Capture the original start date so the onSuccess cascade can compute delta
       if (editingItem.startDate) {
-        data._originalStart = new Date(editingItem.startDate as any);
+        data._originalStart = new Date(editingItem.startDate as string);
+      }
+      if (editingItem.endDate) {
+        data._originalEnd = new Date(editingItem.endDate as string);
       }
       updateItemMutation.mutate(data);
     } else {
