@@ -5069,9 +5069,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/scope-item-types/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { companyId?: string; dbUser?: { roleName?: string } };
       const companyId = user?.companyId;
-      const isAdmin = user?.dbUser?.roleName?.toLowerCase()?.includes('admin') || user?.dbUser?.roleName?.toLowerCase()?.includes('owner') || user?.dbUser?.roleName?.toLowerCase()?.includes('general manager');
+      const roleName = user?.dbUser?.roleName ?? '';
+      const isAdmin = roleName.toLowerCase().includes('admin') || roleName.toLowerCase().includes('owner') || roleName.toLowerCase().includes('general manager');
       if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
       // Company scoping: verify the type belongs to the user's company
       const existing = await storage.getScopeItemTypeDefinitionById(req.params.id);
@@ -5081,6 +5082,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validation.success) return res.status(400).json({ error: "Validation failed" });
       const updated = await storage.updateScopeItemTypeDefinition(req.params.id, validation.data);
       if (!updated) return res.status(404).json({ error: "Scope item type not found" });
+      // Propagate rename: update all scope items that referenced the old type name
+      if (validation.data.name && validation.data.name.toLowerCase() !== existing.name.toLowerCase() && companyId) {
+        await storage.renameScopeItemTypeOnItems(companyId, existing.name, validation.data.name);
+      }
       res.json(updated);
     } catch (error) {
       console.error("Error updating scope item type:", error);

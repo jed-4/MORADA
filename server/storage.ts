@@ -438,6 +438,7 @@ export interface IStorage {
   updateScopeItemTypeDefinition(id: string, def: Partial<InsertScopeItemTypeDefinition>): Promise<ScopeItemTypeDefinition | undefined>;
   deleteScopeItemTypeDefinition(id: string): Promise<boolean>;
   reorderScopeItemTypeDefinitions(orderedIds: string[], companyId: string): Promise<void>;
+  renameScopeItemTypeOnItems(companyId: string, oldName: string, newName: string): Promise<void>;
   seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]>;
 
   // Scope Items CRUD (the DNA of every job)
@@ -10781,6 +10782,20 @@ export class DbStorage implements IStorage {
           )
       )
     );
+  }
+
+  async renameScopeItemTypeOnItems(companyId: string, oldName: string, newName: string): Promise<void> {
+    // When a type definition is renamed, update all scope items for that company
+    // so items with the old type string are updated to the new name (case-insensitive match).
+    // This ensures scope items continue to match their definition after a rename.
+    await db.update(schema.scopeItems)
+      .set({ itemType: newName.toLowerCase() })
+      .where(
+        and(
+          eq(schema.scopeItems.companyId, companyId),
+          sql`lower(${schema.scopeItems.itemType}) = ${oldName.toLowerCase()}`
+        )
+      );
   }
 
   async seedDefaultScopeItemTypes(companyId: string): Promise<ScopeItemTypeDefinition[]> {
