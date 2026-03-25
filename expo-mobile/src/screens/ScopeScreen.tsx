@@ -231,7 +231,8 @@ export default function ScopeScreen({ navigation, route }: Props) {
         )}
         renderItem={({ item }) => {
           const expanded = expandedItems.has(item.id);
-          const typeBadge = getTypeBadgeColor(item.itemType, isDark);
+          const typeKey = item.itemType || 'scope';
+          const typeBadge = getTypeBadgeColor(typeKey, isDark);
           const descText = stripHtml(item.description);
           const gearList = (item.gearList as GearItem[] | null) ?? [];
           const checklistItems = (item.checklistItems as ChecklistItemEntry[] | null) ?? [];
@@ -263,7 +264,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
                   <View style={styles.itemTopRow}>
                     <View style={[styles.typeBadge, { backgroundColor: typeBadge.bg }]}>
                       <Text style={[styles.typeBadgeText, { color: typeBadge.text }]}>
-                        {item.itemType.charAt(0).toUpperCase() + item.itemType.slice(1).toLowerCase()}
+                        {typeKey.charAt(0).toUpperCase() + typeKey.slice(1).toLowerCase()}
                       </Text>
                     </View>
                   </View>
