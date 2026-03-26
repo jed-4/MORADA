@@ -999,7 +999,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           className="h-full rounded-full"
                           style={{
                             width: `${selectedItem.progressPercent}%`,
-                            backgroundColor: "#6b7280",
+                            backgroundColor: "hsl(var(--muted-foreground) / 0.4)",
                           }}
                         />
                       </div>
