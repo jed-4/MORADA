@@ -332,7 +332,7 @@ function SortableProjectRow({
   );
 }
 
-export default function MasterScheduleGantt() {
+export default function MasterScheduleGantt({ className }: { className?: string }) {
   const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
   const [windowStart, setWindowStart] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -345,8 +345,8 @@ export default function MasterScheduleGantt() {
 
   const windowEnd = addWeeks(windowStart, windowWeeks);
   const totalDays = windowWeeks * 7;
-  const pixelsPerDay = Math.max(Math.floor(containerWidth / totalDays), MIN_PIXELS_PER_DAY);
-  const totalWidth = totalDays * pixelsPerDay;
+  const pixelsPerDay = Math.max(containerWidth / totalDays, MIN_PIXELS_PER_DAY);
+  const totalWidth = containerWidth > 0 ? containerWidth : totalDays * pixelsPerDay;
 
   const { data: projects = [] } = useQuery<MasterProject[]>({
     queryKey: ["/api/business-schedule/projects"],
@@ -468,7 +468,7 @@ export default function MasterScheduleGantt() {
   }, [visibleProjects, updateProjectMutation]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className={`flex flex-col overflow-hidden${className ? ` ${className}` : ' flex-1 min-h-0'}`}>
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">

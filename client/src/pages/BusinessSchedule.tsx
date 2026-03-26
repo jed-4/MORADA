@@ -474,7 +474,7 @@ export default function BusinessSchedule() {
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
           <ViewModeTabs active="schedules" />
         </div>
-        <MasterScheduleGantt />
+        <MasterScheduleGantt className="flex-1 min-h-0" />
       </div>
     );
   }
