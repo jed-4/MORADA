@@ -65,14 +65,11 @@ const BAR_GAP = 2;
 const ROW_PADDING = 4;
 const DAY_WIDTH = 44;
 const WEEKEND_DAY_WIDTH = 22;
+const WEEKDAY_WEEKEND_RATIO = DAY_WIDTH / WEEKEND_DAY_WIDTH; // 2:1
 const PANEL_WIDTH = 200;
 const NAV_STEP_DAYS = 7;
 const MIN_ROW_HEIGHT = 36;
 const OVERLOAD_THRESHOLD = 3;
-
-function getDayWidth(day: Date): number {
-  return isWeekend(day) ? WEEKEND_DAY_WIDTH : DAY_WIDTH;
-}
 
 function assignLanes(items: WorkloadItem[]): { layouts: BarLayout[]; laneCount: number } {
   const sorted = [...items].sort((a, b) => {
@@ -137,6 +134,21 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
 
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
 
+  // Dynamic column widths that expand to fill available timeline width
+  const [timelineAreaWidth, setTimelineAreaWidth] = useState(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const updateWidth = () => {
+      setTimelineAreaWidth(Math.max(0, container.clientWidth - PANEL_WIDTH));
+    };
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
   const toggleRowExpanded = useCallback((id: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -159,6 +171,24 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   const days = useMemo(
     () => eachDayOfInterval({ start: rangeStart, end: addDays(rangeEnd, -1) }),
     [rangeStart, rangeEnd]
+  );
+
+  // Scale weekday/weekend widths so they fill the available timeline area
+  const { scaledDayWidth, scaledWeekendWidth } = useMemo(() => {
+    if (timelineAreaWidth <= 0 || days.length === 0) {
+      return { scaledDayWidth: DAY_WIDTH, scaledWeekendWidth: WEEKEND_DAY_WIDTH };
+    }
+    const weekdayCount = days.filter(d => !isWeekend(d)).length;
+    const weekendCount = days.length - weekdayCount;
+    // totalWidth = weekdayCount * W + weekendCount * (W / RATIO)
+    const divisor = weekdayCount + weekendCount / WEEKDAY_WEEKEND_RATIO;
+    const w = divisor > 0 ? timelineAreaWidth / divisor : DAY_WIDTH;
+    return { scaledDayWidth: Math.max(w, 14), scaledWeekendWidth: Math.max(w / WEEKDAY_WEEKEND_RATIO, 7) };
+  }, [timelineAreaWidth, days]);
+
+  const getColWidth = useCallback((day: Date) =>
+    isWeekend(day) ? scaledWeekendWidth : scaledDayWidth,
+    [scaledDayWidth, scaledWeekendWidth]
   );
 
   const workloadUrl = useMemo(() => {
@@ -264,7 +294,14 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       if (item.type === "parent" && !item.assignedToId && !item.assignedToName) continue;
 
       if (!item.assignedToId && !item.assignedToName) {
-        unassigned.push(item);
+        // Route to Business row — items with no assignee were saved as company-assigned
+        const bizKey = 'biz:__company__';
+        let bizRow = contactMap.get(bizKey);
+        if (!bizRow) {
+          bizRow = { id: bizKey, name: 'Business', color: '#6b7280', items: [] };
+          contactMap.set(bizKey, bizRow);
+        }
+        bizRow.items.push(item);
         continue;
       }
 
@@ -293,12 +330,17 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       row.items.push(item);
     }
 
-    // Separate company row (rowKey is "biz:CompanyName" when server nulls assignedToId) from supplier/people rows
+    // Separate company row (any row with id starting "biz:") from supplier/people rows.
+    // Merge all biz: rows together — handles both named (biz:CompanyName) and unnamed (biz:__company__) items.
     let companyRow: ContactRow | null = null;
     const supplierRows: ContactRow[] = [];
     for (const row of contactMap.values()) {
       if (row.id.startsWith("biz:")) {
-        companyRow = row;
+        if (!companyRow) {
+          companyRow = row;
+        } else {
+          companyRow.items.push(...row.items);
+        }
       } else {
         supplierRows.push(row);
       }
@@ -352,10 +394,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     let x = 0;
     for (const day of days) {
       offsets.push(x);
-      x += getDayWidth(day);
+      x += getColWidth(day);
     }
     return { offsets, totalWidth: x };
-  }, [days]);
+  }, [days, getColWidth]);
 
   const totalWidth = dayOffsets.totalWidth;
 
@@ -382,7 +424,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
         const leftPx = clampedStartIdx < offsets.length ? offsets[clampedStartIdx] : tw;
         const rightPx = clampedEndIdx + 1 < offsets.length
           ? offsets[clampedEndIdx + 1]
-          : (clampedEndIdx < offsets.length ? offsets[clampedEndIdx] + getDayWidth(days[clampedEndIdx]) : tw);
+          : (clampedEndIdx < offsets.length ? offsets[clampedEndIdx] + getColWidth(days[clampedEndIdx]) : tw);
 
         layout.leftPx = leftPx;
         layout.widthPx = Math.max(rightPx - leftPx, 4);
@@ -394,7 +436,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       result.set(row.id, { layouts, laneCount, rowHeight });
     }
     return result;
-  }, [allRows, rangeStart, visibleDays, days, dayOffsets, expandedRows]);
+  }, [allRows, rangeStart, visibleDays, days, dayOffsets, expandedRows, getColWidth]);
 
   const dailyTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -766,7 +808,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 const barHeight = maxDailyTotal > 0 ? Math.round((count / maxDailyTotal) * 20) : 0;
                 const isWkend = isWeekend(day);
                 const isToday = isSameDay(day, today);
-                const colWidth = getDayWidth(day);
+                const colWidth = getColWidth(day);
                 const barW = isWkend ? 10 : 20;
 
                 return (
@@ -822,7 +864,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 return (
                   <div
                     className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-10"
-                    style={{ left: dayOffsets.offsets[todayIdx] + getDayWidth(days[todayIdx]) / 2 }}
+                    style={{ left: dayOffsets.offsets[todayIdx] + getColWidth(days[todayIdx]) / 2 }}
                   />
                 );
               })()}
@@ -856,7 +898,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const key = format(day, "yyyy-MM-dd");
                       const isWkend = isWeekend(day);
                       const isToday = isSameDay(day, today);
-                      const colWidth = getDayWidth(day);
+                      const colWidth = getColWidth(day);
                       const isOverloadedDay = assigneeOverloads.get(row.id)?.overloadedDays.has(key) ?? false;
 
                       return (
