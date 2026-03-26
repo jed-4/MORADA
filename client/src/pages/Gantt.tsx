@@ -69,6 +69,7 @@ interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
   baselineItems?: any[];
   nonWorkingDays?: NonWorkingDay[];
+  sortResetKey?: number;
 }
 
 function SortableColumnItem({ 
@@ -472,7 +473,7 @@ function useGanttRowDrag(
   };
 }
 
-export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays = [] }: GanttProps = {}) {
+export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays = [], sortResetKey = 0 }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const weekStartDay = useWeekStartDay();
@@ -615,6 +616,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   // Local session order state - resets on page refresh
   // Only populated when user explicitly row-drags; otherwise defaultItemIds (date-sorted) is used
   const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
+
+  // When Sort by Date completes in Schedule.tsx, sortResetKey increments — clear session order
+  // so the Gantt reflects the new DB sortOrder instead of the old drag state
+  useEffect(() => {
+    if (sortResetKey > 0) {
+      setSessionItemOrder([]);
+    }
+  }, [sortResetKey]);
 
   const canNestItem = (activeId: string, targetId: string): boolean => {
     const activeItem = allItems.find(i => i.id === activeId);

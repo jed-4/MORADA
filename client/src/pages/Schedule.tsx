@@ -122,6 +122,7 @@ export default function Schedule() {
 
   const [scheduleCategory, setScheduleCategory] = useState<"construction" | "preconstruction">("construction");
   const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
+  const [ganttSortResetKey, setGanttSortResetKey] = useState(0);
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -560,6 +561,7 @@ export default function Schedule() {
     },
     onSuccess: () => {
       invalidateScheduleItems();
+      setGanttSortResetKey(k => k + 1);
       toast({ title: "Sorted by date", description: "Schedule items have been re-ordered by start date." });
     },
     onError: (error: Error) => {
@@ -2232,6 +2234,7 @@ export default function Schedule() {
                 }}
                 baselineItems={activeBaselineId ? baselineItems as any[] : []}
                 nonWorkingDays={nonWorkingDays as any[]}
+                sortResetKey={ganttSortResetKey}
               />
             )}
 
