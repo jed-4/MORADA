@@ -526,14 +526,13 @@ export default function DashboardScreen({ navigation }: Props) {
                 contentContainerStyle={styles.timesheetScroll}
               >
                 {recentTimesheets.map(ts => {
-                  const projectColor = getProjectColor(ts.projectId);
                   const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
                   const costCodeName = ccId ? getCostCodeLabel(ccId) : '';
                   const cardWidth = Dimensions.get('window').width * 0.864 - 16;
                   return (
                     <TouchableOpacity
                       key={ts.id}
-                      style={[styles.timesheetCard, { backgroundColor: projectColor + '30', width: cardWidth }]}
+                      style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, width: cardWidth }]}
                       onPress={() => navigation.navigate('Timesheets')}
                       activeOpacity={0.7}
                     >
