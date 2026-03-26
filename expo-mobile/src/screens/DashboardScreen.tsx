@@ -88,6 +88,8 @@ interface TimesheetEntry {
   date: string;
   duration: string;
   status: string;
+  startTime?: string;
+  endTime?: string;
   costCodeId?: string;
   costCodeSplits?: Array<{ costCodeId: string; costCodeName?: string; duration: string }>;
   projectName?: string;
@@ -168,6 +170,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
   const [showBreakModal, setShowBreakModal] = useState(false);
   const [selectedBreakMinutes, setSelectedBreakMinutes] = useState(0);
+  const [selectedTimesheetDetail, setSelectedTimesheetDetail] = useState<TimesheetEntry | null>(null);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -533,7 +536,7 @@ export default function DashboardScreen({ navigation }: Props) {
                     <TouchableOpacity
                       key={ts.id}
                       style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, width: cardWidth }]}
-                      onPress={() => navigation.navigate('Timesheets')}
+                      onPress={() => setSelectedTimesheetDetail(ts)}
                       activeOpacity={0.7}
                     >
                       <View style={styles.timesheetCardContent}>
@@ -748,6 +751,108 @@ export default function DashboardScreen({ navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Timesheet Detail Modal */}
+      <Modal
+        visible={!!selectedTimesheetDetail}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedTimesheetDetail(null)}
+      >
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Timesheet</Text>
+              <TouchableOpacity onPress={() => setSelectedTimesheetDetail(null)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+            {selectedTimesheetDetail ? (
+              <View style={{ padding: 16, gap: 12 }}>
+                {/* Date */}
+                <View style={[styles.detailRow, { borderColor: colors.border }]}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Date</Text>
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {formatDateLabel(selectedTimesheetDetail.date)}
+                    </Text>
+                  </View>
+                </View>
+                {/* Project */}
+                <View style={[styles.detailRow, { borderColor: colors.border }]}>
+                  <Ionicons name="briefcase-outline" size={16} color={colors.secondary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Project</Text>
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {selectedTimesheetDetail.projectId ? getProjectName(selectedTimesheetDetail.projectId) : 'No project'}
+                    </Text>
+                  </View>
+                </View>
+                {/* Duration */}
+                <View style={[styles.detailRow, { borderColor: colors.border }]}>
+                  <Ionicons name="time-outline" size={16} color={colors.secondary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Duration</Text>
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {parseFloat(selectedTimesheetDetail.duration).toFixed(2)}h
+                      {selectedTimesheetDetail.startTime && selectedTimesheetDetail.endTime
+                        ? `  ·  ${selectedTimesheetDetail.startTime} – ${selectedTimesheetDetail.endTime}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+                {/* Cost code */}
+                {(() => {
+                  const ccId = selectedTimesheetDetail.costCodeId || selectedTimesheetDetail.costCodeSplits?.[0]?.costCodeId;
+                  return ccId ? (
+                    <View style={[styles.detailRow, { borderColor: colors.border }]}>
+                      <Ionicons name="pricetag-outline" size={16} color={colors.secondary} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={[styles.detailLabel, { color: colors.secondary }]}>Cost Code</Text>
+                        <Text style={[styles.detailValue, { color: colors.text }]}>{getCostCodeLabel(ccId)}</Text>
+                      </View>
+                    </View>
+                  ) : null;
+                })()}
+                {/* Status */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 }}>
+                  <Text style={[styles.detailLabel, { color: colors.secondary }]}>Status</Text>
+                  <View style={[styles.statusBadge, {
+                    backgroundColor:
+                      selectedTimesheetDetail.status === 'approved' ? '#22c55e20' :
+                      selectedTimesheetDetail.status === 'submitted' ? '#3b82f620' :
+                      selectedTimesheetDetail.status === 'rejected' ? '#ef444420' : colors.accent + '20',
+                  }]}>
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color:
+                        selectedTimesheetDetail.status === 'approved' ? '#16a34a' :
+                        selectedTimesheetDetail.status === 'submitted' ? '#2563eb' :
+                        selectedTimesheetDetail.status === 'rejected' ? '#dc2626' : colors.accent,
+                    }}>
+                      {selectedTimesheetDetail.status.charAt(0).toUpperCase() + selectedTimesheetDetail.status.slice(1)}
+                    </Text>
+                  </View>
+                </View>
+                {/* Navigate button */}
+                <TouchableOpacity
+                  style={[styles.clockBtn, { backgroundColor: colors.accent + '20', borderColor: colors.accent + '40', marginTop: 8 }]}
+                  onPress={() => {
+                    setSelectedTimesheetDetail(null);
+                    navigation.navigate('Timesheets');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="open-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+                  <Text style={[styles.clockBtnText, { color: colors.accent }]}>View in Timesheets</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showBreakModal}
@@ -1409,5 +1514,26 @@ const styles = StyleSheet.create({
   modalConfirmText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  detailLabel: {
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
 });

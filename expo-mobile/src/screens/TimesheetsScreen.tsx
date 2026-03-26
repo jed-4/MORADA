@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type RefObject } from 'react';
 import {
   View,
   Text,
@@ -171,6 +171,25 @@ function calculateDuration(start: string, end: string, breakDur: string): string
   return Math.max(0, Math.round(hours * 4) / 4).toString();
 }
 
+function ElapsedTimer({ clockInTime, style }: { clockInTime: string; style: object }) {
+  const [elapsed, setElapsed] = useState('00:00:00');
+  useEffect(() => {
+    const update = () => {
+      const clockIn = new Date(clockInTime);
+      const now = new Date();
+      const seconds = Math.floor((now.getTime() - clockIn.getTime()) / 1000);
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      setElapsed(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [clockInTime]);
+  return <Text style={style}>{elapsed}</Text>;
+}
+
 export default function TimesheetsScreen() {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
@@ -182,8 +201,6 @@ export default function TimesheetsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [elapsedTime, setElapsedTime] = useState('00:00:00');
-
   const [clockInProjectId, setClockInProjectId] = useState('');
   const [clockInCostCodeId, setClockInCostCodeId] = useState('');
   const [showProjectPicker, setShowProjectPicker] = useState(false);
@@ -241,25 +258,6 @@ export default function TimesheetsScreen() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    if (!activeTimesheet?.clockInTime) {
-      setElapsedTime('00:00:00');
-      return;
-    }
-    const updateElapsed = () => {
-      const clockIn = new Date(activeTimesheet.clockInTime!);
-      const now = new Date();
-      const seconds = Math.floor((now.getTime() - clockIn.getTime()) / 1000);
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor((seconds % 3600) / 60);
-      const s = seconds % 60;
-      setElapsedTime(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-    };
-    updateElapsed();
-    const interval = setInterval(updateElapsed, 1000);
-    return () => clearInterval(interval);
-  }, [activeTimesheet?.clockInTime]);
-
-  useEffect(() => {
     const unsubscribeNet = NetInfo.addEventListener(state => {
       const online = !!(state.isConnected && state.isInternetReachable !== false);
       setNetworkOnline(online);
@@ -277,7 +275,11 @@ export default function TimesheetsScreen() {
     };
   }, []);
 
+  const isSyncingRef = useRef(false);
+
   const handleSync = async () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
     setSyncing(true);
     try {
       const { synced, failed } = await syncQueue();
@@ -290,6 +292,7 @@ export default function TimesheetsScreen() {
       }
     } catch {
     } finally {
+      isSyncingRef.current = false;
       setSyncing(false);
       getQueueCount().then(setPendingQueueCount);
     }
@@ -602,6 +605,24 @@ export default function TimesheetsScreen() {
     }
   };
 
+  const timePickerListRef = useRef<FlatList>(null);
+
+  const PICKER_ITEM_HEIGHT = 52;
+
+  useEffect(() => {
+    if (showTimePicker !== null) {
+      const currentTime = showTimePicker === 'start' ? formStartTime : formEndTime;
+      const index = TIME_OPTIONS.findIndex(t => t.value === currentTime);
+      if (index > 0) {
+        const timer = setTimeout(() => {
+          timePickerListRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.3 });
+        }, 350);
+        return () => clearTimeout(timer);
+      }
+    }
+    return undefined;
+  }, [showTimePicker]);
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
@@ -617,6 +638,7 @@ export default function TimesheetsScreen() {
     items: { id: string; label: string; isHeader?: boolean }[],
     selectedId: string,
     onSelect: (id: string) => void,
+    listRef?: RefObject<FlatList | null>,
   ) => (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={[styles.pickerOverlay]}>
@@ -628,8 +650,15 @@ export default function TimesheetsScreen() {
             </TouchableOpacity>
           </View>
           <FlatList
+            ref={listRef}
             data={items}
             keyExtractor={item => item.id}
+            nestedScrollEnabled
+            getItemLayout={listRef ? (_data, index) => ({
+              length: PICKER_ITEM_HEIGHT,
+              offset: PICKER_ITEM_HEIGHT * index,
+              index,
+            }) : undefined}
             renderItem={({ item }) => {
               if (item.isHeader) {
                 return (
@@ -708,7 +737,11 @@ export default function TimesheetsScreen() {
                   {getProjectName(activeTimesheet.projectId)}
                 </Text>
               </View>
-              <Text style={[styles.timerText, { color: colors.green }]}>{elapsedTime}</Text>
+              {activeTimesheet.clockInTime ? (
+                <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
+              ) : (
+                <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
+              )}
               <Text style={[styles.clockStarted, { color: colors.secondary }]}>
                 Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
               </Text>
@@ -1095,6 +1128,7 @@ export default function TimesheetsScreen() {
           if (showTimePicker === 'start') setFormStartTime(val);
           else setFormEndTime(val);
         },
+        timePickerListRef,
       )}
 
       {/* Form Project Picker */}
