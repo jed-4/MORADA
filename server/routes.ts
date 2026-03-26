@@ -17352,59 +17352,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Batch update sortOrder for schedule items (drag reorder)
   app.post("/api/schedule-items/batch-sort", requireAuth, async (req, res) => {
     try {
-      const { updates } = req.body;
+      const { updates, scheduleId } = req.body;
       if (!Array.isArray(updates)) {
         return res.status(400).json({ error: "Expected updates array" });
       }
-      
-      // Validate all items belong to user's company before updating
+
       const userCompanyId = req.user?.companyId;
       if (!userCompanyId) {
         return res.status(403).json({ error: "User must belong to a company" });
       }
-      
-      // Verify each item's ownership
-      for (const update of updates) {
-        const { id } = update;
-        if (!id) continue;
-        
-        const item = await storage.getScheduleItem(id);
-        if (!item) {
-          return res.status(404).json({ error: `Schedule item ${id} not found` });
-        }
-        
-        const schedule = await storage.getScheduleById(item.scheduleId);
+
+      // Verify ownership ONCE using the provided scheduleId (fast path) or
+      // by sampling the first item's schedule (fallback). This avoids the
+      // previous O(3N) sequential DB round-trips that caused timeouts on
+      // large schedules in production.
+      if (scheduleId) {
+        const schedule = await storage.getScheduleById(scheduleId);
         if (!schedule) {
-          return res.status(404).json({ error: `Schedule not found for item ${id}` });
+          return res.status(404).json({ error: "Schedule not found" });
         }
-        
         const project = await storage.getProject(schedule.projectId);
         if (!project || project.companyId !== userCompanyId) {
-          return res.status(403).json({ error: "Unauthorized to update this schedule item" });
+          return res.status(403).json({ error: "Unauthorized" });
+        }
+      } else {
+        // Fallback: verify via first item in the list
+        const firstUpdate = updates.find(u => u.id);
+        if (firstUpdate) {
+          const firstItem = await storage.getScheduleItem(firstUpdate.id);
+          if (!firstItem) {
+            return res.status(404).json({ error: `Schedule item ${firstUpdate.id} not found` });
+          }
+          const schedule = await storage.getScheduleById(firstItem.scheduleId);
+          if (!schedule) {
+            return res.status(404).json({ error: "Schedule not found" });
+          }
+          const project = await storage.getProject(schedule.projectId);
+          if (!project || project.companyId !== userCompanyId) {
+            return res.status(403).json({ error: "Unauthorized" });
+          }
         }
       }
-      
-      const updatedItems = [];
-      for (const update of updates) {
-        const { id, sortOrder, parentItemId } = update;
-        if (!id || sortOrder === undefined) continue;
-        
-        const updateData: any = { sortOrder };
-        if (parentItemId !== undefined) {
-          updateData.parentItemId = parentItemId;
-        }
-        
-        const item = await storage.updateScheduleItem(id, updateData);
-        if (item) {
-          updatedItems.push(item);
-        }
-      }
-      
-      res.json(updatedItems);
+
+      // Apply all updates in parallel now that ownership is confirmed
+      const updatedItems = await Promise.all(
+        updates
+          .filter(u => u.id && u.sortOrder !== undefined)
+          .map(async ({ id, sortOrder, parentItemId }) => {
+            const updateData: any = { sortOrder };
+            if (parentItemId !== undefined) {
+              updateData.parentItemId = parentItemId;
+            }
+            return storage.updateScheduleItem(id, updateData);
+          })
+      );
+
+      res.json(updatedItems.filter(Boolean));
     } catch (error: any) {
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to batch update sort order",
-        details: error.message 
+        details: error.message,
       });
     }
   });

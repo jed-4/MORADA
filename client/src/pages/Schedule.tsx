@@ -553,7 +553,7 @@ export default function Schedule() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ updates }),
+        body: JSON.stringify({ updates, scheduleId: schedule.id }),
       });
       if (!response.ok) throw new Error("Failed to sort items");
       return response.json();
@@ -2191,7 +2191,7 @@ export default function Schedule() {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             credentials: "include",
-                            body: JSON.stringify({ updates }),
+                            body: JSON.stringify({ updates, scheduleId: schedule?.id }),
                           });
                           invalidateScheduleItems();
                         } catch (error) {
