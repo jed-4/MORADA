@@ -622,7 +622,7 @@ export default function TimesheetsScreen() {
     return cc ? `${cc.code} - ${cc.title}` : null;
   }, [costCodes]);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'draft': return { bg: isDark ? '#374151' : '#f3f4f6', text: isDark ? '#d1d5db' : '#4b5563' };
       case 'submitted': return { bg: isDark ? '#1e3a5f' : '#dbeafe', text: isDark ? '#93c5fd' : '#1d4ed8' };
@@ -630,7 +630,45 @@ export default function TimesheetsScreen() {
       case 'rejected': return { bg: isDark ? '#7f1d1d' : '#fee2e2', text: isDark ? '#fca5a5' : '#b91c1c' };
       default: return { bg: colors.border, text: colors.secondary };
     }
-  };
+  }, [isDark, colors.border, colors.secondary]);
+
+  const renderTimesheetItem = useCallback(({ item: ts }: { item: Timesheet }) => {
+    const statusColor = getStatusColor(ts.status);
+    return (
+      <TouchableOpacity
+        style={[styles.entryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => { setSelectedTimesheet(ts); setShowDetail(true); }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.entryTop}>
+          <View style={styles.entryLeft}>
+            <Text style={[styles.entryDate, { color: colors.text }]}>{formatDayDate(ts.date)}</Text>
+            <Text style={[styles.entryProject, { color: colors.secondary }]} numberOfLines={1}>
+              {getProjectName(ts.projectId)}
+            </Text>
+          </View>
+          <View style={styles.entryRight}>
+            <Text style={[styles.entryHours, { color: colors.accent }]}>{parseFloat(ts.duration || '0').toFixed(1)}h</Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
+              <Text style={[styles.statusText, { color: statusColor.text }]}>
+                {ts.status.charAt(0).toUpperCase() + ts.status.slice(1)}
+              </Text>
+            </View>
+          </View>
+        </View>
+        {ts.startTime && ts.endTime ? (
+          <Text style={[styles.entryTime, { color: colors.secondary }]}>
+            {formatTime12h(ts.startTime)} - {formatTime12h(ts.endTime)}
+          </Text>
+        ) : null}
+        {ts.description ? (
+          <Text style={[styles.entryDesc, { color: colors.secondary }]} numberOfLines={1}>
+            {ts.description}
+          </Text>
+        ) : null}
+      </TouchableOpacity>
+    );
+  }, [getStatusColor, getProjectName, colors, setSelectedTimesheet, setShowDetail]);
 
   const timePickerListRef = useRef<FlatList>(null);
 
@@ -739,160 +777,128 @@ export default function TimesheetsScreen() {
         </TouchableOpacity>
       )}
 
-      <ScrollView
+      <FlatList
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-      >
-        {/* Clock In/Out */}
-        <View style={[
-          styles.clockCard,
-          {
-            backgroundColor: activeTimesheet ? (isDark ? '#052e16' : '#f0fdf4') : colors.card,
-            borderColor: activeTimesheet ? colors.green : colors.border,
-            borderWidth: activeTimesheet ? 2 : 1,
-          },
-        ]}>
-          {activeTimesheet ? (
-            <>
-              <View style={styles.clockHeader}>
-                <View style={styles.clockStatusRow}>
-                  <View style={[styles.pulseDot, { backgroundColor: colors.green }]} />
-                  <Text style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
-                </View>
-                <Text style={[styles.clockProject, { color: colors.secondary }]}>
-                  {getProjectName(activeTimesheet.projectId)}
-                </Text>
-              </View>
-              {activeTimesheet.clockInTime ? (
-                <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
-              ) : (
-                <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
-              )}
-              <Text style={[styles.clockStarted, { color: colors.secondary }]}>
-                Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
-              </Text>
-              <TouchableOpacity
-                style={[styles.clockButton, { backgroundColor: colors.red, opacity: clockingOut ? 0.7 : 1 }]}
-                onPress={handleClockOut}
-                disabled={clockingOut}
-              >
-                {clockingOut ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="stop" size={22} color="#fff" />
-                    <Text style={styles.clockButtonText}>Clock Out</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.clockInRow}>
-                <Ionicons name="time-outline" size={18} color={colors.secondary} />
-                <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project and clock in</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => setShowProjectPicker(true)}
-              >
-                <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
-                  {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
-                </Text>
-                <Ionicons name="chevron-down" size={18} color={colors.secondary} />
-              </TouchableOpacity>
-              {clockInProjectId ? (
-                <TouchableOpacity
-                  style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => setShowClockInCostCodePicker(true)}
-                >
-                  <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
-                    {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={18} color={colors.secondary} />
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
-                onPress={handleClockIn}
-                disabled={!clockInProjectId || !clockInCostCodeId || clockingIn}
-              >
-                {clockingIn ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
-                    <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        {/* Week Navigation */}
-        <View style={[styles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </TouchableOpacity>
-          <View style={styles.weekCenter}>
-            <Text style={[styles.weekRange, { color: colors.text }]}>
-              {formatShortDate(weekStart)} - {formatShortDate(weekEnd)}
-            </Text>
-            <Text style={[styles.weekHours, { color: colors.secondary }]}>
-              {totalHours.toFixed(1)} hours this week
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
-            <Ionicons name="chevron-forward" size={20} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Timesheet Entries */}
-        {filteredTimesheets.map(ts => {
-          const statusColor = getStatusColor(ts.status);
-          return (
-            <TouchableOpacity
-              key={ts.id}
-              style={[styles.entryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => { setSelectedTimesheet(ts); setShowDetail(true); }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.entryTop}>
-                <View style={styles.entryLeft}>
-                  <Text style={[styles.entryDate, { color: colors.text }]}>{formatDayDate(ts.date)}</Text>
-                  <Text style={[styles.entryProject, { color: colors.secondary }]} numberOfLines={1}>
-                    {getProjectName(ts.projectId)}
-                  </Text>
-                </View>
-                <View style={styles.entryRight}>
-                  <Text style={[styles.entryHours, { color: colors.accent }]}>{parseFloat(ts.duration || '0').toFixed(1)}h</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
-                    <Text style={[styles.statusText, { color: statusColor.text }]}>
-                      {ts.status.charAt(0).toUpperCase() + ts.status.slice(1)}
+        data={filteredTimesheets}
+        keyExtractor={item => item.id}
+        renderItem={renderTimesheetItem}
+        initialNumToRender={10}
+        windowSize={5}
+        removeClippedSubviews
+        ListHeaderComponent={
+          <>
+            {/* Clock In/Out */}
+            <View style={[
+              styles.clockCard,
+              {
+                backgroundColor: activeTimesheet ? (isDark ? '#052e16' : '#f0fdf4') : colors.card,
+                borderColor: activeTimesheet ? colors.green : colors.border,
+                borderWidth: activeTimesheet ? 2 : 1,
+              },
+            ]}>
+              {activeTimesheet ? (
+                <>
+                  <View style={styles.clockHeader}>
+                    <View style={styles.clockStatusRow}>
+                      <View style={[styles.pulseDot, { backgroundColor: colors.green }]} />
+                      <Text style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
+                    </View>
+                    <Text style={[styles.clockProject, { color: colors.secondary }]}>
+                      {getProjectName(activeTimesheet.projectId)}
                     </Text>
                   </View>
-                </View>
-              </View>
-              {ts.startTime && ts.endTime && (
-                <Text style={[styles.entryTime, { color: colors.secondary }]}>
-                  {formatTime12h(ts.startTime)} - {formatTime12h(ts.endTime)}
-                </Text>
+                  {activeTimesheet.clockInTime ? (
+                    <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
+                  ) : (
+                    <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
+                  )}
+                  <Text style={[styles.clockStarted, { color: colors.secondary }]}>
+                    Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.clockButton, { backgroundColor: colors.red, opacity: clockingOut ? 0.7 : 1 }]}
+                    onPress={handleClockOut}
+                    disabled={clockingOut}
+                  >
+                    {clockingOut ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="stop" size={22} color="#fff" />
+                        <Text style={styles.clockButtonText}>Clock Out</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.clockInRow}>
+                    <Ionicons name="time-outline" size={18} color={colors.secondary} />
+                    <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project and clock in</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowProjectPicker(true)}
+                  >
+                    <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
+                      {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={18} color={colors.secondary} />
+                  </TouchableOpacity>
+                  {clockInProjectId ? (
+                    <TouchableOpacity
+                      style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                      onPress={() => setShowClockInCostCodePicker(true)}
+                    >
+                      <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
+                        {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={18} color={colors.secondary} />
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
+                    onPress={handleClockIn}
+                    disabled={!clockInProjectId || !clockInCostCodeId || clockingIn}
+                  >
+                    {clockingIn ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
+                        <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
               )}
-              {ts.description && (
-                <Text style={[styles.entryDesc, { color: colors.secondary }]} numberOfLines={1}>
-                  {ts.description}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+            </View>
 
-        {filteredTimesheets.length === 0 && (
+            {/* Week Navigation */}
+            <View style={[styles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
+                <Ionicons name="chevron-back" size={20} color={colors.text} />
+              </TouchableOpacity>
+              <View style={styles.weekCenter}>
+                <Text style={[styles.weekRange, { color: colors.text }]}>
+                  {formatShortDate(weekStart)} - {formatShortDate(weekEnd)}
+                </Text>
+                <Text style={[styles.weekHours, { color: colors.secondary }]}>
+                  {totalHours.toFixed(1)} hours this week
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
+                <Ionicons name="chevron-forward" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
           <Text style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
-        )}
-      </ScrollView>
+        }
+      />
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.accent }]}
