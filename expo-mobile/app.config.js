@@ -36,6 +36,7 @@ module.exports = {
       "expo-secure-store",
       "expo-web-browser",
       "expo-font",
+      "@react-native-community/datetimepicker",
       [
         "expo-image-picker",
         {

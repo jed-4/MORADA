@@ -15,6 +15,7 @@ import {
   Platform,
   FlatList,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
@@ -132,141 +133,6 @@ const BREAK_OPTIONS: { value: string; label: string }[] = [
   { value: '4', label: '4 hrs' },
 ];
 
-const DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DATE_ITEM_H = 48;
-
-function DatePickerModal({
-  visible,
-  value,
-  onConfirm,
-  onClose,
-  colors,
-  isDark,
-}: {
-  visible: boolean;
-  value: string;
-  onConfirm: (date: string) => void;
-  onClose: () => void;
-  colors: any;
-  isDark: boolean;
-}) {
-  const currentYear = new Date().getFullYear();
-  const YEARS = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
-
-  const parseLocal = (s: string) => {
-    const p = s.split('-');
-    if (p.length !== 3) {
-      const n = new Date();
-      return { y: n.getFullYear(), m: n.getMonth(), d: n.getDate() };
-    }
-    return { y: parseInt(p[0]), m: parseInt(p[1]) - 1, d: parseInt(p[2]) };
-  };
-
-  const init = parseLocal(value);
-  const [selY, setSelY] = useState(init.y);
-  const [selM, setSelM] = useState(init.m);
-  const [selD, setSelD] = useState(init.d);
-
-  const dayListRef = useRef<FlatList | null>(null);
-  const monthListRef = useRef<FlatList | null>(null);
-  const yearListRef = useRef<FlatList | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      const p = parseLocal(value);
-      setSelY(p.y); setSelM(p.m); setSelD(p.d);
-      setTimeout(() => {
-        const daysInM = new Date(p.y, p.m + 1, 0).getDate();
-        const clampedD = Math.min(p.d, daysInM);
-        dayListRef.current?.scrollToIndex({ index: Math.max(0, clampedD - 1), animated: false });
-        monthListRef.current?.scrollToIndex({ index: p.m, animated: false });
-        const yi = YEARS.indexOf(p.y);
-        if (yi >= 0) yearListRef.current?.scrollToIndex({ index: yi, animated: false });
-      }, 80);
-    }
-  }, [visible]);
-
-  const daysInMonth = new Date(selY, selM + 1, 0).getDate();
-  const DAYS = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-  const handleConfirm = () => {
-    const clampedD = Math.min(selD, daysInMonth);
-    const dateStr = `${selY}-${String(selM + 1).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
-    onConfirm(dateStr);
-    onClose();
-  };
-
-  const renderCol = (
-    items: string[],
-    selectedIdx: number,
-    onScrollEnd: (idx: number) => void,
-    listRef: RefObject<FlatList | null>,
-    width: number,
-  ) => (
-    <View style={{ width, height: DATE_ITEM_H * 5, overflow: 'hidden' }}>
-      <FlatList
-        ref={listRef}
-        data={items}
-        keyExtractor={(_, i) => String(i)}
-        snapToInterval={DATE_ITEM_H}
-        decelerationRate="fast"
-        showsVerticalScrollIndicator={false}
-        getItemLayout={(_, index) => ({ length: DATE_ITEM_H, offset: DATE_ITEM_H * index, index })}
-        contentContainerStyle={{ paddingVertical: DATE_ITEM_H * 2 }}
-        onMomentumScrollEnd={e => {
-          const idx = Math.round(e.nativeEvent.contentOffset.y / DATE_ITEM_H);
-          onScrollEnd(Math.max(0, Math.min(idx, items.length - 1)));
-        }}
-        renderItem={({ item, index }) => (
-          <View style={{ height: DATE_ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{
-              fontSize: index === selectedIdx ? 18 : 16,
-              fontWeight: index === selectedIdx ? '700' : '400',
-              color: index === selectedIdx ? colors.accent : colors.text,
-              opacity: index === selectedIdx ? 1 : 0.45,
-            }}>{item}</Text>
-          </View>
-        )}
-      />
-      {/* Selection highlight overlay */}
-      <View pointerEvents="none" style={{
-        position: 'absolute',
-        top: DATE_ITEM_H * 2,
-        left: 4,
-        right: 4,
-        height: DATE_ITEM_H,
-        borderRadius: 8,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-      }} />
-    </View>
-  );
-
-  const dayItems = DAYS.map(d => String(d).padStart(2, '0'));
-  const yearItems = YEARS.map(y => String(y));
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-              <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
-            <TouchableOpacity onPress={handleConfirm} style={{ padding: 4 }}>
-              <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, paddingHorizontal: 16, paddingTop: 8 }}>
-            {renderCol(dayItems, selD - 1, (i) => setSelD(DAYS[i]), dayListRef, 60)}
-            {renderCol(DATE_MONTHS, selM, (i) => setSelM(i), monthListRef, 80)}
-            {renderCol(yearItems, YEARS.indexOf(selY), (i) => setSelY(YEARS[i]), yearListRef, 80)}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -378,6 +244,7 @@ export default function TimesheetsScreen() {
   const [showBreakPicker, setShowBreakPicker] = useState(false);
   const [showBreakStartPicker, setShowBreakStartPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerDateObj, setPickerDateObj] = useState<Date>(new Date());
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
@@ -705,6 +572,7 @@ export default function TimesheetsScreen() {
             endTime: formEndTime,
             duration,
             breakDuration: formBreakDuration,
+            breakStartTime: parseFloat(formBreakDuration) > 0 ? formBreakStartTime : null,
             hourlyRate: formHourlyRate,
             description: formDescription,
             costCodeId: formCostCodeId,
@@ -1218,7 +1086,14 @@ export default function TimesheetsScreen() {
               <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
               <TouchableOpacity
                 style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => setShowDatePicker(true)}
+                onPress={() => {
+                  const parts = formDate.split('-');
+                  const d = parts.length === 3
+                    ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+                    : new Date();
+                  setPickerDateObj(d);
+                  setShowDatePicker(true);
+                }}
               >
                 <Text style={[styles.formPickerText, { color: colors.text }]}>{formatDisplayDate(formDate)}</Text>
                 <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
@@ -1363,14 +1238,49 @@ export default function TimesheetsScreen() {
       )}
 
       {/* Date Picker Modal */}
-      <DatePickerModal
-        visible={showDatePicker}
-        value={formDate}
-        onConfirm={(date) => setFormDate(date)}
-        onClose={() => setShowDatePicker(false)}
-        colors={colors}
-        isDark={isDark}
-      />
+      {showDatePicker ? (
+        Platform.OS === 'ios' ? (
+          <Modal visible animationType="slide" transparent>
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+              <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
+                    <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setFormDate(toLocalDateStr(pickerDateObj));
+                      setShowDatePicker(false);
+                    }}
+                    style={{ padding: 4 }}
+                  >
+                    <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={pickerDateObj}
+                  mode="date"
+                  display="spinner"
+                  onChange={(_event, date) => { if (date) setPickerDateObj(date); }}
+                  themeVariant={isDark ? 'dark' : 'light'}
+                  style={{ alignSelf: 'center' }}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          <DateTimePicker
+            value={pickerDateObj}
+            mode="date"
+            display="default"
+            onChange={(event, date) => {
+              setShowDatePicker(false);
+              if (event.type === 'set' && date) setFormDate(toLocalDateStr(date));
+            }}
+          />
+        )
+      ) : null}
 
       {/* Cost Code Picker */}
       {renderPickerModal(
