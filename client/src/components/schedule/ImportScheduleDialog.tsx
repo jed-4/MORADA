@@ -302,6 +302,9 @@ export function ImportScheduleDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      if (scheduleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/schedules/${scheduleId}/items`] });
+      }
       toast({
         title: "Schedule imported",
         description: "Tasks have been added to the project schedule.",
