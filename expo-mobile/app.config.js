@@ -13,7 +13,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.buildpro.mobile",
-      buildNumber: "2",
+      buildNumber: "3",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
