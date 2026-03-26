@@ -513,23 +513,40 @@ export default function Schedule() {
   // Sort schedule items by start date (re-assigns sortOrder values, preserving hierarchy)
   const sortByDateMutation = useMutation({
     mutationFn: async () => {
-      if (!schedule) throw new Error("No schedule");
-      if (scheduleItems.length === 0) return [];
+      if (!schedule) throw new Error("No schedule selected");
+
+      // Always fetch fresh items directly — do not rely on the cached scheduleItems
+      // closure variable, which may be empty or stale when the sort button is clicked.
+      const itemsRes = await fetch(`/api/schedules/${schedule.id}/items`, { credentials: "include" });
+      if (!itemsRes.ok) throw new Error("Failed to load schedule items");
+      const items: ScheduleItem[] = await itemsRes.json();
+
+      if (items.length === 0) throw new Error("No items to sort");
+
+      // Helper: safe timestamp — returns a large number for missing/invalid dates
+      // so those items sort to the end rather than producing NaN comparisons.
+      const safeTs = (dateStr: string | null | undefined): number => {
+        if (!dateStr) return Number.MAX_SAFE_INTEGER;
+        const t = new Date(dateStr).getTime();
+        return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+      };
 
       // Helper: earliest start date among an item's own date or its children's dates
       const effectiveDate = (item: ScheduleItem): number => {
-        if (item.startDate) return new Date(item.startDate).getTime();
-        const childDates = scheduleItems
-          .filter((c) => c.parentItemId === item.id && c.startDate)
-          .map((c) => new Date(c.startDate!).getTime());
-        return childDates.length ? Math.min(...childDates) : Infinity;
+        const own = safeTs(item.startDate);
+        if (own !== Number.MAX_SAFE_INTEGER) return own;
+        const childDates = items
+          .filter((c) => c.parentItemId === item.id)
+          .map((c) => safeTs(c.startDate));
+        const min = Math.min(...childDates);
+        return childDates.length > 0 && isFinite(min) ? min : Number.MAX_SAFE_INTEGER;
       };
 
       const updates: { id: string; sortOrder: number; parentItemId: string | null }[] = [];
       let counter = 0;
 
-      // 1. Sort top-level parents by effective start date
-      const topLevel = scheduleItems
+      // 1. Sort top-level parents by effective start date (stable: MAX_SAFE_INTEGER - MAX_SAFE_INTEGER = 0, not NaN)
+      const topLevel = items
         .filter((i) => !i.parentItemId)
         .sort((a, b) => effectiveDate(a) - effectiveDate(b));
 
@@ -537,13 +554,9 @@ export default function Schedule() {
         updates.push({ id: parent.id, sortOrder: counter++, parentItemId: null });
 
         // 2. Sort children under this parent by their own start date
-        const children = scheduleItems
+        const children = items
           .filter((c) => c.parentItemId === parent.id)
-          .sort((a, b) => {
-            const aDate = a.startDate ? new Date(a.startDate).getTime() : Infinity;
-            const bDate = b.startDate ? new Date(b.startDate).getTime() : Infinity;
-            return aDate - bDate;
-          });
+          .sort((a, b) => safeTs(a.startDate) - safeTs(b.startDate));
 
         for (const child of children) {
           updates.push({ id: child.id, sortOrder: counter++, parentItemId: parent.id });
@@ -556,7 +569,10 @@ export default function Schedule() {
         credentials: "include",
         body: JSON.stringify({ updates, scheduleId: schedule.id }),
       });
-      if (!response.ok) throw new Error("Failed to sort items");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error || `Server error ${response.status}`);
+      }
       return response.json();
     },
     onSuccess: () => {
