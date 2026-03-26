@@ -164,14 +164,6 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
           const d = new Date(day); d.setHours(12, 0, 0, 0);
           return d >= s && d <= e;
         });
-        const dates = getProjectDates(project);
-        let projectActive = false;
-        if (dates.start && dates.end) {
-          const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
-          const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
-          const d = new Date(day); d.setHours(12, 0, 0, 0);
-          projectActive = d >= s && d <= e;
-        }
         return (
           <div
             key={colIdx}
@@ -182,35 +174,19 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
             )}
             style={{ minHeight: rowH }}
           >
-            {activeItems.length > 0 ? (
-              activeItems.map(item => (
-                <div
-                  key={item.id}
-                  className="w-full rounded-sm flex items-center px-1 overflow-hidden shrink-0"
-                  style={{
-                    height: ITEM_H,
-                    backgroundColor: item.assignedToColor || project.color || '#3b82f6',
-                    opacity: 0.8,
-                  }}
-                >
-                  <span className="text-[9px] text-white font-medium truncate leading-none">{item.name}</span>
-                </div>
-              ))
-            ) : projectActive ? (
+            {activeItems.map(item => (
               <div
-                className="w-full rounded-sm shrink-0"
+                key={item.id}
+                className="w-full rounded-sm flex items-center px-1 overflow-hidden shrink-0"
                 style={{
                   height: ITEM_H,
-                  backgroundColor: project.category === 'online' ? (project.color || '#3b82f6') : 'transparent',
-                  border: project.category === 'offline'
-                    ? '2px dashed #d97706'
-                    : project.category === 'prospective'
-                      ? '2px dotted #9ca3af'
-                      : 'none',
-                  opacity: project.category === 'online' ? 0.75 : 0.6,
+                  backgroundColor: item.assignedToColor || project.color || '#3b82f6',
+                  opacity: 0.8,
                 }}
-              />
-            ) : null}
+              >
+                <span className="text-[9px] text-white font-medium truncate leading-none">{item.name}</span>
+              </div>
+            ))}
           </div>
         );
       })}
