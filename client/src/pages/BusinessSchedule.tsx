@@ -10,7 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import MasterScheduleGantt from "@/components/schedule/MasterScheduleGantt";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
@@ -102,6 +105,167 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
   return { start: effectiveStart, end: effectiveEnd };
 }
 
+interface WeekScheduleItem {
+  id: string;
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+  assignedToColor: string | null;
+  parentItemId: string | null;
+  type: string | null;
+}
+
+function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
+  project: BusinessProject;
+  weekDays: Date[];
+  todayStr: string;
+  onNavigate: (id: string) => void;
+}) {
+  const { data: items = [] } = useQuery<WeekScheduleItem[]>({
+    queryKey: ['/api/business-schedule/projects', project.id, 'schedule-items'],
+  });
+
+  const leafItems = items.filter(item => item.type !== 'group' && !item.parentItemId);
+
+  const maxPerDay = Math.max(1, ...weekDays.map(day => {
+    return leafItems.filter(item => {
+      if (!item.startDate || !item.endDate) return false;
+      const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
+      const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
+      const d = new Date(day); d.setHours(12, 0, 0, 0);
+      return d >= s && d <= e;
+    }).length;
+  }));
+  const ITEM_H = 16;
+  const rowH = Math.max(ROW_HEIGHT, maxPerDay * (ITEM_H + 2) + 8);
+
+  return (
+    <div className="flex flex-shrink-0" style={{ minHeight: rowH }}>
+      {/* Sticky left — project name */}
+      <div
+        className="w-52 flex-shrink-0 border-r border-b border-border/30 flex items-start pt-1.5 px-2 gap-2 cursor-pointer hover-elevate group/row"
+        style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--background)', minHeight: rowH }}
+        onClick={() => onNavigate(project.id)}
+      >
+        <div className="w-3 h-3 rounded-sm shrink-0 mt-0.5" style={{ backgroundColor: project.color || '#6b7280' }} />
+        <span className="text-xs font-medium truncate flex-1">{project.name}</span>
+        <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover/row:text-muted-foreground/60 shrink-0 mt-0.5 transition-colors" />
+      </div>
+      {/* Day cells */}
+      {weekDays.map((day, colIdx) => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const isToday = dayStr === todayStr;
+        const isWknd = day.getDay() === 0 || day.getDay() === 6;
+        const activeItems = leafItems.filter(item => {
+          if (!item.startDate || !item.endDate) return false;
+          const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
+          const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
+          const d = new Date(day); d.setHours(12, 0, 0, 0);
+          return d >= s && d <= e;
+        });
+        const dates = getProjectDates(project);
+        let projectActive = false;
+        if (dates.start && dates.end) {
+          const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
+          const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
+          const d = new Date(day); d.setHours(12, 0, 0, 0);
+          projectActive = d >= s && d <= e;
+        }
+        return (
+          <div
+            key={colIdx}
+            className={cn(
+              "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col pt-1 px-0.5 gap-0.5",
+              isWknd ? "bg-muted/20" : "",
+              isToday ? "bg-[#bba7db]/5" : ""
+            )}
+            style={{ minHeight: rowH }}
+          >
+            {activeItems.length > 0 ? (
+              activeItems.map(item => (
+                <div
+                  key={item.id}
+                  className="w-full rounded-sm flex items-center px-1 overflow-hidden shrink-0"
+                  style={{
+                    height: ITEM_H,
+                    backgroundColor: item.assignedToColor || project.color || '#3b82f6',
+                    opacity: 0.8,
+                  }}
+                >
+                  <span className="text-[9px] text-white font-medium truncate leading-none">{item.name}</span>
+                </div>
+              ))
+            ) : projectActive ? (
+              <div
+                className="w-full rounded-sm shrink-0"
+                style={{
+                  height: ITEM_H,
+                  backgroundColor: project.category === 'online' ? (project.color || '#3b82f6') : 'transparent',
+                  border: project.category === 'offline'
+                    ? '2px dashed #d97706'
+                    : project.category === 'prospective'
+                      ? '2px dotted #9ca3af'
+                      : 'none',
+                  opacity: project.category === 'online' ? 0.75 : 0.6,
+                }}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: {
+  project: BusinessProject;
+  onNavigate: (id: string) => void;
+  onSettings: (p: BusinessProject) => void;
+  onContextMenu: (e: React.MouseEvent, projectId: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ height: ROW_HEIGHT, transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className="flex items-center px-1 gap-1 border-b border-border/30 group/row bg-background"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing text-muted-foreground/20 hover:text-muted-foreground/60 shrink-0 p-0.5 touch-none"
+        tabIndex={-1}
+      >
+        <GripVertical className="w-3 h-3" />
+      </button>
+      <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: project.color }} />
+      <span className="text-xs font-medium truncate flex-1">{project.name}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 opacity-0 group-hover/row:opacity-100 shrink-0"
+            data-testid={`menu-${project.id}`}
+          >
+            <MoreHorizontal className="w-3 h-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[140px]">
+          <DropdownMenuItem onClick={() => onNavigate(project.id)} className="text-xs gap-2">
+            <ExternalLink className="w-3 h-3" />
+            Open Schedule
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onSettings(project)} className="text-xs gap-2">
+            <Settings className="w-3 h-3" />
+            Date Settings
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -114,7 +278,7 @@ export default function BusinessSchedule() {
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
-  const [showOffline, setShowOffline] = useState(false);
+  const [showOffline, setShowOffline] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -157,6 +321,46 @@ export default function BusinessSchedule() {
       return true;
     });
   }, [projects, scheduleTypeFilter, showOffline]);
+
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const saveSortOrder = useMutation({
+    mutationFn: async (orderedIds: string[]) => {
+      await Promise.all(orderedIds.map((id, idx) =>
+        apiRequest(`/api/business-schedule/projects/${id}`, 'PATCH', { sortOrder: idx + 1 })
+      ));
+    },
+    onSuccess: () => {
+      setLocalOrder(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/business-schedule/projects'] });
+    },
+    onError: () => setLocalOrder(null),
+  });
+
+  const orderedVisibleProjects = useMemo(() => {
+    if (!localOrder) return visibleProjects;
+    const orderMap = new Map(localOrder.map((id, i) => [id, i]));
+    return [...visibleProjects].sort((a, b) => {
+      const ai = orderMap.get(a.id) ?? 9999;
+      const bi = orderMap.get(b.id) ?? 9999;
+      return ai - bi;
+    });
+  }, [visibleProjects, localOrder]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = orderedVisibleProjects.findIndex(p => p.id === active.id);
+    const newIdx = orderedVisibleProjects.findIndex(p => p.id === over.id);
+    const newOrder = arrayMove(orderedVisibleProjects, oldIdx, newIdx);
+    setLocalOrder(newOrder.map(p => p.id));
+    saveSortOrder.mutate(newOrder.map(p => p.id));
+  }
 
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
     const now = new Date();
@@ -306,7 +510,7 @@ export default function BusinessSchedule() {
     today.setHours(0, 0, 0, 0);
     const todayStr = format(today, 'yyyy-MM-dd');
 
-    const activeProjectsThisWeek = visibleProjects.filter(p => {
+    const activeProjectsThisWeek = orderedVisibleProjects.filter(p => {
       const dates = getProjectDates(p);
       if (!dates.start || !dates.end) return false;
       const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
@@ -375,91 +579,40 @@ export default function BusinessSchedule() {
             </div>
           </div>
         ) : (
-          /* Swimlane grid */
-          <div className="flex flex-1 overflow-auto">
-            {/* Project name column — sticky left */}
-            <div className="w-52 flex-shrink-0 border-r border-border" style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--background)' }}>
-              {/* Day header spacer */}
-              <div className="h-9 border-b border-border bg-muted/20" />
-              {visibleProjects.map(p => (
-                <div
-                  key={p.id}
-                  style={{ height: ROW_HEIGHT }}
-                  className="flex items-center px-2 gap-2 border-b border-border/30 group/row cursor-pointer hover-elevate"
-                  onClick={() => navigate(`/projects/${p.id}/schedule`)}
-                >
-                  <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
-                  <span className="text-xs font-medium truncate flex-1">{p.name}</span>
-                  <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover/row:text-muted-foreground/60 shrink-0 transition-colors" />
-                </div>
-              ))}
-              {visibleProjects.length === 0 && (
-                <div className="p-4 text-xs text-muted-foreground text-center">
-                  No projects visible.
-                </div>
-              )}
-            </div>
-
-            {/* Day columns */}
-            <div className="flex flex-1 min-w-0">
+          /* Swimlane grid — row-major layout */
+          <div className="flex flex-col flex-1 overflow-auto">
+            {/* Sticky header row */}
+            <div className="flex sticky top-0 z-20 bg-background border-b border-border flex-shrink-0">
+              {/* Corner spacer — matches sticky-left width */}
+              <div className="w-52 flex-shrink-0 border-r border-border bg-muted/20 h-9 shrink-0" style={{ position: 'sticky', left: 0, zIndex: 21 }} />
               {weekDays.map((day, colIdx) => {
                 const dayStr = format(day, 'yyyy-MM-dd');
                 const isToday = dayStr === todayStr;
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                 return (
-                  <div key={colIdx} className="flex-1 min-w-[80px] border-r border-border/30 flex flex-col">
-                    {/* Day header */}
-                    <div className={cn(
-                      "h-9 flex flex-col items-center justify-center border-b border-border text-[10px] font-medium shrink-0",
-                      isToday ? "bg-[#bba7db]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
-                    )}>
-                      <span>{format(day, 'EEE')}</span>
-                      <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
-                    </div>
-
-                    {/* Project cells */}
-                    {visibleProjects.map(project => {
-                      const dates = getProjectDates(project);
-                      let isActive = false;
-                      if (dates.start && dates.end) {
-                        const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
-                        const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
-                        const d = new Date(day); d.setHours(12, 0, 0, 0);
-                        isActive = d >= s && d <= e;
-                      }
-                      return (
-                        <div
-                          key={project.id}
-                          style={{ height: ROW_HEIGHT }}
-                          className={cn(
-                            "border-b border-border/20 flex items-center px-1",
-                            isWeekend ? "bg-muted/20" : "",
-                            isToday ? "bg-[#bba7db]/5" : ""
-                          )}
-                        >
-                          {isActive && (
-                            <div
-                              className="w-full h-5 rounded-sm"
-                              style={{
-                                backgroundColor: project.category === 'online'
-                                  ? (project.color || '#3b82f6')
-                                  : 'transparent',
-                                border: project.category === 'offline'
-                                  ? '2px dashed #d97706'
-                                  : project.category === 'prospective'
-                                    ? '2px dotted #9ca3af'
-                                    : 'none',
-                                opacity: project.category === 'online' ? 0.75 : 0.6,
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div key={colIdx} className={cn(
+                    "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-[10px] font-medium",
+                    isToday ? "bg-[#bba7db]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
+                  )}>
+                    <span>{format(day, 'EEE')}</span>
+                    <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
                   </div>
                 );
               })}
             </div>
+            {/* Project rows — each row fetches its own items */}
+            {orderedVisibleProjects.map(project => (
+              <ProjectWeekRow
+                key={project.id}
+                project={project}
+                weekDays={weekDays}
+                todayStr={todayStr}
+                onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
+              />
+            ))}
+            {orderedVisibleProjects.length === 0 && (
+              <div className="p-4 text-xs text-muted-foreground text-center">No projects visible.</div>
+            )}
           </div>
         )}
       </div>
@@ -593,46 +746,27 @@ export default function BusinessSchedule() {
             <span className="text-xs font-medium text-muted-foreground">Project</span>
           </div>
 
-          {/* Project rows */}
-          <div className="overflow-hidden">
-            {visibleProjects.map((project) => (
-              <div
-                key={project.id}
-                style={{ height: ROW_HEIGHT }}
-                className="flex items-center px-2 gap-2 border-b border-border/30 group/row"
-              >
-                <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: project.color }} />
-                <span className="text-xs font-medium truncate flex-1">{project.name}</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 opacity-0 group-hover/row:opacity-100 shrink-0"
-                      data-testid={`menu-${project.id}`}
-                    >
-                      <MoreHorizontal className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[140px]">
-                    <DropdownMenuItem onClick={() => navigate(`/projects/${project.id}/schedule`)} className="text-xs gap-2">
-                      <ExternalLink className="w-3 h-3" />
-                      Open Schedule
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSettingsProject(project)} className="text-xs gap-2">
-                      <Settings className="w-3 h-3" />
-                      Date Settings
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+          {/* Project rows — drag to reorder */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={orderedVisibleProjects.map(p => p.id)} strategy={verticalListSortingStrategy}>
+              <div className="overflow-hidden">
+                {orderedVisibleProjects.map((project) => (
+                  <SortableProjectRow
+                    key={project.id}
+                    project={project}
+                    onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
+                    onSettings={setSettingsProject}
+                    onContextMenu={handleContextMenu}
+                  />
+                ))}
+                {orderedVisibleProjects.length === 0 && (
+                  <div className="p-4 text-xs text-muted-foreground text-center">
+                    No projects visible. Use the filter to show projects.
+                  </div>
+                )}
               </div>
-            ))}
-            {visibleProjects.length === 0 && (
-              <div className="p-4 text-xs text-muted-foreground text-center">
-                No projects visible. Use the filter to show projects.
-              </div>
-            )}
-          </div>
+            </SortableContext>
+          </DndContext>
         </div>
 
         {/* Right panel - Timeline */}
@@ -712,7 +846,7 @@ export default function BusinessSchedule() {
               }
             }}
           >
-            <div className="relative" style={{ width: totalWidth, minHeight: visibleProjects.length * ROW_HEIGHT }}>
+            <div className="relative" style={{ width: totalWidth, minHeight: orderedVisibleProjects.length * ROW_HEIGHT }}>
               {/* Week grid lines */}
               {weeks.map((weekStart, i) => {
                 const left = getPosition(weekStart);
@@ -747,7 +881,7 @@ export default function BusinessSchedule() {
               />
 
               {/* Project bars */}
-              {visibleProjects.map((project, rowIndex) => {
+              {orderedVisibleProjects.map((project) => {
                 const dates = getProjectDates(project);
                 if (!dates.start || !dates.end) {
                   return (

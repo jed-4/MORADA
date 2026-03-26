@@ -21439,6 +21439,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       });
 
       result.sort((a: any, b: any) => {
+        // Use explicit sortOrder when available (set by user DnD)
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        // Fall back to date sort
         const aDate = a.itemStartDate || a.projectStartDate;
         const bDate = b.itemStartDate || b.projectStartDate;
         if (aDate && bDate) return new Date(aDate).getTime() - new Date(bDate).getTime();
