@@ -3,10 +3,15 @@ import type { ScheduleItem } from "@shared/schema";
 
 export type CascadeUpdate = { id: number | string; startDate: string; endDate: string };
 
-export function parseScheduleDate(d: string | Date): Date {
+export function parseScheduleDate(d: string | Date | null | undefined): Date {
+  if (!d) return new Date(NaN);
   const r = typeof d === "string" ? new Date(d + "T00:00:00") : new Date(d);
   r.setHours(0, 0, 0, 0);
   return r;
+}
+
+function isValidDate(d: Date): boolean {
+  return d instanceof Date && !isNaN(d.getTime());
 }
 
 function countWD(start: Date, end: Date, isNonWorking: (d: Date) => boolean): number {
@@ -139,6 +144,7 @@ export function computeMoveCascade(params: {
       for (const succ of ssSuccessors) {
         const succStart = parseScheduleDate(succ.startDate as string);
         const succEnd = parseScheduleDate(succ.endDate as string);
+        if (!isValidDate(succStart) || !isValidDate(succEnd)) continue;
         const succWorkDuration = countWD(succStart, succEnd, isNonWorking);
         let succNewStart = addDays(succStart, startOffset);
         succNewStart = snapWD(succNewStart, snapDir, isNonWorking);
@@ -164,9 +170,10 @@ export function computeMoveCascade(params: {
         }
       }
 
-      const shiftDepItem = (depItem: ScheduleItem): CascadeUpdate => {
+      const shiftDepItem = (depItem: ScheduleItem): CascadeUpdate | null => {
         const depStart = parseScheduleDate(depItem.startDate as string);
         const depEnd = parseScheduleDate(depItem.endDate as string);
+        if (!isValidDate(depStart) || !isValidDate(depEnd)) return null;
         const depWorkingDuration = countWD(depStart, depEnd, isNonWorking);
         let depNewStart = addDays(depStart, startOffset);
         depNewStart = snapWD(depNewStart, snapDir, isNonWorking);
@@ -178,9 +185,10 @@ export function computeMoveCascade(params: {
         };
       };
 
-      const shiftChildItem = (childItem: ScheduleItem): CascadeUpdate => {
+      const shiftChildItem = (childItem: ScheduleItem): CascadeUpdate | null => {
         const childStart = parseScheduleDate(childItem.startDate as string);
         const childEnd = parseScheduleDate(childItem.endDate as string);
+        if (!isValidDate(childStart) || !isValidDate(childEnd)) return null;
         const relativeWD = countWD(origStartMidnight, childStart, isNonWorking);
         const childWorkingDuration = countWD(childStart, childEnd, isNonWorking);
         const depNewStart = addWD(newStartMidnight, relativeWD, isNonWorking);
@@ -194,14 +202,17 @@ export function computeMoveCascade(params: {
 
       for (const child of childItems) {
         if (!dependentItems.some(d => d.id === child.id)) {
-          recordUpdate(shiftChildItem(child));
+          const u = shiftChildItem(child);
+          if (u) recordUpdate(u);
         }
       }
       for (const depItem of dependentItems) {
-        recordUpdate(shiftDepItem(depItem));
+        const u = shiftDepItem(depItem);
+        if (u) recordUpdate(u);
       }
       for (const depChild of depChildItems) {
-        recordUpdate(shiftDepItem(depChild));
+        const u = shiftDepItem(depChild);
+        if (u) recordUpdate(u);
       }
     }
   }
@@ -217,6 +228,7 @@ export function computeMoveCascade(params: {
       if (updatesMap.has(String(succ.id))) continue;
       const succStart = parseScheduleDate(succ.startDate as string);
       const succEnd = parseScheduleDate(succ.endDate as string);
+      if (!isValidDate(succStart) || !isValidDate(succEnd)) continue;
       const succWorkDuration = countWD(succStart, succEnd, isNonWorking);
       let succNewStart = addDays(succStart, endOffset);
       succNewStart = snapWD(succNewStart, snapDir, isNonWorking);

@@ -1612,6 +1612,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       };
 
+      try {
       if (drag.type === 'move') {
         if (deltaDays !== 0) {
           const workingDuration = countWD(drag.originalStart, drag.originalEnd);
@@ -1740,12 +1741,15 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       }
 
-      setDragging(null);
-      setHoveredAnchor(null);
-      
-      setTimeout(() => {
-        dragHappened.current = false;
-      }, 50);
+      } catch (err) {
+        console.error('[drag] Error during drag commit, resetting drag state:', err);
+      } finally {
+        setDragging(null);
+        setHoveredAnchor(null);
+        setTimeout(() => {
+          dragHappened.current = false;
+        }, 50);
+      }
     };
 
     const handleScroll = () => {
