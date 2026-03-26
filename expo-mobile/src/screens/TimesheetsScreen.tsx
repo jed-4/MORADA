@@ -30,6 +30,7 @@ interface Timesheet {
   endTime: string | null;
   duration: string;
   breakDuration: string;
+  breakStartTime: string | null;
   description: string | null;
   hourlyRate: string | null;
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
@@ -88,6 +89,15 @@ function formatDayDate(dateStr: string): string {
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
 }
 
+function formatDisplayDate(dateStr: string): string {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function generateTimeOptions() {
   const times: { value: string; label: string }[] = [];
   for (let i = 0; i < 96; i++) {
@@ -121,6 +131,142 @@ const BREAK_OPTIONS: { value: string; label: string }[] = [
   { value: '3.5', label: '3 hrs 30 min' },
   { value: '4', label: '4 hrs' },
 ];
+
+const DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DATE_ITEM_H = 48;
+
+function DatePickerModal({
+  visible,
+  value,
+  onConfirm,
+  onClose,
+  colors,
+  isDark,
+}: {
+  visible: boolean;
+  value: string;
+  onConfirm: (date: string) => void;
+  onClose: () => void;
+  colors: any;
+  isDark: boolean;
+}) {
+  const currentYear = new Date().getFullYear();
+  const YEARS = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
+
+  const parseLocal = (s: string) => {
+    const p = s.split('-');
+    if (p.length !== 3) {
+      const n = new Date();
+      return { y: n.getFullYear(), m: n.getMonth(), d: n.getDate() };
+    }
+    return { y: parseInt(p[0]), m: parseInt(p[1]) - 1, d: parseInt(p[2]) };
+  };
+
+  const init = parseLocal(value);
+  const [selY, setSelY] = useState(init.y);
+  const [selM, setSelM] = useState(init.m);
+  const [selD, setSelD] = useState(init.d);
+
+  const dayListRef = useRef<FlatList | null>(null);
+  const monthListRef = useRef<FlatList | null>(null);
+  const yearListRef = useRef<FlatList | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      const p = parseLocal(value);
+      setSelY(p.y); setSelM(p.m); setSelD(p.d);
+      setTimeout(() => {
+        const daysInM = new Date(p.y, p.m + 1, 0).getDate();
+        const clampedD = Math.min(p.d, daysInM);
+        dayListRef.current?.scrollToIndex({ index: Math.max(0, clampedD - 1), animated: false });
+        monthListRef.current?.scrollToIndex({ index: p.m, animated: false });
+        const yi = YEARS.indexOf(p.y);
+        if (yi >= 0) yearListRef.current?.scrollToIndex({ index: yi, animated: false });
+      }, 80);
+    }
+  }, [visible]);
+
+  const daysInMonth = new Date(selY, selM + 1, 0).getDate();
+  const DAYS = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  const handleConfirm = () => {
+    const clampedD = Math.min(selD, daysInMonth);
+    const dateStr = `${selY}-${String(selM + 1).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
+    onConfirm(dateStr);
+    onClose();
+  };
+
+  const renderCol = (
+    items: string[],
+    selectedIdx: number,
+    onScrollEnd: (idx: number) => void,
+    listRef: RefObject<FlatList | null>,
+    width: number,
+  ) => (
+    <View style={{ width, height: DATE_ITEM_H * 5, overflow: 'hidden' }}>
+      <FlatList
+        ref={listRef}
+        data={items}
+        keyExtractor={(_, i) => String(i)}
+        snapToInterval={DATE_ITEM_H}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        getItemLayout={(_, index) => ({ length: DATE_ITEM_H, offset: DATE_ITEM_H * index, index })}
+        contentContainerStyle={{ paddingVertical: DATE_ITEM_H * 2 }}
+        onMomentumScrollEnd={e => {
+          const idx = Math.round(e.nativeEvent.contentOffset.y / DATE_ITEM_H);
+          onScrollEnd(Math.max(0, Math.min(idx, items.length - 1)));
+        }}
+        renderItem={({ item, index }) => (
+          <View style={{ height: DATE_ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{
+              fontSize: index === selectedIdx ? 18 : 16,
+              fontWeight: index === selectedIdx ? '700' : '400',
+              color: index === selectedIdx ? colors.accent : colors.text,
+              opacity: index === selectedIdx ? 1 : 0.45,
+            }}>{item}</Text>
+          </View>
+        )}
+      />
+      {/* Selection highlight overlay */}
+      <View pointerEvents="none" style={{
+        position: 'absolute',
+        top: DATE_ITEM_H * 2,
+        left: 4,
+        right: 4,
+        height: DATE_ITEM_H,
+        borderRadius: 8,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+      }} />
+    </View>
+  );
+
+  const dayItems = DAYS.map(d => String(d).padStart(2, '0'));
+  const yearItems = YEARS.map(y => String(y));
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
+            <TouchableOpacity onPress={handleConfirm} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, paddingHorizontal: 16, paddingTop: 8 }}>
+            {renderCol(dayItems, selD - 1, (i) => setSelD(DAYS[i]), dayListRef, 60)}
+            {renderCol(DATE_MONTHS, selM, (i) => setSelM(i), monthListRef, 80)}
+            {renderCol(yearItems, YEARS.indexOf(selY), (i) => setSelY(YEARS[i]), yearListRef, 80)}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -222,6 +368,7 @@ export default function TimesheetsScreen() {
   const [formStartTime, setFormStartTime] = useState('07:00');
   const [formEndTime, setFormEndTime] = useState('15:30');
   const [formBreakDuration, setFormBreakDuration] = useState('0');
+  const [formBreakStartTime, setFormBreakStartTime] = useState('12:00');
   const [formHourlyRate, setFormHourlyRate] = useState('');
   const [formCostCodeId, setFormCostCodeId] = useState('');
   const [formDescription, setFormDescription] = useState('');
@@ -229,6 +376,8 @@ export default function TimesheetsScreen() {
 
   const [showTimePicker, setShowTimePicker] = useState<'start' | 'end' | null>(null);
   const [showBreakPicker, setShowBreakPicker] = useState(false);
+  const [showBreakStartPicker, setShowBreakStartPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
@@ -432,6 +581,7 @@ export default function TimesheetsScreen() {
     setFormStartTime('07:00');
     setFormEndTime('15:30');
     setFormBreakDuration('0');
+    setFormBreakStartTime('12:00');
     setFormHourlyRate('');
     setFormCostCodeId('');
     setFormDescription('');
@@ -454,6 +604,7 @@ export default function TimesheetsScreen() {
     setFormStartTime(ts.startTime || '07:00');
     setFormEndTime(ts.endTime || '15:30');
     setFormBreakDuration(ts.breakDuration || '0');
+    setFormBreakStartTime(ts.breakStartTime || '12:00');
     setFormHourlyRate(ts.hourlyRate || '');
     setFormDescription(ts.description || '');
 
@@ -468,7 +619,8 @@ export default function TimesheetsScreen() {
       setFormCostCodeId(ts.costCodeId || '');
     }
 
-    setShowLogSheet(true);
+    // Delay opening the edit modal so the detail modal's close animation finishes first
+    setTimeout(() => setShowLogSheet(true), 350);
   };
 
   const handleSubmitTimesheet = async () => {
@@ -492,6 +644,7 @@ export default function TimesheetsScreen() {
         endTime: formEndTime,
         duration,
         breakDuration: formBreakDuration,
+        breakStartTime: parseFloat(formBreakDuration) > 0 ? formBreakStartTime : null,
         hourlyRate: formHourlyRate,
         description: formDescription,
         costCodeId: formCostCodeId,
@@ -962,7 +1115,10 @@ export default function TimesheetsScreen() {
                 {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
                   <View style={styles.detailSection}>
                     <Text style={[styles.detailLabel, { color: colors.secondary }]}>Break</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>{selectedTimesheet.breakDuration} hours</Text>
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {BREAK_OPTIONS.find(o => o.value === selectedTimesheet.breakDuration)?.label ?? `${selectedTimesheet.breakDuration} hrs`}
+                      {selectedTimesheet.breakStartTime ? ` from ${formatTime12h(selectedTimesheet.breakStartTime)}` : ''}
+                    </Text>
                   </View>
                 )}
                 <View style={styles.detailSection}>
@@ -1058,20 +1214,31 @@ export default function TimesheetsScreen() {
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
 
-              {/* Date + Break row */}
-              <View style={styles.dateBreakRow}>
-                <View style={styles.dateCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
-                  <TextInput
-                    style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                    value={formDate}
-                    onChangeText={setFormDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.secondary}
-                  />
+              {/* Date */}
+              <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
+              <TouchableOpacity
+                style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={[styles.formPickerText, { color: colors.text }]}>{formatDisplayDate(formDate)}</Text>
+                <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+              </TouchableOpacity>
+
+              {/* Break Start + Break Duration row */}
+              <View style={styles.timeRow}>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break Start</Text>
+                  <TouchableOpacity
+                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowBreakStartPicker(true)}
+                  >
+                    <Text style={[styles.formPickerText, { color: parseFloat(formBreakDuration) > 0 ? colors.text : colors.secondary }]}>
+                      {parseFloat(formBreakDuration) > 0 ? formatTime12h(formBreakStartTime) : '—'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.breakCol}>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break</Text>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break Duration</Text>
                   <TouchableOpacity
                     style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                     onPress={() => setShowBreakPicker(true)}
@@ -1184,6 +1351,26 @@ export default function TimesheetsScreen() {
         formBreakDuration,
         setFormBreakDuration,
       )}
+
+      {/* Break Start Time Picker */}
+      {renderPickerModal(
+        showBreakStartPicker,
+        () => setShowBreakStartPicker(false),
+        'Break Start Time',
+        TIME_OPTIONS.map(t => ({ id: t.value, label: t.label })),
+        formBreakStartTime,
+        setFormBreakStartTime,
+      )}
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        visible={showDatePicker}
+        value={formDate}
+        onConfirm={(date) => setFormDate(date)}
+        onClose={() => setShowDatePicker(false)}
+        colors={colors}
+        isDark={isDark}
+      />
 
       {/* Cost Code Picker */}
       {renderPickerModal(
