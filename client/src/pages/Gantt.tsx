@@ -2348,9 +2348,24 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               size="icon"
               className="h-6 w-6 flex-shrink-0"
               onClick={() => {
-                setSessionItemOrder([...defaultItemIds]);
+                // Sort items by start date in-memory (visual sort, no DB update)
+                const safeTs = (d: string | null | undefined): number => {
+                  if (!d) return Number.MAX_SAFE_INTEGER;
+                  const t = new Date(d).getTime();
+                  return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+                };
+                const sortedParents = [...parentItems].sort((a, b) => safeTs(a.startDate) - safeTs(b.startDate));
+                const sortedIds: string[] = [];
+                for (const parent of sortedParents) {
+                  sortedIds.push(parent.id);
+                  if (!collapsedItems.has(parent.id)) {
+                    const children = [...(childItemsByParent[parent.id] || [])].sort((a, b) => safeTs(a.startDate) - safeTs(b.startDate));
+                    children.forEach(c => sortedIds.push(c.id));
+                  }
+                }
+                setSessionItemOrder(sortedIds);
               }}
-              title="Reset order to start date"
+              title="Sort by start date"
               data-testid="button-reset-order"
             >
               <RotateCcw className="w-3.5 h-3.5" />
