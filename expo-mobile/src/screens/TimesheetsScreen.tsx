@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type RefObject } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type RefObject } from 'react';
 import {
   View,
   Text,
@@ -262,7 +262,19 @@ export default function TimesheetsScreen() {
       const online = !!(state.isConnected && state.isInternetReachable !== false);
       setNetworkOnline(online);
       if (online) {
-        handleSync();
+        // Debounce the sync call to prevent rapid network state toggles from
+        // spamming handleSync (e.g. WiFi handoff, brief interruptions)
+        if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+        syncDebounceRef.current = setTimeout(() => {
+          syncDebounceRef.current = null;
+          handleSync();
+        }, 2000);
+      } else {
+        // Cancel pending debounced sync if we lose connectivity
+        if (syncDebounceRef.current) {
+          clearTimeout(syncDebounceRef.current);
+          syncDebounceRef.current = null;
+        }
       }
     });
     const unsubscribeQueue = addSyncListener(() => {
@@ -272,10 +284,15 @@ export default function TimesheetsScreen() {
     return () => {
       unsubscribeNet();
       unsubscribeQueue();
+      if (syncDebounceRef.current) {
+        clearTimeout(syncDebounceRef.current);
+        syncDebounceRef.current = null;
+      }
     };
   }, []);
 
   const isSyncingRef = useRef(false);
+  const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSync = async () => {
     if (isSyncingRef.current) return;
@@ -571,8 +588,12 @@ export default function TimesheetsScreen() {
     ]);
   };
 
-  const { start: weekStart, end: weekEnd, startStr: weekStartStr, endStr: weekEndStr } = getWeekBounds(weekOffset);
-  const filteredTimesheets = timesheets
+  const { start: weekStart, end: weekEnd, startStr: weekStartStr, endStr: weekEndStr } = useMemo(
+    () => getWeekBounds(weekOffset),
+    [weekOffset],
+  );
+
+  const filteredTimesheets = useMemo(() => timesheets
     .filter(ts => {
       // Compare using local calendar dates to avoid UTC timezone boundary mismatches.
       // A timesheet created Sunday evening AEST must not fall into the previous week
@@ -580,20 +601,26 @@ export default function TimesheetsScreen() {
       const localDateStr = toLocalDateStr(new Date(ts.date));
       return localDateStr >= weekStartStr && localDateStr <= weekEndStr;
     })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [timesheets, weekStartStr, weekEndStr],
+  );
 
-  const totalHours = filteredTimesheets.reduce((sum, ts) => sum + parseFloat(ts.duration || '0'), 0);
+  const totalHours = useMemo(
+    () => filteredTimesheets.reduce((sum, ts) => sum + parseFloat(ts.duration || '0'), 0),
+    [filteredTimesheets],
+  );
 
-  const getProjectName = (pid: string) => {
+  const getProjectName = useCallback((pid: string) => {
     const p = projects.find(p => p.id === pid);
     if (!p) return 'Unknown';
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
-  };
-  const getCostCodeName = (ccId: string | null) => {
+  }, [projects]);
+
+  const getCostCodeName = useCallback((ccId: string | null) => {
     if (!ccId) return null;
     const cc = costCodes.find(c => c.id === ccId);
     return cc ? `${cc.code} - ${cc.title}` : null;
-  };
+  }, [costCodes]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
