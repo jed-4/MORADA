@@ -889,7 +889,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const { item, lane, leftPx, widthPx } = barLayout;
                       const rowIdx = isExpanded ? (expandedItemIndexMap.get(item.id) ?? lane) : lane;
                       const topPx = ROW_PADDING + rowIdx * (BAR_HEIGHT + BAR_GAP);
-                      const barColor = item.projectColor || row.color;
+                      const barColor = row.color;
                       const showLabel = widthPx > 60;
 
                       return (
@@ -955,8 +955,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               <div className="space-y-3 pt-1">
                 <div className="flex items-center gap-2">
                   <div
-                    className="w-3 h-3 rounded-full shrink-0"
-                    style={{ backgroundColor: selectedItem.projectColor || "#6b7280" }}
+                    className="w-3 h-3 rounded-full shrink-0 bg-muted-foreground/40"
                   />
                   <span className="text-sm">{selectedItem.projectName}</span>
                 </div>
@@ -1000,7 +999,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           className="h-full rounded-full"
                           style={{
                             width: `${selectedItem.progressPercent}%`,
-                            backgroundColor: selectedItem.projectColor || "#6b7280",
+                            backgroundColor: "#6b7280",
                           }}
                         />
                       </div>
