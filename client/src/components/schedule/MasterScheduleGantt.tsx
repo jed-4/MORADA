@@ -629,7 +629,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                 return (
                   <div
                     key={`weekend-${i}`}
-                    className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/40 pointer-events-none"
+                    className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50 pointer-events-none"
                     style={{ left: i * pixelsPerDay, width: pixelsPerDay }}
                   />
                 );
