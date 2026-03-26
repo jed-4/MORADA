@@ -125,7 +125,8 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
     queryKey: ['/api/business-schedule/projects', project.id, 'schedule-items'],
   });
 
-  const leafItems = items.filter(item => item.type !== 'group' && !item.parentItemId);
+  // Show all items except group/summary headers (which have no meaningful date span of their own)
+  const leafItems = items.filter(item => item.type !== 'group');
 
   const maxPerDay = Math.max(1, ...weekDays.map(day => {
     return leafItems.filter(item => {
