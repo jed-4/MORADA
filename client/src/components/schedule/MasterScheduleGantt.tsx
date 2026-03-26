@@ -604,7 +604,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                   return (
                     <div
                       key={i}
-                      className={`border-l border-border/20 flex items-center justify-center ${isWeekend ? "bg-muted/30" : ""}`}
+                      className={`border-l border-border/20 flex items-center justify-center ${isWeekend ? "bg-[#f3f4f6] dark:bg-muted/50" : ""}`}
                       style={{ width: pixelsPerDay, minWidth: pixelsPerDay }}
                     >
                       <span className="text-[9px] text-muted-foreground/70">{format(day, "EEE")[0]}</span>
@@ -629,7 +629,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                 return (
                   <div
                     key={`weekend-${i}`}
-                    className="absolute top-0 bottom-0 bg-muted/25 pointer-events-none"
+                    className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/40 pointer-events-none"
                     style={{ left: i * pixelsPerDay, width: pixelsPerDay }}
                   />
                 );

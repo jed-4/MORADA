@@ -123,7 +123,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   const [weekStartDay] = useState(1);
   const [rangeStart, setRangeStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
-  const [visibleDays, setVisibleDays] = useState(28);
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
   const [hideUnassigned, setHideUnassigned] = useState(false);
@@ -162,9 +161,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   const headerTimelineRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setVisibleDays(windowWeeks * 7);
-  }, [windowWeeks]);
+  const visibleDays = windowWeeks * 7;
 
   const rangeEnd = useMemo(() => addDays(rangeStart, visibleDays), [rangeStart, visibleDays]);
 
@@ -440,7 +437,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       result.set(row.id, { layouts, laneCount, rowHeight });
     }
     return result;
-  }, [allRows, rangeStart, visibleDays, days, dayOffsets, expandedRows, getColWidth]);
+  }, [allRows, rangeStart, days, dayOffsets, expandedRows, getColWidth]);
 
   const dailyTotals = useMemo(() => {
     const totals = new Map<string, number>();
