@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -147,6 +147,14 @@ export function TimesheetDialog({
   
   const { labelOptions } = useTimesheetLabelOptions();
   const watchedLabels = form.watch("labels") || [];
+
+  // Stable watched values for bi-directional time calculation
+  const watchedStartTime = useWatch({ control: form.control, name: "startTime" });
+  const watchedEndTime = useWatch({ control: form.control, name: "endTime" });
+  const watchedDuration = useWatch({ control: form.control, name: "duration" });
+  const watchedBreakDuration = useWatch({ control: form.control, name: "breakDuration" });
+  const watchedBreakStartTime = useWatch({ control: form.control, name: "breakStartTime" });
+  const watchedBreakEndTime = useWatch({ control: form.control, name: "breakEndTime" });
   
   const toggleLabel = (labelKey: string) => {
     const current = form.getValues("labels") || [];
@@ -211,12 +219,12 @@ export function TimesheetDialog({
     return `${hour.toString().padStart(2, '0')}:${String(Math.round(min / 15) * 15).padStart(2, '0')}`;
   };
 
-  // Bi-directional time calculation
+  // Bi-directional time calculation using stable useWatch values
   useEffect(() => {
-    const startTime = form.watch("startTime");
-    const endTime = form.watch("endTime");
-    const duration = form.watch("duration");
-    const breakDuration = parseFloat(form.watch("breakDuration") || "0");
+    const startTime = watchedStartTime;
+    const endTime = watchedEndTime;
+    const duration = watchedDuration;
+    const breakDuration = parseFloat(watchedBreakDuration || "0");
 
     // Calculate duration from start + end (when start or end or break changes)
     if ((lastEditedField === "startTime" || lastEditedField === "endTime" || lastEditedField === "breakDuration") && startTime && endTime) {
@@ -239,16 +247,13 @@ export function TimesheetDialog({
       const calculatedEnd = minutesToTime(endMinutes);
       form.setValue("endTime", calculatedEnd);
     }
-  }, [form.watch("startTime"), form.watch("endTime"), form.watch("duration"), form.watch("breakDuration"), lastEditedField]);
+  }, [watchedStartTime, watchedEndTime, watchedDuration, watchedBreakDuration, lastEditedField]);
 
   // Auto-calculate break duration from break start/end times
   useEffect(() => {
-    const breakStartTime = form.watch("breakStartTime");
-    const breakEndTime = form.watch("breakEndTime");
-    
-    if (breakStartTime && breakEndTime) {
-      const startMinutes = timeToMinutes(breakStartTime);
-      const endMinutes = timeToMinutes(breakEndTime);
+    if (watchedBreakStartTime && watchedBreakEndTime) {
+      const startMinutes = timeToMinutes(watchedBreakStartTime);
+      const endMinutes = timeToMinutes(watchedBreakEndTime);
       
       let totalMinutes = endMinutes - startMinutes;
       if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight
@@ -257,7 +262,7 @@ export function TimesheetDialog({
       form.setValue("breakDuration", hours.toString());
       setLastEditedField("breakDuration"); // Trigger duration recalculation
     }
-  }, [form.watch("breakStartTime"), form.watch("breakEndTime")]);
+  }, [watchedBreakStartTime, watchedBreakEndTime]);
 
   // Create/Update mutation
   const createMutation = useMutation({

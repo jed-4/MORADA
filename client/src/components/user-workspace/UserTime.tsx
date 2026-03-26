@@ -1,9 +1,11 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Clock, Calendar, Timer, ChevronLeft, ChevronRight, X, Briefcase, Tag, FileText, AlarmClock } from "lucide-react";
+import { Clock, Calendar, Timer, ChevronLeft, ChevronRight, X, Briefcase, Tag, FileText, AlarmClock, ExternalLink } from "lucide-react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay } from "date-fns";
 import type { User, Timesheet, Project, CostCode } from "@shared/schema";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
@@ -13,6 +15,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 
 interface UserTimeProps {
@@ -26,6 +29,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const { effectiveTimezone } = useTimezone();
   const [selectedTimesheet, setSelectedTimesheet] = useState<any | null>(null);
+  const [, navigate] = useLocation();
 
   const { data: timesheets = [], isLoading } = useQuery<Timesheet[]>({
     queryKey: ["/api/timesheets", { userId: user.id }],
@@ -339,6 +343,19 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               )}
             </div>
           )}
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedTimesheet(null);
+                navigate("/timesheets");
+              }}
+            >
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+              Go to Timesheets
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
