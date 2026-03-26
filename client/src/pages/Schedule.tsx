@@ -359,6 +359,7 @@ export default function Schedule() {
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
     queryKey: schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`],
     enabled: !!projectId && (!!schedule?.id || scheduleCategory === "construction"),
+    placeholderData: (prev) => prev,
   });
 
 
@@ -512,6 +513,7 @@ export default function Schedule() {
   const sortByDateMutation = useMutation({
     mutationFn: async () => {
       if (!schedule) throw new Error("No schedule");
+      if (scheduleItems.length === 0) return [];
 
       // Helper: earliest start date among an item's own date or its children's dates
       const effectiveDate = (item: ScheduleItem): number => {
@@ -1677,7 +1679,7 @@ export default function Schedule() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => sortByDateMutation.mutate()}
-                  disabled={sortByDateMutation.isPending || scheduleItems.length === 0}
+                  disabled={sortByDateMutation.isPending}
                 >
                   <ArrowUpDown className="w-4 h-4 mr-2" />
                   {sortByDateMutation.isPending ? "Sorting..." : "Sort by Date"}
