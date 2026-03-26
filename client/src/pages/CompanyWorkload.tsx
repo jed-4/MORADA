@@ -340,6 +340,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           companyRow = row;
         } else {
           companyRow.items.push(...row.items);
+          // Prefer a named company label over the generic fallback
+          if (companyRow.name === 'Business' && row.name !== 'Business') {
+            companyRow.name = row.name;
+          }
         }
       } else {
         supplierRows.push(row);
