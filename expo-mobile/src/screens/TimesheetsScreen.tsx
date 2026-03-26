@@ -232,9 +232,10 @@ export default function TimesheetsScreen() {
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
-  const colors = isDark
+  const colors = useMemo(() => isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', green: '#22c55e', red: '#ef4444', inputBg: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', green: '#16a34a', red: '#dc2626', inputBg: '#f1f5f9' };
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', green: '#16a34a', red: '#dc2626', inputBg: '#f1f5f9' },
+  [isDark]);
 
   const fetchData = useCallback(async () => {
     try {
