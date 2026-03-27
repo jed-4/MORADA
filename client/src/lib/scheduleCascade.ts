@@ -132,6 +132,9 @@ export function computeMoveCascade(params: {
   const updatedEndMap = new Map<string, Date>([[String(movedItemId), newEndMidnight]]);
   const updatesMap = new Map<string, CascadeUpdate>();
 
+  // Fast lookup so every branch can resolve unchanged predecessor dates.
+  const allItemsById = new Map<string, ScheduleItem>(allItems.map(i => [String(i.id), i]));
+
   const recordUpdate = (id: number | string, newS: Date, newE: Date) => {
     updatesMap.set(String(id), {
       id,
@@ -158,10 +161,11 @@ export function computeMoveCascade(params: {
       let requiredStart: Date | null = null;
       for (const dep of deps) {
         if (dep.type !== "SS") continue;
-        const predNewStart = updatedStartMap.get(String(dep.id));
-        if (!predNewStart) continue;
-        // SS: successor starts dep.lag calendar days after predecessor's new start
-        let cs = addDays(predNewStart, dep.lag);
+        // Use updated start if predecessor was moved; fall back to current value.
+        const predStart = updatedStartMap.get(String(dep.id))
+          ?? parseScheduleDate((allItemsById.get(String(dep.id))?.startDate as string | undefined));
+        if (!predStart || !isValidDate(predStart)) continue;
+        let cs = addDays(predStart, dep.lag);
         cs = snapWD(cs, "forward", isNonWorking);
         if (!requiredStart || cs > requiredStart) requiredStart = cs;
       }
@@ -195,6 +199,10 @@ export function computeMoveCascade(params: {
   //    For each successor, compute the required start based on its predecessor's
   //    *new* dates and the stored lag — NOT by adding the raw calendar offset.
   //    This preserves the gap regardless of weekends or snap direction.
+  //
+  //    All predecessors (moved AND unmoved) are evaluated so that dragging an
+  //    item backward cannot pull a successor past a constraint imposed by an
+  //    unchanged predecessor.
   for (const succ of allSuccessors) {
     const succStart = parseScheduleDate(succ.startDate as string);
     const succEnd = parseScheduleDate(succ.endDate as string);
@@ -208,26 +216,33 @@ export function computeMoveCascade(params: {
       const predIdStr = String(dep.id);
       let candidateStart: Date | null = null;
 
-      if ((dep.type === "FS" || dep.type === "SF") && updatedEndMap.has(predIdStr)) {
-        // FS: start = predecessor new end + (lag + 1) calendar days, snapped forward
-        const predNewEnd = updatedEndMap.get(predIdStr)!;
-        let cs = addDays(predNewEnd, dep.lag + 1);
-        cs = snapWD(cs, "forward", isNonWorking);
-        candidateStart = cs;
-      } else if (dep.type === "SS" && updatedStartMap.has(predIdStr)) {
-        // SS: start = predecessor new start + lag calendar days, snapped forward
-        const predNewStart = updatedStartMap.get(predIdStr)!;
-        let cs = addDays(predNewStart, dep.lag);
-        cs = snapWD(cs, "forward", isNonWorking);
-        candidateStart = cs;
-      } else if (dep.type === "FF" && updatedEndMap.has(predIdStr)) {
-        // FF: end = predecessor new end + lag days; back-compute start from duration
-        const predNewEnd = updatedEndMap.get(predIdStr)!;
-        const newSuccEnd = snapWD(addDays(predNewEnd, dep.lag), "forward", isNonWorking);
-        candidateStart = addWD(newSuccEnd, -workDuration, isNonWorking);
+      if (dep.type === "FS" || dep.type === "SF") {
+        // Use updated end if predecessor was moved; otherwise fall back to current value.
+        const predEnd = updatedEndMap.get(predIdStr)
+          ?? parseScheduleDate((allItemsById.get(predIdStr)?.endDate as string | undefined));
+        if (predEnd && isValidDate(predEnd)) {
+          let cs = addDays(predEnd, dep.lag + 1);
+          cs = snapWD(cs, "forward", isNonWorking);
+          candidateStart = cs;
+        }
+      } else if (dep.type === "SS") {
+        const predStart = updatedStartMap.get(predIdStr)
+          ?? parseScheduleDate((allItemsById.get(predIdStr)?.startDate as string | undefined));
+        if (predStart && isValidDate(predStart)) {
+          let cs = addDays(predStart, dep.lag);
+          cs = snapWD(cs, "forward", isNonWorking);
+          candidateStart = cs;
+        }
+      } else if (dep.type === "FF") {
+        const predEnd = updatedEndMap.get(predIdStr)
+          ?? parseScheduleDate((allItemsById.get(predIdStr)?.endDate as string | undefined));
+        if (predEnd && isValidDate(predEnd)) {
+          const newSuccEnd = snapWD(addDays(predEnd, dep.lag), "forward", isNonWorking);
+          candidateStart = addWD(newSuccEnd, -workDuration, isNonWorking);
+        }
       }
 
-      // Multiple predecessors: the successor must satisfy all constraints → use latest start
+      // Multiple predecessors: take the latest required start so all constraints are met.
       if (candidateStart && (!requiredStart || candidateStart > requiredStart)) {
         requiredStart = candidateStart;
       }
