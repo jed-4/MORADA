@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -55,7 +54,6 @@ function getNotifIcon(type: string): keyof typeof Ionicons.glyphMap {
 }
 
 export default function NotificationsScreen({ navigation }: Props) {
-  const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -125,7 +123,7 @@ export default function NotificationsScreen({ navigation }: Props) {
       navigation.navigate('More', { screen: 'Tasks' });
     } else if (notif.type === 'reminder') {
       navigation.navigate('Calendar');
-    } else if (notif.type === 'timesheet_submitted' || notif.type === 'timesheet_approved') {
+    } else if (notif.type.startsWith('timesheet_')) {
       navigation.navigate('Timesheets');
     }
   }, [navigation]);
