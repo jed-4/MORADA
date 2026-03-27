@@ -1576,12 +1576,20 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const item = items.find(i => i.id === itemId);
         if (!item?.dependencies || (item.dependencies as any[]).length === 0) return;
         const deps = item.dependencies as any[];
+        const MS_PER_DAY = 1000 * 60 * 60 * 24;
         const updatedDeps = deps.map((dep: any) => {
-          if (dep.type && dep.type !== 'FS') return dep;
           const pred = items.find(i => String(i.id) === String(dep.id));
           if (!pred) return dep;
-          const newLag = calcFsLag(new Date(pred.endDate), itemNewStart);
-          return { ...dep, lag: newLag };
+          const type = dep.type || 'FS';
+          if (type === 'FS') {
+            return { ...dep, lag: calcFsLag(new Date(pred.endDate as any), itemNewStart) };
+          } else if (type === 'SS') {
+            const predStart = new Date(pred.startDate as any); predStart.setHours(0,0,0,0);
+            const newLag = Math.round((itemNewStart.getTime() - predStart.getTime()) / MS_PER_DAY);
+            return { ...dep, lag: newLag };
+          }
+          // FF and SF are not affected by resize-left (successor end unchanged)
+          return dep;
         });
         const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
         if (changed) {
@@ -1597,13 +1605,21 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         const successors = items.filter(item =>
           (item.dependencies as any[] || []).some((dep: any) => String(dep.id) === String(predecessorId))
         );
+        const MS_PER_DAY = 1000 * 60 * 60 * 24;
         for (const succ of successors) {
           const deps = succ.dependencies as any[];
           const updatedDeps = deps.map((dep: any) => {
             if (String(dep.id) !== String(predecessorId)) return dep;
-            if (dep.type && dep.type !== 'FS') return dep;
-            const newLag = calcFsLag(predNewEnd, new Date(succ.startDate));
-            return { ...dep, lag: newLag };
+            const type = dep.type || 'FS';
+            if (type === 'FS') {
+              return { ...dep, lag: calcFsLag(predNewEnd, new Date(succ.startDate as any)) };
+            } else if (type === 'FF') {
+              const succEnd = new Date(succ.endDate as any); succEnd.setHours(0,0,0,0);
+              const newLag = Math.round((succEnd.getTime() - predNewEnd.getTime()) / MS_PER_DAY);
+              return { ...dep, lag: newLag };
+            }
+            // SS and SF are not affected by predecessor end change
+            return dep;
           });
           const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
           if (changed) {
@@ -3356,15 +3372,44 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     const deltaY = endY - startY;
                     
                     const stub = 12;
+                    const midY = startY + deltaY / 2;
                     let path: string;
-                    if (deltaX >= stub * 2) {
-                      const midX = startX + deltaX / 5;
-                      path = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
-                    } else {
+
+                    if (depType === 'SS') {
+                      // Start→Start: exit left of predStart, enter left of targetStart
+                      const outX = startX - stub;
+                      const inX  = endX - stub;
+                      if (outX <= inX) {
+                        path = `M ${startX} ${startY} H ${outX} V ${endY} H ${endX}`;
+                      } else {
+                        const leftX = Math.min(outX, inX) - stub;
+                        path = `M ${startX} ${startY} H ${leftX} V ${midY} H ${inX} V ${endY} H ${endX}`;
+                      }
+                    } else if (depType === 'FF') {
+                      // Finish→Finish: exit right of predEnd, enter right of targetEnd
                       const outX = startX + stub;
-                      const stepY = startY + deltaY / 2;
-                      const inX = endX - stub;
-                      path = `M ${startX} ${startY} H ${outX} V ${stepY} H ${inX} V ${endY} H ${endX}`;
+                      const inX  = endX + stub;
+                      if (outX >= inX) {
+                        path = `M ${startX} ${startY} H ${outX} V ${endY} H ${endX}`;
+                      } else {
+                        const rightX = Math.max(outX, inX) + stub;
+                        path = `M ${startX} ${startY} H ${rightX} V ${midY} H ${inX} V ${endY} H ${endX}`;
+                      }
+                    } else if (depType === 'SF') {
+                      // Start→Finish: exit left of predStart, enter right of targetEnd
+                      const outX = startX - stub;
+                      const inX  = endX + stub;
+                      path = `M ${startX} ${startY} H ${outX} V ${midY} H ${inX} V ${endY} H ${endX}`;
+                    } else {
+                      // FS (default): exit right of predEnd, enter left of targetStart
+                      if (deltaX >= stub * 2) {
+                        const midX = startX + deltaX / 5;
+                        path = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
+                      } else {
+                        const outX = startX + stub;
+                        const inX  = endX - stub;
+                        path = `M ${startX} ${startY} H ${outX} V ${midY} H ${inX} V ${endY} H ${endX}`;
+                      }
                     }
                     
                     const depKey = `${item.id}-${dep.id}`;
@@ -3705,9 +3750,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
                   {selectedDependency.type === 'FS' && 'Successor starts after predecessor finishes'}
-                  {selectedDependency.type === 'SS' && 'Both tasks start at the same time'}
-                  {selectedDependency.type === 'FF' && 'Both tasks finish at the same time'}
-                  {selectedDependency.type === 'SF' && 'Predecessor starts after successor finishes'}
+                  {selectedDependency.type === 'SS' && 'Successor starts when predecessor starts'}
+                  {selectedDependency.type === 'FF' && 'Successor finishes when predecessor finishes'}
+                  {selectedDependency.type === 'SF' && 'Successor finishes when predecessor starts'}
                 </p>
               </div>
 
