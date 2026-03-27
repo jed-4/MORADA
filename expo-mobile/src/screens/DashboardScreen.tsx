@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -192,7 +193,11 @@ export default function DashboardScreen({ navigation }: Props) {
     try {
       const userId = user?.id || '';
       const companyId = user?.companyId || '';
-      const activityParams = companyId ? `companyId=${companyId}&limit=5` : `userId=${userId}&limit=5`;
+      const activityParams = [
+        userId ? `userId=${userId}` : '',
+        companyId ? `companyId=${companyId}` : '',
+        'limit=5',
+      ].filter(Boolean).join('&');
       const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData, costCodesData, activitiesData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
@@ -241,6 +246,14 @@ export default function DashboardScreen({ navigation }: Props) {
       if (clockTimerRef.current) clearInterval(clockTimerRef.current);
     };
   }, [activeTimesheet]);
+
+  useFocusEffect(
+    useCallback(() => {
+      apiFetch<{ count: number }>('/api/notifications/unread-count')
+        .then(data => setUnreadCount(data?.count ?? 0))
+        .catch(() => {});
+    }, [])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -703,28 +716,31 @@ export default function DashboardScreen({ navigation }: Props) {
               <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent activity</Text>
             </View>
           ) : (
-            recentActivities.map(activity => (
-              <View
-                key={activity.id}
-                style={[styles.activityRow, { borderColor: colors.border }]}
-              >
-                <View style={[styles.activityIcon, { backgroundColor: colors.accent + '30' }]}>
-                  <Ionicons name={getActivityIcon(activity.activityType)} size={15} color={colors.accent} />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>
-                    {activity.description}
-                  </Text>
-                  {activity.userName ? (
-                    <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>
-                      {activity.userName}
-                      {activity.entityName ? ` · ${activity.entityName}` : ''}
+            recentActivities.map(activity => {
+              const projectLabel = activity.projectId ? getProjectName(activity.projectId) : null;
+              const metaLine = [activity.userName, projectLabel].filter(Boolean).join(' · ');
+              return (
+                <View
+                  key={activity.id}
+                  style={[styles.activityRow, { borderColor: colors.border }]}
+                >
+                  <View style={[styles.activityIcon, { backgroundColor: colors.accent + '30' }]}>
+                    <Ionicons name={getActivityIcon(activity.activityType)} size={15} color={colors.accent} />
+                  </View>
+                  <View style={styles.activityContent}>
+                    <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>
+                      {activity.description}
                     </Text>
-                  ) : null}
+                    {metaLine ? (
+                      <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>
+                        {metaLine}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(activity.createdAt)}</Text>
                 </View>
-                <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(activity.createdAt)}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 

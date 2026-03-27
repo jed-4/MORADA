@@ -151,26 +151,30 @@ export default function NotificationsScreen({ navigation }: Props) {
   const unread = notifications.filter(n => !n.isRead);
   const read = notifications.filter(n => n.isRead);
 
-  const sections: Array<{ key: string; label?: string; item: Notification }> = [
-    ...(unread.length > 0 ? [{ key: 'header-unread', label: `Unread (${unread.length})`, item: null as any }] : []),
-    ...unread.map(n => ({ key: n.id, label: undefined, item: n })),
-    ...(read.length > 0 ? [{ key: 'header-read', label: 'Earlier', item: null as any }] : []),
-    ...read.map(n => ({ key: n.id, label: undefined, item: n })),
+  type ListRow =
+    | { kind: 'header'; key: string; label: string }
+    | { kind: 'item'; key: string; item: Notification };
+
+  const rows: ListRow[] = [
+    ...(unread.length > 0 ? [{ kind: 'header' as const, key: 'header-unread', label: `Unread (${unread.length})` }] : []),
+    ...unread.map(n => ({ kind: 'item' as const, key: n.id, item: n })),
+    ...(read.length > 0 ? [{ kind: 'header' as const, key: 'header-read', label: 'Earlier' }] : []),
+    ...read.map(n => ({ kind: 'item' as const, key: n.id, item: n })),
   ];
 
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
       contentContainerStyle={styles.list}
-      data={sections}
-      keyExtractor={s => s.key}
-      renderItem={({ item: section }) => {
-        if (section.label !== undefined && !section.item) {
+      data={rows}
+      keyExtractor={r => r.key}
+      renderItem={({ item: row }) => {
+        if (row.kind === 'header') {
           return (
-            <Text style={[styles.sectionLabel, { color: colors.secondary }]}>{section.label}</Text>
+            <Text style={[styles.sectionLabel, { color: colors.secondary }]}>{row.label}</Text>
           );
         }
-        const notif = section.item;
+        const notif = row.item;
         return (
           <TouchableOpacity
             onPress={() => handleTap(notif)}
