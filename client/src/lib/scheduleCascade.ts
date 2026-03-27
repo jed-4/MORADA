@@ -84,25 +84,72 @@ function getAllDownstreamSuccessors(
   allItems: ScheduleItem[],
   depTypeFilter?: (type: string) => boolean,
 ): ScheduleItem[] {
-  const visited = new Set<number | string>();
-  const result: ScheduleItem[] = [];
-  const queue: Array<number | string> = [rootId];
-  visited.add(rootId);
+  // Step 1: collect all reachable downstream successors via BFS.
+  const reachable = new Set<string>();
+  const queue: Array<string> = [String(rootId)];
+  reachable.add(String(rootId));
   while (queue.length > 0) {
     const cur = queue.shift()!;
     for (const it of allItems) {
-      if (!visited.has(it.id)) {
-        const deps = getItemDeps(it).filter(d => String(d.id) === String(cur));
+      const itId = String(it.id);
+      if (!reachable.has(itId)) {
+        const deps = getItemDeps(it).filter(d => String(d.id) === cur);
         const matching = depTypeFilter ? deps.some(d => depTypeFilter(d.type)) : deps.length > 0;
         if (matching) {
-          visited.add(it.id);
-          result.push(it);
-          queue.push(it.id);
+          reachable.add(itId);
+          queue.push(itId);
         }
       }
     }
   }
-  return result;
+  reachable.delete(String(rootId)); // root is the moved item, not a result
+
+  // Step 2: build adjacency within the reachable set and compute in-degrees for
+  //         Kahn's topological sort so diamond graphs are processed correctly.
+  //
+  //         In-degree counts only edges whose SOURCE is also in the reachable set
+  //         (i.e. other downstream successors).  Edges from the root (moved item)
+  //         are NOT counted so that direct root successors start with in-degree 0
+  //         and seed the Kahn queue correctly.
+  const itemById = new Map<string, ScheduleItem>();
+  for (const it of allItems) if (reachable.has(String(it.id))) itemById.set(String(it.id), it);
+
+  const inDegree = new Map<string, number>();
+  const edges = new Map<string, string[]>(); // predecessor (within reachable) → successors
+  for (const id of reachable) {
+    inDegree.set(id, 0);
+    edges.set(id, []);
+  }
+  for (const [id, item] of itemById) {
+    for (const dep of getItemDeps(item)) {
+      const predId = String(dep.id);
+      const shouldInclude = depTypeFilter ? depTypeFilter(dep.type) : true;
+      if (!shouldInclude) continue;
+      // Only count edges from other reachable successors (NOT from rootId).
+      if (reachable.has(predId)) {
+        edges.get(predId)!.push(id);
+        inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Step 3: Kahn's algorithm — seeds with nodes that have no in-subgraph predecessors.
+  const topoQueue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) topoQueue.push(id);
+  }
+  const sorted: ScheduleItem[] = [];
+  while (topoQueue.length > 0) {
+    const cur = topoQueue.shift()!;
+    const item = itemById.get(cur);
+    if (item) sorted.push(item);
+    for (const next of (edges.get(cur) ?? [])) {
+      const newDeg = (inDegree.get(next) ?? 1) - 1;
+      inDegree.set(next, newDeg);
+      if (newDeg === 0) topoQueue.push(next);
+    }
+  }
+  return sorted;
 }
 
 export function computeMoveCascade(params: {
