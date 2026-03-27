@@ -1591,9 +1591,28 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       };
 
-      // recalcLagForSuccessors is no longer needed: computeMoveCascade now uses
-      // the stored lag to compute successor positions, so lags remain accurate
-      // after a cascade drag without any post-hoc patching.
+      // When a resize-right extends/shrinks the predecessor's end but leaves successors
+      // in place, we update the stored lag so future drags preserve the new gap.
+      const recalcLagForSuccessors = (predecessorId: string | number, predNewEnd: Date, items: ScheduleItem[]) => {
+        const successors = items.filter(item =>
+          (item.dependencies as any[] || []).some((dep: any) => String(dep.id) === String(predecessorId))
+        );
+        for (const succ of successors) {
+          const deps = succ.dependencies as any[];
+          const updatedDeps = deps.map((dep: any) => {
+            if (String(dep.id) !== String(predecessorId)) return dep;
+            if (dep.type && dep.type !== 'FS') return dep;
+            const newLag = calcFsLag(predNewEnd, new Date(succ.startDate));
+            return { ...dep, lag: newLag };
+          });
+          const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
+          if (changed) {
+            apiRequest(`/api/schedule-items/${succ.id}`, "PATCH", { dependencies: updatedDeps })
+              .then(() => invalidateScheduleItems())
+              .catch(() => {});
+          }
+        }
+      };
 
       try {
       if (drag.type === 'move') {
