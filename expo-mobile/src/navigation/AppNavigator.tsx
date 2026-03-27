@@ -25,6 +25,7 @@ import ScopeScreen from '../screens/ScopeScreen';
 import MoreScreen from '../screens/MoreScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -46,6 +47,11 @@ function WorkspaceStack() {
     >
       <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
       <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: true, title: 'Notifications' }}
+      />
     </Stack.Navigator>
   );
 }

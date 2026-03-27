@@ -59,6 +59,17 @@ interface Notification {
   linkUrl?: string;
 }
 
+interface ActivityItem {
+  id: string;
+  activityType: string;
+  action: string;
+  description: string;
+  userName?: string;
+  entityName?: string;
+  projectId?: string;
+  createdAt: string;
+}
+
 interface ScheduleItem {
   id: string;
   name: string;
@@ -149,6 +160,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [activeTimesheet, setActiveTimesheet] = useState<ActiveTimesheet | null>(null);
   const [recentTimesheets, setRecentTimesheets] = useState<TimesheetEntry[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
@@ -179,7 +191,9 @@ export default function DashboardScreen({ navigation }: Props) {
   const fetchData = useCallback(async () => {
     try {
       const userId = user?.id || '';
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData, costCodesData] = await Promise.all([
+      const companyId = user?.companyId || '';
+      const activityParams = companyId ? `companyId=${companyId}&limit=5` : `userId=${userId}&limit=5`;
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData, costCodesData, activitiesData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
@@ -189,6 +203,7 @@ export default function DashboardScreen({ navigation }: Props) {
         apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
         apiFetch<CompanySettings>('/api/company-settings').catch(() => null),
         apiFetch<CostCode[]>('/api/cost-codes').catch(() => []),
+        apiFetch<ActivityItem[]>(`/api/activities?${activityParams}`).catch(() => []),
       ]);
       setProjects(projectsData || []);
       setCostCodes(costCodesData || []);
@@ -201,6 +216,7 @@ export default function DashboardScreen({ navigation }: Props) {
       setNotifications(notifData || []);
       setUnreadCount(unreadData?.count || 0);
       setActiveTimesheet(timesheetData || null);
+      setRecentActivities(activitiesData || []);
 
       const sortedTimesheets = (recentTsList || [])
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -313,7 +329,21 @@ export default function DashboardScreen({ navigation }: Props) {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   }).slice(0, 5);
 
-  const recentActivity = notifications.slice(0, 3);
+  const getActivityIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+    switch (type) {
+      case 'task': return 'checkmark-circle-outline';
+      case 'estimate': return 'document-text-outline';
+      case 'invoice': return 'card-outline';
+      case 'bill': return 'receipt-outline';
+      case 'timesheet': return 'time-outline';
+      case 'site_diary': return 'journal-outline';
+      case 'schedule': return 'calendar-outline';
+      case 'project': return 'business-outline';
+      case 'variation': return 'git-branch-outline';
+      case 'proposal': return 'mail-outline';
+      default: return 'ellipse-outline';
+    }
+  };
 
   const getProjectName = (pid: string) => {
     const p = projects.find(pr => pr.id === pid);
@@ -368,15 +398,6 @@ export default function DashboardScreen({ navigation }: Props) {
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
     .slice(0, 6);
 
-  const getNotifIcon = (type: string): keyof typeof Ionicons.glyphMap => {
-    switch (type) {
-      case 'task_assigned': return 'checkbox-outline';
-      case 'mention': return 'at-outline';
-      case 'reminder': return 'alarm-outline';
-      case 'task_completed': return 'checkmark-circle-outline';
-      default: return 'notifications-outline';
-    }
-  };
 
   const PROJECT_PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f43f5e', '#84cc16'];
 
@@ -414,15 +435,7 @@ export default function DashboardScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.headerRight}>
           <TouchableOpacity
-            onPress={() => {
-              if (unreadCount > 0) {
-                apiRequest('/api/notifications/read-all', 'POST').then(() => {
-                  setUnreadCount(0);
-                  setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-                }).catch(() => {});
-              }
-              navigation.navigate('Timesheets');
-            }}
+            onPress={() => { navigation.navigate('Notifications'); }}
             style={styles.headerIconBtn}
           >
             <Ionicons name="notifications-outline" size={22} color={colors.text} />
@@ -684,38 +697,33 @@ export default function DashboardScreen({ navigation }: Props) {
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.todayText, { color: colors.secondary }]}>Recent Activity</Text>
           </View>
-          {recentActivity.length === 0 ? (
+          {recentActivities.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="pulse-outline" size={24} color={colors.muted} />
               <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent activity</Text>
             </View>
           ) : (
-            recentActivity.map(notif => (
-              <TouchableOpacity
-                key={notif.id}
-                style={[styles.activityRow, { borderColor: '#d6d3d1' }]}
-                onPress={() => {
-                  if (notif.type === 'task_assigned' || notif.type === 'task_completed') {
-                    navigation.navigate('More', { screen: 'Tasks' });
-                  } else if (notif.type === 'reminder') {
-                    navigation.navigate('Calendar');
-                  } else {
-                    navigation.navigate('Timesheets');
-                  }
-                }}
-                activeOpacity={0.7}
+            recentActivities.map(activity => (
+              <View
+                key={activity.id}
+                style={[styles.activityRow, { borderColor: colors.border }]}
               >
-                <View style={[styles.activityIcon, { backgroundColor: notif.isRead ? colors.accent + '30' : colors.accent }]}>
-                  <Ionicons name={getNotifIcon(notif.type)} size={15} color={notif.isRead ? colors.accent : '#ffffff'} />
+                <View style={[styles.activityIcon, { backgroundColor: colors.accent + '30' }]}>
+                  <Ionicons name={getActivityIcon(activity.activityType)} size={15} color={colors.accent} />
                 </View>
                 <View style={styles.activityContent}>
-                  <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{notif.title}</Text>
-                  {notif.message && (
-                    <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>{notif.message}</Text>
-                  )}
+                  <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>
+                    {activity.description}
+                  </Text>
+                  {activity.userName ? (
+                    <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>
+                      {activity.userName}
+                      {activity.entityName ? ` · ${activity.entityName}` : ''}
+                    </Text>
+                  ) : null}
                 </View>
-                <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(notif.createdAt)}</Text>
-              </TouchableOpacity>
+                <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(activity.createdAt)}</Text>
+              </View>
             ))
           )}
         </View>
