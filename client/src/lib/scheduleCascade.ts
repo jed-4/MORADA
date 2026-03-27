@@ -5,7 +5,7 @@ export type CascadeUpdate = { id: number | string; startDate: string; endDate: s
 
 export function parseScheduleDate(d: string | Date | null | undefined): Date {
   if (!d) return new Date(NaN);
-  const r = typeof d === "string" ? new Date(d + "T00:00:00") : new Date(d);
+  const r = typeof d === "string" ? new Date(d.substring(0, 10) + "T00:00:00") : new Date(d);
   r.setHours(0, 0, 0, 0);
   return r;
 }
