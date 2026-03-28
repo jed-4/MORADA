@@ -6564,17 +6564,18 @@ export default function EstimateDetail() {
                   {(() => {
                     const qty = editForm.watch("quantity") || 0;
                     const unitCost = editForm.watch("unitCostExTax") || 0;
-                    const markup = editForm.watch("markupPercent") || 0;
+                    const markupRaw = editForm.watch("markupPercent");
+                    const markup = markupRaw != null ? markupRaw : (editingItem?.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
                     const taxRate = 10; // 10% GST
-                    
-                    const builderCostExTax = Math.round(qty * unitCost * 100); // in cents
-                    const builderCostTax = Math.round((builderCostExTax * taxRate) / 100);
-                    const builderCostIncTax = builderCostExTax + builderCostTax;
-                    
-                    const markupAmount = Math.round((builderCostExTax * markup) / 100);
-                    const clientPriceExTax = builderCostExTax + markupAmount;
-                    const clientTax = Math.round((clientPriceExTax * taxRate) / 100);
-                    const clientPriceIncTax = clientPriceExTax + clientTax;
+
+                    const builderCostExTax = Math.round(qty * unitCost * 100) / 100; // in dollars
+                    const builderCostTax = Math.round(builderCostExTax * taxRate) / 100;
+                    const builderCostIncTax = Math.round((builderCostExTax + builderCostTax) * 100) / 100;
+
+                    const markupAmount = Math.round(builderCostExTax * markup) / 100;
+                    const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
+                    const clientTax = Math.round(clientPriceExTax * taxRate) / 100;
+                    const clientPriceIncTax = Math.round((clientPriceExTax + clientTax) * 100) / 100;
                     
                     return (qty > 0 && unitCost > 0) ? (
                       <div className="p-4 bg-muted/30 rounded-lg border space-y-2">
