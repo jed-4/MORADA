@@ -8963,13 +8963,16 @@ export class DbStorage implements IStorage {
           const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
           
           const actualCost = billCost + timesheetCost;
-          const variance = actualCost - (item.priceIncTax || 0);
+          // price_inc_tax is stored in dollars; convert to cents for consistent display
+          const priceInCents = Math.round((item.priceIncTax || 0) * 100);
+          const variance = actualCost - priceInCents;
           
           return {
             item: {
               ...item,
               estimateName: estimate?.name || "Unknown",
               estimateVersion: estimate?.version || 1,
+              priceIncTax: priceInCents,
             },
             actualCost,
             variance,
