@@ -409,6 +409,8 @@ export default function EstimateDetail() {
   // Inline editing state for table cells
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<any>("");
+  // Tracks a newly-created inline item that should auto-open name edit
+  const pendingAutoFocusItemId = React.useRef<string | null>(null);
 
   // State to track collapsed parent items
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
@@ -3083,6 +3085,17 @@ export default function EstimateDetail() {
     }
   }, [editingItemId, items, editForm]);
 
+  // Auto-focus name cell on a newly inline-added item once it appears in the list
+  React.useEffect(() => {
+    const targetId = pendingAutoFocusItemId.current;
+    if (!targetId || !items) return;
+    const item = items.find(i => i.id === targetId);
+    if (!item) return;
+    pendingAutoFocusItemId.current = null;
+    setEditingCell({ itemId: item.id, field: 'name' });
+    setEditingValue(item.name || '');
+  }, [items]);
+
   // Helper function to get sub-items for a parent item
   const getSubItems = (parentItemId: string): EstimateItem[] => {
     const subItems = items.filter(item => item.parentItemId === parentItemId);
@@ -3301,7 +3314,13 @@ export default function EstimateDetail() {
       ...(group && (group as any).defaultCostCategoryId ? { costCategoryId: (group as any).defaultCostCategoryId } : {}),
     };
     
-    addItemMutation.mutate(newItem);
+    addItemMutation.mutate(newItem, {
+      onSuccess: (data: any) => {
+        if (data?.id) {
+          pendingAutoFocusItemId.current = data.id;
+        }
+      },
+    });
   };
   
   const handleCopyItem = (itemId: string) => {
