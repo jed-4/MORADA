@@ -1069,6 +1069,7 @@ interface DroppableStageProps {
   onToggleStageComplete?: (stageId: string, isCompleted: boolean) => void; // Stage completion
   checklistCount?: number; // Number of checklist instances linked to this stage
   onNavigateToChecklists?: (stageId: string) => void; // Navigate to checklists filtered by stage
+  linkedChecklists?: { id: string; name: string; status: string; completedItemsCount?: number; totalItemsCount?: number }[]; // Inline linked checklists
 }
 
 function DroppableStage({ 
@@ -1106,6 +1107,7 @@ function DroppableStage({
   onToggleStageComplete, // Stage completion toggle
   checklistCount = 0, // Linked checklists count
   onNavigateToChecklists, // Navigate to filtered checklists
+  linkedChecklists = [], // Inline linked checklists
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1481,6 +1483,45 @@ function DroppableStage({
                   ))}
                 </div>
               )}
+
+              {/* Linked Checklists — inline in stage body */}
+              {linkedChecklists.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
+                    Linked Checklists
+                  </div>
+                  {linkedChecklists.map((cl) => (
+                    <div
+                      key={cl.id}
+                      className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
+                      onClick={() => onNavigateToChecklists?.(stageData.id)}
+                      data-testid={`linked-checklist-${cl.id}`}
+                    >
+                      <ClipboardList className="h-4 w-4 text-violet-500" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{cl.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            cl.status === 'completed'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                              : cl.status === 'in_progress'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}>
+                            {cl.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        {(cl.totalItemsCount ?? 0) > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {cl.completedItemsCount ?? 0}/{cl.totalItemsCount} items
+                          </div>
+                        )}
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1830,7 +1871,7 @@ export default function ProjectScope() {
     enabled: !!projectId,
   });
 
-  // Count checklists per stage
+  // Count checklists per stage + build inline list
   const checklistCountByStage = useMemo(() => {
     const counts: Record<string, number> = {};
     projectChecklistInstances.forEach(inst => {
@@ -1839,6 +1880,17 @@ export default function ProjectScope() {
       }
     });
     return counts;
+  }, [projectChecklistInstances]);
+
+  const checklistsByStage = useMemo(() => {
+    const grouped: Record<string, typeof projectChecklistInstances> = {};
+    projectChecklistInstances.forEach(inst => {
+      if (inst.scopeStageId) {
+        if (!grouped[inst.scopeStageId]) grouped[inst.scopeStageId] = [];
+        grouped[inst.scopeStageId].push(inst);
+      }
+    });
+    return grouped;
   }, [projectChecklistInstances]);
 
   // Initialize default stages if empty
@@ -3277,6 +3329,7 @@ export default function ProjectScope() {
                       onToggleStageComplete={handleToggleStageComplete}
                       checklistCount={checklistCountByStage[stage.id] || 0}
                       onNavigateToChecklists={handleNavigateToChecklists}
+                      linkedChecklists={checklistsByStage[stage.id] || []}
                     />
                   ))}
               </SortableContext>
