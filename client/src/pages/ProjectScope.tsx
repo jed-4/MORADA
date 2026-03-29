@@ -57,7 +57,6 @@ import {
   CheckCircle2,
   X,
   AlignLeft,
-  Settings,
   ClipboardList,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1069,7 +1068,7 @@ interface DroppableStageProps {
   onToggleStageComplete?: (stageId: string, isCompleted: boolean) => void; // Stage completion
   checklistCount?: number; // Number of checklist instances linked to this stage
   onNavigateToChecklists?: (stageId: string) => void; // Navigate to checklists filtered by stage
-  linkedChecklists?: { id: string; name: string; status: string; completedItemsCount?: number; totalItemsCount?: number }[]; // Inline linked checklists
+  linkedChecklists?: { id: string; name: string; status: string; completedCount?: number; totalCount?: number }[]; // Inline linked checklists
 }
 
 function DroppableStage({ 
@@ -1511,9 +1510,9 @@ function DroppableStage({
                             {cl.status.replace('_', ' ')}
                           </span>
                         </div>
-                        {(cl.totalItemsCount ?? 0) > 0 && (
+                        {(cl.totalCount ?? 0) > 0 && (
                           <div className="text-xs text-muted-foreground">
-                            {cl.completedItemsCount ?? 0}/{cl.totalItemsCount} items
+                            {cl.completedCount ?? 0}/{cl.totalCount} items
                           </div>
                         )}
                       </div>
@@ -1861,7 +1860,7 @@ export default function ProjectScope() {
   }, [projectScheduleItems]);
 
   // Fetch checklist instances for this project (used for per-stage badge count)
-  const { data: projectChecklistInstances = [] } = useQuery<{ id: string; name: string; scopeStageId: string | null }[]>({
+  const { data: projectChecklistInstances = [] } = useQuery<{ id: string; name: string; status: string; scopeStageId: string | null; completedCount?: number; totalCount?: number }[]>({
     queryKey: ['/api/checklist-instances', { projectId }],
     queryFn: async () => {
       const res = await fetch(`/api/checklist-instances?projectId=${projectId}`, { credentials: 'include' });
@@ -2949,23 +2948,6 @@ export default function ProjectScope() {
             </TooltipContent>
           </Tooltip>
 
-          {/* Configure Types — admin only — links to Field Settings */}
-          {isAdmin && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => navigate("/field-settings?section=scope")}
-                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
-                  data-testid="button-configure-types"
-                >
-                  <Settings className="h-3 w-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Configure item types</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
 
           {/* Add Stage */}
           <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
