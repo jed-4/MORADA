@@ -192,14 +192,27 @@ export default function ScopeScreen({ navigation, route }: Props) {
   const toggleStageCompletion = async (stage: ScopeStage) => {
     if (!canEdit) return;
     const newVal = !stage.isCompleted;
+    // Optimistically update stage
     setStages(prev => prev.map(s => (s.id === stage.id ? { ...s, isCompleted: newVal } : s)));
+    // Cascade: mark all items in the stage as completed/incomplete
+    setItems(prev =>
+      prev.map(item =>
+        item.stage === stage.name ? { ...item, isCompleted: newVal } : item
+      )
+    );
     try {
       await apiRequest(`/api/scope-stages/${stage.id}`, 'PATCH', {
         isCompleted: newVal,
         completedAt: newVal ? new Date().toISOString() : null,
       });
     } catch {
+      // Rollback both stage and items
       setStages(prev => prev.map(s => (s.id === stage.id ? { ...s, isCompleted: stage.isCompleted } : s)));
+      setItems(prev =>
+        prev.map(item =>
+          item.stage === stage.name ? { ...item, isCompleted: !newVal } : item
+        )
+      );
     }
   };
 

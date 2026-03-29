@@ -39,6 +39,7 @@ import {
   Send,
   DollarSign,
   Package,
+  Check,
   ChevronDown,
   ChevronUp,
   ChevronRight,
@@ -1064,7 +1065,8 @@ interface DroppableStageProps {
   onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
   showDescriptionInline?: boolean; // Show descriptions inline instead of hover
   dropTarget?: { id: string; position: 'above' | 'below' } | null; // Drop indicator target
-  }
+  onToggleStageComplete?: (stageId: string, isCompleted: boolean) => void; // Stage completion
+}
 
 function DroppableStage({ 
   stageData, 
@@ -1098,6 +1100,7 @@ function DroppableStage({
   linkedScheduleItems = [], // Linked Schedule Items
   onViewScheduleItem, // Handler to view schedule item details
   dropTarget, // Drop indicator target
+  onToggleStageComplete, // Stage completion toggle
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1185,11 +1188,34 @@ function DroppableStage({
         >
           {/* Stage Header - h-9, collapsible */}
           <div 
-            className="h-9 px-3 flex items-center justify-between border-b border-border bg-muted/60 dark:bg-muted/40 group cursor-pointer hover-elevate"
+            className={`h-9 px-3 flex items-center justify-between border-b border-border group cursor-pointer hover-elevate transition-colors ${
+              stageData.isCompleted
+                ? 'bg-green-50/60 dark:bg-green-950/20'
+                : 'bg-muted/60 dark:bg-muted/40'
+            }`}
             onClick={onToggleExpand}
             data-testid={`stage-header-${stageData.id}`}
           >
             <div className="flex items-center gap-2">
+              {/* Stage Completion Checkbox */}
+              {onToggleStageComplete && (
+                <button
+                  className={`h-5 w-5 flex-shrink-0 flex items-center justify-center rounded border-2 transition-colors ${
+                    stageData.isCompleted
+                      ? 'bg-green-500 border-green-500 text-white'
+                      : 'border-muted-foreground/40 bg-transparent hover:border-green-500'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleStageComplete(stageData.id, !stageData.isCompleted);
+                  }}
+                  data-testid={`button-toggle-stage-complete-${stageData.id}`}
+                  title={stageData.isCompleted ? "Mark stage as incomplete" : "Mark stage as complete"}
+                >
+                  {stageData.isCompleted && <Check className="h-3 w-3" />}
+                </button>
+              )}
+
               {/* Chevron */}
               {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
               
@@ -1218,11 +1244,14 @@ function DroppableStage({
                 />
               ) : (
                 <span 
-                  className="text-sm font-semibold" 
+                  className={`text-sm font-semibold ${stageData.isCompleted ? 'line-through text-muted-foreground' : ''}`}
                   data-testid={`text-stage-name-${stageData.id}`}
                 >
                   {stageData.name}
                 </span>
+              )}
+              {stageData.isCompleted && (
+                <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">✓ Complete</span>
               )}
 
               {/* Item Count Badge */}
@@ -1475,6 +1504,7 @@ function DroppableStage({
                 onViewScheduleItem={onViewScheduleItem}
                 showDescriptionInline={showDescriptionInline}
                 dropTarget={dropTarget}
+                onToggleStageComplete={onToggleStageComplete}
               />
             );
           })}
@@ -1828,6 +1858,46 @@ export default function ProjectScope() {
       toast({ title: "Stage updated" });
     },
   });
+
+  // Toggle stage completion
+  const toggleStageCompleteMutation = useMutation({
+    mutationFn: async ({ id, isCompleted }: { id: string; isCompleted: boolean }) => {
+      return apiRequest(`/api/scope-stages/${id}`, 'PATCH', {
+        isCompleted,
+        completedAt: isCompleted ? new Date().toISOString() : null,
+      });
+    },
+    onMutate: async ({ id, isCompleted }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      const previousStages = queryClient.getQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`]);
+      queryClient.setQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`], (old) => {
+        if (!old) return old;
+        return old.map(stage => stage.id === id ? { ...stage, isCompleted } : stage);
+      });
+      // Also collapse the stage if marking complete (find stage name for the key)
+      if (isCompleted) {
+        const stageName = previousStages?.find(s => s.id === id)?.name;
+        if (stageName) {
+          setStageExpanded(prev => ({ ...prev, [stageName]: false }));
+        }
+      }
+      return { previousStages };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousStages) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
+      }
+      toast({ title: "Failed to update stage completion", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+    },
+  });
+
+  const handleToggleStageComplete = (stageId: string, isCompleted: boolean) => {
+    toggleStageCompleteMutation.mutate({ id: stageId, isCompleted });
+  };
 
   // Delete stage mutation
   const deleteStageMutation = useMutation({
@@ -3157,6 +3227,7 @@ export default function ProjectScope() {
                       onViewScheduleItem={handleViewScheduleItem}
                       showDescriptionInline={showDescriptionInline}
                       dropTarget={dropTarget}
+                      onToggleStageComplete={handleToggleStageComplete}
                     />
                   ))}
               </SortableContext>
