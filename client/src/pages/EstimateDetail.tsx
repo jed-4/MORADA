@@ -2257,11 +2257,11 @@ export default function EstimateDetail() {
         setEditingValue(item.quantity.toFixed(2));
         break;
       case 'unitCostExTax':
-        setEditingValue(item.unitCostExTax.toFixed(2));
+        setEditingValue(parseFloat(item.unitCostExTax.toFixed(3)).toString());
         break;
       case 'unitCostIncTax':
         const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
-        setEditingValue(unitCostIncTax.toFixed(2));
+        setEditingValue(parseFloat(unitCostIncTax.toFixed(3)).toString());
         break;
       case 'markup':
       case 'markupPercent':
@@ -2308,10 +2308,10 @@ export default function EstimateDetail() {
         });
         // Reset to original value
         if (field === 'unitCostExTax') {
-          setEditingValue(((item as any)[field]).toFixed(2));
+          setEditingValue(parseFloat(item.unitCostExTax.toFixed(3)).toString());
         } else if (field === 'unitCostIncTax') {
           const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
-          setEditingValue(unitCostIncTax.toFixed(2));
+          setEditingValue(parseFloat(unitCostIncTax.toFixed(3)).toString());
         } else if (field === 'markupPercent' || field === 'markup') {
           setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
         } else {
@@ -2339,10 +2339,9 @@ export default function EstimateDetail() {
       // Send actual dollar value to backend (backend will multiply by 100)
       valueToSave = parseFloat(editingValue);
       
-      // Check if value actually changed (compare actual to stored cents)
-      // Only skip save if both values are finite numbers and they match
+      // Skip save if value hasn't meaningfully changed (within 0.0001 tolerance)
       if (Number.isFinite(item.unitCostExTax) && Number.isFinite(valueToSave) && 
-          Math.round(valueToSave * 100) === item.unitCostExTax) {
+          Math.abs(valueToSave - item.unitCostExTax) < 0.0001) {
         setEditingCell(null);
         return;
       }
@@ -2351,17 +2350,17 @@ export default function EstimateDetail() {
       const incTaxValue = parseFloat(editingValue);
       const taxRate = estimate?.taxRate ?? 10;
       
-      // Back-calculate: unitCostExTax = unitCostIncTax / (1 + taxRate/100)
-      const calculatedExTax = incTaxValue / (1 + taxRate / 100);
+      // Back-calculate: unitCostExTax = unitCostIncTax / (1 + taxRate/100), rounded to 3dp
+      const calculatedExTax = Math.round(incTaxValue / (1 + taxRate / 100) * 1000) / 1000;
       
       // Check if the calculated ex-tax value is different from current
       const currentIncTax = calculatePricingValues(item).unitCostIncTax;
-      if (Math.abs(incTaxValue - currentIncTax) < 0.01) {
+      if (Math.abs(incTaxValue - currentIncTax) < 0.0005) {
         setEditingCell(null);
         return;
       }
       
-      // Save the back-calculated ex-tax value
+      // Save the back-calculated ex-tax value (already rounded to 3dp)
       valueToSave = calculatedExTax;
       fieldToUpdate = 'unitCostExTax'; // Update the ex-tax field instead
     } else if (field === 'markupPercent' || field === 'markup') {
@@ -2380,7 +2379,7 @@ export default function EstimateDetail() {
       valueToSave = parseFloat(editingValue);
       
       // Check if value actually changed (compare actual to stored cents)
-      if (Math.round(valueToSave * 100) === item.quantity) {
+      if (Math.abs(valueToSave - item.quantity) < 0.0001) {
         setEditingCell(null);
         return;
       }
@@ -2903,26 +2902,27 @@ export default function EstimateDetail() {
 
   // Helper function to calculate two-tier pricing values
   const calculatePricingValues = (item: EstimateItem) => {
-    // Unit cost with tax
+    const round3 = (n: number) => Math.round(n * 1000) / 1000;
     const taxRate = estimate?.taxRate ?? 10;
-    const unitCostTax = Math.round(item.unitCostExTax * taxRate) / 100;
-    const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
-    
+
+    // Unit cost with tax
+    const unitCostTax = round3(item.unitCostExTax * taxRate / 100);
+    const unitCostIncTax = round3(item.unitCostExTax + unitCostTax);
+
     // Builder's cost (what builder pays)
-    const builderCost = Math.round(item.unitCostExTax * item.quantity * 100) / 100;
-    
+    const builderCost = round3(item.unitCostExTax * item.quantity);
+
     // Builder's cost with tax
-    const builderCostTax = Math.round(builderCost * taxRate) / 100;
-    const builderCostIncTax = Math.round((builderCost + builderCostTax) * 100) / 100;
-    
-    // Markup percentage (item level or project level)
+    const builderCostTax = round3(builderCost * taxRate / 100);
+    const builderCostIncTax = round3(builderCost + builderCostTax);
+
+    // Markup — always calculate fresh from the effective markup percent
     const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
-    
-    // Client pricing (calculated by backend, or fallback for legacy items)
-    const clientTax = item.taxAmount ?? 0; // in dollars
-    const clientPriceIncTax = item.priceIncTax ?? 0; // in dollars
-    const clientPriceExTax = clientPriceIncTax - clientTax; // in dollars
-    
+    const markupAmount = round3(builderCost * markupPercent / 100);
+    const clientPriceExTax = round3(builderCost + markupAmount);
+    const clientTax = round3(clientPriceExTax * taxRate / 100);
+    const clientPriceIncTax = round3(clientPriceExTax + clientTax);
+
     return {
       unitCostIncTax, // in dollars
       builderCost, // in dollars
@@ -5864,7 +5864,7 @@ export default function EstimateDetail() {
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                             <Input 
                               type="number" 
-                              step="0.01" 
+                              step="0.001" 
                               min="0"
                               placeholder="Unit cost ex. tax"
                               className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -5875,7 +5875,7 @@ export default function EstimateDetail() {
                                   field.onChange(0);
                                 } else {
                                   const cost = parseFloat(value) || 0;
-                                  const rounded = Math.round(cost * 100) / 100;
+                                  const rounded = Math.round(cost * 1000) / 1000;
                                   field.onChange(rounded);
                                 }
                               }}
@@ -5896,8 +5896,9 @@ export default function EstimateDetail() {
                     <div className="h-9 flex items-center px-3 text-sm text-muted-foreground">
                       ${(() => {
                         const unitCost = form.watch("unitCostExTax") || 0;
-                        const tax = unitCost * 0.10;
-                        return tax.toFixed(2);
+                        const taxRate = estimate?.taxRate ?? 10;
+                        const tax = Math.round(unitCost * taxRate / 100 * 1000) / 1000;
+                        return parseFloat(tax.toFixed(3)).toString();
                       })()}
                     </div>
                   </div>
@@ -5908,24 +5909,25 @@ export default function EstimateDetail() {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                       <Input 
                         type="number" 
-                        step="0.01" 
+                        step="0.001" 
                         min="0"
                         placeholder="Unit cost inc. tax"
                         className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         value={(() => {
                           const unitCost = form.watch("unitCostExTax") || 0;
-                          const incTax = unitCost * 1.10;
-                          return incTax === 0 ? '' : incTax.toFixed(2);
+                          const taxRate = estimate?.taxRate ?? 10;
+                          const incTax = Math.round(unitCost * (1 + taxRate / 100) * 1000) / 1000;
+                          return incTax === 0 ? '' : parseFloat(incTax.toFixed(3)).toString();
                         })()}
                         onChange={(e) => {
                           const value = e.target.value;
                           if (value === '') {
                             form.setValue("unitCostExTax", 0);
                           } else {
+                            const taxRate = estimate?.taxRate ?? 10;
                             const incTax = parseFloat(value) || 0;
-                            const exTax = incTax / 1.10;
-                            const rounded = Math.round(exTax * 100) / 100;
-                            form.setValue("unitCostExTax", rounded);
+                            const exTax = Math.round(incTax / (1 + taxRate / 100) * 1000) / 1000;
+                            form.setValue("unitCostExTax", exTax);
                           }
                         }}
                         data-testid="input-item-unit-cost-inc-tax"
@@ -6585,16 +6587,17 @@ export default function EstimateDetail() {
                     const unitCost = editForm.watch("unitCostExTax") || 0;
                     const markupRaw = editForm.watch("markupPercent");
                     const markup = markupRaw != null ? markupRaw : (editingItem?.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
-                    const taxRate = 10; // 10% GST
+                    const taxRate = estimate?.taxRate ?? 10;
 
-                    const builderCostExTax = Math.round(qty * unitCost * 100) / 100; // in dollars
-                    const builderCostTax = Math.round(builderCostExTax * taxRate) / 100;
-                    const builderCostIncTax = Math.round((builderCostExTax + builderCostTax) * 100) / 100;
+                    const round3 = (n: number) => Math.round(n * 1000) / 1000;
+                    const builderCostExTax = round3(qty * unitCost);
+                    const builderCostTax = round3(builderCostExTax * taxRate / 100);
+                    const builderCostIncTax = round3(builderCostExTax + builderCostTax);
 
-                    const markupAmount = Math.round(builderCostExTax * markup) / 100;
-                    const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-                    const clientTax = Math.round(clientPriceExTax * taxRate) / 100;
-                    const clientPriceIncTax = Math.round((clientPriceExTax + clientTax) * 100) / 100;
+                    const markupAmount = round3(builderCostExTax * markup / 100);
+                    const clientPriceExTax = round3(builderCostExTax + markupAmount);
+                    const clientTax = round3(clientPriceExTax * taxRate / 100);
+                    const clientPriceIncTax = round3(clientPriceExTax + clientTax);
                     
                     return (qty > 0 && unitCost > 0) ? (
                       <div className="p-4 bg-muted/30 rounded-lg border space-y-2">
