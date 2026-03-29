@@ -70,10 +70,6 @@ args = "Start application"
 task = "workflow.run"
 args = "Expo Mobile"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "EAS iOS Build"
-
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -93,17 +89,6 @@ outputType = "console"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "fuser -k 8081/tcp 2>/dev/null; sleep 1; cd expo-mobile && npx expo start --tunnel --port 8081"
-
-[[workflows.workflow]]
-name = "EAS iOS Build"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "rm -rf /home/runner/workspace/.cache/.bun /tmp/runner/eas-cli-nodejs; cd expo-mobile && eas build --platform ios --profile preview --non-interactive --auto-submit"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:1.0.0", "google-calendar:1.0.0", "javascript_object_storage:2.0.0"]
