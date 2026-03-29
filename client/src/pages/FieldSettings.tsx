@@ -996,7 +996,7 @@ export default function FieldSettings() {
   return (
     <div className="flex h-screen bg-background">
       {/* Left Sidebar - Categories */}
-      <div className="w-64 border-r bg-card">
+      <div className="w-64 min-w-0 overflow-hidden border-r bg-card">
         <div className="p-6">
           <Button
             variant="ghost"
@@ -1030,7 +1030,7 @@ export default function FieldSettings() {
                   data-testid={`category-${category.key}`}
                 >
                   <List className="h-4 w-4 flex-shrink-0" />
-                  <span className="text-sm font-medium">{category.label}</span>
+                  <span className="text-sm font-medium truncate">{category.label}</span>
                 </button>
               );
             })}
