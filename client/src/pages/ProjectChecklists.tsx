@@ -225,6 +225,12 @@ export default function ProjectChecklists() {
   const stageFilterId = urlParams.get('scopeStageId');
   const [scopeStageFilter, setScopeStageFilter] = useState<string | null>(stageFilterId);
 
+  // Sync scopeStageFilter when URL location changes (e.g. in-app navigation)
+  useEffect(() => {
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    setScopeStageFilter(params.get('scopeStageId'));
+  }, [location]);
+
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);

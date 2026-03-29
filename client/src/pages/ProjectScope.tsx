@@ -1275,11 +1275,11 @@ function DroppableStage({
                     e.stopPropagation();
                     onNavigateToChecklists?.(stageData.id);
                   }}
-                  title={`${checklistCount} linked checklist${checklistCount !== 1 ? 's' : ''} — click to view`}
+                  title="Click to view linked checklists"
                   data-testid={`badge-stage-checklists-${stageData.id}`}
                 >
                   <ClipboardList className="h-2.5 w-2.5" />
-                  {checklistCount}
+                  {checklistCount} checklist{checklistCount !== 1 ? 's' : ''}
                 </button>
               )}
 
