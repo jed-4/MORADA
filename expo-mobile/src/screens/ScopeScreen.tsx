@@ -19,6 +19,7 @@ interface ScopeStage {
   id: string;
   name: string;
   displayOrder: number;
+  isCompleted: boolean;
 }
 
 interface GearItem {
@@ -188,6 +189,20 @@ export default function ScopeScreen({ navigation, route }: Props) {
     }
   };
 
+  const toggleStageCompletion = async (stage: ScopeStage) => {
+    if (!canEdit) return;
+    const newVal = !stage.isCompleted;
+    setStages(prev => prev.map(s => (s.id === stage.id ? { ...s, isCompleted: newVal } : s)));
+    try {
+      await apiRequest(`/api/scope-stages/${stage.id}`, 'PATCH', {
+        isCompleted: newVal,
+        completedAt: newVal ? new Date().toISOString() : null,
+      });
+    } catch {
+      setStages(prev => prev.map(s => (s.id === stage.id ? { ...s, isCompleted: stage.isCompleted } : s)));
+    }
+  };
+
   const sectionData = stages.map(stage => ({
     stage,
     data: items
@@ -223,7 +238,34 @@ export default function ScopeScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.listContent}
         renderSectionHeader={({ section }) => (
           <View style={[styles.stageHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
-            <Text style={[styles.stageHeaderText, { color: colors.text }]}>{section.stage.name}</Text>
+            <TouchableOpacity
+              onPress={() => toggleStageCompletion(section.stage)}
+              disabled={!canEdit}
+              style={[
+                styles.stageCheckbox,
+                {
+                  borderColor: section.stage.isCompleted ? colors.success : colors.muted,
+                  backgroundColor: section.stage.isCompleted ? colors.success : 'transparent',
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              {section.stage.isCompleted ? (
+                <Ionicons name="checkmark" size={12} color="#fff" />
+              ) : null}
+            </TouchableOpacity>
+            <Text
+              style={[
+                styles.stageHeaderText,
+                {
+                  color: section.stage.isCompleted ? colors.secondary : colors.text,
+                  textDecorationLine: section.stage.isCompleted ? 'line-through' : 'none',
+                  flex: 1,
+                },
+              ]}
+            >
+              {section.stage.name}
+            </Text>
             <Text style={[styles.stageCount, { color: colors.secondary }]}>
               {section.data.filter(i => i.isCompleted).length}/{section.data.length}
             </Text>
@@ -375,6 +417,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
+    gap: 8,
+  },
+  stageCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   stageHeaderText: {
     fontSize: 13,

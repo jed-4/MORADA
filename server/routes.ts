@@ -5321,6 +5321,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Scope stage not found" });
       }
 
+      // Cascade completion: when a stage is marked complete, mark all its items complete too
+      if (validationResult.data.isCompleted === true) {
+        await storage.bulkUpdateScopeItemsInStage(updatedStage.projectId, updatedStage.name, {
+          isCompleted: true,
+          completedAt: new Date(),
+        });
+      } else if (validationResult.data.isCompleted === false) {
+        await storage.bulkUpdateScopeItemsInStage(updatedStage.projectId, updatedStage.name, {
+          isCompleted: false,
+          completedAt: null,
+        });
+      }
+
       res.json(updatedStage);
     } catch (error) {
       console.error("Error updating scope stage:", error);

@@ -59,6 +59,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -126,7 +130,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type TabType = "all" | "upcoming" | "action" | "done";
@@ -262,6 +266,13 @@ export default function ProjectChecklists() {
       if (!res.ok) throw new Error("Failed to fetch checklist groups");
       return res.json();
     },
+    enabled: !!projectId,
+  });
+
+  // Fetch scope stages for this project (for linking)
+  interface ScopeStageRef { id: string; name: string; }
+  const { data: scopeStages = [] } = useQuery<ScopeStageRef[]>({
+    queryKey: [`/api/projects/${projectId}/scope-stages`],
     enabled: !!projectId,
   });
 
@@ -1023,6 +1034,12 @@ export default function ProjectChecklists() {
                         </Tooltip>
                       )}
                     </span>
+                    {instance.scopeStageId && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0" data-testid={`stage-badge-${instance.id}`}>
+                        <Layers className="h-2.5 w-2.5 mr-1" />
+                        {scopeStages.find(s => s.id === instance.scopeStageId)?.name ?? 'Stage'}
+                      </Badge>
+                    )}
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                       {groups.length} checklists
                     </Badge>
@@ -1062,6 +1079,46 @@ export default function ProjectChecklists() {
                             <><Lock className="h-3 w-3 mr-2" />Restrict to Assignee Only</>
                           )}
                         </DropdownMenuItem>
+                        {scopeStages.length > 0 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger onClick={(e) => e.stopPropagation()}>
+                                <Layers className="h-3 w-3 mr-2" />
+                                {instance.scopeStageId
+                                  ? `Stage: ${scopeStages.find(s => s.id === instance.scopeStageId)?.name ?? '—'}`
+                                  : 'Link to Stage'}
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent onClick={(e) => e.stopPropagation()}>
+                                {instance.scopeStageId && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateInstanceMutation.mutate({ id: instance.id, data: { scopeStageId: null } });
+                                    }}
+                                    data-testid={`unlink-stage-${instance.id}`}
+                                  >
+                                    — None (unlink)
+                                  </DropdownMenuItem>
+                                )}
+                                {scopeStages.map(stage => (
+                                  <DropdownMenuItem
+                                    key={stage.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateInstanceMutation.mutate({ id: instance.id, data: { scopeStageId: stage.id } });
+                                    }}
+                                    className={instance.scopeStageId === stage.id ? 'font-medium' : ''}
+                                    data-testid={`link-stage-${instance.id}-${stage.id}`}
+                                  >
+                                    {stage.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={(e) => {

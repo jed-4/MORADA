@@ -7,13 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { FieldOption, FieldCategory, SupplierLabel, PriceListCategory } from "@shared/schema";
+import { FieldOption, FieldCategory, SupplierLabel, PriceListCategory, ScopeItemTypeDefinition, UserRole } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 
@@ -157,10 +158,60 @@ function SortableRow({ option, onEdit, onDelete, onToggleDefault, onToggleComple
   );
 }
 
+interface SortableTypeRowProps {
+  def: ScopeItemTypeDefinition;
+  userRoles: UserRole[];
+  onEdit: (def: ScopeItemTypeDefinition) => void;
+  onDelete: (id: string) => void;
+}
+
+function SortableTypeRow({ def, userRoles, onEdit, onDelete }: SortableTypeRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: def.id,
+    animateLayoutChanges: () => false,
+  });
+
+  const style: React.CSSProperties = {
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  const roles = (def.visibleToRoles as string[]) ?? [];
+  const visibilityText = roles.length === 0
+    ? 'Everyone'
+    : roles.map(rid => userRoles.find(r => r.id === rid)?.name ?? rid).join(', ');
+
+  return (
+    <TableRow ref={setNodeRef} style={style} data-testid={`row-scope-type-${def.id}`}>
+      <TableCell className="w-8">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </TableCell>
+      <TableCell className="font-medium">{def.name}</TableCell>
+      <TableCell className="text-sm text-muted-foreground">{visibilityText}</TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-2">
+          <Button size="icon" variant="ghost" onClick={() => onEdit(def)} data-testid={`button-edit-scope-type-${def.id}`}>
+            <Edit2 className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => onDelete(def.id)} data-testid={`button-delete-scope-type-${def.id}`}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function FieldSettings() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+
   const [showSupplierLabels, setShowSupplierLabels] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
@@ -190,6 +241,28 @@ export default function FieldSettings() {
     description: "",
   });
 
+  // Scope Item Types state
+  const [showScopeItemTypes, setShowScopeItemTypes] = useState(false);
+  const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
+  const [editingTypeDef, setEditingTypeDef] = useState<ScopeItemTypeDefinition | null>(null);
+  const [deletingTypeId, setDeletingTypeId] = useState<string | null>(null);
+  const [activeTypeId, setActiveTypeId] = useState<string | null>(null);
+  const [typeFormData, setTypeFormData] = useState({
+    name: "",
+    visibleToRoles: [] as string[],
+  });
+
+  // Auto-navigate to a section based on ?section= query param
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const section = params.get("section");
+    if (section === "scope") {
+      setShowScopeItemTypes(true);
+      setShowSupplierLabels(false);
+      setShowPriceListCategories(false);
+    }
+  }, []);
+
   // Fetch field categories
   const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
     queryKey: ['/api/field-categories'],
@@ -205,6 +278,18 @@ export default function FieldSettings() {
   const { data: priceListCategories = [] } = useQuery<PriceListCategory[]>({
     queryKey: ['/api/price-list/categories'],
     enabled: showPriceListCategories,
+  });
+
+  // Fetch scope item type definitions
+  const { data: scopeItemTypeDefs = [] } = useQuery<ScopeItemTypeDefinition[]>({
+    queryKey: ['/api/scope-item-types'],
+    enabled: showScopeItemTypes,
+  });
+
+  // Fetch user roles for role visibility settings
+  const { data: userRoles = [] } = useQuery<UserRole[]>({
+    queryKey: ['/api/user-roles'],
+    enabled: showScopeItemTypes,
   });
 
   // Auto-select first category if none selected
@@ -727,6 +812,118 @@ export default function FieldSettings() {
     }
   };
 
+  // Scope Item Type mutations
+  const createTypeMutation = useMutation({
+    mutationFn: async (data: { name: string; visibleToRoles: string[]; displayOrder: number }) => {
+      return await apiRequest('/api/scope-item-types', 'POST', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
+      toast({ title: "Type created", description: "Scope item type created successfully." });
+      setIsTypeDialogOpen(false);
+      setTypeFormData({ name: "", visibleToRoles: [] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create scope item type.", variant: "destructive" });
+    },
+  });
+
+  const updateTypeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; visibleToRoles: string[] } }) => {
+      return await apiRequest(`/api/scope-item-types/${id}`, 'PATCH', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
+      toast({ title: "Type updated", description: "Scope item type updated successfully." });
+      setIsTypeDialogOpen(false);
+      setEditingTypeDef(null);
+      setTypeFormData({ name: "", visibleToRoles: [] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update scope item type.", variant: "destructive" });
+    },
+  });
+
+  const deleteTypeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/scope-item-types/${id}`, 'DELETE');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
+      toast({ title: "Type deleted" });
+      setDeletingTypeId(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete scope item type.", variant: "destructive" });
+    },
+  });
+
+  const reorderTypesMutation = useMutation({
+    mutationFn: async (orderedIds: string[]) => {
+      return await apiRequest('/api/scope-item-types/reorder', 'PATCH', { orderedIds });
+    },
+    onMutate: async (orderedIds) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/scope-item-types'] });
+      const previous = queryClient.getQueryData(['/api/scope-item-types']);
+      queryClient.setQueryData(['/api/scope-item-types'], (old: ScopeItemTypeDefinition[] | undefined) => {
+        if (!old) return old;
+        return orderedIds.map((id, index) => {
+          const def = old.find(d => d.id === id)!;
+          return { ...def, displayOrder: index };
+        });
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['/api/scope-item-types'], context.previous);
+      toast({ title: "Error", description: "Failed to reorder types.", variant: "destructive" });
+    },
+    onSettled: () => {
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] }), 500);
+    },
+  });
+
+  const handleEditType = (def: ScopeItemTypeDefinition) => {
+    setEditingTypeDef(def);
+    setTypeFormData({ name: def.name, visibleToRoles: (def.visibleToRoles as string[]) ?? [] });
+    setIsTypeDialogOpen(true);
+  };
+
+  const handleSubmitType = () => {
+    if (!typeFormData.name.trim()) {
+      toast({ title: "Validation error", description: "Type name is required.", variant: "destructive" });
+      return;
+    }
+    if (editingTypeDef) {
+      updateTypeMutation.mutate({ id: editingTypeDef.id, data: { name: typeFormData.name.trim(), visibleToRoles: typeFormData.visibleToRoles } });
+    } else {
+      createTypeMutation.mutate({ name: typeFormData.name.trim(), visibleToRoles: typeFormData.visibleToRoles, displayOrder: scopeItemTypeDefs.length });
+    }
+  };
+
+  const toggleTypeRole = (roleId: string) => {
+    setTypeFormData(prev => ({
+      ...prev,
+      visibleToRoles: prev.visibleToRoles.includes(roleId)
+        ? prev.visibleToRoles.filter(r => r !== roleId)
+        : [...prev.visibleToRoles, roleId],
+    }));
+  };
+
+  const handleTypeDragStart = (event: DragStartEvent) => {
+    setActiveTypeId(String(event.active.id));
+  };
+
+  const handleTypeDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTypeId(null);
+    if (!over || active.id === over.id) return;
+    const oldIndex = scopeItemTypeDefs.findIndex(d => d.id === active.id);
+    const newIndex = scopeItemTypeDefs.findIndex(d => d.id === over.id);
+    const reordered = arrayMove(scopeItemTypeDefs, oldIndex, newIndex);
+    reorderTypesMutation.mutate(reordered.map(d => d.id));
+  };
+
   const handleEdit = (option: FieldOption) => {
     setEditingOption(option);
     setFormData({
@@ -814,7 +1011,7 @@ export default function FieldSettings() {
           <h1 className="text-2xl font-bold tracking-tight mb-6">Field Settings</h1>
           <nav className="space-y-1">
             {fieldCategories.map((category) => {
-              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showPriceListCategories;
+              const isActive = selectedCategoryId === category.id && !showSupplierLabels && !showPriceListCategories && !showScopeItemTypes;
               
               return (
                 <button
@@ -823,6 +1020,7 @@ export default function FieldSettings() {
                     setSelectedCategoryId(category.id);
                     setShowSupplierLabels(false);
                     setShowPriceListCategories(false);
+                    setShowScopeItemTypes(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                     isActive 
@@ -847,6 +1045,7 @@ export default function FieldSettings() {
               onClick={() => {
                 setShowSupplierLabels(true);
                 setShowPriceListCategories(false);
+                setShowScopeItemTypes(false);
                 setSelectedCategoryId("");
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -870,6 +1069,7 @@ export default function FieldSettings() {
               onClick={() => {
                 setShowPriceListCategories(true);
                 setShowSupplierLabels(false);
+                setShowScopeItemTypes(false);
                 setSelectedCategoryId("");
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
@@ -881,6 +1081,30 @@ export default function FieldSettings() {
             >
               <Tag className="h-4 w-4 flex-shrink-0" />
               <span className="text-sm font-medium">Price List Categories</span>
+            </button>
+
+            <div className="pt-4 pb-2">
+              <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Scope
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowScopeItemTypes(true);
+                setShowSupplierLabels(false);
+                setShowPriceListCategories(false);
+                setSelectedCategoryId("");
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
+                showScopeItemTypes
+                  ? "bg-[#bba7db] text-white"
+                  : "text-muted-foreground hover-elevate"
+              }`}
+              data-testid="category-scope-item-types"
+            >
+              <Layers className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm font-medium">Item Types</span>
             </button>
           </nav>
         </div>
@@ -1213,6 +1437,148 @@ export default function FieldSettings() {
                     </Table>
                   </CardContent>
                 </Card>
+              </div>
+            ) : showScopeItemTypes ? (
+              <div className="space-y-6">
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">Scope Item Types</h1>
+                  <p className="text-muted-foreground mt-2">
+                    Define custom item types for your scope. Control which roles can see each type. An empty role list means the type is visible to everyone.
+                  </p>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                      <CardTitle>Item Types</CardTitle>
+                      <Button onClick={() => { setEditingTypeDef(null); setTypeFormData({ name: "", visibleToRoles: [] }); setIsTypeDialogOpen(true); }} data-testid="button-add-scope-type">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Type
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {scopeItemTypeDefs.length === 0 ? (
+                      <div className="text-center text-muted-foreground py-8 text-sm">
+                        No custom item types configured. Click "Add Type" to create one.
+                      </div>
+                    ) : (
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragStart={(e) => setActiveTypeId(String(e.active.id))}
+                        onDragEnd={handleTypeDragEnd}
+                      >
+                        <SortableContext items={scopeItemTypeDefs.map(d => d.id)} strategy={verticalListSortingStrategy}>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-8"></TableHead>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Visibility</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {scopeItemTypeDefs.map((def) => (
+                                <SortableTypeRow
+                                  key={def.id}
+                                  def={def}
+                                  userRoles={userRoles}
+                                  onEdit={handleEditType}
+                                  onDelete={(id) => setDeletingTypeId(id)}
+                                />
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </SortableContext>
+                        <DragOverlay>
+                          {activeTypeId ? (
+                            <div className="bg-card border rounded shadow-lg px-4 py-2 text-sm font-medium">
+                              {scopeItemTypeDefs.find(d => d.id === activeTypeId)?.name}
+                            </div>
+                          ) : null}
+                        </DragOverlay>
+                      </DndContext>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Add/Edit Type Dialog */}
+                <Dialog open={isTypeDialogOpen} onOpenChange={(open) => {
+                  if (!open) { setEditingTypeDef(null); setTypeFormData({ name: "", visibleToRoles: [] }); }
+                  setIsTypeDialogOpen(open);
+                }}>
+                  <DialogContent data-testid="dialog-scope-type-form">
+                    <DialogHeader>
+                      <DialogTitle>{editingTypeDef ? "Edit Item Type" : "Add Item Type"}</DialogTitle>
+                      <DialogDescription>
+                        {editingTypeDef ? "Update the item type details." : "Create a new scope item type."}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="type-name">Type Name</Label>
+                        <Input
+                          id="type-name"
+                          value={typeFormData.name}
+                          onChange={(e) => setTypeFormData({ ...typeFormData, name: e.target.value })}
+                          placeholder="e.g., Proposal, Safety Notice"
+                          data-testid="input-scope-type-name"
+                        />
+                      </div>
+                      {userRoles.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Visible to roles (empty = everyone)</Label>
+                          <div className="flex flex-wrap gap-3">
+                            {userRoles.map((role) => (
+                              <label key={role.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                                <Checkbox
+                                  checked={typeFormData.visibleToRoles.includes(role.id)}
+                                  onCheckedChange={() => toggleTypeRole(role.id)}
+                                  data-testid={`checkbox-role-${role.id}`}
+                                />
+                                {role.name}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsTypeDialogOpen(false)}>Cancel</Button>
+                      <Button
+                        onClick={handleSubmitType}
+                        disabled={!typeFormData.name.trim() || createTypeMutation.isPending || updateTypeMutation.isPending}
+                        data-testid="button-save-scope-type"
+                      >
+                        {editingTypeDef ? "Update" : "Create"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Delete Type Confirmation */}
+                <AlertDialog open={!!deletingTypeId} onOpenChange={(open) => !open && setDeletingTypeId(null)}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Type</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete the type "{scopeItemTypeDefs.find(d => d.id === deletingTypeId)?.name}"? Existing items with this type will not be deleted but may not display correctly.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => deletingTypeId && deleteTypeMutation.mutate(deletingTypeId)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        data-testid="button-confirm-delete-scope-type"
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ) : selectedCategory ? (
               <div className="space-y-6">

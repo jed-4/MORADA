@@ -447,6 +447,7 @@ export interface IStorage {
   createScopeItem(item: InsertScopeItem): Promise<ScopeItem>;
   bulkCreateScopeItems(items: InsertScopeItem[]): Promise<ScopeItem[]>;
   updateScopeItem(id: string, item: Partial<InsertScopeItem>): Promise<ScopeItem | undefined>;
+  bulkUpdateScopeItemsInStage(projectId: string, stageName: string, update: Partial<InsertScopeItem>): Promise<void>;
   deleteScopeItem(id: string): Promise<boolean>;
   reorderScopeItems(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void>;
   
@@ -10877,6 +10878,19 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in updateScopeItem:", error);
       return undefined;
+    }
+  }
+
+  async bulkUpdateScopeItemsInStage(projectId: string, stageName: string, update: Partial<InsertScopeItem>): Promise<void> {
+    try {
+      await db.update(schema.scopeItems)
+        .set({ ...update, updatedAt: new Date() })
+        .where(and(
+          eq(schema.scopeItems.projectId, projectId),
+          eq(schema.scopeItems.stage, stageName),
+        ));
+    } catch (error) {
+      console.error("Database error in bulkUpdateScopeItemsInStage:", error);
     }
   }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, CSSProperties } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -1565,6 +1565,7 @@ type ChecklistItem = {
 
 export default function ProjectScope() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [, navigate] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Scope" });
@@ -1603,8 +1604,6 @@ export default function ProjectScope() {
   const [newStageName, setNewStageName] = useState("");
   const [addStageAfterId, setAddStageAfterId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
-  const [isConfigureTypesOpen, setIsConfigureTypesOpen] = useState(false);
-
   // Import from Estimate state
   const [isImportFromEstimateOpen, setIsImportFromEstimateOpen] = useState(false);
   const [selectedEstimateForImport, setSelectedEstimateForImport] = useState<string | null>(null);
@@ -1683,12 +1682,6 @@ export default function ProjectScope() {
     }
   }, [scopeItemTypeDefs]);
 
-  // Fetch user roles (for admin type config)
-  interface UserRoleData { id: string; name: string; }
-  const { data: allUserRoles = [] } = useQuery<UserRoleData[]>({
-    queryKey: ['/api/user-roles'],
-    enabled: !!user,
-  });
 
   // Fetch scope stages
   const { data: scopeStages = [], isLoading: isLoadingStages } = useQuery<ScopeStage[]>({
@@ -2787,12 +2780,12 @@ export default function ProjectScope() {
             </TooltipContent>
           </Tooltip>
 
-          {/* Configure Types — admin only */}
+          {/* Configure Types — admin only — links to Field Settings */}
           {isAdmin && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => setIsConfigureTypesOpen(true)}
+                  onClick={() => navigate("/field-settings?section=scope")}
                   className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                   data-testid="button-configure-types"
                 >
@@ -3588,260 +3581,7 @@ export default function ProjectScope() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Configure Scope Item Types Dialog — admin only */}
-      {isAdmin && (
-        <ConfigureTypesDialog
-          open={isConfigureTypesOpen}
-          onOpenChange={setIsConfigureTypesOpen}
-          typeDefs={scopeItemTypeDefs}
-          allUserRoles={allUserRoles}
-        />
-      )}
     </div>
   );
 }
 
-// --- ConfigureTypesDialog component ---
-interface ConfigureTypesDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  typeDefs: ScopeItemTypeDefinition[];
-  allUserRoles: { id: string; name: string }[];
-}
-
-function ConfigureTypesDialog({ open, onOpenChange, typeDefs, allUserRoles }: ConfigureTypesDialogProps) {
-  const { toast } = useToast();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editRoles, setEditRoles] = useState<string[]>([]);
-  const [newName, setNewName] = useState('');
-  const [newRoles, setNewRoles] = useState<string[]>([]);
-  const [deletingTypeId, setDeletingTypeId] = useState<string | null>(null);
-
-  const reorderMutation = useMutation({
-    mutationFn: (orderedIds: string[]) =>
-      apiRequest('/api/scope-item-types/reorder', 'PATCH', { orderedIds }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
-    },
-    onError: () => toast({ title: 'Failed to reorder types', variant: 'destructive' }),
-  });
-
-  const moveType = (index: number, direction: 'up' | 'down') => {
-    const sorted = [...typeDefs];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= sorted.length) return;
-    [sorted[index], sorted[newIndex]] = [sorted[newIndex], sorted[index]];
-    reorderMutation.mutate(sorted.map(d => d.id));
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (data: { name: string; visibleToRoles: string[]; displayOrder: number }) =>
-      apiRequest('/api/scope-item-types', 'POST', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
-      setNewName('');
-      setNewRoles([]);
-      toast({ title: 'Type created' });
-    },
-    onError: () => toast({ title: 'Failed to create type', variant: 'destructive' }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name: string; visibleToRoles: string[] } }) =>
-      apiRequest(`/api/scope-item-types/${id}`, 'PATCH', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
-      setEditingId(null);
-      toast({ title: 'Type updated' });
-    },
-    onError: () => toast({ title: 'Failed to update type', variant: 'destructive' }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/scope-item-types/${id}`, 'DELETE'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scope-item-types'] });
-      setDeletingTypeId(null);
-      toast({ title: 'Type deleted' });
-    },
-    onError: () => toast({ title: 'Failed to delete type', variant: 'destructive' }),
-  });
-
-  const startEdit = (def: ScopeItemTypeDefinition) => {
-    setEditingId(def.id);
-    setEditName(def.name);
-    setEditRoles((def.visibleToRoles as string[]) ?? []);
-  };
-
-  const toggleRole = (roles: string[], setRoles: (r: string[]) => void, roleId: string) => {
-    if (roles.includes(roleId)) {
-      setRoles(roles.filter(r => r !== roleId));
-    } else {
-      setRoles([...roles, roleId]);
-    }
-  };
-
-  return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Configure Scope Item Types</DialogTitle>
-            <DialogDescription>
-              Manage which item types appear in the scope and control which roles can see each type. An empty role list means the type is visible to everyone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-            {typeDefs.map((def, index) => (
-              <div key={def.id} className="border border-border/50 rounded-md p-3 space-y-2">
-                {editingId === def.id ? (
-                  <>
-                    <Input
-                      value={editName}
-                      onChange={e => setEditName(e.target.value)}
-                      placeholder="Type name"
-                      data-testid={`input-edit-type-name-${def.id}`}
-                    />
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Visible to roles (empty = everyone):</p>
-                      <div className="flex flex-wrap gap-2">
-                        {allUserRoles.map(role => (
-                          <label key={role.id} className="flex items-center gap-1 text-sm cursor-pointer">
-                            <Checkbox
-                              checked={editRoles.includes(role.id)}
-                              onCheckedChange={() => toggleRole(editRoles, setEditRoles, role.id)}
-                            />
-                            {role.name}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => updateMutation.mutate({ id: def.id, data: { name: editName.trim(), visibleToRoles: editRoles } })}
-                        disabled={!editName.trim() || updateMutation.isPending}
-                        data-testid={`button-save-type-${def.id}`}
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1">
-                      <div className="flex flex-col gap-0.5">
-                        <button
-                          onClick={() => moveType(index, 'up')}
-                          disabled={index === 0 || reorderMutation.isPending}
-                          className="flex items-center justify-center text-muted-foreground hover-elevate active-elevate-2 disabled:opacity-30"
-                          data-testid={`button-move-up-type-${def.id}`}
-                        >
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => moveType(index, 'down')}
-                          disabled={index === typeDefs.length - 1 || reorderMutation.isPending}
-                          className="flex items-center justify-center text-muted-foreground hover-elevate active-elevate-2 disabled:opacity-30"
-                          data-testid={`button-move-down-type-${def.id}`}
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">{def.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {((def.visibleToRoles as string[])?.length ?? 0) === 0
-                            ? 'Visible to everyone'
-                            : `Restricted to: ${(def.visibleToRoles as string[]).map(rid => allUserRoles.find(r => r.id === rid)?.name ?? rid).join(', ')}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => startEdit(def)} data-testid={`button-edit-type-${def.id}`}>
-                        <Pen className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => setDeletingTypeId(def.id)}
-                        data-testid={`button-delete-type-${def.id}`}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Add new type */}
-            <div className="border border-dashed border-border/50 rounded-md p-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Add new type</p>
-              <Input
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                placeholder="e.g., Safety Notice"
-                data-testid="input-new-type-name"
-              />
-              {allUserRoles.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Visible to roles (empty = everyone):</p>
-                  <div className="flex flex-wrap gap-2">
-                    {allUserRoles.map(role => (
-                      <label key={role.id} className="flex items-center gap-1 text-sm cursor-pointer">
-                        <Checkbox
-                          checked={newRoles.includes(role.id)}
-                          onCheckedChange={() => toggleRole(newRoles, setNewRoles, role.id)}
-                        />
-                        {role.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <Button
-                size="sm"
-                onClick={() => createMutation.mutate({ name: newName.trim(), visibleToRoles: newRoles, displayOrder: typeDefs.length })}
-                disabled={!newName.trim() || createMutation.isPending}
-                data-testid="button-create-type"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add Type
-              </Button>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete type confirmation */}
-      <AlertDialog open={!!deletingTypeId} onOpenChange={(open) => !open && setDeletingTypeId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Type</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the type "{typeDefs.find(d => d.id === deletingTypeId)?.name}"? Existing items with this type will not be deleted but may not display correctly.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deletingTypeId && deleteMutation.mutate(deletingTypeId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-confirm-delete-type"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
-}

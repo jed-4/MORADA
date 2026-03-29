@@ -2733,6 +2733,7 @@ export const checklistInstances = pgTable("checklist_instances", {
   notes: text("notes"),
   triggeredByStatus: text("triggered_by_status"), // Which project status triggered this
   visibility: text("visibility").notNull().default("everyone"), // "everyone" | "assignee_only"
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -3508,6 +3509,11 @@ export const scopeStages = pgTable("scope_stages", {
   
   // Inline stage-specific checklist (simple yes/no items)
   checklist: json("checklist").default([]), // Array of {id, text, completed} items
+  
+  // Stage completion
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
