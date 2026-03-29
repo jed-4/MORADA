@@ -996,7 +996,7 @@ export default function FieldSettings() {
   return (
     <div className="flex h-screen bg-background">
       {/* Left Sidebar - Categories */}
-      <div className="w-64 min-w-0 overflow-hidden border-r bg-card">
+      <div className="w-64 min-w-0 overflow-x-hidden overflow-y-auto border-r bg-card">
         <div className="p-6">
           <Button
             variant="ghost"
