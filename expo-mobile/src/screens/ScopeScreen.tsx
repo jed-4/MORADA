@@ -98,6 +98,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', success: '#22c55e' }
@@ -200,6 +201,12 @@ export default function ScopeScreen({ navigation, route }: Props) {
         item.stage === stage.name ? { ...item, isCompleted: newVal } : item
       )
     );
+    // Collapse the stage when marking complete, expand when uncompleting
+    if (newVal) {
+      setCollapsedStages(prev => new Set([...prev, stage.id]));
+    } else {
+      setCollapsedStages(prev => { const next = new Set(prev); next.delete(stage.id); return next; });
+    }
     try {
       await apiRequest(`/api/scope-stages/${stage.id}`, 'PATCH', {
         isCompleted: newVal,
@@ -213,15 +220,26 @@ export default function ScopeScreen({ navigation, route }: Props) {
           item.stage === stage.name ? { ...item, isCompleted: !newVal } : item
         )
       );
+      // Rollback collapse state
+      if (newVal) {
+        setCollapsedStages(prev => { const next = new Set(prev); next.delete(stage.id); return next; });
+      } else {
+        setCollapsedStages(prev => new Set([...prev, stage.id]));
+      }
     }
   };
 
-  const sectionData = stages.map(stage => ({
-    stage,
-    data: items
+  const sectionData = stages.map(stage => {
+    const stageItems = items
       .filter(item => item.stage === stage.name && !item.parentId && isItemVisible(item))
-      .sort((a, b) => a.displayOrder - b.displayOrder),
-  })).filter(s => s.data.length > 0);
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+    return {
+      stage,
+      allItemCount: stageItems.length,
+      // Show no items if collapsed (but keep section header visible)
+      data: collapsedStages.has(stage.id) ? [] : stageItems,
+    };
+  }).filter(s => s.allItemCount > 0 || s.stage.isCompleted);
 
   if (loading) {
     return (
@@ -249,41 +267,62 @@ export default function ScopeScreen({ navigation, route }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         stickySectionHeadersEnabled
         contentContainerStyle={styles.listContent}
-        renderSectionHeader={({ section }) => (
-          <View style={[styles.stageHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
+        renderSectionHeader={({ section }) => {
+          const isCollapsed = collapsedStages.has(section.stage.id);
+          const completedCount = items.filter(i => i.stage === section.stage.name && i.isCompleted).length;
+          return (
             <TouchableOpacity
-              onPress={() => toggleStageCompletion(section.stage)}
-              disabled={!canEdit}
-              style={[
-                styles.stageCheckbox,
-                {
-                  borderColor: section.stage.isCompleted ? colors.success : colors.muted,
-                  backgroundColor: section.stage.isCompleted ? colors.success : 'transparent',
-                },
-              ]}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
+              onPress={() => {
+                setCollapsedStages(prev => {
+                  const next = new Set(prev);
+                  if (next.has(section.stage.id)) { next.delete(section.stage.id); } else { next.add(section.stage.id); }
+                  return next;
+                });
+              }}
             >
-              {section.stage.isCompleted ? (
-                <Ionicons name="checkmark" size={12} color="#fff" />
-              ) : null}
+              <View style={[styles.stageHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
+                <TouchableOpacity
+                  onPress={() => toggleStageCompletion(section.stage)}
+                  disabled={!canEdit}
+                  style={[
+                    styles.stageCheckbox,
+                    {
+                      borderColor: section.stage.isCompleted ? colors.success : colors.muted,
+                      backgroundColor: section.stage.isCompleted ? colors.success : 'transparent',
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  {section.stage.isCompleted ? (
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  ) : null}
+                </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.stageHeaderText,
+                    {
+                      color: section.stage.isCompleted ? colors.secondary : colors.text,
+                      textDecorationLine: section.stage.isCompleted ? 'line-through' : 'none',
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  {section.stage.name}
+                </Text>
+                <Text style={[styles.stageCount, { color: colors.secondary }]}>
+                  {completedCount}/{section.allItemCount}
+                </Text>
+                <Ionicons
+                  name={isCollapsed ? "chevron-forward" : "chevron-down"}
+                  size={16}
+                  color={colors.secondary}
+                  style={{ marginLeft: 4 }}
+                />
+              </View>
             </TouchableOpacity>
-            <Text
-              style={[
-                styles.stageHeaderText,
-                {
-                  color: section.stage.isCompleted ? colors.secondary : colors.text,
-                  textDecorationLine: section.stage.isCompleted ? 'line-through' : 'none',
-                  flex: 1,
-                },
-              ]}
-            >
-              {section.stage.name}
-            </Text>
-            <Text style={[styles.stageCount, { color: colors.secondary }]}>
-              {section.data.filter(i => i.isCompleted).length}/{section.data.length}
-            </Text>
-          </View>
-        )}
+          );
+        }}
         renderItem={({ item }) => {
           const expanded = expandedItems.has(item.id);
           const typeKey = item.itemType || 'scope';

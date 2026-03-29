@@ -214,12 +214,17 @@ function ActivityLogContent({ instanceId }: { instanceId: string }) {
 
 export default function ProjectChecklists() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
   const userDisplayName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown' : 'Unknown';
   const pageTitle = usePageTitle({ pageName: "Checklists" });
-  
+
+  // Read scopeStageId from URL params for stage-filtered view
+  const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const stageFilterId = urlParams.get('scopeStageId');
+  const [scopeStageFilter, setScopeStageFilter] = useState<string | null>(stageFilterId);
+
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -760,14 +765,19 @@ export default function ProjectChecklists() {
     // When filtering by tab/search/assignee/hideCompleted, only show instances that have matching groups
     // But on "all" tab with no filters, show all instances including empty ones
     const hasFilters = activeTab !== "all" || searchTerm || assigneeFilter !== "all" || hideCompleted;
-    const filtered = hasFilters 
+    let filtered = hasFilters 
       ? result.filter(({ groups }) => groups.length > 0)
       : result;
+
+    // Apply scopeStageFilter if set
+    if (scopeStageFilter) {
+      filtered = filtered.filter(({ instance }) => instance.scopeStageId === scopeStageFilter);
+    }
     
     return filtered.sort((a, b) => 
       a.instance.name.localeCompare(b.instance.name)
     );
-  }, [filteredGroups, instances, activeTab, searchTerm, assigneeFilter]);
+  }, [filteredGroups, instances, activeTab, searchTerm, assigneeFilter, scopeStageFilter]);
 
   const allCount = allGroups.length;
   const upcomingCount = allGroups.filter(g => g.status === "active").length;
@@ -978,6 +988,27 @@ export default function ProjectChecklists() {
           </button>
         </div>
       </div>
+
+      {/* Stage filter banner */}
+      {scopeStageFilter && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-muted/60 border-b text-sm">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="text-muted-foreground">Filtered by stage:</span>
+          <span className="font-medium">{scopeStages.find(s => s.id === scopeStageFilter)?.name ?? scopeStageFilter}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 px-2 text-xs"
+            onClick={() => {
+              setScopeStageFilter(null);
+              navigate(location.replace(/[?&]scopeStageId=[^&]*/g, '').replace(/[?&]$/, '').replace(/^&/, '?'));
+            }}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">

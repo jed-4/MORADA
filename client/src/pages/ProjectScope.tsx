@@ -58,6 +58,7 @@ import {
   X,
   AlignLeft,
   Settings,
+  ClipboardList,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -1066,6 +1067,8 @@ interface DroppableStageProps {
   showDescriptionInline?: boolean; // Show descriptions inline instead of hover
   dropTarget?: { id: string; position: 'above' | 'below' } | null; // Drop indicator target
   onToggleStageComplete?: (stageId: string, isCompleted: boolean) => void; // Stage completion
+  checklistCount?: number; // Number of checklist instances linked to this stage
+  onNavigateToChecklists?: (stageId: string) => void; // Navigate to checklists filtered by stage
 }
 
 function DroppableStage({ 
@@ -1101,6 +1104,8 @@ function DroppableStage({
   onViewScheduleItem, // Handler to view schedule item details
   dropTarget, // Drop indicator target
   onToggleStageComplete, // Stage completion toggle
+  checklistCount = 0, // Linked checklists count
+  onNavigateToChecklists, // Navigate to filtered checklists
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1259,6 +1264,22 @@ function DroppableStage({
                 <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20">
                   {items.length}
                 </span>
+              )}
+
+              {/* Linked Checklists Badge */}
+              {checklistCount > 0 && (
+                <button
+                  className="h-4 px-1.5 text-[10px] font-semibold rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/40 flex items-center gap-0.5 hover-elevate"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToChecklists?.(stageData.id);
+                  }}
+                  title={`${checklistCount} linked checklist${checklistCount !== 1 ? 's' : ''} — click to view`}
+                  data-testid={`badge-stage-checklists-${stageData.id}`}
+                >
+                  <ClipboardList className="h-2.5 w-2.5" />
+                  {checklistCount}
+                </button>
               )}
 
               {/* Total Value */}
@@ -1798,6 +1819,28 @@ export default function ProjectScope() {
     return grouped;
   }, [projectScheduleItems]);
 
+  // Fetch checklist instances for this project (used for per-stage badge count)
+  const { data: projectChecklistInstances = [] } = useQuery<{ id: string; name: string; scopeStageId: string | null }[]>({
+    queryKey: ['/api/checklist-instances', { projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/checklist-instances?projectId=${projectId}`, { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  // Count checklists per stage
+  const checklistCountByStage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    projectChecklistInstances.forEach(inst => {
+      if (inst.scopeStageId) {
+        counts[inst.scopeStageId] = (counts[inst.scopeStageId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [projectChecklistInstances]);
+
   // Initialize default stages if empty
   const initializeStagesMutation = useMutation({
     mutationFn: async () => {
@@ -1898,6 +1941,10 @@ export default function ProjectScope() {
   const handleToggleStageComplete = (stageId: string, isCompleted: boolean) => {
     toggleStageCompleteMutation.mutate({ id: stageId, isCompleted });
   };
+
+  const handleNavigateToChecklists = useCallback((stageId: string) => {
+    navigate(`/projects/${projectId}/checklists?scopeStageId=${stageId}`);
+  }, [navigate, projectId]);
 
   // Delete stage mutation
   const deleteStageMutation = useMutation({
@@ -3228,6 +3275,8 @@ export default function ProjectScope() {
                       showDescriptionInline={showDescriptionInline}
                       dropTarget={dropTarget}
                       onToggleStageComplete={handleToggleStageComplete}
+                      checklistCount={checklistCountByStage[stage.id] || 0}
+                      onNavigateToChecklists={handleNavigateToChecklists}
                     />
                   ))}
               </SortableContext>
