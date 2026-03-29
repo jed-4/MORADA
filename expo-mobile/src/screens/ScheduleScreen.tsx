@@ -238,6 +238,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const isProjectContext = !!route?.params?.projectId;
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -1909,16 +1910,18 @@ export default function ScheduleScreen({ navigation, route }: Props) {
           ))}
         </View>
 
-        <TouchableOpacity
-          style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
-          onPress={() => setShowProjectPicker(true)}
-        >
-          <Ionicons name="folder-outline" size={15} color={colors.accent} />
-          <Text style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
-            {getSelectedProjectLabel()}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={colors.secondary} />
-        </TouchableOpacity>
+        {!isProjectContext && (
+          <TouchableOpacity
+            style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
+            onPress={() => setShowProjectPicker(true)}
+          >
+            <Ionicons name="folder-outline" size={15} color={colors.accent} />
+            <Text style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
+              {getSelectedProjectLabel()}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={colors.secondary} />
+          </TouchableOpacity>
+        )}
 
         {viewMode === 'gantt' && (
           <View style={{ position: 'relative', zIndex: 200 }}>
@@ -1960,7 +1963,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      {!selectedProjectId ? (
+      {!selectedProjectId && !isProjectContext ? (
         <View style={[styles.flex1, styles.center]}>
           <Ionicons name="folder-open-outline" size={56} color={colors.secondary} />
           <Text style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
