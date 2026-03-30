@@ -3615,6 +3615,11 @@ export default function EstimateDetail() {
       }
     }
     
+    // Active editing row highlight
+    if (editingCell?.itemId === item.id) {
+      itemClassName += " bg-primary/[0.04]";
+    }
+
     // Calculate drop indicator for this item
     const itemDropIndicator = dropTarget?.id === item.id ? dropTarget.position : undefined;
     
@@ -3899,12 +3904,16 @@ export default function EstimateDetail() {
     
     // Common grid cell base class
     const cellBase = "h-9 px-2 flex items-center text-sm overflow-hidden";
+    // Active cell: inset ring on the cell container (not on the input itself)
+    const cellActive = "ring-1 ring-inset ring-primary/60 rounded-[2px]";
+    // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
+    const cellEditable = !isLocked ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer" : "";
 
     switch (columnId) {
       case 'costCode':
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <CostCodeSelect
                 value={editingValue || ''}
                 onValueChange={(value) => {
@@ -3917,7 +3926,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
                 placeholder="None"
-                triggerClassName="h-8 text-sm border-primary"
+                triggerClassName="h-8 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent"
                 data-testid={`select-edit-costCode-${item.id}`}
               />
             </div>
@@ -3927,7 +3936,7 @@ export default function EstimateDetail() {
         const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
         return (
           <div 
-            className={`${cellBase} truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} truncate ${cellEditable}`}
             role="gridcell"
             title={isLocked ? displayCode : 'Click to edit'}
             onClick={(e) => {
@@ -3943,7 +3952,7 @@ export default function EstimateDetail() {
       case 'costCategoryId': {
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Select
                 value={editingValue || 'none'}
                 onValueChange={(value) => {
@@ -3956,7 +3965,7 @@ export default function EstimateDetail() {
                   setEditingCell(null);
                 }}
               >
-                <SelectTrigger className="h-8 text-sm" data-testid={`select-edit-costCategoryId-${item.id}`}>
+                <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent" data-testid={`select-edit-costCategoryId-${item.id}`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -3973,7 +3982,7 @@ export default function EstimateDetail() {
         const displayCat = matchedCat ? `${matchedCat.code} - ${matchedCat.title}` : ((item as any).costCategoryId ? (item as any).costCategoryId : '-');
         return (
           <div
-            className={`${cellBase} truncate text-xs ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} truncate text-xs ${cellEditable}`}
             role="gridcell"
             onClick={(e) => { e.stopPropagation(); if (!isLocked) handleCellEdit(item, 'costCategoryId'); }}
             data-testid={`cell-costCategoryId-${item.id}`}
@@ -4016,7 +4025,7 @@ export default function EstimateDetail() {
         }
         return (
           <div
-            className={`${cellBase} ${!isLocked ? 'cursor-pointer' : ''}`}
+            className={`${cellBase} ${cellEditable}`}
             role="gridcell"
             onClick={(e) => { e.stopPropagation(); if (!isLocked) handleCellEdit(item, 'type'); }}
             data-testid={`cell-type-${item.id}`}
@@ -4037,13 +4046,13 @@ export default function EstimateDetail() {
         
         if (isEditing) {
           return (
-            <div className={`${cellBase} ${indentClass}`} role="gridcell">
+            <div className={`${cellBase} ${indentClass} ${cellActive}`} role="gridcell">
               <Input
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
                 onBlur={() => handleCellSave(item, 'name')}
-                className="h-8 text-sm border-primary focus-visible:ring-0"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
@@ -4076,7 +4085,7 @@ export default function EstimateDetail() {
                 </Button>
               )}
               <span 
-                className="font-medium truncate max-w-[180px] block cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 text-[12px]"
+                className={`font-medium truncate max-w-[180px] block text-[12px] ${!isLocked ? 'cursor-pointer' : ''}`}
                 title={isLocked ? item.name : 'Click to edit'}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -4111,7 +4120,7 @@ export default function EstimateDetail() {
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
                 <div 
-                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
+                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!isLocked) {
@@ -4315,14 +4324,14 @@ export default function EstimateDetail() {
       case 'quantity':
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
                 onBlur={() => handleCellSave(item, 'quantity')}
-                className="h-8 text-sm border-primary focus-visible:ring-0"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4339,7 +4348,7 @@ export default function EstimateDetail() {
         
         return (
           <div 
-            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} ${cellEditable}`}
             role="gridcell"
             title={isLocked ? '' : `Click to edit (Base: ${baseQuantity.toFixed(2).replace(/\.?0+$/, '')}${wastage > 0 ? `, +${wastage}% waste` : ''})`}
             onClick={(e) => {
@@ -4392,7 +4401,7 @@ export default function EstimateDetail() {
       case 'unitType':
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Select
                 value={editingValue}
                 onValueChange={(value) => {
@@ -4406,7 +4415,7 @@ export default function EstimateDetail() {
                 }}
                 data-testid={`select-edit-unitType-${item.id}`}
               >
-                <SelectTrigger className="h-8 text-sm border-primary focus-visible:ring-0">
+                <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent">
                   <SelectValue placeholder="Unit" />
                 </SelectTrigger>
                 <SelectContent>
@@ -4425,7 +4434,7 @@ export default function EstimateDetail() {
         }
         return (
           <div 
-            className={`${cellBase} truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} truncate ${cellEditable}`}
             role="gridcell"
             title={isLocked ? item.unitType || '' : 'Click to edit'}
             onClick={(e) => {
@@ -4441,14 +4450,14 @@ export default function EstimateDetail() {
       case 'unitCostExTax':
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
                 onBlur={() => handleCellSave(item, 'unitCostExTax')}
-                className="h-8 text-sm border-primary focus-visible:ring-0"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4459,7 +4468,7 @@ export default function EstimateDetail() {
         }
         return (
           <div 
-            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} ${cellEditable}`}
             role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
@@ -4477,14 +4486,14 @@ export default function EstimateDetail() {
         
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
                 onBlur={() => handleCellSave(item, 'unitCostIncTax')}
-                className="h-8 text-sm border-primary focus-visible:ring-0"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -4495,7 +4504,7 @@ export default function EstimateDetail() {
         }
         return (
           <div 
-            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} ${cellEditable}`}
             role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
@@ -4525,14 +4534,14 @@ export default function EstimateDetail() {
       case 'markup':
         if (isEditing) {
           return (
-            <div className={cellBase} role="gridcell">
+            <div className={`${cellBase} ${cellActive}`} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'markup')}
                 onBlur={() => handleCellSave(item, 'markup')}
-                className="h-8 text-sm border-primary focus-visible:ring-0"
+                className="h-full w-full bg-transparent border-0 shadow-none focus-visible:ring-0 text-sm"
                 autoFocus
                 min="0"
                 step="1"
@@ -4543,7 +4552,7 @@ export default function EstimateDetail() {
         }
         return (
           <div 
-            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`${cellBase} ${cellEditable}`}
             role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {

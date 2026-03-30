@@ -234,27 +234,30 @@ function SortableRow({
     gridTemplateColumns: GRID_TEMPLATE,
   };
 
-  const isEditing = (field: string) => editingCell?.itemId === item.id && editingCell?.field === field;
+  const isEditingField = (field: string) => editingCell?.itemId === item.id && editingCell?.field === field;
+  const isRowActive = editingCell?.itemId === item.id;
 
   const amount = calcLineAmount(item);
 
   const editableCell = (field: string, value: string, align: "left" | "right" = "left", placeholder = "") => {
-    if (isEditing(field)) {
+    if (isEditingField(field)) {
       return (
-        <input
-          autoFocus
-          className="w-full h-full bg-background border border-ring rounded px-1 text-xs focus:outline-none"
-          style={{ textAlign: align }}
-          value={editingValue}
-          onChange={(e) => onCellChange(e.target.value)}
-          onBlur={onCellBlur}
-          onKeyDown={onCellKeyDown}
-        />
+        <div className="w-full h-full ring-1 ring-inset ring-primary/60 rounded-[2px] flex items-center">
+          <input
+            autoFocus
+            className="w-full h-full bg-transparent border-0 outline-none px-1 text-xs"
+            style={{ textAlign: align }}
+            value={editingValue}
+            onChange={(e) => onCellChange(e.target.value)}
+            onBlur={onCellBlur}
+            onKeyDown={onCellKeyDown}
+          />
+        </div>
       );
     }
     return (
       <div
-        className="w-full h-full flex items-center px-1 cursor-pointer rounded hover:bg-muted/40 transition-colors"
+        className="w-full h-full flex items-center px-1 cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors"
         style={{ justifyContent: align === "right" ? "flex-end" : "flex-start" }}
         onClick={() => onCellClick(item, field)}
         title="Click to edit"
@@ -272,7 +275,7 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="grid items-center min-h-[32px] border-b border-border/50 hover:bg-muted/20 group"
+      className={`grid items-center min-h-[32px] border-b border-border/50 hover:bg-muted/20 group ${isRowActive ? 'bg-primary/[0.04]' : ''}`}
     >
       {/* Drag handle */}
       <div
@@ -307,7 +310,7 @@ function SortableRow({
           </div>
         ) : (
           <div
-            className="w-full flex items-center cursor-pointer h-full px-1 rounded hover:bg-muted/40"
+            className="w-full flex items-center cursor-pointer h-full px-1 border-b border-transparent hover:border-primary/30 transition-colors"
             onClick={() => onCellClick(item, "costCode")}
           >
             {item.costCodeTitle ? (
