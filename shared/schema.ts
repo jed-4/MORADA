@@ -3529,6 +3529,14 @@ const scopeStageChecklistItemSchema = z.object({
   completed: z.boolean(),
 });
 
+const scopeStageAttachmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  objectPath: z.string(),
+  size: z.number(),
+  uploadedAt: z.string(),
+}).passthrough();
+
 export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
   id: true,
   companyId: true,
@@ -3537,6 +3545,7 @@ export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
 }).extend({
   name: z.string().min(1, "Stage name is required"),
   checklist: z.array(scopeStageChecklistItemSchema).optional(),
+  attachments: z.array(scopeStageAttachmentSchema).optional(),
 });
 
 export type InsertScopeStage = z.infer<typeof insertScopeStageSchema>;
@@ -4035,6 +4044,9 @@ export const taskTemplates = pgTable("task_templates", {
   tagIds: json("tag_ids").default([]), // Array of task tag IDs from task_tags table
   estimatedDuration: integer("estimated_duration"), // Estimated minutes to complete
   
+  // Scope stage link
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

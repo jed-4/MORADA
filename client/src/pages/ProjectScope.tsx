@@ -65,7 +65,7 @@ import { useUpload } from "@/hooks/use-upload";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate, ScopeItemTypeDefinition } from "@shared/schema";
+import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate, ScopeItemTypeDefinition, TaskTemplate } from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1089,6 +1089,9 @@ interface DroppableStageProps {
   onUnlinkChecklist?: (checklistId: string) => void;
   onAddStageAttachment?: (stageId: string, file: File) => void;
   onDeleteStageAttachment?: (stageId: string, attachmentId: string) => void;
+  allProjectTasks?: { id: string; title: string; statusName?: string | null; scopeStageId?: string | null }[];
+  onLinkTask?: (taskId: string, stageId: string) => void;
+  onUnlinkTask?: (taskId: string) => void;
 }
 
 function DroppableStage({ 
@@ -1135,6 +1138,9 @@ function DroppableStage({
   onUnlinkChecklist,
   onAddStageAttachment,
   onDeleteStageAttachment,
+  allProjectTasks = [],
+  onLinkTask,
+  onUnlinkTask,
 }: DroppableStageProps) {
   const stageAttachments = (Array.isArray((stageData as any).attachments) ? (stageData as any).attachments : []) as Array<{
     id: string; name: string; objectPath: string; size: number; uploadedAt: string;
@@ -1662,6 +1668,82 @@ function DroppableStage({
                 );
               })()}
 
+              {/* Linked Tasks */}
+              {(() => {
+                const linkedTasks = allProjectTasks.filter(t => t.scopeStageId === stageData.id);
+                const linkableTasks = allProjectTasks.filter(t => !t.scopeStageId);
+                const showSection = linkedTasks.length > 0 || linkableTasks.length > 0;
+                if (!showSection) return null;
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                        Tasks
+                      </div>
+                      {linkableTasks.length > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+                              title="Link a task to this stage"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-1" align="end">
+                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                              Link a task to this stage
+                            </div>
+                            <div className="max-h-56 overflow-y-auto space-y-0.5">
+                              {linkableTasks.map((task) => (
+                                <button
+                                  key={task.id}
+                                  className="w-full text-left px-2 py-1.5 rounded hover-elevate active-elevate-2 flex items-center gap-2"
+                                  onClick={() => onLinkTask?.(task.id, stageData.id)}
+                                >
+                                  <CheckSquare className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium truncate">{task.title}</div>
+                                    {task.statusName && (
+                                      <div className="text-[10px] text-muted-foreground truncate">{task.statusName}</div>
+                                    )}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                    {linkedTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 group"
+                      >
+                        <CheckSquare className="h-4 w-4 text-blue-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{task.title}</span>
+                            {task.statusName && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 shrink-0">
+                                {task.statusName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                          title="Unlink task from this stage"
+                          onClick={(e) => { e.stopPropagation(); onUnlinkTask?.(task.id); }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* Stage Attachments */}
               <div className="mt-2 space-y-1">
                 <div className="flex items-center justify-between px-2">
@@ -2086,6 +2168,17 @@ export default function ProjectScope() {
     });
     return grouped;
   }, [projectChecklistInstances]);
+
+  // Project task templates (scope="project") for linking to stages
+  const { data: allTaskTemplates = [] } = useQuery<TaskTemplate[]>({
+    queryKey: ['/api/systems/task-templates'],
+    enabled: !!projectId,
+  });
+
+  const projectTasks = useMemo(
+    () => allTaskTemplates.filter(t => t.scope === 'project' && t.projectId === projectId),
+    [allTaskTemplates, projectId],
+  );
 
   // Initialize default stages if empty
   const initializeStagesMutation = useMutation({
@@ -2787,6 +2880,36 @@ export default function ProjectScope() {
 
   const handleUnlinkChecklist = (checklistId: string) => {
     unlinkChecklistMutation.mutate(checklistId);
+  };
+
+  const linkTaskMutation = useMutation({
+    mutationFn: ({ taskId, stageId }: { taskId: string; stageId: string }) =>
+      apiRequest(`/api/systems/task-templates/${taskId}`, 'PATCH', { scopeStageId: stageId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/systems/task-templates'] });
+    },
+    onError: () => {
+      toast({ title: "Failed to link task", variant: "destructive" });
+    },
+  });
+
+  const unlinkTaskMutation = useMutation({
+    mutationFn: (taskId: string) =>
+      apiRequest(`/api/systems/task-templates/${taskId}`, 'PATCH', { scopeStageId: null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/systems/task-templates'] });
+    },
+    onError: () => {
+      toast({ title: "Failed to unlink task", variant: "destructive" });
+    },
+  });
+
+  const handleLinkTask = (taskId: string, stageId: string) => {
+    linkTaskMutation.mutate({ taskId, stageId });
+  };
+
+  const handleUnlinkTask = (taskId: string) => {
+    unlinkTaskMutation.mutate(taskId);
   };
 
   // Stage file attachments
@@ -3621,6 +3744,9 @@ export default function ProjectScope() {
                       onUnlinkChecklist={handleUnlinkChecklist}
                       onAddStageAttachment={handleAddStageAttachment}
                       onDeleteStageAttachment={handleDeleteStageAttachment}
+                      allProjectTasks={projectTasks}
+                      onLinkTask={handleLinkTask}
+                      onUnlinkTask={handleUnlinkTask}
                     />
                   ))}
               </SortableContext>
