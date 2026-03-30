@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate, ScopeItemTypeDefinition } from "@shared/schema";
 import {
   AlertDialog,
@@ -1061,6 +1062,9 @@ interface DroppableStageProps {
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0
   linkedPOs?: LinkedPOForStage[]; // Linked Purchase Orders
   onViewPO?: (poId: string) => void; // Handler to view PO details
+  allProjectPOs?: LinkedPOForStage[]; // All project POs (for link picker)
+  onLinkPO?: (poId: string, stageId: string) => void; // Link PO to this stage
+  onUnlinkPO?: (poId: string) => void; // Unlink PO from this stage
   linkedScheduleItems?: LinkedScheduleItemForStage[]; // Linked Schedule Items
   onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
   showDescriptionInline?: boolean; // Show descriptions inline instead of hover
@@ -1100,6 +1104,9 @@ function DroppableStage({
   showDescriptionInline = false, // Show descriptions inline
   linkedPOs = [], // Linked Purchase Orders
   onViewPO, // Handler to view PO details
+  allProjectPOs = [], // All project POs for link picker
+  onLinkPO, // Link PO to stage
+  onUnlinkPO, // Unlink PO from stage
   linkedScheduleItems = [], // Linked Schedule Items
   onViewScheduleItem, // Handler to view schedule item details
   dropTarget, // Drop indicator target
@@ -1399,48 +1406,102 @@ function DroppableStage({
               )}
               
               {/* Linked Purchase Orders */}
-              {linkedPOs.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
-                    Linked Purchase Orders
-                  </div>
-                  {linkedPOs.map((po) => (
-                    <div
-                      key={po.id}
-                      className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
-                      onClick={() => onViewPO?.(po.id)}
-                      data-testid={`linked-po-${po.id}`}
-                    >
-                      <Package className="h-4 w-4 text-primary" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{po.poNumber}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                            po.status === 'completed' || po.status === 'billed' 
-                              ? 'bg-green-100 text-green-800' 
-                              : po.status === 'draft' 
-                                ? 'bg-gray-100 text-gray-600' 
-                                : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {po.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        {(po.title || po.supplierName) && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {po.title && <span>{po.title}</span>}
-                            {po.title && po.supplierName && <span> - </span>}
-                            {po.supplierName && <span>{po.supplierName}</span>}
-                          </div>
-                        )}
+              {(() => {
+                const linkablePOs = allProjectPOs.filter(
+                  (po) => !po.scopeStageId
+                );
+                const showSection = linkedPOs.length > 0 || linkablePOs.length > 0;
+                if (!showSection) return null;
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                        Purchase Orders
                       </div>
-                      <div className="text-sm font-medium">
-                        ${(po.total / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {linkablePOs.length > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+                              title="Link a purchase order to this stage"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-1" align="end">
+                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                              Link a PO to this stage
+                            </div>
+                            <div className="max-h-56 overflow-y-auto space-y-0.5">
+                              {linkablePOs.map((po) => (
+                                <button
+                                  key={po.id}
+                                  className="w-full text-left px-2 py-1.5 rounded hover-elevate active-elevate-2 flex items-center gap-2"
+                                  onClick={() => onLinkPO?.(po.id, stageData.id)}
+                                >
+                                  <Package className="h-3.5 w-3.5 text-primary shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium truncate">{po.poNumber}</div>
+                                    {(po.title || po.supplierName) && (
+                                      <div className="text-[10px] text-muted-foreground truncate">
+                                        {po.title || po.supplierName}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground shrink-0">
+                                    ${(po.total / 100).toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {linkedPOs.map((po) => (
+                      <div
+                        key={po.id}
+                        className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
+                        onClick={() => onViewPO?.(po.id)}
+                        data-testid={`linked-po-${po.id}`}
+                      >
+                        <Package className="h-4 w-4 text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{po.poNumber}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              po.status === 'completed' || po.status === 'billed'
+                                ? 'bg-green-100 text-green-800'
+                                : po.status === 'draft'
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {po.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          {(po.title || po.supplierName) && (
+                            <div className="text-xs text-muted-foreground truncate">
+                              {po.title && <span>{po.title}</span>}
+                              {po.title && po.supplierName && <span> - </span>}
+                              {po.supplierName && <span>{po.supplierName}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm font-medium shrink-0">
+                          ${(po.total / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                        </div>
+                        <button
+                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                          title="Unlink PO from this stage"
+                          onClick={(e) => { e.stopPropagation(); onUnlinkPO?.(po.id); }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               
               {/* Linked Schedule Items */}
               {linkedScheduleItems.length > 0 && (
@@ -2531,6 +2592,38 @@ export default function ProjectScope() {
     window.location.href = `/projects/${projectId}/purchase-orders/${poId}`;
   };
 
+  // Link a PO to a scope stage
+  const linkPOMutation = useMutation({
+    mutationFn: ({ poId, stageId }: { poId: string; stageId: string }) =>
+      apiRequest(`/api/purchase-orders/${poId}`, 'PATCH', { scopeStageId: stageId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', { projectId }] });
+    },
+    onError: () => {
+      toast({ title: "Failed to link PO", variant: "destructive" });
+    },
+  });
+
+  // Unlink a PO from its scope stage
+  const unlinkPOMutation = useMutation({
+    mutationFn: (poId: string) =>
+      apiRequest(`/api/purchase-orders/${poId}`, 'PATCH', { scopeStageId: null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', { projectId }] });
+    },
+    onError: () => {
+      toast({ title: "Failed to unlink PO", variant: "destructive" });
+    },
+  });
+
+  const handleLinkPO = (poId: string, stageId: string) => {
+    linkPOMutation.mutate({ poId, stageId });
+  };
+
+  const handleUnlinkPO = (poId: string) => {
+    unlinkPOMutation.mutate(poId);
+  };
+
   // Handle view schedule item - navigate to the schedule page
   const handleViewScheduleItem = (itemId: string) => {
     window.location.href = `/projects/${projectId}/schedule`;
@@ -3304,6 +3397,9 @@ export default function ProjectScope() {
                       getTypeLabel={getTypeLabel} // Scope 2.0
                       linkedPOs={posByStage[stage.id] || []}
                       onViewPO={handleViewPO}
+                      allProjectPOs={projectPOs}
+                      onLinkPO={handleLinkPO}
+                      onUnlinkPO={handleUnlinkPO}
                       linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
                       onViewScheduleItem={handleViewScheduleItem}
                       showDescriptionInline={showDescriptionInline}
