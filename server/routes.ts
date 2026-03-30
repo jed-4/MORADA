@@ -16025,7 +16025,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk action route for timesheets
-  app.post("/api/timesheets/bulk-action", async (req, res) => {
+  app.post("/api/timesheets/bulk-action", requireAuth, requireTeamMember, async (req, res) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: "User not authenticated" });
