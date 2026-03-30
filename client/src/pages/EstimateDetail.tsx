@@ -646,10 +646,13 @@ export default function EstimateDetail() {
           name: item.name,
           group: item.groupName || item.parentGroupName || "",
           description: item.description || "",
-          unit: item.unit || "",
+          unitType: item.unit || "ea",
           quantity: item.quantity ?? 1,
-          unitPrice: item.unitPrice ?? 0,
-          markup: item.markup ?? 0,
+          unitCostExTax: (item.unitPrice ?? 0) / 100, // template stores in cents
+          markupPercent: item.markup ?? 0,
+          allowance: item.allowance || "None",
+          wastagePercent: item.wastagePercent ?? 0,
+          type: item.type || "Material",
           costCode: item.costCodeTitle || "",
         }));
       if (lineItems.length === 0) throw new Error("This template has no line items to import.");
