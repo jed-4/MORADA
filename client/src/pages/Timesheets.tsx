@@ -1378,9 +1378,9 @@ export default function Timesheets() {
             };
 
             return (
-              <div className="flex flex-col h-full">
-                {/* Week Navigation */}
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+              <div className="flex flex-col">
+                {/* Week Navigation — sticks to top of outer scroll container */}
+                <div className="sticky top-0 z-30 flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
                   <Button
                     variant="outline"
                     size="icon"
@@ -1412,156 +1412,153 @@ export default function Timesheets() {
                   </Button>
                 </div>
 
-                {/* Calendar grid */}
-                <div className="flex-1 overflow-auto">
-                  {/* Sticky day headers */}
-                  <div className="sticky top-0 z-20 flex border-b-2 border-border bg-background">
-                    <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} />
-                    {calendarDays.map(day => {
-                      const isToday = isSameDay(day, new Date());
-                      return (
-                        <div
-                          key={day.toISOString()}
-                          className={`flex-1 text-center py-1.5 border-l border-border text-[11px] font-medium ${
-                            isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
-                          }`}
-                        >
-                          <div className={isToday ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
-                            {format(day, "EEE")}
-                          </div>
-                          <div className={`text-[10px] font-semibold ${isToday ? "text-blue-600 dark:text-blue-400" : ""}`}>
-                            {format(day, "d")}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* All-day / untimed row */}
-                  {hasUntimed && (
-                    <div className="flex border-b border-border bg-muted/10">
+                {/* Day headers — sticks just below the nav (nav = py-2 + h-7 = 44px) */}
+                <div className="sticky top-[44px] z-20 flex border-b-2 border-border bg-card">
+                  <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="border-r border-border" />
+                  {calendarDays.map(day => {
+                    const isToday = isSameDay(day, new Date());
+                    return (
                       <div
-                        style={{ width: GUTTER_W, minWidth: GUTTER_W }}
-                        className="text-[9px] text-muted-foreground text-right pr-2 pt-1 leading-tight"
+                        key={day.toISOString()}
+                        className={`flex-1 text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium ${
+                          isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
+                        }`}
                       >
-                        no<br />time
+                        <div className={isToday ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
+                          {format(day, "EEE")}
+                        </div>
+                        <div className={`text-[10px] font-semibold ${isToday ? "text-blue-600 dark:text-blue-400" : ""}`}>
+                          {format(day, "d")}
+                        </div>
                       </div>
-                      {calendarDays.map(day => {
-                        const dk = format(day, "yyyy-MM-dd");
-                        const dayUntimed = untimedByDay.get(dk) || [];
-                        const isToday = isSameDay(day, new Date());
-                        return (
-                          <div
-                            key={dk}
-                            className={`flex-1 border-l border-border p-1 min-h-[28px] ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
-                          >
-                            {dayUntimed.map(ts => (
-                              <div
-                                key={ts.id}
-                                onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`text-[9px] px-1 py-0.5 mb-0.5 rounded border cursor-pointer truncate hover-elevate ${statusColors(ts.status)}`}
-                                title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
-                              >
-                                {getUserName(ts.userId).split(" ")[0]} · {formatDuration(getNetHours(ts))}
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                    );
+                  })}
+                </div>
 
-                  {/* Time grid */}
-                  <div className="flex" style={{ height: totalHours * HOUR_PX }}>
-                    {/* Hour labels */}
-                    <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="relative select-none">
-                      {Array.from({ length: totalHours }, (_, i) => {
-                        const h = CAL_START_HOUR + i;
-                        return (
-                          <div
-                            key={h}
-                            className="absolute right-0 pr-2 text-[10px] text-muted-foreground leading-none"
-                            style={{ top: i * HOUR_PX - 6 }}
-                          >
-                            {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
-                          </div>
-                        );
-                      })}
+                {/* All-day / untimed row */}
+                {hasUntimed && (
+                  <div className="flex border-b border-border bg-muted/10">
+                    <div
+                      style={{ width: GUTTER_W, minWidth: GUTTER_W }}
+                      className="text-[9px] text-muted-foreground text-right pr-2 pt-1 leading-tight border-r border-border"
+                    >
+                      no<br />time
                     </div>
-
-                    {/* Day columns */}
                     {calendarDays.map(day => {
                       const dk = format(day, "yyyy-MM-dd");
+                      const dayUntimed = untimedByDay.get(dk) || [];
                       const isToday = isSameDay(day, new Date());
-                      const dayTimed = timedSheets.filter(ts => format(new Date(ts.date), "yyyy-MM-dd") === dk);
-
                       return (
                         <div
                           key={dk}
-                          className={`flex-1 border-l border-border relative ${isToday ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                          className={`flex-1 border-r border-border last:border-r-0 p-1 min-h-[28px] ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
                         >
-                          {/* Hour lines */}
-                          {Array.from({ length: totalHours }, (_, i) => (
+                          {dayUntimed.map(ts => (
                             <div
-                              key={i}
-                              className="absolute left-0 right-0 border-t border-border/50"
-                              style={{ top: i * HOUR_PX }}
-                            />
+                              key={ts.id}
+                              onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                              className={`text-[9px] px-1 py-0.5 mb-0.5 rounded border cursor-pointer truncate hover-elevate ${statusColors(ts.status)}`}
+                              title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
+                            >
+                              {getUserName(ts.userId).split(" ")[0]} · {formatDuration(getNetHours(ts))}
+                            </div>
                           ))}
-                          {/* Half-hour lines */}
-                          {Array.from({ length: totalHours }, (_, i) => (
-                            <div
-                              key={`h${i}`}
-                              className="absolute left-0 right-0 border-t border-border/25"
-                              style={{ top: i * HOUR_PX + HOUR_PX / 2 }}
-                            />
-                          ))}
-
-                          {/* Timesheet blocks */}
-                          {dayTimed.map(ts => {
-                            const startDecimal = parseHHmm(ts.startTime);
-                            if (startDecimal === null) return null;
-
-                            let endDecimal = parseHHmm(ts.endTime);
-                            if (endDecimal === null) {
-                              endDecimal = startDecimal + getNetHours(ts);
-                            }
-
-                            const clampedStart = Math.max(startDecimal, CAL_START_HOUR);
-                            const clampedEnd = Math.min(endDecimal, CAL_END_HOUR);
-                            if (clampedEnd <= clampedStart) return null;
-
-                            const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
-                            const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
-
-                            return (
-                              <div
-                                key={ts.id}
-                                onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`absolute left-0.5 right-0.5 rounded border text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate ${statusColors(ts.status)}`}
-                                style={{ top, height }}
-                                title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
-                              >
-                                <div className="font-semibold truncate leading-tight">
-                                  {ts.startTime}{ts.endTime ? `–${ts.endTime}` : ""}
-                                </div>
-                                {height > 28 && (
-                                  <div className="truncate leading-tight opacity-80">
-                                    {getUserName(ts.userId).split(" ")[0]}
-                                  </div>
-                                )}
-                                {height > 42 && (
-                                  <div className="truncate leading-tight opacity-70">
-                                    {getProjectName(ts.projectId)}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
                         </div>
                       );
                     })}
                   </div>
+                )}
+
+                {/* Time grid — natural height, outer container scrolls */}
+                <div className="flex" style={{ height: totalHours * HOUR_PX }}>
+                  {/* Hour labels */}
+                  <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="relative select-none border-r border-border">
+                    {Array.from({ length: totalHours }, (_, i) => {
+                      const h = CAL_START_HOUR + i;
+                      return (
+                        <div
+                          key={h}
+                          className="absolute right-0 pr-2 text-[10px] text-muted-foreground leading-none"
+                          style={{ top: i * HOUR_PX - 6 }}
+                        >
+                          {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Day columns */}
+                  {calendarDays.map(day => {
+                    const dk = format(day, "yyyy-MM-dd");
+                    const isToday = isSameDay(day, new Date());
+                    const dayTimed = timedSheets.filter(ts => format(new Date(ts.date), "yyyy-MM-dd") === dk);
+
+                    return (
+                      <div
+                        key={dk}
+                        className={`flex-1 border-r border-border last:border-r-0 relative ${isToday ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                      >
+                        {/* Hour lines */}
+                        {Array.from({ length: totalHours }, (_, i) => (
+                          <div
+                            key={i}
+                            className="absolute left-0 right-0 border-t border-border/50"
+                            style={{ top: i * HOUR_PX }}
+                          />
+                        ))}
+                        {/* Half-hour lines */}
+                        {Array.from({ length: totalHours }, (_, i) => (
+                          <div
+                            key={`h${i}`}
+                            className="absolute left-0 right-0 border-t border-border/25"
+                            style={{ top: i * HOUR_PX + HOUR_PX / 2 }}
+                          />
+                        ))}
+
+                        {/* Timesheet blocks */}
+                        {dayTimed.map(ts => {
+                          const startDecimal = parseHHmm(ts.startTime);
+                          if (startDecimal === null) return null;
+
+                          let endDecimal = parseHHmm(ts.endTime);
+                          if (endDecimal === null) {
+                            endDecimal = startDecimal + getNetHours(ts);
+                          }
+
+                          const clampedStart = Math.max(startDecimal, CAL_START_HOUR);
+                          const clampedEnd = Math.min(endDecimal, CAL_END_HOUR);
+                          if (clampedEnd <= clampedStart) return null;
+
+                          const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
+                          const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+
+                          return (
+                            <div
+                              key={ts.id}
+                              onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                              className={`absolute left-0.5 right-0.5 rounded border text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate ${statusColors(ts.status)}`}
+                              style={{ top, height }}
+                              title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
+                            >
+                              <div className="font-semibold truncate leading-tight">
+                                {ts.startTime}{ts.endTime ? `–${ts.endTime}` : ""}
+                              </div>
+                              {height > 28 && (
+                                <div className="truncate leading-tight opacity-80">
+                                  {getUserName(ts.userId).split(" ")[0]}
+                                </div>
+                              )}
+                              {height > 42 && (
+                                <div className="truncate leading-tight opacity-70">
+                                  {getProjectName(ts.projectId)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
