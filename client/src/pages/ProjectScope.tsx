@@ -58,7 +58,10 @@ import {
   X,
   AlignLeft,
   ClipboardList,
+  Flag,
+  Paperclip,
 } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -580,7 +583,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       <div 
         className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
           isSelected ? 'bg-primary/5 border-primary/30' : ''
-        } ${isCompleted ? 'opacity-60' : ''}`}
+        } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-orange-400 bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
         style={{ 
           gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
         }}
@@ -754,6 +757,14 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             >
               <Pen className="h-3 w-3 mr-2" />
               Edit Description
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => onUpdate(item.id, { isTodo: !item.isTodo })}
+              data-testid={`menu-toggle-todo-${item.id}`}
+              className={item.isTodo ? 'text-orange-600 dark:text-orange-400' : ''}
+            >
+              <Flag className="h-3 w-3 mr-2" />
+              {item.isTodo ? 'Clear Action Flag' : 'Flag as Action Item'}
             </DropdownMenuItem>
             <DropdownMenuItem 
               onClick={() => setShowAddToTemplate(true)}
@@ -1076,6 +1087,8 @@ interface DroppableStageProps {
   allProjectChecklists?: { id: string; name: string; status: string; scopeStageId: string | null; completedCount?: number; totalCount?: number }[]; // All project checklists (for link picker)
   onLinkChecklist?: (checklistId: string, stageId: string) => void;
   onUnlinkChecklist?: (checklistId: string) => void;
+  onAddStageAttachment?: (stageId: string, file: File) => void;
+  onDeleteStageAttachment?: (stageId: string, attachmentId: string) => void;
 }
 
 function DroppableStage({ 
@@ -1120,7 +1133,13 @@ function DroppableStage({
   allProjectChecklists = [], // All project checklists for link picker
   onLinkChecklist,
   onUnlinkChecklist,
+  onAddStageAttachment,
+  onDeleteStageAttachment,
 }: DroppableStageProps) {
+  const stageAttachments = (Array.isArray((stageData as any).attachments) ? (stageData as any).attachments : []) as Array<{
+    id: string; name: string; objectPath: string; size: number; uploadedAt: string;
+  }>;
+  const attachFileInputRef = useRef<HTMLInputElement>(null);
   const {
     attributes,
     listeners,
@@ -1642,6 +1661,61 @@ function DroppableStage({
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Stage Attachments */}
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center justify-between px-2">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  Attachments
+                </div>
+                <button
+                  className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+                  title="Attach a file to this stage"
+                  onClick={() => attachFileInputRef.current?.click()}
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+                <input
+                  ref={attachFileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) onAddStageAttachment?.(stageData.id, file);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              {stageAttachments.map((att) => (
+                <div
+                  key={att.id}
+                  className="h-9 flex items-center gap-2 px-3 rounded-lg border border-border/50 bg-background/80 group"
+                >
+                  <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <a
+                    href={att.objectPath}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 min-w-0 text-sm truncate hover:underline"
+                    title={att.name}
+                  >
+                    {att.name}
+                  </a>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {att.size < 1024 * 1024
+                      ? `${Math.round(att.size / 1024)}KB`
+                      : `${(att.size / (1024 * 1024)).toFixed(1)}MB`}
+                  </span>
+                  <button
+                    className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                    title="Remove attachment"
+                    onClick={() => onDeleteStageAttachment?.(stageData.id, att.id)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -2715,6 +2789,49 @@ export default function ProjectScope() {
     unlinkChecklistMutation.mutate(checklistId);
   };
 
+  // Stage file attachments
+  const { uploadFile } = useUpload();
+
+  const updateStageAttachmentsMutation = useMutation({
+    mutationFn: ({ stageId, attachments }: { stageId: string; attachments: unknown[] }) =>
+      apiRequest(`/api/scope-stages/${stageId}`, 'PATCH', { attachments }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/scope-stages', projectId] });
+    },
+    onError: () => {
+      toast({ title: "Failed to update stage attachments", variant: "destructive" });
+    },
+  });
+
+  const handleAddStageAttachment = async (stageId: string, file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum 20MB per file.", variant: "destructive" });
+      return;
+    }
+    const result = await uploadFile(file);
+    if (!result) return;
+    const stage = projectStages.find(s => s.id === stageId);
+    const existing = Array.isArray((stage as any)?.attachments) ? (stage as any).attachments : [];
+    const newAttachment = {
+      id: crypto.randomUUID(),
+      name: result.metadata.name,
+      objectPath: result.objectPath,
+      size: result.metadata.size,
+      uploadedAt: new Date().toISOString(),
+    };
+    updateStageAttachmentsMutation.mutate({ stageId, attachments: [...existing, newAttachment] });
+    toast({ title: "File attached", description: result.metadata.name });
+  };
+
+  const handleDeleteStageAttachment = (stageId: string, attachmentId: string) => {
+    const stage = projectStages.find(s => s.id === stageId);
+    const existing = Array.isArray((stage as any)?.attachments) ? (stage as any).attachments : [];
+    updateStageAttachmentsMutation.mutate({
+      stageId,
+      attachments: existing.filter((a: any) => a.id !== attachmentId),
+    });
+  };
+
   // Handle view schedule item - navigate to the schedule page
   const handleViewScheduleItem = (itemId: string) => {
     window.location.href = `/projects/${projectId}/schedule`;
@@ -3502,6 +3619,8 @@ export default function ProjectScope() {
                       allProjectChecklists={projectChecklistInstances}
                       onLinkChecklist={handleLinkChecklist}
                       onUnlinkChecklist={handleUnlinkChecklist}
+                      onAddStageAttachment={handleAddStageAttachment}
+                      onDeleteStageAttachment={handleDeleteStageAttachment}
                     />
                   ))}
               </SortableContext>
@@ -3543,14 +3662,15 @@ export default function ProjectScope() {
           setNewDialogChecklistText("");
         }
       }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Scope Item to {addItemStage}</DialogTitle>
+        <DialogContent className="max-w-2xl flex flex-col max-h-[88vh]">
+          <DialogHeader className="shrink-0 pb-2">
+            <DialogTitle>Add Item to {addItemStage}</DialogTitle>
             <DialogDescription>
-              Create a new scope item with rich text description
+              Fill in the details below to add a new scope item.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="overflow-y-auto flex-1 pr-1">
+          <div className="space-y-5 py-1">
             <div>
               <Label htmlFor="item-title">Title</Label>
               <Input
@@ -3725,7 +3845,8 @@ export default function ProjectScope() {
               </div>
             )}
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 pt-2 border-t border-border">
             <Button
               onClick={handleCreateItem}
               disabled={!newItemTitle.trim() || createItemMutation.isPending}
