@@ -56,7 +56,7 @@ import {
   Flag,
   Check
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -68,7 +68,7 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal, LayoutTemplate } from "lucide-react";
 import {
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -101,6 +101,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -402,6 +403,10 @@ export default function EstimateDetail() {
   
   // Import items modal state
   const [isImportOpen, setIsImportOpen] = useState(false);
+
+  // Load from template modal state
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
   
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
@@ -622,6 +627,45 @@ export default function EstimateDetail() {
   // Fetch cost categories
   const { data: costCategories = [] } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
+  });
+
+  // Fetch estimate templates (for "Load from template" picker)
+  const { data: estimateTemplates = [] } = useQuery<EstimateTemplate[]>({
+    queryKey: ["/api/estimate-templates"],
+  });
+
+  // Apply estimate template mutation
+  const applyTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      const template = estimateTemplates.find(t => t.id === templateId);
+      if (!template) throw new Error("Template not found");
+      const templateData = (template.templateData as any[]) || [];
+      const lineItems = templateData
+        .filter((item: any) => !item.isGroup)
+        .map((item: any) => ({
+          name: item.name,
+          group: item.groupName || item.parentGroupName || "",
+          description: item.description || "",
+          unit: item.unit || "",
+          quantity: item.quantity ?? 1,
+          unitPrice: item.unitPrice ?? 0,
+          markup: item.markup ?? 0,
+          costCode: item.costCodeTitle || "",
+        }));
+      if (lineItems.length === 0) throw new Error("This template has no line items to import.");
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/import`, "POST", { items: lineItems });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      setIsTemplatePickerOpen(false);
+      setTemplateSearch("");
+      toast({ title: "Template loaded", description: "Groups and items have been imported from the template." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to load template", description: error.message, variant: "destructive" });
+    },
   });
 
   // Get tax rate from company settings (default to 10% if not set)
@@ -4980,6 +5024,15 @@ export default function EstimateDetail() {
                 </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => setIsTemplatePickerOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-load-template"
+                >
+                  <LayoutTemplate className="w-3.5 h-3.5 text-muted-foreground" />
+                  Load from template
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   onClick={() => setIsCatalogOpen(true)}
                   disabled={estimate?.isLocked}
                   data-testid="button-open-catalog"
@@ -5375,6 +5428,15 @@ export default function EstimateDetail() {
                       >
                         <Upload className="w-4 h-4 mr-2" />
                         Import Items
+                      </Button>
+                      <Button 
+                        data-testid="button-load-template-empty" 
+                        onClick={() => setIsTemplatePickerOpen(true)}
+                        disabled={estimate?.isLocked}
+                        variant={estimate?.isLocked ? "secondary" : "outline"}
+                      >
+                        <LayoutTemplate className="w-4 h-4 mr-2" />
+                        Load Template
                       </Button>
                       <Button 
                         data-testid="button-open-catalog" 
@@ -6997,6 +7059,85 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Load from Template Dialog */}
+      <Dialog open={isTemplatePickerOpen} onOpenChange={(open) => { if (!open) { setIsTemplatePickerOpen(false); setTemplateSearch(""); } }}>
+        <DialogContent className="rounded-xl max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Load from Template</DialogTitle>
+            <DialogDescription>
+              Choose an estimate template to import its groups and items into this estimate.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                className="w-full pl-8 pr-3 py-2 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Search templates..."
+                value={templateSearch}
+                onChange={(e) => setTemplateSearch(e.target.value)}
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+              {estimateTemplates
+                .filter(t => !t.isArchived && (
+                  t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                  (t.description ?? "").toLowerCase().includes(templateSearch.toLowerCase()) ||
+                  (t.category ?? "").toLowerCase().includes(templateSearch.toLowerCase())
+                ))
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(template => {
+                  const itemCount = ((template.templateData as any[]) || []).filter((i: any) => !i.isGroup).length;
+                  const groupCount = ((template.templateData as any[]) || []).filter((i: any) => i.isGroup).length;
+                  return (
+                    <button
+                      key={template.id}
+                      className="w-full text-left px-3 py-2.5 rounded-md hover-elevate border border-transparent hover:border-border transition-colors"
+                      onClick={() => applyTemplateMutation.mutate(template.id)}
+                      disabled={applyTemplateMutation.isPending}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{template.name}</p>
+                          {template.description && (
+                            <p className="text-xs text-muted-foreground truncate">{template.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {template.category && (
+                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                              {template.category}
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {groupCount > 0 && `${groupCount}g `}{itemCount} items
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              {estimateTemplates.filter(t => !t.isArchived).length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">No estimate templates found.</p>
+              )}
+              {estimateTemplates.filter(t => !t.isArchived).length > 0 &&
+                estimateTemplates.filter(t => !t.isArchived && (
+                  t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                  (t.description ?? "").toLowerCase().includes(templateSearch.toLowerCase()) ||
+                  (t.category ?? "").toLowerCase().includes(templateSearch.toLowerCase())
+                )).length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">No templates match your search.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsTemplatePickerOpen(false); setTemplateSearch(""); }}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Estimate Dialog */}
       <Dialog open={isEditEstimateDialogOpen} onOpenChange={setIsEditEstimateDialogOpen}>
