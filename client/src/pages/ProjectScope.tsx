@@ -2919,7 +2919,7 @@ export default function ProjectScope() {
     mutationFn: ({ stageId, attachments }: { stageId: string; attachments: unknown[] }) =>
       apiRequest(`/api/scope-stages/${stageId}`, 'PATCH', { attachments }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scope-stages', projectId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
     },
     onError: () => {
       toast({ title: "Failed to update stage attachments", variant: "destructive" });
@@ -2933,7 +2933,7 @@ export default function ProjectScope() {
     }
     const result = await uploadFile(file);
     if (!result) return;
-    const stage = projectStages.find(s => s.id === stageId);
+    const stage = scopeStages.find(s => s.id === stageId);
     const existing = Array.isArray((stage as any)?.attachments) ? (stage as any).attachments : [];
     const newAttachment = {
       id: crypto.randomUUID(),
@@ -2947,7 +2947,7 @@ export default function ProjectScope() {
   };
 
   const handleDeleteStageAttachment = (stageId: string, attachmentId: string) => {
-    const stage = projectStages.find(s => s.id === stageId);
+    const stage = scopeStages.find(s => s.id === stageId);
     const existing = Array.isArray((stage as any)?.attachments) ? (stage as any).attachments : [];
     updateStageAttachmentsMutation.mutate({
       stageId,
