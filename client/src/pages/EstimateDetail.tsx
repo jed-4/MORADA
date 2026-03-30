@@ -3745,7 +3745,7 @@ export default function EstimateDetail() {
       subItems.forEach(subItem => {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
+          <SortableRow key={subItem.id} id={subItem.id} className={editingCell?.itemId === subItem.id ? 'bg-primary/[0.04]' : 'bg-muted/20'} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
             <div className="h-9 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
