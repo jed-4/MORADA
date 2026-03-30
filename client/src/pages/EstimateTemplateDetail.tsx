@@ -298,14 +298,15 @@ function SortableRow({
 
       {/* Cost Code */}
       <div className="h-8 flex items-center pr-1">
-        {isEditing("costCode") ? (
-          <div className="w-full">
+        {isEditingField("costCode") ? (
+          <div className="w-full h-full ring-1 ring-inset ring-primary/60 rounded-[2px] flex items-center">
             <CostCodeSelect
               value={item.costCodeId || ""}
               onValueChange={(v) => {
                 onCostCodeChange(item, v, costCodes);
               }}
               placeholder="Select…"
+              triggerClassName="h-full border-0 shadow-none focus-visible:ring-0 bg-transparent text-xs"
             />
           </div>
         ) : (
