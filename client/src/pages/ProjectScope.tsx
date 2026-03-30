@@ -1073,6 +1073,9 @@ interface DroppableStageProps {
   checklistCount?: number; // Number of checklist instances linked to this stage
   onNavigateToChecklists?: (stageId: string) => void; // Navigate to checklists filtered by stage
   linkedChecklists?: { id: string; name: string; status: string; completedCount?: number; totalCount?: number }[]; // Inline linked checklists
+  allProjectChecklists?: { id: string; name: string; status: string; scopeStageId: string | null; completedCount?: number; totalCount?: number }[]; // All project checklists (for link picker)
+  onLinkChecklist?: (checklistId: string, stageId: string) => void;
+  onUnlinkChecklist?: (checklistId: string) => void;
 }
 
 function DroppableStage({ 
@@ -1114,6 +1117,9 @@ function DroppableStage({
   checklistCount = 0, // Linked checklists count
   onNavigateToChecklists, // Navigate to filtered checklists
   linkedChecklists = [], // Inline linked checklists
+  allProjectChecklists = [], // All project checklists for link picker
+  onLinkChecklist,
+  onUnlinkChecklist,
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1544,44 +1550,98 @@ function DroppableStage({
                 </div>
               )}
 
-              {/* Linked Checklists — inline in stage body */}
-              {linkedChecklists.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
-                    Linked Checklists
-                  </div>
-                  {linkedChecklists.map((cl) => (
-                    <div
-                      key={cl.id}
-                      className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
-                      onClick={() => onNavigateToChecklists?.(stageData.id)}
-                      data-testid={`linked-checklist-${cl.id}`}
-                    >
-                      <ClipboardList className="h-4 w-4 text-violet-500" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{cl.name}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                            cl.status === 'completed'
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                              : cl.status === 'in_progress'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                          }`}>
-                            {cl.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        {(cl.totalCount ?? 0) > 0 && (
-                          <div className="text-xs text-muted-foreground">
-                            {cl.completedCount ?? 0}/{cl.totalCount} items
-                          </div>
-                        )}
+              {/* Linked Checklists */}
+              {(() => {
+                const linkableChecklists = allProjectChecklists.filter(cl => !cl.scopeStageId);
+                const showSection = linkedChecklists.length > 0 || linkableChecklists.length > 0;
+                if (!showSection) return null;
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                        Checklists
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {linkableChecklists.length > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+                              title="Link a checklist to this stage"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-1" align="end">
+                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                              Link a checklist to this stage
+                            </div>
+                            <div className="max-h-56 overflow-y-auto space-y-0.5">
+                              {linkableChecklists.map((cl) => (
+                                <button
+                                  key={cl.id}
+                                  className="w-full text-left px-2 py-1.5 rounded hover-elevate active-elevate-2 flex items-center gap-2"
+                                  onClick={() => onLinkChecklist?.(cl.id, stageData.id)}
+                                >
+                                  <ClipboardList className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium truncate">{cl.name}</div>
+                                    {(cl.totalCount ?? 0) > 0 && (
+                                      <div className="text-[10px] text-muted-foreground">
+                                        {cl.completedCount ?? 0}/{cl.totalCount} items
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                                    cl.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {cl.status.replace('_', ' ')}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {linkedChecklists.map((cl) => (
+                      <div
+                        key={cl.id}
+                        className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
+                        onClick={() => onNavigateToChecklists?.(stageData.id)}
+                        data-testid={`linked-checklist-${cl.id}`}
+                      >
+                        <ClipboardList className="h-4 w-4 text-violet-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{cl.name}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              cl.status === 'completed'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : cl.status === 'in_progress'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                            }`}>
+                              {cl.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          {(cl.totalCount ?? 0) > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              {cl.completedCount ?? 0}/{cl.totalCount} items
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                          title="Unlink checklist from this stage"
+                          onClick={(e) => { e.stopPropagation(); onUnlinkChecklist?.(cl.id); }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -2624,6 +2684,37 @@ export default function ProjectScope() {
     unlinkPOMutation.mutate(poId);
   };
 
+  // Link a checklist instance to a scope stage
+  const linkChecklistMutation = useMutation({
+    mutationFn: ({ checklistId, stageId }: { checklistId: string; stageId: string }) =>
+      apiRequest(`/api/checklist-instances/${checklistId}`, 'PATCH', { scopeStageId: stageId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/checklist-instances', { projectId }] });
+    },
+    onError: () => {
+      toast({ title: "Failed to link checklist", variant: "destructive" });
+    },
+  });
+
+  const unlinkChecklistMutation = useMutation({
+    mutationFn: (checklistId: string) =>
+      apiRequest(`/api/checklist-instances/${checklistId}`, 'PATCH', { scopeStageId: null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/checklist-instances', { projectId }] });
+    },
+    onError: () => {
+      toast({ title: "Failed to unlink checklist", variant: "destructive" });
+    },
+  });
+
+  const handleLinkChecklist = (checklistId: string, stageId: string) => {
+    linkChecklistMutation.mutate({ checklistId, stageId });
+  };
+
+  const handleUnlinkChecklist = (checklistId: string) => {
+    unlinkChecklistMutation.mutate(checklistId);
+  };
+
   // Handle view schedule item - navigate to the schedule page
   const handleViewScheduleItem = (itemId: string) => {
     window.location.href = `/projects/${projectId}/schedule`;
@@ -3408,6 +3499,9 @@ export default function ProjectScope() {
                       checklistCount={checklistCountByStage[stage.id] || 0}
                       onNavigateToChecklists={handleNavigateToChecklists}
                       linkedChecklists={checklistsByStage[stage.id] || []}
+                      allProjectChecklists={projectChecklistInstances}
+                      onLinkChecklist={handleLinkChecklist}
+                      onUnlinkChecklist={handleUnlinkChecklist}
                     />
                   ))}
               </SortableContext>
