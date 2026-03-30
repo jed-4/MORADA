@@ -4061,9 +4061,13 @@ export default function EstimateDetail() {
         }
         return (
           <div 
-            className={`${cellBase} ${indentClass}`}
+            className={`${cellBase} ${indentClass} ${cellEditable}`}
             role="gridcell"
             data-testid={`cell-name-${item.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'name');
+            }}
           >
             <div className="flex items-center gap-2">
               {hasSubItems && (
@@ -4085,14 +4089,8 @@ export default function EstimateDetail() {
                 </Button>
               )}
               <span 
-                className={`font-medium truncate max-w-[180px] block text-[12px] ${!isLocked ? 'cursor-pointer' : ''}`}
+                className="font-medium truncate max-w-[180px] block text-[12px]"
                 title={isLocked ? item.name : 'Click to edit'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!isLocked) {
-                    handleCellEdit(item, 'name');
-                  }
-                }}
               >
                 {item.name}
               </span>
