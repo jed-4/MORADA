@@ -1661,61 +1661,61 @@ function DroppableStage({
                   </div>
                 );
               })()}
-            </div>
 
-            {/* Stage Attachments */}
-            <div className="mt-2 space-y-1">
-              <div className="flex items-center justify-between px-2">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Attachments
-                </div>
-                <button
-                  className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
-                  title="Attach a file to this stage"
-                  onClick={() => attachFileInputRef.current?.click()}
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
-                <input
-                  ref={attachFileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) onAddStageAttachment?.(stageData.id, file);
-                    e.target.value = '';
-                  }}
-                />
-              </div>
-              {stageAttachments.map((att) => (
-                <div
-                  key={att.id}
-                  className="h-9 flex items-center gap-2 px-3 rounded-lg border border-border/50 bg-background/80 group"
-                >
-                  <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <a
-                    href={att.objectPath}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex-1 min-w-0 text-sm truncate hover:underline"
-                    title={att.name}
-                  >
-                    {att.name}
-                  </a>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {att.size < 1024 * 1024
-                      ? `${Math.round(att.size / 1024)}KB`
-                      : `${(att.size / (1024 * 1024)).toFixed(1)}MB`}
-                  </span>
+              {/* Stage Attachments */}
+              <div className="mt-2 space-y-1">
+                <div className="flex items-center justify-between px-2">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    Attachments
+                  </div>
                   <button
-                    className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
-                    title="Remove attachment"
-                    onClick={() => onDeleteStageAttachment?.(stageData.id, att.id)}
+                    className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
+                    title="Attach a file to this stage"
+                    onClick={() => attachFileInputRef.current?.click()}
                   >
-                    <X className="h-3 w-3" />
+                    <Plus className="h-3 w-3" />
                   </button>
+                  <input
+                    ref={attachFileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) onAddStageAttachment?.(stageData.id, file);
+                      e.target.value = '';
+                    }}
+                  />
                 </div>
-              ))}
+                {stageAttachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="h-9 flex items-center gap-2 px-3 rounded-lg border border-border/50 bg-background/80 group"
+                  >
+                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <a
+                      href={att.objectPath}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 min-w-0 text-sm truncate hover:underline"
+                      title={att.name}
+                    >
+                      {att.name}
+                    </a>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {att.size < 1024 * 1024
+                        ? `${Math.round(att.size / 1024)}KB`
+                        : `${(att.size / (1024 * 1024)).toFixed(1)}MB`}
+                    </span>
+                    <button
+                      className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                      title="Remove attachment"
+                      onClick={() => onDeleteStageAttachment?.(stageData.id, att.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
