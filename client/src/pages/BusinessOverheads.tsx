@@ -70,7 +70,12 @@ interface OverheadMonthStatus { id: string; companyId: string; year: number; mon
 interface OhSettings { targetOhPercent: string; }
 interface OhPipelineJob { id: string; name: string; estimatedValue: number; probabilityPercent: number; expectedStartDate: string | null; notes: string | null; }
 interface OverheadForecastOverride { id: string; itemId: string; year: number; month: number; forecastCents: number; }
-interface ContractedProject { id: string; name: string; projectStatus: string | null; lockedContractPrice: number | null; }
+interface ContractedProject {
+  id: string; name: string; projectStatus: string | null;
+  lockedContractPrice: number | null; // cents
+  percentComplete: number | null; // 0-100
+  remainingCents: number; // computed by backend: lockedContractPrice × (1 - %complete/100)
+}
 
 interface OverheadsData {
   categories: OverheadCategory[];
@@ -1025,9 +1030,9 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
   const jobs = pipelineQuery.data || [];
   const contractedProjects = contractedQuery.data || [];
 
-  // Full locked contract price (no % complete field in schema)
+  // Remaining contracted revenue = backend-computed remaining (full price for pre-construction, price×(1-pct) for construction)
   const totalContractedCents = useMemo(() =>
-    contractedProjects.reduce((s, p) => s + Math.round((p.lockedContractPrice || 0) * 100), 0),
+    contractedProjects.reduce((s, p) => s + p.remainingCents, 0),
     [contractedProjects]);
   const weightedPipelineCents = useMemo(() =>
     jobs.reduce((s, j) => s + Math.round(j.estimatedValue * j.probabilityPercent / 100), 0),
@@ -1143,21 +1148,31 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <p className="px-4 pb-4 text-xs text-muted-foreground italic">No active (construction / pre-construction) projects with a locked contract price.</p>
             ) : (
               <div>
-                <div className="grid px-4 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 100px" }}>
-                  <span>Project</span><span>Status</span><span className="text-right">Contract</span>
+                <div className="grid px-4 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 95px 95px" }}>
+                  <span>Project</span><span>Status</span><span className="text-right">Contract</span><span className="text-right">Remaining</span>
                 </div>
                 {contractedProjects.map(p => (
-                  <div key={p.id} className="grid items-center px-4 py-1.5 border-b border-border/30 hover-elevate" style={{ gridTemplateColumns: "1fr 90px 100px" }}>
-                    <span className="text-xs truncate font-medium">{p.name}</span>
+                  <div key={p.id} className="grid items-center px-4 py-1.5 border-b border-border/30 hover-elevate" style={{ gridTemplateColumns: "1fr 90px 95px 95px" }}>
+                    <div>
+                      <p className="text-xs font-medium truncate">{p.name}</p>
+                      {p.projectStatus === "construction" && (p.percentComplete || 0) > 0 && (
+                        <p className="text-[10px] text-muted-foreground">{p.percentComplete}% complete</p>
+                      )}
+                    </div>
                     <Badge variant="secondary" className="text-[10px] no-default-active-elevate capitalize w-fit">{p.projectStatus}</Badge>
-                    <span className="text-xs text-right tabular-nums">{p.lockedContractPrice ? fmtDollars(Math.round(p.lockedContractPrice * 100)) : <span className="text-muted-foreground/40">—</span>}</span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {p.lockedContractPrice ? fmtDollars(p.lockedContractPrice) : <span className="opacity-40">—</span>}
+                    </span>
+                    <span className="text-xs text-right tabular-nums font-medium">{fmtDollars(p.remainingCents)}</span>
                   </div>
                 ))}
-                <div className="grid items-center px-4 py-2 border-t-2 border-border bg-muted/20 font-semibold" style={{ gridTemplateColumns: "1fr 90px 100px" }}>
-                  <span className="text-xs">Total Contracted</span><span />
+                <div className="grid items-center px-4 py-2 border-t-2 border-border bg-muted/20 font-semibold" style={{ gridTemplateColumns: "1fr 90px 95px 95px" }}>
+                  <span className="text-xs">Total Remaining</span><span /><span />
                   <span className="text-xs text-right tabular-nums">{fmtDollars(totalContractedCents)}</span>
                 </div>
-                <p className="px-4 py-2 text-[10px] text-muted-foreground/60 italic">Full locked contract price shown (no % complete tracking).</p>
+                <p className="px-4 py-2 text-[10px] text-muted-foreground/60 italic">
+                  Remaining = contract × (1 − % complete). Update % complete on each project to refine this figure.
+                </p>
               </div>
             )}
           </CardContent>

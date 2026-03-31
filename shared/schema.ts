@@ -788,6 +788,7 @@ export const projects = pgTable("projects", {
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
   contractPrice: integer("contract_price"), // Locked agreed contract price in cents (set when project transitions to construction)
+  percentComplete: integer("percent_complete").notNull().default(0), // Construction completion % (0-100); used by OH predictor for remaining revenue
   
   // Google Drive integration
   googleDriveFolderId: text("google_drive_folder_id"), // Linked Google Drive folder ID

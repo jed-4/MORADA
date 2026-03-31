@@ -8,6 +8,13 @@
       "when": 1772243451438,
       "tag": "0000_pending_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774927589945,
+      "tag": "0001_burly_wolverine",
+      "breakpoints": true
     }
   ]
 }

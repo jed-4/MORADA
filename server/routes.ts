@@ -22654,6 +22654,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         name: projectsTable.name,
         projectStatus: projectsTable.projectStatus,
         lockedContractPrice: projectsTable.lockedContractPrice,
+        percentComplete: projectsTable.percentComplete,
       })
         .from(projectsTable)
         .where(and(
@@ -22661,7 +22662,18 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           inArray(projectsTable.projectStatus, ["construction", "pre-construction"]),
         ));
 
-      res.json(contractedProjects);
+      // Compute remaining contracted revenue for each project:
+      // pre-construction = full contract price; construction = price × (1 - %complete/100)
+      const result = contractedProjects.map(p => {
+        const fullPriceCents = p.lockedContractPrice || 0;
+        const pct = p.percentComplete ?? 0;
+        const remainingCents = p.projectStatus === "construction"
+          ? Math.round(fullPriceCents * (1 - pct / 100))
+          : fullPriceCents;
+        return { ...p, remainingCents };
+      });
+
+      res.json(result);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to fetch contracted projects" });
     }
