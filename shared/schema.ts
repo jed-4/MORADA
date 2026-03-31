@@ -5888,3 +5888,97 @@ export const insertScopeItemTypeDefinitionSchema = createInsertSchema(scopeItemT
 });
 export type InsertScopeItemTypeDefinition = z.infer<typeof insertScopeItemTypeDefinitionSchema>;
 export type ScopeItemTypeDefinition = typeof scopeItemTypeDefinitions.$inferSelect;
+
+// ── Business Overheads ────────────────────────────────────────────────────────
+
+export const overheadCategories = pgTable("overhead_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOverheadCategorySchema = createInsertSchema(overheadCategories).omit({ id: true, createdAt: true });
+export type InsertOverheadCategory = z.infer<typeof insertOverheadCategorySchema>;
+export type OverheadCategory = typeof overheadCategories.$inferSelect;
+
+export const frequencyEnum = pgEnum("oh_frequency", ["weekly", "monthly", "quarterly", "annual"]);
+
+export const overheadItems = pgTable("overhead_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => overheadCategories.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  frequency: frequencyEnum("frequency").notNull().default("monthly"),
+  budgetCents: integer("budget_cents").notNull().default(0),
+  xeroAccountCode: text("xero_account_code"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOverheadItemSchema = createInsertSchema(overheadItems).omit({ id: true, createdAt: true });
+export type InsertOverheadItem = z.infer<typeof insertOverheadItemSchema>;
+export type OverheadItem = typeof overheadItems.$inferSelect;
+
+export const overheadMonthActuals = pgTable("overhead_month_actuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => overheadItems.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  actualCents: integer("actual_cents").notNull().default(0),
+  xeroImported: boolean("xero_imported").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueItemMonth: uniqueIndex("overhead_month_actuals_item_year_month_unique").on(table.itemId, table.year, table.month),
+}));
+
+export const insertOverheadMonthActualSchema = createInsertSchema(overheadMonthActuals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOverheadMonthActual = z.infer<typeof insertOverheadMonthActualSchema>;
+export type OverheadMonthActual = typeof overheadMonthActuals.$inferSelect;
+
+export const overheadMonthStatus = pgTable("overhead_month_status", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedByUserId: varchar("confirmed_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("overhead_month_status_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export const insertOverheadMonthStatusSchema = createInsertSchema(overheadMonthStatus).omit({ id: true, createdAt: true });
+export type InsertOverheadMonthStatus = z.infer<typeof insertOverheadMonthStatusSchema>;
+export type OverheadMonthStatus = typeof overheadMonthStatus.$inferSelect;
+
+export const companyOhSettings = pgTable("company_oh_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }).unique(),
+  targetOhPercent: numeric("target_oh_percent", { precision: 5, scale: 2 }).notNull().default("15"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCompanyOhSettingsSchema = createInsertSchema(companyOhSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyOhSettings = z.infer<typeof insertCompanyOhSettingsSchema>;
+export type CompanyOhSettings = typeof companyOhSettings.$inferSelect;
+
+// Pipeline jobs for OH Predictor
+export const ohPipelineJobs = pgTable("oh_pipeline_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  estimatedValue: integer("estimated_value").notNull().default(0), // cents
+  probabilityPercent: integer("probability_percent").notNull().default(100), // 0-100
+  expectedStartDate: date("expected_start_date"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOhPipelineJobSchema = createInsertSchema(ohPipelineJobs).omit({ id: true, createdAt: true });
+export type InsertOhPipelineJob = z.infer<typeof insertOhPipelineJobSchema>;
+export type OhPipelineJob = typeof ohPipelineJobs.$inferSelect;

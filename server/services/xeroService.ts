@@ -495,6 +495,95 @@ export class XeroService {
     const data = (await response.json()) as any;
     return data.Invoices?.[0] || null;
   }
+
+  /**
+   * Fetch P&L report for a date range and return expense lines grouped by account code and month.
+   * fromDate / toDate: "YYYY-MM-DD"
+   * Returns: { [accountCode]: { [YYYY-MM]: amountExTax } }
+   */
+  async getProfitAndLossReport(
+    connectionId: string,
+    fromDate: string,
+    toDate: string
+  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[] }> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    // Fetch the P&L report with monthly periods
+    const params = new URLSearchParams({
+      fromDate,
+      toDate,
+      periods: "12",
+      timeframe: "MONTH",
+      standardLayout: "true",
+    });
+
+    const response = await fetch(`${XERO_API_BASE}/Reports/ProfitAndLoss?${params}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch P&L report: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    const report = data.Reports?.[0];
+    if (!report) return { byAccount: {}, accounts: [] };
+
+    // Parse column headers to extract month labels (format: "Jan 2025")
+    const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
+
+    // Parse the rows — we look for expense/overhead account rows
+    const byAccount: Record<string, { name: string; amounts: Record<string, number> }> = {};
+    const accounts: any[] = [];
+
+    function parseRows(rows: any[]) {
+      for (const row of rows) {
+        if (row.RowType === "Row" && row.Cells) {
+          const cells = row.Cells as any[];
+          const accountName = cells[0]?.Value || "";
+          const accountCode = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
+          if (!accountCode && !accountName) continue;
+          const key = accountCode || accountName;
+          if (!byAccount[key]) {
+            byAccount[key] = { name: accountName, amounts: {} };
+            accounts.push({ code: accountCode, name: accountName });
+          }
+          // Map monthly values
+          for (let i = 1; i < cells.length && i < columns.length; i++) {
+            const monthLabel = columns[i]; // e.g. "Jan 2025"
+            const val = parseFloat(cells[i]?.Value || "0") || 0;
+            // Convert month label "Jan 2025" -> "2025-01"
+            const parts = monthLabel.split(" ");
+            if (parts.length === 2) {
+              const monthNames: Record<string, string> = {
+                Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+                Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+              };
+              const mm = monthNames[parts[0]];
+              const yyyy = parts[1];
+              if (mm && yyyy) {
+                byAccount[key].amounts[`${yyyy}-${mm}`] = (byAccount[key].amounts[`${yyyy}-${mm}`] || 0) + val;
+              }
+            }
+          }
+        }
+        if (row.Rows) {
+          parseRows(row.Rows);
+        }
+      }
+    }
+
+    parseRows(report.Rows || []);
+
+    return { byAccount, accounts };
+  }
 }
 
 export const xeroService = new XeroService();

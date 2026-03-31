@@ -85,6 +85,7 @@ Preferred communication style: Simple, everyday language.
 - **Default Diary**: Weekly view of recurring tasks, with automated generation for current + next week, and template syncing to future uncompleted tasks.
 - **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action.
 - **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, including contact merging and dedicated `contactInsurances` table.
+- **Business Overheads CFO Dashboard**: New "Overheads" tab in Business page. 4 sub-tabs: Register (spreadsheet by category/item with frequency, budget, Xero account code, monthly equivalent), Monthly Actuals (12-month editable grid per item with green confirmation chips per month), Forecast (last-12-month bar chart vs budget, next-12-month projection, KPI cards), OH Predictor (breakeven revenue calculator, weighted pipeline jobs, traffic light coverage indicator). Schema: `overhead_categories`, `overhead_items`, `overhead_month_actuals`, `overhead_month_status`, `company_oh_settings`, `oh_pipeline_jobs`, `oh_frequency` enum. API: `/api/overheads` (GET all), CRUD endpoints for categories/items/actuals/pipeline/settings, `/api/xero/overhead-actuals` (P&L report import). `XeroService.getProfitAndLossReport()` added.
 
 ### Mobile App (Expo/React Native)
 - **Framework**: React Native with Expo SDK 52.

@@ -22235,6 +22235,377 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // ─── Business Overheads Routes ────────────────────────────────────────────
+
+  // Get all overheads data (categories + items + actuals + month status + settings)
+  app.get("/api/overheads", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings } = await import("@shared/schema");
+
+      const [categories, items, actuals, statuses, settings] = await Promise.all([
+        db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadCategories.sortOrder), asc(overheadCategories.createdAt)),
+        db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.sortOrder), asc(overheadItems.createdAt)),
+        db.select().from(overheadMonthActuals).innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id)).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)),
+        db.select().from(overheadMonthStatus).where(eq(overheadMonthStatus.companyId, companyId)),
+        db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1),
+      ]);
+
+      res.json({
+        categories,
+        items: items.map(r => r.overhead_items),
+        actuals: actuals.map(r => r.overhead_month_actuals),
+        monthStatuses: statuses,
+        settings: settings[0] || null,
+      });
+    } catch (error: any) {
+      console.error("Error fetching overheads:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch overheads" });
+    }
+  });
+
+  // Create overhead category
+  app.post("/api/overheads/categories", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadCategories, insertOverheadCategorySchema } = await import("@shared/schema");
+      const parsed = insertOverheadCategorySchema.safeParse({ ...req.body, companyId });
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed" });
+
+      const [created] = await db.insert(overheadCategories).values(parsed.data).returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create category" });
+    }
+  });
+
+  // Update overhead category
+  app.patch("/api/overheads/categories/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadCategories } = await import("@shared/schema");
+      const [updated] = await db.update(overheadCategories)
+        .set({ name: req.body.name, sortOrder: req.body.sortOrder })
+        .where(and(eq(overheadCategories.id, req.params.id), eq(overheadCategories.companyId, companyId)))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update category" });
+    }
+  });
+
+  // Delete overhead category
+  app.delete("/api/overheads/categories/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadCategories } = await import("@shared/schema");
+      await db.delete(overheadCategories).where(and(eq(overheadCategories.id, req.params.id), eq(overheadCategories.companyId, companyId)));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete category" });
+    }
+  });
+
+  // Create overhead item
+  app.post("/api/overheads/items", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadItems, overheadCategories, insertOverheadItemSchema } = await import("@shared/schema");
+      // Verify category belongs to company
+      const [cat] = await db.select().from(overheadCategories).where(and(eq(overheadCategories.id, req.body.categoryId), eq(overheadCategories.companyId, companyId)));
+      if (!cat) return res.status(403).json({ error: "Category not found" });
+
+      const parsed = insertOverheadItemSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed" });
+
+      const [created] = await db.insert(overheadItems).values(parsed.data).returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create item" });
+    }
+  });
+
+  // Update overhead item
+  app.patch("/api/overheads/items/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadItems, overheadCategories } = await import("@shared/schema");
+      // Verify ownership via join
+      const [existing] = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(eq(overheadItems.id, req.params.id), eq(overheadCategories.companyId, companyId)));
+      if (!existing) return res.status(404).json({ error: "Not found" });
+
+      const allowed = ['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'];
+      const updates: any = {};
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) updates[key] = req.body[key];
+      }
+
+      const [updated] = await db.update(overheadItems).set(updates).where(eq(overheadItems.id, req.params.id)).returning();
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update item" });
+    }
+  });
+
+  // Delete overhead item
+  app.delete("/api/overheads/items/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadItems, overheadCategories } = await import("@shared/schema");
+      const [existing] = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(eq(overheadItems.id, req.params.id), eq(overheadCategories.companyId, companyId)));
+      if (!existing) return res.status(404).json({ error: "Not found" });
+
+      await db.delete(overheadItems).where(eq(overheadItems.id, req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete item" });
+    }
+  });
+
+  // Upsert overhead month actual
+  app.put("/api/overheads/actuals", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadMonthActuals, overheadItems, overheadCategories } = await import("@shared/schema");
+      const { itemId, year, month, actualCents, xeroImported } = req.body;
+
+      // Verify item belongs to company
+      const [item] = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(eq(overheadItems.id, itemId), eq(overheadCategories.companyId, companyId)));
+      if (!item) return res.status(403).json({ error: "Item not found" });
+
+      const [upserted] = await db.insert(overheadMonthActuals)
+        .values({ itemId, year, month, actualCents: actualCents || 0, xeroImported: xeroImported || false, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
+          set: { actualCents: actualCents || 0, xeroImported: xeroImported || false, updatedAt: new Date() },
+        })
+        .returning();
+      res.json(upserted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to upsert actual" });
+    }
+  });
+
+  // Bulk upsert Xero actuals (from P&L import)
+  app.post("/api/overheads/actuals/bulk", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadMonthActuals, overheadItems, overheadCategories } = await import("@shared/schema");
+      const { actuals } = req.body; // Array of { itemId, year, month, actualCents }
+
+      if (!Array.isArray(actuals) || actuals.length === 0) return res.json({ count: 0 });
+
+      // Validate all items belong to company
+      const itemIds = [...new Set(actuals.map((a: any) => a.itemId))];
+      const validItems = await db.select({ id: overheadItems.id }).from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(inArray(overheadItems.id, itemIds), eq(overheadCategories.companyId, companyId)));
+      const validIds = new Set(validItems.map(i => i.id));
+
+      const validActuals = actuals.filter((a: any) => validIds.has(a.itemId));
+
+      for (const actual of validActuals) {
+        await db.insert(overheadMonthActuals)
+          .values({ itemId: actual.itemId, year: actual.year, month: actual.month, actualCents: actual.actualCents || 0, xeroImported: true, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
+            set: { actualCents: actual.actualCents || 0, xeroImported: true, updatedAt: new Date() },
+          });
+      }
+
+      res.json({ count: validActuals.length });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to bulk upsert actuals" });
+    }
+  });
+
+  // Toggle month confirmation status
+  app.post("/api/overheads/month-status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const userId = user?.id;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadMonthStatus } = await import("@shared/schema");
+      const { year, month, confirmed } = req.body;
+
+      const [existing] = await db.select().from(overheadMonthStatus)
+        .where(and(eq(overheadMonthStatus.companyId, companyId), eq(overheadMonthStatus.year, year), eq(overheadMonthStatus.month, month)));
+
+      if (existing) {
+        const [updated] = await db.update(overheadMonthStatus)
+          .set({ confirmedAt: confirmed ? new Date() : null, confirmedByUserId: confirmed ? userId : null })
+          .where(eq(overheadMonthStatus.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+
+      const [created] = await db.insert(overheadMonthStatus)
+        .values({ companyId, year, month, confirmedAt: confirmed ? new Date() : null, confirmedByUserId: confirmed ? userId : null })
+        .returning();
+      res.json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update month status" });
+    }
+  });
+
+  // Get/set company OH settings
+  app.get("/api/overheads/settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { companyOhSettings } = await import("@shared/schema");
+      const [settings] = await db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1);
+      res.json(settings || { targetOhPercent: "15" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch settings" });
+    }
+  });
+
+  app.put("/api/overheads/settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { companyOhSettings } = await import("@shared/schema");
+      const { targetOhPercent } = req.body;
+
+      const [upserted] = await db.insert(companyOhSettings)
+        .values({ companyId, targetOhPercent: String(targetOhPercent), updatedAt: new Date() })
+        .onConflictDoUpdate({ target: companyOhSettings.companyId, set: { targetOhPercent: String(targetOhPercent), updatedAt: new Date() } })
+        .returning();
+      res.json(upserted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update settings" });
+    }
+  });
+
+  // OH Pipeline jobs
+  app.get("/api/overheads/pipeline", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { ohPipelineJobs } = await import("@shared/schema");
+      const jobs = await db.select().from(ohPipelineJobs).where(eq(ohPipelineJobs.companyId, companyId)).orderBy(asc(ohPipelineJobs.sortOrder), asc(ohPipelineJobs.createdAt));
+      res.json(jobs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch pipeline" });
+    }
+  });
+
+  app.post("/api/overheads/pipeline", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { ohPipelineJobs, insertOhPipelineJobSchema } = await import("@shared/schema");
+      const parsed = insertOhPipelineJobSchema.safeParse({ ...req.body, companyId });
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed" });
+
+      const [created] = await db.insert(ohPipelineJobs).values(parsed.data).returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create pipeline job" });
+    }
+  });
+
+  app.patch("/api/overheads/pipeline/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { ohPipelineJobs } = await import("@shared/schema");
+      const allowed = ['name', 'estimatedValue', 'probabilityPercent', 'expectedStartDate', 'notes', 'sortOrder'];
+      const updates: any = {};
+      for (const k of allowed) { if (req.body[k] !== undefined) updates[k] = req.body[k]; }
+
+      const [updated] = await db.update(ohPipelineJobs).set(updates)
+        .where(and(eq(ohPipelineJobs.id, req.params.id), eq(ohPipelineJobs.companyId, companyId)))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update pipeline job" });
+    }
+  });
+
+  app.delete("/api/overheads/pipeline/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { ohPipelineJobs } = await import("@shared/schema");
+      await db.delete(ohPipelineJobs).where(and(eq(ohPipelineJobs.id, req.params.id), eq(ohPipelineJobs.companyId, companyId)));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete pipeline job" });
+    }
+  });
+
+  // Xero OH actuals — fetch P&L report for a date range
+  app.get("/api/xero/overhead-actuals", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero not connected" });
+
+      const { from, to } = req.query;
+      if (!from || !to) return res.status(400).json({ error: "from and to dates required (YYYY-MM-DD)" });
+
+      const result = await xeroService.getProfitAndLossReport(connection.id, String(from), String(to));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching Xero overhead actuals:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Xero P&L data" });
+    }
+  });
+
   // ─── Demo Data Routes ──────────────────────────────────────────────────────
 
   app.get("/api/demo/status", requireAuth, async (req, res) => {

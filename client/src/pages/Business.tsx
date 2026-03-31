@@ -16,6 +16,7 @@ import BusinessSchedule from "./BusinessSchedule";
 import ComingSoonPage from "./ComingSoonPage";
 import BusinessMetrics from "./BusinessMetrics";
 import { useAuth } from "@/hooks/use-auth";
+import BusinessOverheads from "./BusinessOverheads";
 
 const BUSINESS_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "/business" },
@@ -25,6 +26,7 @@ const BUSINESS_TABS = [
   { id: "schedule", label: "Schedule", icon: GanttChart, path: "/business/schedule" },
   { id: "files", label: "Files", icon: HardDrive, path: "/business/files" },
   { id: "expenses", label: "Expenses", icon: CreditCard, path: "/business/expenses" },
+  { id: "overheads", label: "Overheads", icon: BarChart3, path: "/business/overheads" },
   { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
   { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/business/minutes" },
@@ -69,6 +71,8 @@ export default function Business() {
         return <BusinessFiles />;
       case "expenses":
         return <ComingSoonPage section="business-expenses" />;
+      case "overheads":
+        return <BusinessOverheads />;
       case "timesheets":
         return <Timesheets />;
       case "messages":
