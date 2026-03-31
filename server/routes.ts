@@ -22792,7 +22792,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       };
 
       for (const acc of accounts) {
-        const accCode: string = acc.Code || "";
+        const accCode: string = acc.Code?.trim() || "";
+        if (!accCode) continue; // skip accounts with no code — no stable upsert key
         const accName: string = acc.Name || "";
         const accType: string = acc.Type || "EXPENSE";
         const catLabel = TYPE_LABEL[accType] || accType;
