@@ -22690,9 +22690,25 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!connection) return res.status(400).json({ error: "Xero not connected" });
 
       const { from, to } = req.query;
-      if (!from || !to) return res.status(400).json({ error: "from and to dates required (YYYY-MM-DD)" });
+      if (!from || !to) return res.status(400).json({ error: "from and to required (YYYY-MM or YYYY-MM-DD)" });
 
-      const result = await xeroService.getProfitAndLossReport(connection.id, String(from), String(to));
+      // Normalise YYYY-MM → full dates for the Xero API
+      const normaliseDate = (raw: string, endOfMonth: boolean): string => {
+        if (/^\d{4}-\d{2}$/.test(raw)) {
+          const [yyyy, mm] = raw.split("-").map(Number);
+          if (endOfMonth) {
+            const last = new Date(yyyy, mm, 0).getDate();
+            return `${raw}-${String(last).padStart(2, "0")}`;
+          }
+          return `${raw}-01`;
+        }
+        return raw; // already full date
+      };
+
+      const fromDate = normaliseDate(String(from), false);
+      const toDate   = normaliseDate(String(to),   true);
+
+      const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
       res.json(result);
     } catch (error: any) {
       console.error("Error fetching Xero overhead actuals:", error);

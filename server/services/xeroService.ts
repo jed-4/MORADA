@@ -543,44 +543,68 @@ export class XeroService {
     const byAccount: Record<string, { name: string; amounts: Record<string, number> }> = {};
     const accounts: any[] = [];
 
-    function parseRows(rows: any[]) {
-      for (const row of rows) {
-        if (row.RowType === "Row" && row.Cells) {
-          const cells = row.Cells as any[];
-          const accountName = cells[0]?.Value || "";
-          const accountCode = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
-          if (!accountCode && !accountName) continue;
-          const key = accountCode || accountName;
-          if (!byAccount[key]) {
-            byAccount[key] = { name: accountName, amounts: {} };
-            accounts.push({ code: accountCode, name: accountName });
+    const MONTH_MAP: Record<string, string> = {
+      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+    };
+
+    // Keywords that identify expense/overhead sections in a Xero P&L report.
+    // Income sections (Revenue, Sales, Gross Profit, Net Profit) are excluded.
+    const EXPENSE_KEYWORDS = [
+      "expense", "overhead", "operating", "administrative", "cost of sales",
+      "depreciation", "wage", "staff", "rent", "insurance", "utilities",
+    ];
+    const INCOME_KEYWORDS = ["revenue", "income", "sales", "gross profit", "net profit", "other income"];
+
+    function isExpenseSection(title: string): boolean {
+      const lower = title.toLowerCase();
+      if (INCOME_KEYWORDS.some(k => lower.includes(k))) return false;
+      if (EXPENSE_KEYWORDS.some(k => lower.includes(k))) return true;
+      // Default: include if no income keyword matches (catch-all for custom section names)
+      return true;
+    }
+
+    function parseRow(cells: any[]) {
+      const accountName = cells[0]?.Value || "";
+      const accountCode = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
+      if (!accountCode && !accountName) return;
+      const key = accountCode || accountName;
+      if (!byAccount[key]) {
+        byAccount[key] = { name: accountName, amounts: {} };
+        accounts.push({ code: accountCode, name: accountName });
+      }
+      for (let i = 1; i < cells.length && i < columns.length; i++) {
+        const monthLabel = columns[i]; // e.g. "Jan 2025"
+        const val = parseFloat(cells[i]?.Value || "0") || 0;
+        const parts = monthLabel.split(" ");
+        if (parts.length === 2) {
+          const mm = MONTH_MAP[parts[0]];
+          const yyyy = parts[1];
+          if (mm && yyyy) {
+            byAccount[key].amounts[`${yyyy}-${mm}`] = (byAccount[key].amounts[`${yyyy}-${mm}`] || 0) + val;
           }
-          // Map monthly values
-          for (let i = 1; i < cells.length && i < columns.length; i++) {
-            const monthLabel = columns[i]; // e.g. "Jan 2025"
-            const val = parseFloat(cells[i]?.Value || "0") || 0;
-            // Convert month label "Jan 2025" -> "2025-01"
-            const parts = monthLabel.split(" ");
-            if (parts.length === 2) {
-              const monthNames: Record<string, string> = {
-                Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
-                Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
-              };
-              const mm = monthNames[parts[0]];
-              const yyyy = parts[1];
-              if (mm && yyyy) {
-                byAccount[key].amounts[`${yyyy}-${mm}`] = (byAccount[key].amounts[`${yyyy}-${mm}`] || 0) + val;
-              }
-            }
-          }
-        }
-        if (row.Rows) {
-          parseRows(row.Rows);
         }
       }
     }
 
-    parseRows(report.Rows || []);
+    // Section-aware parsing: only collect Row entries from expense sections.
+    // Top-level sections have RowType "Section" with a Title cell (RowType "Header" child or Title field).
+    function parseSection(rows: any[], insideExpense: boolean) {
+      for (const row of rows) {
+        if (row.RowType === "Section") {
+          // Determine if this section is an expense section from its title
+          const sectionTitle: string = row.Title || row.Cells?.[0]?.Value || "";
+          const isExpense = sectionTitle ? isExpenseSection(sectionTitle) : insideExpense;
+          if (row.Rows) parseSection(row.Rows, isExpense);
+        } else if (row.RowType === "Row" && row.Cells && insideExpense) {
+          parseRow(row.Cells);
+        } else if (row.Rows) {
+          parseSection(row.Rows, insideExpense);
+        }
+      }
+    }
+
+    parseSection(report.Rows || [], false);
 
     return { byAccount, accounts };
   }

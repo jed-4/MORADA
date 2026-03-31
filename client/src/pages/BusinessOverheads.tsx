@@ -560,6 +560,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const rolling12 = useMemo(() => rollingLast12(), []);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
+  // Months that have at least one non-zero actual entered (drives amber chip state)
+  const monthsWithActuals = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of data.actuals) if (a.actualCents !== 0) s.add(`${a.year}__${a.month}`);
+    return s;
+  }, [data.actuals]);
 
   const upsertActualMut = useMutation({
     mutationFn: (p: { itemId: string; year: number; month: number; actualCents: number }) => apiRequest("/api/overheads/actuals", "PUT", p),
@@ -636,7 +642,20 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
             <div className="w-44 flex-shrink-0 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
             {rolling12.map(({ year, month }) => {
-              const isConfirmed = statusSet.has(`${year}__${month}`);
+              const key = `${year}__${month}`;
+              const isConfirmed = statusSet.has(key);
+              const hasData = monthsWithActuals.has(key);
+              // green = confirmed; amber = has data but unconfirmed; muted = no data
+              const chipCls = isConfirmed
+                ? "text-green-600 dark:text-green-400"
+                : hasData
+                  ? "text-amber-500 dark:text-amber-400"
+                  : "text-muted-foreground/30 hover:text-muted-foreground/60";
+              const tipText = isConfirmed
+                ? "Confirmed — click to unconfirm"
+                : hasData
+                  ? "Actuals entered but not yet confirmed — click to confirm"
+                  : "No actuals entered — click to confirm";
               return (
                 <div key={`${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-1">
                   <p className="text-[10px] font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
@@ -645,11 +664,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button onClick={() => toggleMonthMut.mutate({ year, month, confirmed: !isConfirmed })}
-                          className={`mt-0.5 w-full flex items-center justify-center ${isConfirmed ? "text-green-600 dark:text-green-400" : "text-muted-foreground/30 hover:text-muted-foreground/60"}`}>
+                          className={`mt-0.5 w-full flex items-center justify-center transition-colors ${chipCls}`}>
                           <CheckCircle2 className="w-3 h-3" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent><p className="text-xs">{isConfirmed ? "Confirmed — click to unconfirm" : "Click to confirm month"}</p></TooltipContent>
+                      <TooltipContent><p className="text-xs">{tipText}</p></TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>
