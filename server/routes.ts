@@ -22817,7 +22817,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           updated++;
         } else {
           // Create new item
-          await db.insert(overheadItems).values({
+          const [newItem] = await db.insert(overheadItems).values({
             categoryId: catId,
             name: accName,
             frequency: "monthly",
@@ -22826,9 +22826,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             xeroSynced: true,
             notes: null,
             sortOrder: 0,
-          });
+          }).returning();
           created++;
-          if (accCode) itemByCode.set(accCode, "synced");
+          if (accCode && newItem) itemByCode.set(accCode, newItem.id);
         }
       }
 
