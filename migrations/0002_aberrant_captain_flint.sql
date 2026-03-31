@@ -1,0 +1,1 @@
+ALTER TABLE "overhead_items" ADD COLUMN "xero_synced" boolean DEFAULT false NOT NULL;

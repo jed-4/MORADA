@@ -15,6 +15,13 @@
       "when": 1774927589945,
       "tag": "0001_burly_wolverine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774952051109,
+      "tag": "0002_aberrant_captain_flint",
+      "breakpoints": true
     }
   ]
 }
