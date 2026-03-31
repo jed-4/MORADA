@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { MessageSquare, Send, Loader2, User } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
 interface ActivityNotesPopoverProps {
@@ -208,7 +208,7 @@ export function ActivityNotesPopover({
                             {note.type === "system" ? "System" : note.userName}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                            {format(new Date(note.createdAt), "EEE do MMM")}
                           </span>
                           {note.isEdited && (
                             <span className="text-xs text-muted-foreground italic">

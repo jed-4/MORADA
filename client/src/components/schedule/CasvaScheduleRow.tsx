@@ -220,7 +220,7 @@ export function CasvaScheduleRow({
       <TableCell className="w-8 h-8 py-0">
         <ActivityNotesPopover 
           scheduleItemId={item.id} 
-          externalNoteCount={noteCount}
+          noteCount={noteCount}
         />
       </TableCell>
 
