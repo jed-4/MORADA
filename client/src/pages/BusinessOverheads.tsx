@@ -220,9 +220,9 @@ function AddCategoryDialog({ open, onClose, onSave }: { open: boolean; onClose: 
 
 interface ItemFormState { name: string; frequency: Frequency; budgetCents: string; xeroAccountCode: string; notes: string; categoryId: string; }
 
-function ItemDialog({ open, onClose, onSave, categories, initial, title }: {
+function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSynced }: {
   open: boolean; onClose: () => void; onSave: (f: ItemFormState) => void;
-  categories: OverheadCategory[]; initial?: Partial<ItemFormState>; title?: string;
+  categories: OverheadCategory[]; initial?: Partial<ItemFormState>; title?: string; xeroSynced?: boolean;
 }) {
   const [form, setForm] = useState<ItemFormState>({
     name: initial?.name || "", frequency: (initial?.frequency as Frequency) || "monthly",
@@ -235,8 +235,8 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title }: {
         <DialogHeader><DialogTitle>{title || "Add Overhead Item"}</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground">Item Name</Label>
-            <Input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Office Rent" className="mt-1" />
+            <Label className="text-xs text-muted-foreground">Item Name{xeroSynced && <span className="ml-1 text-[10px] text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Input autoFocus={!xeroSynced} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Office Rent" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Category</Label>
@@ -262,8 +262,8 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title }: {
             <Input type="number" value={form.budgetCents} onChange={e => setForm(f => ({ ...f, budgetCents: e.target.value }))} placeholder="0" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground">Xero Account Code</Label>
-            <Input value={form.xeroAccountCode} onChange={e => setForm(f => ({ ...f, xeroAccountCode: e.target.value }))} placeholder="e.g. 420" className="mt-1" />
+            <Label className="text-xs text-muted-foreground">Xero Account Code{xeroSynced && <span className="ml-1 text-[10px] text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Input value={form.xeroAccountCode} onChange={e => setForm(f => ({ ...f, xeroAccountCode: e.target.value }))} placeholder="e.g. 420" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div className="col-span-2">
             <Label className="text-xs text-muted-foreground">Notes</Label>
@@ -576,6 +576,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
         <ItemDialog open title="Edit Overhead Item" onClose={() => setEditItem(null)}
           onSave={form => { updateItemMut.mutate({ id: editItem.id, patch: { ...form, budgetCents: Math.round(parseFloat(form.budgetCents || "0") * 100) || 0 } }); setEditItem(null); }}
           categories={data.categories}
+          xeroSynced={editItem.xeroSynced}
           initial={{ name: editItem.name, frequency: editItem.frequency, budgetCents: editItem.budgetCents > 0 ? (editItem.budgetCents / 100).toFixed(0) : "", xeroAccountCode: editItem.xeroAccountCode || "", notes: editItem.notes || "", categoryId: editItem.categoryId }} />
       )}
     </div>

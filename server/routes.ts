@@ -22362,7 +22362,11 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         if (!newCat) return res.status(403).json({ error: "Target category not found or not in your company" });
       }
 
-      const allowed = ['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'] as const;
+      // Xero-synced items: name and xeroAccountCode are owned by Xero and cannot be changed manually
+      const xeroSynced = existing.overhead_items.xeroSynced;
+      const allowed = xeroSynced
+        ? (['frequency', 'budgetCents', 'notes', 'sortOrder', 'categoryId'] as const)
+        : (['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'] as const);
       const updates: Record<string, unknown> = {};
       for (const key of allowed) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
