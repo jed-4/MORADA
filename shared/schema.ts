@@ -5982,3 +5982,19 @@ export const ohPipelineJobs = pgTable("oh_pipeline_jobs", {
 export const insertOhPipelineJobSchema = createInsertSchema(ohPipelineJobs).omit({ id: true, createdAt: true });
 export type InsertOhPipelineJob = z.infer<typeof insertOhPipelineJobSchema>;
 export type OhPipelineJob = typeof ohPipelineJobs.$inferSelect;
+
+// Manual forecast overrides — per item per future month
+export const overheadForecastOverrides = pgTable("overhead_forecast_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => overheadItems.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  forecastCents: integer("forecast_cents").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueItemMonth: uniqueIndex("overhead_forecast_overrides_item_year_month_unique").on(table.itemId, table.year, table.month),
+}));
+
+export const insertOverheadForecastOverrideSchema = createInsertSchema(overheadForecastOverrides).omit({ id: true, updatedAt: true });
+export type InsertOverheadForecastOverride = z.infer<typeof insertOverheadForecastOverrideSchema>;
+export type OverheadForecastOverride = typeof overheadForecastOverrides.$inferSelect;

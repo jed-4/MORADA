@@ -22355,8 +22355,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         .where(and(eq(overheadItems.id, req.params.id), eq(overheadCategories.companyId, companyId)));
       if (!existing) return res.status(404).json({ error: "Not found" });
 
-      const allowed = ['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'];
-      const updates: any = {};
+      // Security: if categoryId is being changed, verify the NEW category belongs to this company too
+      if (req.body.categoryId && req.body.categoryId !== existing.overhead_items.categoryId) {
+        const [newCat] = await db.select().from(overheadCategories)
+          .where(and(eq(overheadCategories.id, req.body.categoryId), eq(overheadCategories.companyId, companyId)));
+        if (!newCat) return res.status(403).json({ error: "Target category not found or not in your company" });
+      }
+
+      const allowed = ['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'] as const;
+      const updates: Record<string, unknown> = {};
       for (const key of allowed) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
       }
@@ -22582,6 +22589,81 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to delete pipeline job" });
+    }
+  });
+
+  // Forecast overrides — upsert a single cell override
+  app.put("/api/overheads/forecast", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadForecastOverrides, overheadItems, overheadCategories } = await import("@shared/schema");
+      const { itemId, year, month, forecastCents } = req.body;
+
+      // Verify item belongs to company
+      const [item] = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(eq(overheadItems.id, itemId), eq(overheadCategories.companyId, companyId)));
+      if (!item) return res.status(403).json({ error: "Item not found" });
+
+      const [upserted] = await db.insert(overheadForecastOverrides)
+        .values({ itemId, year, month, forecastCents: forecastCents || 0, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [overheadForecastOverrides.itemId, overheadForecastOverrides.year, overheadForecastOverrides.month],
+          set: { forecastCents: forecastCents || 0, updatedAt: new Date() },
+        })
+        .returning();
+      res.json(upserted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to upsert forecast override" });
+    }
+  });
+
+  // Fetch all forecast overrides for this company
+  app.get("/api/overheads/forecast", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { overheadForecastOverrides, overheadItems, overheadCategories } = await import("@shared/schema");
+      const overrides = await db.select({ override: overheadForecastOverrides })
+        .from(overheadForecastOverrides)
+        .innerJoin(overheadItems, eq(overheadForecastOverrides.itemId, overheadItems.id))
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(eq(overheadCategories.companyId, companyId));
+
+      res.json(overrides.map(r => r.override));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch forecast overrides" });
+    }
+  });
+
+  // OH Predictor — active projects contracted value aggregation
+  app.get("/api/overheads/predictor/contracted", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projects: projectsTable } = await import("@shared/schema");
+      const contractedProjects = await db.select({
+        id: projectsTable.id,
+        name: projectsTable.name,
+        projectStatus: projectsTable.projectStatus,
+        lockedContractPrice: projectsTable.lockedContractPrice,
+      })
+        .from(projectsTable)
+        .where(and(
+          eq(projectsTable.companyId, companyId),
+          inArray(projectsTable.projectStatus, ["construction", "pre-construction"]),
+        ));
+
+      res.json(contractedProjects);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch contracted projects" });
     }
   });
 
