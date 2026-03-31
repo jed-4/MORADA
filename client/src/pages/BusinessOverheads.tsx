@@ -55,6 +55,8 @@ import {
   Building2,
   ToggleLeft,
   ToggleRight,
+  RefreshCw,
+  Lock,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -63,7 +65,7 @@ interface OverheadCategory { id: string; name: string; sortOrder: number; }
 interface OverheadItem {
   id: string; categoryId: string; name: string;
   frequency: "weekly" | "monthly" | "quarterly" | "annual";
-  budgetCents: number; xeroAccountCode: string | null; notes: string | null; sortOrder: number;
+  budgetCents: number; xeroAccountCode: string | null; xeroSynced: boolean; notes: string | null; sortOrder: number;
 }
 interface OverheadMonthActual { id: string; itemId: string; year: number; month: number; actualCents: number; xeroImported: boolean; }
 interface OverheadMonthStatus { id: string; companyId: string; year: number; month: number; confirmedAt: string | null; }
@@ -281,7 +283,7 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title }: {
 
 type CellId = { itemId: string; field: string };
 
-function RegisterTab({ data }: { data: OverheadsData }) {
+function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnected: boolean }) {
   const { toast } = useToast();
   const [addCatOpen, setAddCatOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
@@ -321,6 +323,15 @@ function RegisterTab({ data }: { data: OverheadsData }) {
     mutationFn: (id: string) => apiRequest(`/api/overheads/items/${id}`, "DELETE"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
     onError: () => toast({ title: "Failed to delete item", variant: "destructive" }),
+  });
+
+  const syncXeroMut = useMutation({
+    mutationFn: () => apiRequest("/api/xero/sync-overhead-accounts", "POST"),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
+      toast({ title: "Synced from Xero", description: `${data.created} added, ${data.updated} updated` });
+    },
+    onError: () => toast({ title: "Xero sync failed", variant: "destructive" }),
   });
 
   const itemsByCategory = useMemo(() => {
@@ -365,6 +376,12 @@ function RegisterTab({ data }: { data: OverheadsData }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {xeroConnected && (
+            <Button size="sm" variant="outline" onClick={() => syncXeroMut.mutate()} disabled={syncXeroMut.isPending}>
+              {syncXeroMut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+              Sync from Xero
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setAddItemOpen(true)}><Plus className="w-3.5 h-3.5 mr-1" />Add Item</Button>
           <Button size="sm" onClick={() => setAddCatOpen(true)}><FolderPlus className="w-3.5 h-3.5 mr-1" />Add Category</Button>
         </div>
@@ -374,7 +391,15 @@ function RegisterTab({ data }: { data: OverheadsData }) {
         <Card><CardContent className="py-10 flex flex-col items-center gap-3 text-center">
           <Package className="w-8 h-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No overhead categories yet.</p>
-          <Button size="sm" onClick={() => setAddCatOpen(true)}><FolderPlus className="w-3.5 h-3.5 mr-1" />Add First Category</Button>
+          <div className="flex items-center gap-2">
+            {xeroConnected && (
+              <Button size="sm" variant="outline" onClick={() => syncXeroMut.mutate()} disabled={syncXeroMut.isPending}>
+                {syncXeroMut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                Sync from Xero
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setAddCatOpen(true)}><FolderPlus className="w-3.5 h-3.5 mr-1" />Add First Category</Button>
+          </div>
         </CardContent></Card>
       )}
 
@@ -436,13 +461,16 @@ function RegisterTab({ data }: { data: OverheadsData }) {
                       <span />
 
                       {/* Name inline */}
-                      <div className={`h-full flex items-center ${isActive(item.id, "name") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                        {isActive(item.id, "name") ? (
+                      <div className={`h-full flex items-center gap-1.5 ${isActive(item.id, "name") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+                        {isActive(item.id, "name") && !item.xeroSynced ? (
                           <input autoFocus defaultValue={item.name} className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1"
                             onBlur={e => commitField(item.id, "name", e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
                         ) : (
-                          <button onClick={() => activate(item.id, "name")} className="w-full h-full flex items-center text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors text-left">{item.name}</button>
+                          <button onClick={() => !item.xeroSynced && activate(item.id, "name")} className={`flex-1 h-full flex items-center text-xs px-1 border-b border-transparent transition-colors text-left ${item.xeroSynced ? "cursor-default" : "hover:border-primary/30"}`}>{item.name}</button>
+                        )}
+                        {item.xeroSynced && (
+                          <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
                         )}
                       </div>
 
@@ -481,19 +509,26 @@ function RegisterTab({ data }: { data: OverheadsData }) {
                         )}
                       </div>
 
-                      {/* Xero code inline */}
-                      <div className={`h-full flex items-center ${isActive(item.id, "xeroAccountCode") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                        {isActive(item.id, "xeroAccountCode") ? (
-                          <input autoFocus defaultValue={item.xeroAccountCode || ""}
-                            className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1"
-                            onBlur={e => commitField(item.id, "xeroAccountCode", e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                        ) : (
-                          <button onClick={() => activate(item.id, "xeroAccountCode")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors text-muted-foreground">
-                            {item.xeroAccountCode || <span className="opacity-40">—</span>}
-                          </button>
-                        )}
-                      </div>
+                      {/* Xero code inline — read-only for synced items */}
+                      {item.xeroSynced ? (
+                        <div className="h-full flex items-center justify-end gap-1 px-1">
+                          <Lock className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" />
+                          <span className="text-xs text-muted-foreground tabular-nums">{item.xeroAccountCode || <span className="opacity-40">—</span>}</span>
+                        </div>
+                      ) : (
+                        <div className={`h-full flex items-center ${isActive(item.id, "xeroAccountCode") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+                          {isActive(item.id, "xeroAccountCode") ? (
+                            <input autoFocus defaultValue={item.xeroAccountCode || ""}
+                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1"
+                              onBlur={e => commitField(item.id, "xeroAccountCode", e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+                          ) : (
+                            <button onClick={() => activate(item.id, "xeroAccountCode")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors text-muted-foreground">
+                              {item.xeroAccountCode || <span className="opacity-40">—</span>}
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Monthly equiv — read-only */}
                       <span className="text-xs text-right tabular-nums px-1">{fmtDollars(toMonthlyCents(item))}</span>
@@ -1318,6 +1353,8 @@ export default function BusinessOverheads() {
   const [activeTab, setActiveTab] = useState<TabId>("register");
 
   const { data, isLoading, error } = useQuery<OverheadsData>({ queryKey: ["/api/overheads"] });
+  const { data: xeroStatus } = useQuery<{ connected: boolean }>({ queryKey: ["/api/xero/status"] });
+  const xeroConnected = xeroStatus?.connected ?? false;
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   if (error || !data) return <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">Failed to load overhead data.</div>;
@@ -1338,7 +1375,7 @@ export default function BusinessOverheads() {
         })}
       </div>
 
-      {activeTab === "register"  && <RegisterTab data={data} />}
+      {activeTab === "register"  && <RegisterTab data={data} xeroConnected={xeroConnected} />}
       {activeTab === "actuals"   && <MonthlyActualsTab data={data} />}
       {activeTab === "forecast"  && <ForecastTab data={data} />}
       {activeTab === "predictor" && <OhRecoveryTab data={data} />}

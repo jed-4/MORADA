@@ -22749,6 +22749,92 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Xero — sync overhead accounts (chart of accounts → categories + items)
+  app.post("/api/xero/sync-overhead-accounts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero not connected" });
+
+      const accounts = await xeroService.getAccounts(connection.id);
+      if (!accounts.length) return res.json({ created: 0, updated: 0 });
+
+      const { overheadCategories, overheadItems } = await import("@shared/schema");
+
+      // Fetch existing categories and items for this company
+      const existingCats = await db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId));
+      const existingItems = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(eq(overheadCategories.companyId, companyId));
+
+      // Build lookup maps
+      const catByName = new Map(existingCats.map(c => [c.name.toLowerCase(), c.id]));
+      const itemByCode = new Map(existingItems
+        .filter(r => r.overhead_items.xeroAccountCode)
+        .map(r => [r.overhead_items.xeroAccountCode as string, r.overhead_items.id]));
+
+      let created = 0;
+      let updated = 0;
+
+      // Group accounts by Type using friendly labels for category names
+      const TYPE_LABEL: Record<string, string> = {
+        EXPENSE: "General Expenses",
+        OVERHEADS: "Overheads",
+        DIRECTCOSTS: "Direct Costs",
+        CURRLIAB: "Current Liabilities",
+      };
+
+      for (const acc of accounts) {
+        const accCode: string = acc.Code || "";
+        const accName: string = acc.Name || "";
+        const accType: string = acc.Type || "EXPENSE";
+        const catLabel = TYPE_LABEL[accType] || accType;
+
+        // Upsert category by name
+        let catId = catByName.get(catLabel.toLowerCase());
+        if (!catId) {
+          const [newCat] = await db.insert(overheadCategories)
+            .values({ companyId, name: catLabel, sortOrder: 0 })
+            .returning();
+          catId = newCat.id;
+          catByName.set(catLabel.toLowerCase(), catId);
+        }
+
+        // Upsert item by xeroAccountCode
+        const existingItemId = accCode ? itemByCode.get(accCode) : null;
+        if (existingItemId) {
+          // Update name only — preserve budget and frequency
+          await db.update(overheadItems)
+            .set({ name: accName, xeroSynced: true, xeroAccountCode: accCode || null })
+            .where(eq(overheadItems.id, existingItemId));
+          updated++;
+        } else {
+          // Create new item
+          await db.insert(overheadItems).values({
+            categoryId: catId,
+            name: accName,
+            frequency: "monthly",
+            budgetCents: 0,
+            xeroAccountCode: accCode || null,
+            xeroSynced: true,
+            notes: null,
+            sortOrder: 0,
+          });
+          created++;
+          if (accCode) itemByCode.set(accCode, "synced");
+        }
+      }
+
+      res.json({ created, updated });
+    } catch (error: any) {
+      console.error("Error syncing overhead accounts from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to sync" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication

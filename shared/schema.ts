@@ -5913,6 +5913,7 @@ export const overheadItems = pgTable("overhead_items", {
   frequency: frequencyEnum("frequency").notNull().default("monthly"),
   budgetCents: integer("budget_cents").notNull().default(0),
   xeroAccountCode: text("xero_account_code"),
+  xeroSynced: boolean("xero_synced").notNull().default(false),
   notes: text("notes"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
