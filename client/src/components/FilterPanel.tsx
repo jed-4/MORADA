@@ -41,6 +41,7 @@ export interface FilterState {
   dueDateFrom?: Date;
   dueDateTo?: Date;
   dueDatePreset?: DueDatePreset;
+  dueDateToRelative?: 'today';
   search?: string;
 }
 

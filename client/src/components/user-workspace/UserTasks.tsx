@@ -694,7 +694,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     }
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || filters.dueDateFrom || filters.dueDateTo);
+  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || filters.dueDateFrom || filters.dueDateTo || filters.dueDateToRelative);
 
   const clearAllFilters = () => {
     setFilters({});
@@ -918,11 +918,13 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     : presetRange?.from 
                       ? formatInTimezone(presetRange.from, effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                       : 'Any start';
-                  const toDisplay = filters.dueDateTo 
-                    ? formatInTimezone(new Date(filters.dueDateTo), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
-                    : presetRange?.to 
-                      ? formatInTimezone(presetRange.to, effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
-                      : 'Any end';
+                  const toDisplay = filters.dueDateToRelative === 'today'
+                    ? 'Relative: Today'
+                    : filters.dueDateTo 
+                      ? formatInTimezone(new Date(filters.dueDateTo), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
+                      : presetRange?.to 
+                        ? formatInTimezone(presetRange.to, effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
+                        : 'Any end';
                   return (
                     <div className="px-2 py-1 space-y-2">
                       {filters.dueDatePreset && presetRange?.label && (
@@ -971,32 +973,38 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                             </button>
                           </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
-                        <div className="p-2 border-b flex gap-1">
+                        <div className="p-2 border-b flex flex-wrap gap-1">
                           <button
                             className={`text-xs px-2 py-1 rounded border ${
-                              filters.dueDatePreset === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                              filters.dueDateToRelative === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                             }`}
-                            onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today'})}
+                            onClick={() => setFilters({...filters, dueDateTo: undefined, dueDatePreset: undefined, dueDateToRelative: 'today'})}
+                          >Relative: Today</button>
+                          <button
+                            className={`text-xs px-2 py-1 rounded border ${
+                              filters.dueDatePreset === 'today' && !filters.dueDateToRelative ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                            }`}
+                            onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today', dueDateToRelative: undefined})}
                           >Today</button>
                           <button
                             className={`text-xs px-2 py-1 rounded border ${
                               filters.dueDatePreset === 'tomorrow' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                             }`}
-                            onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow'})}
+                            onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow', dueDateToRelative: undefined})}
                           >Tomorrow</button>
                         </div>
                         <CalendarComponent
                           mode="single"
                           selected={filters.dueDateTo ? new Date(filters.dueDateTo) : undefined}
                           onSelect={(date) => {
-                            setFilters({...filters, dueDateTo: date || undefined, dueDatePreset: undefined});
+                            setFilters({...filters, dueDateTo: date || undefined, dueDatePreset: undefined, dueDateToRelative: undefined});
                           }}
                         />
-                        {filters.dueDateTo && (
+                        {(filters.dueDateTo || filters.dueDateToRelative) && (
                           <div className="p-2 border-t">
                             <button 
                               className="text-xs text-destructive hover:underline"
-                              onClick={() => setFilters({...filters, dueDateTo: undefined})}
+                              onClick={() => setFilters({...filters, dueDateTo: undefined, dueDateToRelative: undefined})}
                             >
                               Clear
                             </button>
@@ -1015,42 +1023,42 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'overdue' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'overdue'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'overdue', dueDateToRelative: undefined})}
                   >Overdue</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today', dueDateToRelative: undefined})}
                   >Today</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'tomorrow' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow', dueDateToRelative: undefined})}
                   >Tomorrow</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'this-week' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-week'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-week', dueDateToRelative: undefined})}
                   >This Week</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'last-week-to-today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'last-week-to-today'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'last-week-to-today', dueDateToRelative: undefined})}
                   >Last Week+</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'this-month' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
-                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-month'})}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-month', dueDateToRelative: undefined})}
                   >This Month</button>
-                  {(filters.dueDateFrom || filters.dueDateTo || filters.dueDatePreset) && (
+                  {(filters.dueDateFrom || filters.dueDateTo || filters.dueDatePreset || filters.dueDateToRelative) && (
                     <button 
                       className="text-[10px] px-1.5 py-0.5 rounded border text-destructive hover-elevate"
-                      onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: undefined})}
+                      onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: undefined, dueDateToRelative: undefined})}
                     >Clear</button>
                   )}
                 </div>

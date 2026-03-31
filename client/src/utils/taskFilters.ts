@@ -126,7 +126,7 @@ export function applyTaskFilters(tasks: Task[], filters: FilterState, weekStartD
         if (range.from && taskDueDate < range.from) return false;
         if (range.to && taskDueDate > range.to) return false;
       }
-    } else if (filters.dueDateFrom || filters.dueDateTo) {
+    } else if (filters.dueDateFrom || filters.dueDateTo || filters.dueDateToRelative) {
       if (!task.dueDate) {
         return false; // Exclude tasks without due dates when date filter is active
       }
@@ -141,12 +141,15 @@ export function applyTaskFilters(tasks: Task[], filters: FilterState, weekStartD
         }
       }
 
-      if (filters.dueDateTo) {
-        const toDate = new Date(filters.dueDateTo);
-        toDate.setHours(23, 59, 59, 999);
-        if (taskDueDate > toDate) {
-          return false;
-        }
+      // dueDateToRelative === 'today' resolves dynamically to end-of-today on every evaluation
+      const effectiveTo = filters.dueDateToRelative === 'today'
+        ? endOfDay(new Date())
+        : filters.dueDateTo
+          ? (() => { const d = new Date(filters.dueDateTo); d.setHours(23, 59, 59, 999); return d; })()
+          : null;
+
+      if (effectiveTo && taskDueDate > effectiveTo) {
+        return false;
       }
     }
 
