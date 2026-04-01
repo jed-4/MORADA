@@ -580,7 +580,7 @@ export async function syncOverheadActualsNightly() {
     // Lazy import to avoid circular deps
     const { db } = await import("../db");
     const { eq, and, isNotNull } = await import("drizzle-orm");
-    const xeroService = (await import("../services/xeroService")).default;
+    const { xeroService } = await import("../services/xeroService");
     const { xeroConnections, overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
 
     // Get all companies that have Xero connected
