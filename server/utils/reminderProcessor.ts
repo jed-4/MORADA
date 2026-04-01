@@ -7,6 +7,7 @@ let isProcessorRunning = false;
 let lastInsuranceCheckDate: string | null = null;
 let lastRecurringTasksCheckDate: string | null = null;
 let lastArchivedContactCleanupDate: string | null = null;
+let lastOverheadActualsSyncDate: string | null = null;
 let processorInterval: NodeJS.Timeout | null = null;
 const timesheetReminderSent = new Map<string, number>();
 
@@ -198,6 +199,7 @@ export async function processReminders() {
     await processRecurringTaskTemplates();
     await processTimesheetOvertimeReminders();
     await cleanupArchivedContacts();
+    await syncOverheadActualsNightly();
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
@@ -566,5 +568,76 @@ export async function cleanupArchivedContacts() {
     }
   } catch (error) {
     console.error("[ReminderProcessor] Error cleaning up archived contacts:", error);
+  }
+}
+
+export async function syncOverheadActualsNightly() {
+  const today = format(new Date(), "yyyy-MM-dd");
+  if (lastOverheadActualsSyncDate === today) return;
+
+  try {
+    console.log("[ReminderProcessor] Running nightly overhead actuals Xero sync...");
+    // Lazy import to avoid circular deps
+    const { db } = await import("../db");
+    const { eq, and, isNotNull } = await import("drizzle-orm");
+    const xeroService = (await import("../services/xeroService")).default;
+    const { xeroConnections, overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
+
+    // Get all companies that have Xero connected
+    const allConnections = await db.select().from(xeroConnections);
+    let totalSynced = 0;
+    let totalDrifted = 0;
+
+    for (const connection of allConnections) {
+      const companyId = connection.companyId;
+      try {
+        const now = new Date();
+        const fromDate = `${now.getFullYear() - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+        const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
+
+        const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
+
+        const companyItemRows = await db.select({ id: overheadItems.id, code: overheadItems.xeroAccountCode })
+          .from(overheadItems)
+          .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+          .where(and(eq(overheadCategories.companyId, companyId), isNotNull(overheadItems.xeroAccountCode)));
+        const itemByCode = new Map(companyItemRows.map(i => [i.code as string, i.id]));
+
+        const confirmedStatuses = await db.select({ year: overheadMonthStatus.year, month: overheadMonthStatus.month })
+          .from(overheadMonthStatus)
+          .where(and(eq(overheadMonthStatus.companyId, companyId), isNotNull(overheadMonthStatus.confirmedAt)));
+        const confirmedSet = new Set(confirmedStatuses.map(s => `${s.year}__${s.month}`));
+
+        for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
+          const itemId = itemByCode.get(accountCode);
+          if (!itemId) continue;
+          for (const [monthKey, amount] of Object.entries((accountData as any).amounts)) {
+            const [yyyy, mm] = monthKey.split("-").map(Number);
+            if (!yyyy || !mm) continue;
+            const actualCents = Math.round((amount as number) * 100);
+            const isConfirmed = confirmedSet.has(`${yyyy}__${mm}`);
+            const [existing] = await db.select({ actualCents: overheadMonthActuals.actualCents })
+              .from(overheadMonthActuals)
+              .where(and(eq(overheadMonthActuals.itemId, itemId), eq(overheadMonthActuals.year, yyyy), eq(overheadMonthActuals.month, mm)));
+            const hasDrift = isConfirmed && existing && existing.actualCents !== actualCents;
+            if (hasDrift) totalDrifted++;
+            await db.insert(overheadMonthActuals)
+              .values({ itemId, year: yyyy, month: mm, actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
+                set: { actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() },
+              });
+            totalSynced++;
+          }
+        }
+      } catch (err) {
+        console.error(`[ReminderProcessor] Overhead actuals sync failed for company ${companyId}:`, err);
+      }
+    }
+
+    lastOverheadActualsSyncDate = today;
+    console.log(`[ReminderProcessor] Nightly overhead actuals sync complete: ${totalSynced} records, ${totalDrifted} drifted`);
+  } catch (error) {
+    console.error("[ReminderProcessor] Error in nightly overhead actuals sync:", error);
   }
 }

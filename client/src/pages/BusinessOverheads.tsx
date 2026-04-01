@@ -51,7 +51,6 @@ import {
   Package,
   Target,
   Download,
-  Info,
   Building2,
   ToggleLeft,
   ToggleRight,
@@ -67,7 +66,7 @@ interface OverheadItem {
   frequency: "weekly" | "monthly" | "quarterly" | "annual";
   budgetCents: number; xeroAccountCode: string | null; xeroSynced: boolean; notes: string | null; sortOrder: number;
 }
-interface OverheadMonthActual { id: string; itemId: string; year: number; month: number; actualCents: number; xeroImported: boolean; }
+interface OverheadMonthActual { id: string; itemId: string; year: number; month: number; actualCents: number; xeroImported: boolean; driftedSinceConfirmed: boolean; }
 interface OverheadMonthStatus { id: string; companyId: string; year: number; month: number; confirmedAt: string | null; }
 interface OhSettings { targetOhPercent: string; }
 interface OhPipelineJob { id: string; name: string; estimatedValue: number; probabilityPercent: number; expectedStartDate: string | null; notes: string | null; }
@@ -123,6 +122,11 @@ function buildActualMap(actuals: OverheadMonthActual[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const a of actuals) m.set(getKey(a.itemId, a.year, a.month), a.actualCents);
   return m;
+}
+function buildDriftMap(actuals: OverheadMonthActual[]): Set<string> {
+  const s = new Set<string>();
+  for (const a of actuals) if (a.driftedSinceConfirmed) s.add(getKey(a.itemId, a.year, a.month));
+  return s;
 }
 function buildStatusSet(statuses: OverheadMonthStatus[]): Set<string> {
   const s = new Set<string>();
@@ -504,7 +508,12 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                             onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
                         ) : (
                           <button onClick={() => activate(item.id, "budgetCents")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors tabular-nums">
-                            {item.budgetCents > 0 ? fmtDollars(item.budgetCents) : <span className="text-muted-foreground/40">—</span>}
+                            {item.budgetCents > 0
+                              ? fmtDollars(item.budgetCents)
+                              : item.xeroSynced
+                                ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
+                                : <span className="text-muted-foreground/40">—</span>
+                            }
                           </button>
                         )}
                       </div>
@@ -585,21 +594,23 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 
 // ─── Tab 2: Monthly Actuals (rolling 12-month) ────────────────────────────────
 
-interface XeroMappingRow { xeroAccountName: string; xeroKey: string; amounts: Record<string, number>; selectedItemId: string; }
-
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
-  const [xeroDialogOpen, setXeroDialogOpen] = useState(false);
-  const [xeroLoading, setXeroLoading] = useState(false);
-  const [xeroMappings, setXeroMappings] = useState<XeroMappingRow[]>([]);
 
   const rolling12 = useMemo(() => rollingLast12(), []);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
+  const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
   // Months that have at least one non-zero actual entered (drives amber chip state)
   const monthsWithActuals = useMemo(() => {
     const s = new Set<string>();
     for (const a of data.actuals) if (a.actualCents !== 0) s.add(`${a.year}__${a.month}`);
+    return s;
+  }, [data.actuals]);
+  // Months that have at least one drifted actual (drives drift indicator on column header)
+  const monthsWithDrift = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of data.actuals) if (a.driftedSinceConfirmed) s.add(`${a.year}__${a.month}`);
     return s;
   }, [data.actuals]);
 
@@ -613,49 +624,17 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
     onError: () => toast({ title: "Failed to update month status", variant: "destructive" }),
   });
-  const bulkUpsertMut = useMutation({
-    mutationFn: (actuals: Array<{ itemId: string; year: number; month: number; actualCents: number }>) =>
-      apiRequest("/api/overheads/actuals/bulk", "POST", { actuals }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }); toast({ title: "Xero actuals imported" }); setXeroDialogOpen(false); },
-    onError: () => toast({ title: "Failed to import Xero actuals", variant: "destructive" }),
+  const syncActualsMut = useMutation({
+    mutationFn: () => apiRequest("/api/xero/sync-overhead-actuals", "POST", {}),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
+      const drifted = res?.drifted || 0;
+      toast({ title: drifted > 0 ? `Synced — ${drifted} confirmed month${drifted !== 1 ? "s" : ""} have changed figures` : "Xero actuals synced" });
+    },
+    onError: () => toast({ title: "Failed to sync Xero actuals", variant: "destructive" }),
   });
 
   const monthBudget = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
-
-  const openXeroImport = async () => {
-    setXeroLoading(true);
-    setXeroDialogOpen(true);
-    try {
-      const now = new Date();
-      const fromDate = `${now.getFullYear() - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-28`;
-      const result = await fetch(`/api/xero/overhead-actuals?from=${fromDate}&to=${toDate}`, { credentials: "include" });
-      if (!result.ok) throw new Error(await result.text());
-      const json = await result.json() as { byAccount: Record<string, { name: string; amounts: Record<string, number> }> };
-      setXeroMappings(Object.entries(json.byAccount).map(([key, val]) => ({
-        xeroAccountName: val.name, xeroKey: key, amounts: val.amounts,
-        selectedItemId: data.items.find(i => i.xeroAccountCode === key)?.id || "",
-      })));
-    } catch {
-      toast({ title: "Failed to load Xero data", variant: "destructive" });
-      setXeroDialogOpen(false);
-    } finally {
-      setXeroLoading(false);
-    }
-  };
-
-  const applyXeroImport = () => {
-    const actuals: Array<{ itemId: string; year: number; month: number; actualCents: number }> = [];
-    for (const row of xeroMappings) {
-      if (!row.selectedItemId) continue;
-      for (const [monthKey, amount] of Object.entries(row.amounts)) {
-        const parts = monthKey.split("-");
-        actuals.push({ itemId: row.selectedItemId, year: parseInt(parts[0]), month: parseInt(parts[1]), actualCents: Math.round(amount * 100) });
-      }
-    }
-    if (!actuals.length) { toast({ title: "No data to import" }); return; }
-    bulkUpsertMut.mutate(actuals);
-  };
 
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
 
@@ -668,7 +647,10 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         </div>
         <div className="flex items-center gap-2">
           <p className="text-xs text-muted-foreground hidden md:block">Click any cell to enter actuals.</p>
-          <Button size="sm" variant="outline" onClick={openXeroImport}><Download className="w-3.5 h-3.5 mr-1" />Import from Xero</Button>
+          <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
+            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
+            {syncActualsMut.isPending ? "Syncing…" : "Sync Actuals from Xero"}
+          </Button>
         </div>
       </div>
 
@@ -681,17 +663,22 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               const key = `${year}__${month}`;
               const isConfirmed = statusSet.has(key);
               const hasData = monthsWithActuals.has(key);
-              // green = confirmed; amber = has data but unconfirmed; muted = no data
-              const chipCls = isConfirmed
-                ? "text-green-600 dark:text-green-400"
-                : hasData
-                  ? "text-amber-500 dark:text-amber-400"
-                  : "text-muted-foreground/30 hover:text-muted-foreground/60";
-              const tipText = isConfirmed
-                ? "Confirmed — click to unconfirm"
-                : hasData
-                  ? "Actuals entered but not yet confirmed — click to confirm"
-                  : "No actuals entered — click to confirm";
+              const hasDrift = monthsWithDrift.has(key);
+              // green = confirmed (no drift); orange = confirmed but drifted; amber = has data but unconfirmed; muted = no data
+              const chipCls = hasDrift
+                ? "text-orange-500 dark:text-orange-400"
+                : isConfirmed
+                  ? "text-green-600 dark:text-green-400"
+                  : hasData
+                    ? "text-amber-500 dark:text-amber-400"
+                    : "text-muted-foreground/30 hover:text-muted-foreground/60";
+              const tipText = hasDrift
+                ? "Xero figures changed since confirmed — re-confirm to accept"
+                : isConfirmed
+                  ? "Confirmed — click to unconfirm"
+                  : hasData
+                    ? "Actuals entered but not yet confirmed — click to confirm"
+                    : "No actuals entered — click to confirm";
               return (
                 <div key={`${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-1">
                   <p className="text-[10px] font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
@@ -740,8 +727,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                       {rolling12.map(({ year, month }) => {
                         const cents = actualMap.get(getKey(item.id, year, month)) || 0;
                         const over = cents > 0 && itemBudgetMonthly > 0 && cents > itemBudgetMonthly * 1.1;
+                        const drifted = driftMap.has(getKey(item.id, year, month));
                         return (
-                          <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : ""}`}>
+                          <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : drifted ? "bg-orange-500/8" : ""}`}>
                             <ActualCell cents={cents} highlight={over}
                               onSave={val => upsertActualMut.mutate({ itemId: item.id, year, month, actualCents: val })} />
                           </div>
@@ -801,47 +789,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         </div>
       </div>
 
-      {/* Xero import dialog */}
-      <Dialog open={xeroDialogOpen} onOpenChange={setXeroDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-          <DialogHeader><DialogTitle>Import Actuals from Xero — Rolling 12 Months</DialogTitle></DialogHeader>
-          {xeroLoading ? (
-            <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-          ) : (
-            <div className="flex flex-col gap-3 overflow-y-auto flex-1">
-              <p className="text-xs text-muted-foreground">Match each Xero account to an overhead item. Only mapped rows will be imported.</p>
-              {xeroMappings.length === 0 ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4"><Info className="w-4 h-4" />No P&L data found. Ensure Xero is connected.</div>
-              ) : (
-                <div className="border border-border/50 rounded-md overflow-hidden">
-                  <div className="grid px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground bg-muted/30" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                    <span>Xero Account</span><span>Map to Overhead Item</span>
-                  </div>
-                  {xeroMappings.map((row, idx) => (
-                    <div key={row.xeroKey} className="grid items-center px-3 py-2 border-t border-border/30" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                      <div><p className="text-xs font-medium">{row.xeroAccountName}</p><p className="text-[10px] text-muted-foreground">{row.xeroKey}</p></div>
-                      <Select value={row.selectedItemId || "none"} onValueChange={v => setXeroMappings(prev => prev.map((r, i) => i === idx ? { ...r, selectedItemId: v === "none" ? "" : v } : r))}>
-                        <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Skip" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Skip</SelectItem>
-                          {data.items.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setXeroDialogOpen(false)}>Cancel</Button>
-            <Button onClick={applyXeroImport} disabled={xeroLoading || xeroMappings.every(r => !r.selectedItemId) || bulkUpsertMut.isPending}>
-              {bulkUpsertMut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1" />}
-              Import Selected
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

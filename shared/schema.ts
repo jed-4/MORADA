@@ -5930,6 +5930,7 @@ export const overheadMonthActuals = pgTable("overhead_month_actuals", {
   month: integer("month").notNull(), // 1-12
   actualCents: integer("actual_cents").notNull().default(0),
   xeroImported: boolean("xero_imported").notNull().default(false),
+  driftedSinceConfirmed: boolean("drifted_since_confirmed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

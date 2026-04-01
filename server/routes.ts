@@ -149,7 +149,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -22248,7 +22248,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 
       const [categories, items, actuals, statuses, settings] = await Promise.all([
         db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadCategories.sortOrder), asc(overheadCategories.createdAt)),
-        db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.sortOrder), asc(overheadItems.createdAt)),
+        db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.name)),
         db.select().from(overheadMonthActuals).innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id)).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)),
         db.select().from(overheadMonthStatus).where(eq(overheadMonthStatus.companyId, companyId)),
         db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1),
@@ -22464,6 +22464,76 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Smart Xero actuals sync — pulls last 13 months of P&L and matches by xeroAccountCode, no dialog needed
+  app.post("/api/xero/sync-overhead-actuals", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero not connected" });
+
+      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
+
+      // Determine date range: 13 months back to end of current month
+      const now = new Date();
+      const fromDate = `${now.getFullYear() - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
+
+      const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
+
+      // Build itemByCode map for this company
+      const companyItems = await db.select({ id: overheadItems.id, code: overheadItems.xeroAccountCode })
+        .from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(and(eq(overheadCategories.companyId, companyId), isNotNull(overheadItems.xeroAccountCode)));
+      const itemByCode = new Map(companyItems.map(i => [i.code as string, i.id]));
+
+      // Get confirmed months for this company (to detect drift)
+      const confirmedStatuses = await db.select({ year: overheadMonthStatus.year, month: overheadMonthStatus.month })
+        .from(overheadMonthStatus)
+        .where(and(eq(overheadMonthStatus.companyId, companyId), isNotNull(overheadMonthStatus.confirmedAt)));
+      const confirmedSet = new Set(confirmedStatuses.map(s => `${s.year}__${s.month}`));
+
+      let synced = 0;
+      let drifted = 0;
+
+      for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
+        const itemId = itemByCode.get(accountCode);
+        if (!itemId) continue; // no matching overhead item — skip
+
+        for (const [monthKey, amount] of Object.entries(accountData.amounts)) {
+          const [yyyy, mm] = monthKey.split("-").map(Number);
+          if (!yyyy || !mm) continue;
+          const actualCents = Math.round(amount * 100);
+          const isConfirmed = confirmedSet.has(`${yyyy}__${mm}`);
+
+          // Detect drift: fetch existing actual to compare
+          const [existing] = await db.select({ actualCents: overheadMonthActuals.actualCents })
+            .from(overheadMonthActuals)
+            .where(and(eq(overheadMonthActuals.itemId, itemId), eq(overheadMonthActuals.year, yyyy), eq(overheadMonthActuals.month, mm)));
+
+          const hasDrift = isConfirmed && existing && existing.actualCents !== actualCents;
+          if (hasDrift) drifted++;
+
+          await db.insert(overheadMonthActuals)
+            .values({ itemId, year: yyyy, month: mm, actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
+              set: { actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() },
+            });
+          synced++;
+        }
+      }
+
+      res.json({ synced, drifted });
+    } catch (error: any) {
+      console.error("Error syncing Xero overhead actuals:", error);
+      res.status(500).json({ error: error.message || "Failed to sync actuals" });
+    }
+  });
+
   // Toggle month confirmation status
   app.post("/api/overheads/month-status", requireAuth, async (req, res) => {
     try {
@@ -22472,7 +22542,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const userId = user?.id;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { overheadMonthStatus } = await import("@shared/schema");
+      const { overheadMonthStatus, overheadMonthActuals, overheadItems, overheadCategories } = await import("@shared/schema");
       const { year, month, confirmed } = req.body;
 
       const [existing] = await db.select().from(overheadMonthStatus)
@@ -22483,6 +22553,18 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           .set({ confirmedAt: confirmed ? new Date() : null, confirmedByUserId: confirmed ? userId : null })
           .where(eq(overheadMonthStatus.id, existing.id))
           .returning();
+        // When re-confirming a drifted month, clear all drift flags for that month
+        if (confirmed) {
+          const companyItemIds = await db.select({ id: overheadItems.id }).from(overheadItems)
+            .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+            .where(eq(overheadCategories.companyId, companyId));
+          const ids = companyItemIds.map(i => i.id);
+          if (ids.length > 0) {
+            await db.update(overheadMonthActuals)
+              .set({ driftedSinceConfirmed: false })
+              .where(and(inArray(overheadMonthActuals.itemId, ids), eq(overheadMonthActuals.year, year), eq(overheadMonthActuals.month, month)));
+          }
+        }
         return res.json(updated);
       }
 
@@ -22774,29 +22856,58 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
         .where(eq(overheadCategories.companyId, companyId));
 
-      // Build lookup maps
-      const catByName = new Map(existingCats.map(c => [c.name.toLowerCase(), c.id]));
-      const itemByCode = new Map(existingItems
+      // Simplified category mapping: builders only need Overheads vs Direct Costs
+      const TYPE_LABEL: Record<string, string> = {
+        EXPENSE: "Overheads",
+        OVERHEADS: "Overheads",
+        DIRECTCOSTS: "Direct Costs",
+        CURRLIAB: "Overheads",
+      };
+
+      // Legacy category names that should be merged into the simplified categories
+      const LEGACY_TO_TARGET: Record<string, string> = {
+        "general expenses": "overheads",
+        "current liabilities": "overheads",
+      };
+
+      // Migrate items from legacy categories to their target categories
+      for (const [legacyName, targetName] of Object.entries(LEGACY_TO_TARGET)) {
+        const legacyCat = existingCats.find(c => c.name.toLowerCase() === legacyName);
+        if (!legacyCat) continue;
+        // Ensure target category exists
+        let targetCat = existingCats.find(c => c.name.toLowerCase() === targetName);
+        if (!targetCat) {
+          const label = targetName === "overheads" ? "Overheads" : "Direct Costs";
+          const [nc] = await db.insert(overheadCategories).values({ companyId, name: label, sortOrder: 0 }).returning();
+          targetCat = nc;
+          existingCats.push(targetCat);
+        }
+        // Move all items from legacy to target
+        await db.update(overheadItems).set({ categoryId: targetCat.id }).where(eq(overheadItems.categoryId, legacyCat.id));
+        // Delete now-empty legacy category
+        await db.delete(overheadCategories).where(eq(overheadCategories.id, legacyCat.id));
+      }
+
+      // Re-fetch current state after migration
+      const currentCats = await db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId));
+      const currentItems = await db.select().from(overheadItems)
+        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
+        .where(eq(overheadCategories.companyId, companyId));
+
+      const catByName = new Map(currentCats.map(c => [c.name.toLowerCase(), c.id]));
+      const itemByCode = new Map(currentItems
         .filter(r => r.overhead_items.xeroAccountCode)
         .map(r => [r.overhead_items.xeroAccountCode as string, r.overhead_items.id]));
 
       let created = 0;
       let updated = 0;
 
-      // Group accounts by Type using friendly labels for category names
-      const TYPE_LABEL: Record<string, string> = {
-        EXPENSE: "General Expenses",
-        OVERHEADS: "Overheads",
-        DIRECTCOSTS: "Direct Costs",
-        CURRLIAB: "Current Liabilities",
-      };
-
       for (const acc of accounts) {
         const accCode: string = acc.Code?.trim() || "";
         if (!accCode) continue; // skip accounts with no code — no stable upsert key
         const accName: string = acc.Name || "";
         const accType: string = acc.Type || "EXPENSE";
-        const catLabel = TYPE_LABEL[accType] || accType;
+        const catLabel = TYPE_LABEL[accType] || "Overheads";
 
         // Upsert category by name
         let catId = catByName.get(catLabel.toLowerCase());
