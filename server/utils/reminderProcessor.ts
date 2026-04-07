@@ -42,34 +42,9 @@ export async function processReminders() {
           body: reminder.description || undefined,
         });
         
-        // Create in-app notification for the bell icon
-        let notificationLink: string | undefined;
-        if (reminder.linkedItemType === "task" && reminder.linkedItemId) {
-          // Link to task - use project tasks page or business tasks page based on projectId
-          if (reminder.projectId) {
-            notificationLink = `/projects/${reminder.projectId}/tasks?taskId=${reminder.linkedItemId}`;
-          } else {
-            notificationLink = `/business/tasks?taskId=${reminder.linkedItemId}`;
-          }
-        } else if (reminder.projectId) {
-          notificationLink = `/projects/${reminder.projectId}`;
-        }
-        
-        try {
-          await storage.createNotification({
-            userId: reminder.userId,
-            companyId: reminder.companyId,
-            type: "reminder_due",
-            title: `Reminder: ${reminder.title}`,
-            message: reminder.description || undefined,
-            link: notificationLink,
-            entityType: reminder.linkedItemType || "reminder",
-            entityId: reminder.linkedItemId || reminder.id,
-          });
-          console.log(`[ReminderProcessor] Created in-app notification for reminder ${reminder.id}`);
-        } catch (notifError) {
-          console.error(`[ReminderProcessor] Failed to create in-app notification for reminder ${reminder.id}:`, notifError);
-        }
+        // Reminders are displayed in the Reminders tab of the notification bell via the
+        // reminders table (status = "sent"). No need to also create a duplicate entry in
+        // the notifications table, which would cause them to appear in the Notifications tab.
         
         const user = await storage.getUser(reminder.userId);
         if (user?.email) {

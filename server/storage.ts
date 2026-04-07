@@ -110,7 +110,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
@@ -20317,6 +20317,7 @@ export class DbStorage implements IStorage {
         .where(and(
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
+          ne(schema.notifications.type, "reminder_due"),
           ...(options?.unreadOnly ? [eq(schema.notifications.isRead, false)] : [])
         ))
         .orderBy(desc(schema.notifications.createdAt));
@@ -20413,7 +20414,8 @@ export class DbStorage implements IStorage {
         .where(and(
           eq(schema.notifications.userId, userId),
           eq(schema.notifications.companyId, companyId),
-          eq(schema.notifications.isRead, false)
+          eq(schema.notifications.isRead, false),
+          ne(schema.notifications.type, "reminder_due")
         ));
       return Number(result?.count || 0);
     } catch (error) {
