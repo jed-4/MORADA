@@ -22476,9 +22476,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 
       const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
 
-      // Determine date range: 13 months back to end of current month
+      // Use Australian financial year (Jul 1 – Jun 30) to stay within Xero's 365-day P&L limit
       const now = new Date();
-      const fromDate = `${now.getFullYear() - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const fyYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+      const fromDate = `${fyYear}-07-01`;
       const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
 
       const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
