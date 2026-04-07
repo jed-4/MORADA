@@ -179,23 +179,11 @@ function rollingPrev12(): Array<{ year: number; month: number }> {
 
 // ─── Shared editable cells ───────────────────────────────────────────────────
 
-function ActualCell({ cents, onSave, highlight = false }: { cents: number; onSave: (v: number) => void; highlight?: boolean }) {
-  const [editing, setEditing] = useState(false);
-  if (editing) {
-    return (
-      <div className="ring-1 ring-inset ring-primary/60 rounded-[2px] h-full flex items-center">
-        <input autoFocus type="number"
-          defaultValue={cents > 0 ? (cents / 100).toFixed(0) : ""}
-          className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1 tabular-nums"
-          onBlur={e => { const n = parseFloat(e.target.value); onSave(isNaN(n) ? 0 : Math.round(n * 100)); setEditing(false); }}
-          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditing(false); }} />
-      </div>
-    );
-  }
+function ActualCell({ cents, highlight = false }: { cents: number; highlight?: boolean }) {
   return (
-    <button onClick={() => setEditing(true)} className={`w-full h-full text-right text-xs tabular-nums px-1 border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer ${highlight ? "text-destructive" : cents > 0 ? "" : "text-muted-foreground/30"}`}>
+    <div className={`w-full h-full text-right text-xs tabular-nums px-1 flex items-center justify-end ${highlight ? "text-destructive" : cents > 0 ? "" : "text-muted-foreground/30"}`}>
       {cents > 0 ? fmtK(cents) : "—"}
-    </button>
+    </div>
   );
 }
 
@@ -614,11 +602,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return s;
   }, [data.actuals]);
 
-  const upsertActualMut = useMutation({
-    mutationFn: (p: { itemId: string; year: number; month: number; actualCents: number }) => apiRequest("/api/overheads/actuals", "PUT", p),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
-    onError: () => toast({ title: "Failed to save actual", variant: "destructive" }),
-  });
   const toggleMonthMut = useMutation({
     mutationFn: (p: { year: number; month: number; confirmed: boolean }) => apiRequest("/api/overheads/month-status", "POST", p),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
@@ -646,7 +629,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           <p className="text-xs text-muted-foreground/60">Monthly budget: {fmtDollars(monthBudget)}/mo</p>
         </div>
         <div className="flex items-center gap-2">
-          <p className="text-xs text-muted-foreground hidden md:block">Click any cell to enter actuals.</p>
           <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
             {syncActualsMut.isPending ? "Syncing…" : "Sync Actuals from Xero"}
@@ -730,8 +712,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                         const drifted = driftMap.has(getKey(item.id, year, month));
                         return (
                           <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : drifted ? "bg-orange-500/8" : ""}`}>
-                            <ActualCell cents={cents} highlight={over}
-                              onSave={val => upsertActualMut.mutate({ itemId: item.id, year, month, actualCents: val })} />
+                            <ActualCell cents={cents} highlight={over} />
                           </div>
                         );
                       })}

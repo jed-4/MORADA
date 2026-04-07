@@ -516,7 +516,14 @@ export class XeroService {
     const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
     const periods = String(Math.min(11, Math.max(1, monthsDiff)));
 
-    // Fetch the P&L report with monthly periods
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-Tenant-Id": connection.tenantId,
+      Accept: "application/json",
+    };
+
+    // Fetch P&L report and full accounts list in parallel
+    // Accounts list is needed to resolve Xero AccountIDs (UUIDs) → account code numbers
     const params = new URLSearchParams({
       fromDate,
       toDate,
@@ -525,17 +532,25 @@ export class XeroService {
       standardLayout: "true",
     });
 
-    const response = await fetch(`${XERO_API_BASE}/Reports/ProfitAndLoss?${params}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Xero-Tenant-Id": connection.tenantId,
-        Accept: "application/json",
-      },
-    });
+    const [response, accountsResponse] = await Promise.all([
+      fetch(`${XERO_API_BASE}/Reports/ProfitAndLoss?${params}`, { headers }),
+      fetch(`${XERO_API_BASE}/Accounts`, { headers }),
+    ]);
 
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Failed to fetch P&L report: ${response.status} ${errorText}`);
+    }
+
+    // Build UUID → account code map so P&L rows can be matched by code number
+    const uuidToCode = new Map<string, string>();
+    if (accountsResponse.ok) {
+      const accountsData = (await accountsResponse.json()) as any;
+      for (const acc of (accountsData.Accounts || [])) {
+        if (acc.AccountID && acc.Code) {
+          uuidToCode.set(acc.AccountID as string, (acc.Code as string).trim());
+        }
+      }
     }
 
     const data = (await response.json()) as any;
@@ -572,7 +587,10 @@ export class XeroService {
 
     function parseRow(cells: any[]) {
       const accountName = cells[0]?.Value || "";
-      const accountCode = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
+      // Xero returns the AccountID (UUID) in the "account" attribute, not the code number.
+      // Resolve it to the friendly code (e.g. "420") using the UUID→code map we built above.
+      const accountUuid = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
+      const accountCode = (accountUuid && uuidToCode.get(accountUuid)) || accountUuid;
       if (!accountCode && !accountName) return;
       const key = accountCode || accountName;
       if (!byAccount[key]) {
