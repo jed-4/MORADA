@@ -22,6 +22,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { getCached, setCached } from '../services/cache';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -368,17 +369,26 @@ export default function CalendarScreen({ navigation }: Props) {
     try {
       const dateRange = buildDateRange();
 
+      const cachedProjects = getCached<Project[]>('projects');
+      const cachedSettings = getCached<any>('companySettings');
+
       const [tasksData, projectsData, scheduleData, timesheetsData, diariesData, gcalStatus, viewsData, taskStatusCat, companySettings] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => [] as Task[]),
-        apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
+        cachedProjects
+          ? Promise.resolve(cachedProjects)
+          : apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
         apiFetch<ScheduleItem[]>(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`).catch(() => [] as ScheduleItem[]),
         apiFetch<any[]>(`/api/timesheets?userId=${user.id}`).catch(() => []),
         apiFetch<any[]>('/api/company/site-diary-entries').catch(() => []),
         apiFetch<{ connected: boolean }>('/api/google-calendar/status').catch(() => ({ connected: false })),
         apiFetch<SavedView[]>('/api/calendar-views?calendarType=personal').catch(() => [] as SavedView[]),
         apiFetch<any>('/api/field-categories/by-key/task.status').catch(() => null),
-        apiFetch<any>('/api/company-settings').catch(() => null),
+        cachedSettings
+          ? Promise.resolve(cachedSettings)
+          : apiFetch<any>('/api/company-settings').catch(() => null),
       ]);
+      if (!cachedProjects && projectsData?.length) setCached('projects', projectsData);
+      if (!cachedSettings && companySettings) setCached('companySettings', companySettings);
 
       const resolvedBrandColor: string | null = companySettings?.brandColor || null;
       setBrandColor(resolvedBrandColor);

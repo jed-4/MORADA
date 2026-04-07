@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
+import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
 
 interface Timesheet {
@@ -255,16 +256,28 @@ export default function TimesheetsScreen() {
 
   const fetchData = useCallback(async () => {
     try {
+      const cachedProjects = getCached<Project[]>('projects');
+      const cachedCostCodes = getCached<CostCode[]>('costCodes');
+
+      const fetchProjects = cachedProjects
+        ? Promise.resolve(cachedProjects)
+        : apiFetch<Project[]>('/api/projects').catch(() => []);
+      const fetchCostCodes = cachedCostCodes
+        ? Promise.resolve(cachedCostCodes)
+        : apiFetch<CostCode[]>('/api/cost-codes?timesheets=true').catch(() => []);
+
       const [ts, prj, cc, active] = await Promise.all([
         apiFetch<Timesheet[]>('/api/timesheets').catch(() => []),
-        apiFetch<Project[]>('/api/projects').catch(() => []),
-        apiFetch<CostCode[]>('/api/cost-codes?timesheets=true').catch(() => []),
+        fetchProjects,
+        fetchCostCodes,
         apiFetch<Timesheet | null>('/api/timesheets/active').catch(() => null),
       ]);
       setTimesheets(ts || []);
       setProjects(prj || []);
       setCostCodes(cc || []);
       setActiveTimesheet(active || null);
+      if (!cachedProjects) setCached('projects', prj || []);
+      if (!cachedCostCodes) setCached('costCodes', cc || []);
     } catch (e) {
       console.error('Failed to fetch timesheet data:', e);
     } finally {

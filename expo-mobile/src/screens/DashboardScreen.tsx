@@ -20,6 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { setCached, clearCache } from '../services/cache';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Project {
@@ -189,52 +190,42 @@ export default function DashboardScreen({ navigation }: Props) {
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
     : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', cardHover: '#eeede9' };
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     try {
-      const userId = user?.id || '';
-      const companyId = user?.companyId || '';
-      const activityParams = [
-        userId ? `userId=${userId}` : '',
-        companyId ? `companyId=${companyId}` : '',
-        'limit=5',
-      ].filter(Boolean).join('&');
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData, costCodesData, activitiesData] = await Promise.all([
-        apiFetch<Project[]>('/api/projects').catch(() => []),
-        apiFetch<Task[]>('/api/tasks').catch(() => []),
-        apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
-        apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
-        apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
-        apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
-        apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
-        apiFetch<CompanySettings>('/api/company-settings').catch(() => null),
-        apiFetch<CostCode[]>('/api/cost-codes').catch(() => []),
-        apiFetch<ActivityItem[]>(`/api/activities?${activityParams}`).catch(() => []),
-      ]);
-      setProjects(projectsData || []);
-      setCostCodes(costCodesData || []);
-      setCompanySettings(settingsData || null);
-      const myTasks = (tasksData || []).filter((t) => {
-        const ids = t.assigneeIds || [];
-        return ids.includes(user?.id ?? '') || t.ownerId === user?.id || t.assigneeId === user?.id;
-      });
-      setTasks(myTasks);
-      setNotifications(notifData || []);
-      setUnreadCount(unreadData?.count || 0);
-      setActiveTimesheet(timesheetData || null);
-      setRecentActivities(activitiesData || []);
+      const data = await apiFetch<{
+        projects: Project[];
+        tasks: Task[];
+        notifications: Notification[];
+        unreadCount: number;
+        activeTimesheet: ActiveTimesheet | null;
+        recentTimesheets: TimesheetEntry[];
+        scheduleItems: ScheduleItem[];
+        companySettings: CompanySettings | null;
+        costCodes: CostCode[];
+        activities: ActivityItem[];
+      }>('/api/mobile/dashboard');
 
-      const sortedTimesheets = (recentTsList || [])
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 3);
-      setRecentTimesheets(sortedTimesheets);
+      setProjects(data.projects || []);
+      setCostCodes(data.costCodes || []);
+      setCompanySettings(data.companySettings || null);
+      setTasks(data.tasks || []);
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
+      setActiveTimesheet(data.activeTimesheet || null);
+      setRecentActivities(data.activities || []);
+      setRecentTimesheets(data.recentTimesheets || []);
+      setScheduleItems(data.scheduleItems || []);
 
-      setScheduleItems(scheduleData || []);
+      // Seed cache so other screens don't need to re-fetch this data
+      setCached('projects', data.projects || []);
+      setCached('costCodes', data.costCodes || []);
+      setCached('companySettings', data.companySettings || null);
     } catch {
       console.error('Failed to fetch dashboard data');
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -257,7 +248,8 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    clearCache();
+    await fetchData(true);
     setRefreshing(false);
   }, [fetchData]);
 

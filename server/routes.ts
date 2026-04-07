@@ -21287,6 +21287,88 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Mobile dashboard: single endpoint returning all dashboard data
+  app.get("/api/mobile/dashboard", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const userId = String(user.id);
+      const companyId = user.companyId;
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+
+      // Schedule items: today through next 30 days only
+      const today = new Date();
+      const in30Days = new Date(today);
+      in30Days.setDate(today.getDate() + 30);
+      const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+      const scheduleRange = { startDate: fmtDate(today), endDate: fmtDate(in30Days) };
+
+      const [
+        allProjects,
+        userTasks,
+        notifications,
+        unreadCount,
+        activeTimesheet,
+        allTimesheets,
+        scheduleItemsRaw,
+        companySettings,
+        costCodes,
+        activities,
+      ] = await Promise.all([
+        storage.getProjects().catch(() => []),
+        storage.getTasksByUser(userId, companyId).catch(() => []),
+        storage.getNotifications(userId, companyId, { limit: 20 }).catch(() => []),
+        storage.getUnreadNotificationCount(userId, companyId).catch(() => 0),
+        storage.getActiveTimesheet(userId).catch(() => null),
+        storage.getTimesheets(undefined, { userId }).catch(() => []),
+        storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
+        storage.getCompanySettings().catch(() => null),
+        storage.getCostCodes(companyId).catch(() => []),
+        storage.getActivities({ userId, companyId, limit: 5 }).catch(() => []),
+      ]);
+
+      // Filter projects by company and role access
+      const companyProjects = (allProjects as any[]).filter(p => p.companyId === companyId && !p.isBusiness);
+      let visibleProjects = companyProjects;
+      if (!isAdmin) {
+        const userAccess = await storage.getUserProjectAccess(userId);
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        visibleProjects = companyProjects.filter(p =>
+          accessibleProjectIds.has(p.id) || p.ownerId === userId
+        );
+      }
+
+      // Filter schedule items to accessible projects only
+      const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
+      const scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
+
+      // Recent timesheets: 5 most recent for this user
+      const recentTimesheets = (allTimesheets as any[])
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
+
+      res.json({
+        projects: visibleProjects,
+        tasks: userTasks,
+        notifications,
+        unreadCount,
+        activeTimesheet: activeTimesheet || null,
+        recentTimesheets,
+        scheduleItems,
+        companySettings,
+        costCodes,
+        activities,
+      });
+    } catch (error: any) {
+      console.error("Error fetching mobile dashboard:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
   // Mark a notification as read
   app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
     try {
