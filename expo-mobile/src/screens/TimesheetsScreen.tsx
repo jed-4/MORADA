@@ -1045,7 +1045,7 @@ export default function TimesheetsScreen() {
                 <Ionicons name="close" size={24} color={colors.secondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.formScroll} contentContainerStyle={styles.formContent}>
+            <ScrollView style={styles.formScroll} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
               {/* Clock-in info banner (read-only, shown when editing a clocked-in timesheet) */}
               {isEditMode && (() => {
                 const editingTs = timesheets.find(ts => ts.id === editingId);
@@ -1495,9 +1495,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     maxHeight: '90%',
+    flex: 1,
   },
-  formScroll: {},
-  formContent: { padding: 16, paddingBottom: 40 },
+  formScroll: { flex: 1 },
+  formContent: { padding: 16, paddingBottom: 60 },
   formLabel: { fontSize: 12, fontWeight: '500', marginBottom: 6, marginTop: 14 },
   formInput: {
     height: 44,
