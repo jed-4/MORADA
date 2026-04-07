@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from 'react-native';
 import MorePanel from '../components/MorePanel';
+import { apiFetch } from '../services/api';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -148,6 +149,22 @@ function MainTabs() {
   const isDark = colorScheme === 'dark';
   const [moreVisible, setMoreVisible] = useState(false);
   const tabNavRef = useRef<any>(null);
+  const [messagesUnread, setMessagesUnread] = useState(0);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const counts = await apiFetch<Record<string, number>>('/api/channels/unread/counts');
+        const total = Object.values(counts || {}).reduce((s, n) => s + n, 0);
+        setMessagesUnread(total);
+      } catch {
+        // silently fail
+      }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#b196d2', inactive: '#64748b' }
@@ -179,7 +196,11 @@ function MainTabs() {
       >
         <Tab.Screen name="Workspace" component={WorkspaceStack} />
         <Tab.Screen name="Projects" component={ProjectsStack} />
-        <Tab.Screen name="Messages" component={MessagesStack} />
+        <Tab.Screen
+          name="Messages"
+          component={MessagesStack}
+          options={{ tabBarBadge: messagesUnread > 0 ? messagesUnread : undefined }}
+        />
         <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
         <Tab.Screen
           name="More"

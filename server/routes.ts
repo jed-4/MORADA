@@ -19870,10 +19870,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const lastMessage = messages[0];
         const messageCount = await storage.getMessageCount(channel.id);
         
+        const lastMessageSender = lastMessage?.userFirstName
+          ? `${lastMessage.userFirstName}${lastMessage.userLastName ? ' ' + lastMessage.userLastName : ''}`
+          : lastMessage?.userEmail || null;
         return {
           ...channel,
           isPinned: userMembership?.isPinned || false,
           lastMessageAt: lastMessage?.createdAt || null,
+          lastMessageContent: lastMessage?.content || null,
+          lastMessageSender,
           messageCount,
         };
       });

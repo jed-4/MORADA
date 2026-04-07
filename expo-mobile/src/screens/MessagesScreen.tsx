@@ -26,6 +26,8 @@ interface Channel {
   description?: string | null;
   isPinned?: boolean;
   lastMessageAt?: string | null;
+  lastMessageContent?: string | null;
+  lastMessageSender?: string | null;
   messageCount?: number;
   dmParticipants?: string[] | null;
 }
@@ -222,11 +224,19 @@ export default function MessagesScreen({ navigation }: Props) {
               </Text>
             )}
           </View>
-          {item.description ? (
+          {item.lastMessageContent ? (
+            <Text style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
+              {item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessageContent}` : item.lastMessageContent}
+            </Text>
+          ) : item.description ? (
             <Text style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
               {item.description}
             </Text>
-          ) : null}
+          ) : (
+            <Text style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
+              No messages yet
+            </Text>
+          )}
         </View>
         {unread > 0 && (
           <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
@@ -456,6 +466,7 @@ const styles = StyleSheet.create({
   channelNameBold: { fontWeight: '700' },
   channelTime: { fontSize: 12 },
   channelDesc: { fontSize: 13, marginTop: 1 },
+  channelDescBold: { fontWeight: '600' },
   unreadBadge: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, minWidth: 20, alignItems: 'center' },
   unreadBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '700' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
