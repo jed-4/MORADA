@@ -510,11 +510,17 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
+    // Calculate months in range, capped at 11 (Xero's maximum for the periods param)
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
+    const periods = String(Math.min(11, Math.max(1, monthsDiff)));
+
     // Fetch the P&L report with monthly periods
     const params = new URLSearchParams({
       fromDate,
       toDate,
-      periods: "12",
+      periods,
       timeframe: "MONTH",
       standardLayout: "true",
     });
