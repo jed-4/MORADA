@@ -26,6 +26,8 @@ import MoreScreen from '../screens/MoreScreen';
 import NotesListScreen from '../screens/NotesListScreen';
 import NoteEditorScreen from '../screens/NoteEditorScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import MessagesScreen from '../screens/MessagesScreen';
+import MessageThreadScreen from '../screens/MessageThreadScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -93,6 +95,27 @@ function ProjectsStack() {
   );
 }
 
+function MessagesStack() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
+        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerTitleStyle: { fontWeight: '600' },
+        headerShadowVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
+      }}
+    >
+      <Stack.Screen name="MessagesList" component={MessagesScreen} />
+      <Stack.Screen name="MessageThread" component={MessageThreadScreen} />
+    </Stack.Navigator>
+  );
+}
+
 function MoreStack() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -138,7 +161,7 @@ function MainTabs() {
             let iconName: keyof typeof Ionicons.glyphMap = 'home';
             if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
             else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
-            else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
+            else if (route.name === 'Messages') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
             else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
             else if (route.name === 'More') iconName = moreVisible ? 'grid' : 'grid-outline';
             return <Ionicons name={iconName} size={size} color={color} />;
@@ -156,7 +179,7 @@ function MainTabs() {
       >
         <Tab.Screen name="Workspace" component={WorkspaceStack} />
         <Tab.Screen name="Projects" component={ProjectsStack} />
-        <Tab.Screen name="Calendar" component={CalendarScreen} />
+        <Tab.Screen name="Messages" component={MessagesStack} />
         <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
         <Tab.Screen
           name="More"
