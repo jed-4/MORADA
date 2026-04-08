@@ -7885,7 +7885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } catch (channelError) {
-        console.error("Error adding user to project channel or sending notification:", channelError);
+        console.error("[POST /api/project-access/grant] Error sending access notification:", channelError);
       }
 
       res.status(201).json(access);
