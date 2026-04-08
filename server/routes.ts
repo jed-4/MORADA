@@ -20144,7 +20144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId!;
       
       // Get all user's channels
-      const channels = await storage.getUserChannels(userId, companyId);
+      const channels = await storage.getChannels(companyId, userId);
       
       // Get recent messages from each channel
       const allMessages: any[] = [];
