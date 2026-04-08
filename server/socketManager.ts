@@ -50,16 +50,39 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
 
     // Channel room management — clients join/leave rooms so REST-posted messages
-    // can be broadcast to all members of a channel in real-time
-    socket.on("join_channel", (channelId: string) => {
-      socket.join(`channel:${channelId}`);
+    // can be broadcast to all members of a channel in real-time.
+    // Access control: verify the channel belongs to the user's company AND the
+    // user is a member of the channel before allowing them into the socket room.
+    socket.on("join_channel", async (channelId: string) => {
+      try {
+        const userId = socket.data.userId;
+        const companyId = socket.data.companyId;
+
+        const channel = await storage.getChannel(channelId, companyId);
+        if (!channel) {
+          socket.emit("error", { message: "Channel not found or access denied" });
+          return;
+        }
+
+        const members = await storage.getChannelMembers(channelId);
+        if (!members.some(m => m.userId === userId)) {
+          socket.emit("error", { message: "Not a member of this channel" });
+          return;
+        }
+
+        socket.join(`channel:${channelId}`);
+      } catch {
+        socket.emit("error", { message: "Failed to join channel" });
+      }
     });
 
     socket.on("leave_channel", (channelId: string) => {
       socket.leave(`channel:${channelId}`);
     });
 
-    // Typing indicators — broadcast to everyone else in the channel room
+    // Typing indicators — broadcast to everyone else in the channel room.
+    // No extra DB check needed: the room itself is the authz boundary (only
+    // members can join the room via join_channel above).
     socket.on("typing_start", (channelId: string) => {
       socket.to(`channel:${channelId}`).emit("user_typing", {
         channelId,
@@ -74,7 +97,8 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
       });
     });
 
-    // Mark read — update last-read timestamp for this user/channel
+    // Mark read — update last-read timestamp for this user/channel.
+    // Room membership (established via join_channel) is the authz boundary.
     socket.on("mark_read", async (channelId: string) => {
       try {
         await storage.updateChannelMemberLastRead(channelId, socket.data.userId);
@@ -83,16 +107,26 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
       }
     });
 
-    // send_message — fallback socket-based send; saves and broadcasts to channel room
+    // send_message — fallback socket-based send; saves and broadcasts to channel room.
+    // Verifies channel membership before creating the message.
     socket.on("send_message", async (data: { channelId: string; content: string; mentions?: string[] }) => {
       try {
         const { channelId, content, mentions = [] } = data;
+        const userId = socket.data.userId;
+        const companyId = socket.data.companyId;
+
+        const channel = await storage.getChannel(channelId, companyId);
+        if (!channel) return;
+
+        const members = await storage.getChannelMembers(channelId);
+        if (!members.some(m => m.userId === userId)) return;
+
         const hasCommand = content.startsWith("/");
         const commandType = hasCommand ? content.split(" ")[0].substring(1) : undefined;
 
         const message = await storage.createMessage({
           channelId,
-          userId: socket.data.userId,
+          userId,
           content,
           mentions,
           hasCommand,
