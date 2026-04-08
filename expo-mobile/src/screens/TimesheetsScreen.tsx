@@ -1202,110 +1202,102 @@ export default function TimesheetsScreen() {
                 )}
               </TouchableOpacity>
             </ScrollView>
+
+            {/* Form picker modals — rendered inside the Log Hours modal so they stack
+                correctly on top of it. Sibling modals cannot present over an already-open
+                transparent Modal on iOS (Expo Go SDK 52). */}
+            {renderPickerModal(
+              showTimePicker !== null,
+              () => setShowTimePicker(null),
+              showTimePicker === 'start' ? 'Start Time' : 'End Time',
+              TIME_OPTIONS.map(t => ({ id: t.value, label: t.label })),
+              showTimePicker === 'start' ? formStartTime : formEndTime,
+              (val) => {
+                if (showTimePicker === 'start') setFormStartTime(val);
+                else setFormEndTime(val);
+              },
+              timePickerListRef,
+            )}
+            {renderPickerModal(
+              showFormProjectPicker,
+              () => setShowFormProjectPicker(false),
+              'Select Project',
+              getSortedProjectItems(projects),
+              formProjectId,
+              setFormProjectId,
+            )}
+            {renderPickerModal(
+              showBreakPicker,
+              () => setShowBreakPicker(false),
+              'Break Duration',
+              BREAK_OPTIONS.map(o => ({ id: o.value, label: o.label })),
+              formBreakDuration,
+              setFormBreakDuration,
+            )}
+            {renderPickerModal(
+              showBreakStartPicker,
+              () => setShowBreakStartPicker(false),
+              'Break Start Time',
+              TIME_OPTIONS.map(t => ({ id: t.value, label: t.label })),
+              formBreakStartTime,
+              setFormBreakStartTime,
+            )}
+            {renderPickerModal(
+              showCostCodePicker,
+              () => setShowCostCodePicker(false),
+              'Select Cost Code',
+              costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
+              formCostCodeId,
+              setFormCostCodeId,
+            )}
+            {showDatePicker ? (
+              Platform.OS === 'ios' ? (
+                <Modal visible animationType="slide" transparent>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+                    <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                        <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
+                          <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
+                        </TouchableOpacity>
+                        <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setFormDate(toLocalDateStr(pickerDateObj));
+                            setShowDatePicker(false);
+                          }}
+                          style={{ padding: 4 }}
+                        >
+                          <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <DateTimePicker
+                        value={pickerDateObj}
+                        mode="date"
+                        display="spinner"
+                        onChange={(_event, date) => { if (date) setPickerDateObj(date); }}
+                        themeVariant={isDark ? 'dark' : 'light'}
+                        style={{ alignSelf: 'center' }}
+                      />
+                    </View>
+                  </View>
+                </Modal>
+              ) : (
+                <DateTimePicker
+                  value={pickerDateObj}
+                  mode="date"
+                  display="default"
+                  onChange={(event, date) => {
+                    setShowDatePicker(false);
+                    if (event.type === 'set' && date) setFormDate(toLocalDateStr(date));
+                  }}
+                />
+              )
+            ) : null}
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Time Picker Modal */}
-      {renderPickerModal(
-        showTimePicker !== null,
-        () => setShowTimePicker(null),
-        showTimePicker === 'start' ? 'Start Time' : 'End Time',
-        TIME_OPTIONS.map(t => ({ id: t.value, label: t.label })),
-        showTimePicker === 'start' ? formStartTime : formEndTime,
-        (val) => {
-          if (showTimePicker === 'start') setFormStartTime(val);
-          else setFormEndTime(val);
-        },
-        timePickerListRef,
-      )}
-
-      {/* Form Project Picker */}
-      {renderPickerModal(
-        showFormProjectPicker,
-        () => setShowFormProjectPicker(false),
-        'Select Project',
-        getSortedProjectItems(projects),
-        formProjectId,
-        setFormProjectId,
-      )}
-
-      {/* Break Picker */}
-      {renderPickerModal(
-        showBreakPicker,
-        () => setShowBreakPicker(false),
-        'Break Duration',
-        BREAK_OPTIONS.map(o => ({ id: o.value, label: o.label })),
-        formBreakDuration,
-        setFormBreakDuration,
-      )}
-
-      {/* Break Start Time Picker */}
-      {renderPickerModal(
-        showBreakStartPicker,
-        () => setShowBreakStartPicker(false),
-        'Break Start Time',
-        TIME_OPTIONS.map(t => ({ id: t.value, label: t.label })),
-        formBreakStartTime,
-        setFormBreakStartTime,
-      )}
-
-      {/* Date Picker Modal */}
-      {showDatePicker ? (
-        Platform.OS === 'ios' ? (
-          <Modal visible animationType="slide" transparent>
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-              <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
-                    <Text style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setFormDate(toLocalDateStr(pickerDateObj));
-                      setShowDatePicker(false);
-                    }}
-                    style={{ padding: 4 }}
-                  >
-                    <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={pickerDateObj}
-                  mode="date"
-                  display="spinner"
-                  onChange={(_event, date) => { if (date) setPickerDateObj(date); }}
-                  themeVariant={isDark ? 'dark' : 'light'}
-                  style={{ alignSelf: 'center' }}
-                />
-              </View>
-            </View>
-          </Modal>
-        ) : (
-          <DateTimePicker
-            value={pickerDateObj}
-            mode="date"
-            display="default"
-            onChange={(event, date) => {
-              setShowDatePicker(false);
-              if (event.type === 'set' && date) setFormDate(toLocalDateStr(date));
-            }}
-          />
-        )
-      ) : null}
-
-      {/* Cost Code Picker */}
-      {renderPickerModal(
-        showCostCodePicker,
-        () => setShowCostCodePicker(false),
-        'Select Cost Code',
-        costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
-        formCostCodeId,
-        setFormCostCodeId,
-      )}
-
-      {/* Clock-In Cost Code Picker */}
+      {/* Clock-In Cost Code Picker — stays outside, unrelated to Log Hours form */}
       {renderPickerModal(
         showClockInCostCodePicker,
         () => setShowClockInCostCodePicker(false),
