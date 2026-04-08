@@ -29,8 +29,6 @@ export const sessionMiddleware = (() => {
     tableName: 'sessions',
   });
 
-  const isProduction = process.env.NODE_ENV === 'production';
-  
   return session({
     secret: sessionSecret,
     store: sessionStore,
@@ -39,8 +37,12 @@ export const sessionMiddleware = (() => {
     rolling: true,
     cookie: {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'lax' as const,
+      // Replit dev server is always served over HTTPS via Replit's proxy,
+      // so SameSite=None + Secure works in both dev and production.
+      // This allows the session cookie to be sent in cross-origin iframes
+      // (e.g. the canvas preview) without third-party-cookie blocking.
+      secure: true,
+      sameSite: 'none' as const,
       maxAge: sessionTtl,
     },
   });
