@@ -108,7 +108,7 @@ interface MessagesProps {
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { socket, isConnected, joinChannel, leaveChannel, startTyping, stopTyping, markAsRead } = useSocket();
+  const { socket, isConnected, isReconnecting, joinChannel, leaveChannel, startTyping, stopTyping, markAsRead } = useSocket();
 
   // Keep stable refs for socket functions so the channel-join useEffect
   // doesn't have joinChannel/leaveChannel/markAsRead as deps — those change
@@ -848,8 +848,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
-                    <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isReconnecting ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+                    <span>{isConnected ? 'Connected' : isReconnecting ? 'Reconnecting…' : 'Disconnected'}</span>
                   </div>
                   <NotificationSettingsButton />
                   <Button

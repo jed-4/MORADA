@@ -7,6 +7,7 @@ import type { Message, Task } from "@shared/schema";
 interface SocketContextType {
   socket: Socket | null;
   isConnected: boolean;
+  isReconnecting: boolean;
   joinChannel: (channelId: string) => void;
   leaveChannel: (channelId: string) => void;
   sendMessage: (channelId: string, content: string, mentions?: string[]) => void;
@@ -20,6 +21,7 @@ const SocketContext = createContext<SocketContextType | null>(null);
 export function SocketProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     socketInstance.on("connect", () => {
       console.log("Socket connected");
       setIsConnected(true);
+      setIsReconnecting(false);
     });
 
     socketInstance.on("disconnect", () => {
@@ -40,9 +43,22 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setIsConnected(false);
     });
 
+    socketInstance.on("reconnect_attempt", () => {
+      setIsReconnecting(true);
+    });
+
+    socketInstance.on("reconnect", () => {
+      setIsReconnecting(false);
+    });
+
+    socketInstance.on("reconnect_failed", () => {
+      setIsReconnecting(false);
+    });
+
     socketInstance.on("connect_error", (error: any) => {
       console.error("Socket connection error:", error.message);
       setIsConnected(false);
+      setIsReconnecting(true);
     });
 
     socketInstance.on("error", (error: any) => {
@@ -85,13 +101,14 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({
     socket,
     isConnected,
+    isReconnecting,
     joinChannel,
     leaveChannel,
     sendMessage,
     startTyping,
     stopTyping,
     markAsRead,
-  }), [socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead]);
+  }), [socket, isConnected, isReconnecting, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead]);
 
   return (
     <SocketContext.Provider value={contextValue}>
