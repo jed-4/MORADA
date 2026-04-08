@@ -81,9 +81,12 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     });
 
     // Typing indicators — broadcast to everyone else in the channel room.
-    // No extra DB check needed: the room itself is the authz boundary (only
-    // members can join the room via join_channel above).
+    // Guard: only emit if the socket is already in the channel room, which
+    // can only happen after passing the membership checks in join_channel.
+    // This prevents a crafted socket from spoofing typing events to channels
+    // they never successfully joined (no extra DB round-trip required).
     socket.on("typing_start", (channelId: string) => {
+      if (!socket.rooms.has(`channel:${channelId}`)) return;
       socket.to(`channel:${channelId}`).emit("user_typing", {
         channelId,
         userId: socket.data.userId,
@@ -91,6 +94,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     });
 
     socket.on("typing_stop", (channelId: string) => {
+      if (!socket.rooms.has(`channel:${channelId}`)) return;
       socket.to(`channel:${channelId}`).emit("user_stopped_typing", {
         channelId,
         userId: socket.data.userId,
