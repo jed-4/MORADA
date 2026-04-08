@@ -20153,7 +20153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Add channel name and sender name to each message
         for (const msg of messages) {
-          const sender = await storage.getUserById(msg.userId);
+          const sender = await storage.getUser(msg.userId);
           allMessages.push({
             ...msg,
             channelName: channel.name,

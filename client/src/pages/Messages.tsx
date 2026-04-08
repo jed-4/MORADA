@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages } from "@/lib/socket";
@@ -109,6 +109,19 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const { user } = useAuth();
   const { toast } = useToast();
   const { socket, isConnected, joinChannel, leaveChannel, startTyping, stopTyping, markAsRead } = useSocket();
+
+  // Keep stable refs for socket functions so the channel-join useEffect
+  // doesn't have joinChannel/leaveChannel/markAsRead as deps — those change
+  // identity whenever the socket reconnects and would cause the effect to
+  // loop infinitely under rapid connect→disconnect cycles.
+  const joinChannelRef = useRef(joinChannel);
+  const leaveChannelRef = useRef(leaveChannel);
+  const markAsReadRef = useRef(markAsRead);
+  useLayoutEffect(() => {
+    joinChannelRef.current = joinChannel;
+    leaveChannelRef.current = leaveChannel;
+    markAsReadRef.current = markAsRead;
+  });
   
   useEffect(() => {
     document.title = "BuildPro";
@@ -280,18 +293,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   useEffect(() => {
     if (selectedChannelId && isConnected) {
-      joinChannel(selectedChannelId);
-      markAsRead(selectedChannelId);
+      joinChannelRef.current(selectedChannelId);
+      markAsReadRef.current(selectedChannelId);
       
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
       
       return () => {
-        leaveChannel(selectedChannelId);
+        leaveChannelRef.current(selectedChannelId);
       };
     }
-  }, [selectedChannelId, isConnected, joinChannel, leaveChannel, markAsRead]);
+  }, [selectedChannelId, isConnected]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

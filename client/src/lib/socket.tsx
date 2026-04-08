@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, type ReactNode } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient } from "@/lib/queryClient";
@@ -82,19 +82,19 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     socket?.emit("mark_read", channelId);
   }, [socket]);
 
+  const contextValue = useMemo(() => ({
+    socket,
+    isConnected,
+    joinChannel,
+    leaveChannel,
+    sendMessage,
+    startTyping,
+    stopTyping,
+    markAsRead,
+  }), [socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead]);
+
   return (
-    <SocketContext.Provider
-      value={{
-        socket,
-        isConnected,
-        joinChannel,
-        leaveChannel,
-        sendMessage,
-        startTyping,
-        stopTyping,
-        markAsRead
-      }}
-    >
+    <SocketContext.Provider value={contextValue}>
       {children}
     </SocketContext.Provider>
   );
