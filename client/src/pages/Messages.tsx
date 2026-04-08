@@ -117,10 +117,15 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const joinChannelRef = useRef(joinChannel);
   const leaveChannelRef = useRef(leaveChannel);
   const markAsReadRef = useRef(markAsRead);
+  // Also track selectedChannelId in a ref so the auto-select effect doesn't
+  // include it as a dep (setSelectedChannelId inside that effect would otherwise
+  // trigger a re-run and risk an infinite loop).
+  const selectedChannelIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     joinChannelRef.current = joinChannel;
     leaveChannelRef.current = leaveChannel;
     markAsReadRef.current = markAsRead;
+    selectedChannelIdRef.current = selectedChannelId;
   });
   
   useEffect(() => {
@@ -292,19 +297,33 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   useEffect(() => {
-    if (selectedChannelId && isConnected) {
+    if (!selectedChannelId || !socket) return;
+
+    // Join immediately if already connected; otherwise the "connect" listener below handles it.
+    const doJoin = () => {
       joinChannelRef.current(selectedChannelId);
       markAsReadRef.current(selectedChannelId);
-      
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
-      
-      return () => {
-        leaveChannelRef.current(selectedChannelId);
-      };
+    };
+
+    if (socket.connected) {
+      doJoin();
     }
-  }, [selectedChannelId, isConnected]);
+
+    // Re-join after every reconnect (socket.io fires "connect" on initial connect
+    // AND after reconnects, so this handles both cases).
+    socket.on("connect", doJoin);
+
+    return () => {
+      socket.off("connect", doJoin);
+      leaveChannelRef.current(selectedChannelId);
+    };
+  // socket changes only when the user changes (new Socket instance created).
+  // isConnected is intentionally omitted — the socket "connect" event handles
+  // reconnection without causing a React state cascade.
+  }, [selectedChannelId, socket]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -595,14 +614,19 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   useEffect(() => {
     if (channels.length === 0) return;
-    if (!selectedChannelId) {
+    // Use the ref (kept current by useLayoutEffect) instead of the state value
+    // directly, so this effect doesn't list selectedChannelId as a dep.
+    // Listing it would mean setSelectedChannelId() triggers a re-run which
+    // calls setSelectedChannelId() again — a self-feeding loop.
+    const currentId = selectedChannelIdRef.current;
+    if (!currentId) {
       // No channel selected — auto-select first available
       setSelectedChannelId(channels[0].id);
-    } else if (!channels.find(c => c.id === selectedChannelId)) {
-      // URL param pointed to a channel the user can't access — fall back to first
+    } else if (!channels.find(c => c.id === currentId)) {
+      // Previously selected channel is no longer accessible — fall back to first
       setSelectedChannelId(channels[0].id);
     }
-  }, [channels, selectedChannelId]);
+  }, [channels]);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 

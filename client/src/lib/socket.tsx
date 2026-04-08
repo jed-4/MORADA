@@ -27,6 +27,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return;
 
+    // Guard against state updates after this effect is cleaned up.
+    // Without this, rapid user-id changes or StrictMode double-invocations
+    // can call setIsConnected on a stale closure, cascading into infinite loops.
+    let active = true;
+
     const socketInstance = io({
       path: "/socket.io/",
       withCredentials: true
@@ -34,31 +39,35 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     socketInstance.on("connect", () => {
       console.log("Socket connected");
-      setIsConnected(true);
-      setIsReconnecting(false);
+      if (active) {
+        setIsConnected(true);
+        setIsReconnecting(false);
+      }
     });
 
     socketInstance.on("disconnect", () => {
       console.log("Socket disconnected");
-      setIsConnected(false);
+      if (active) setIsConnected(false);
     });
 
     socketInstance.on("reconnect_attempt", () => {
-      setIsReconnecting(true);
+      if (active) setIsReconnecting(true);
     });
 
     socketInstance.on("reconnect", () => {
-      setIsReconnecting(false);
+      if (active) setIsReconnecting(false);
     });
 
     socketInstance.on("reconnect_failed", () => {
-      setIsReconnecting(false);
+      if (active) setIsReconnecting(false);
     });
 
     socketInstance.on("connect_error", (error: any) => {
       console.error("Socket connection error:", error.message);
-      setIsConnected(false);
-      setIsReconnecting(true);
+      if (active) {
+        setIsConnected(false);
+        setIsReconnecting(true);
+      }
     });
 
     socketInstance.on("error", (error: any) => {
@@ -68,6 +77,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     setSocket(socketInstance);
 
     return () => {
+      active = false;
       socketInstance.disconnect();
     };
   }, [user?.id]);
