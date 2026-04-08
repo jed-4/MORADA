@@ -256,7 +256,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   }, [messages]);
 
   useChannelMessages(selectedChannelId, (message) => {
-    setLocalMessages(prev => [...prev, message]);
+    setLocalMessages(prev => {
+      // Deduplicate: skip if this real ID is already in the list
+      // (can happen when sender receives their own REST-sent message via socket)
+      if (prev.some(m => m.id === message.id)) return prev;
+      return [...prev, message];
+    });
     scrollToBottom();
     
     if (selectedChannelId) {
@@ -523,8 +528,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
     try {
       const saved = await sendViaRest(selectedChannelId, content, mentions);
-      // Replace the optimistic placeholder with the real saved message
-      setLocalMessages(prev => prev.map(m => m.id === tempId ? saved : m));
+      // Remove the temp placeholder; if socket already delivered the real message, don't add a dup
+      setLocalMessages(prev => {
+        const withoutTemp = prev.filter(m => m.id !== tempId);
+        if (withoutTemp.some(m => m.id === saved.id)) return withoutTemp;
+        return [...withoutTemp, saved];
+      });
       // Mark as read since we just sent
       markAsRead(selectedChannelId);
       setTimeout(() => {
