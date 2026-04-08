@@ -49,6 +49,62 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     socket.join(`user:${socket.data.userId}`);
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
 
+    // Channel room management — clients join/leave rooms so REST-posted messages
+    // can be broadcast to all members of a channel in real-time
+    socket.on("join_channel", (channelId: string) => {
+      socket.join(`channel:${channelId}`);
+    });
+
+    socket.on("leave_channel", (channelId: string) => {
+      socket.leave(`channel:${channelId}`);
+    });
+
+    // Typing indicators — broadcast to everyone else in the channel room
+    socket.on("typing_start", (channelId: string) => {
+      socket.to(`channel:${channelId}`).emit("user_typing", {
+        channelId,
+        userId: socket.data.userId,
+      });
+    });
+
+    socket.on("typing_stop", (channelId: string) => {
+      socket.to(`channel:${channelId}`).emit("user_stopped_typing", {
+        channelId,
+        userId: socket.data.userId,
+      });
+    });
+
+    // Mark read — update last-read timestamp for this user/channel
+    socket.on("mark_read", async (channelId: string) => {
+      try {
+        await storage.updateChannelMemberLastRead(channelId, socket.data.userId);
+      } catch {
+        // Non-critical — silently ignore
+      }
+    });
+
+    // send_message — fallback socket-based send; saves and broadcasts to channel room
+    socket.on("send_message", async (data: { channelId: string; content: string; mentions?: string[] }) => {
+      try {
+        const { channelId, content, mentions = [] } = data;
+        const hasCommand = content.startsWith("/");
+        const commandType = hasCommand ? content.split(" ")[0].substring(1) : undefined;
+
+        const message = await storage.createMessage({
+          channelId,
+          userId: socket.data.userId,
+          content,
+          mentions,
+          hasCommand,
+          commandType,
+        });
+
+        io!.to(`channel:${channelId}`).emit("new_message", message);
+      } catch {
+        // Non-critical
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.data.userId}`);
     });

@@ -542,28 +542,33 @@ export class XeroService {
       throw new Error(`Failed to fetch P&L report: ${response.status} ${errorText}`);
     }
 
-    // Build UUID → account code map so P&L rows can be matched by code number
+    // Build UUID → account code and UUID → account type maps
+    // The type map lets us classify income vs expense by Xero's canonical Type field
+    // (REVENUE / SALES / OTHERINCOME) instead of fragile section-title keyword matching
     const uuidToCode = new Map<string, string>();
+    const uuidToType = new Map<string, string>(); // e.g. "REVENUE", "SALES", "OTHERINCOME", "EXPENSE", etc.
     if (accountsResponse.ok) {
       const accountsData = (await accountsResponse.json()) as any;
       for (const acc of (accountsData.Accounts || [])) {
-        if (acc.AccountID && acc.Code) {
-          uuidToCode.set(acc.AccountID as string, (acc.Code as string).trim());
+        if (acc.AccountID) {
+          if (acc.Code) uuidToCode.set(acc.AccountID as string, (acc.Code as string).trim());
+          if (acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
         }
       }
     }
 
+    const INCOME_TYPES = new Set(["REVENUE", "SALES", "OTHERINCOME"]);
+
     const data = (await response.json()) as any;
     const report = data.Reports?.[0];
-    if (!report) return { byAccount: {}, accounts: [] };
+    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {} };
 
     // Parse column headers to extract month labels (format: "Jan 2025")
     const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
 
-    // Parse the rows — we look for expense/overhead account rows
     const byAccount: Record<string, { name: string; amounts: Record<string, number> }> = {};
     const accounts: any[] = [];
-    // income totals keyed by "YYYY-MM" — sum of all income section rows per month
+    // income totals keyed by "YYYY-MM"
     const incomeTotals: Record<string, number> = {};
 
     const MONTH_MAP: Record<string, string> = {
@@ -571,12 +576,8 @@ export class XeroService {
       Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
     };
 
-    const EXPENSE_KEYWORDS = [
-      "expense", "overhead", "operating", "administrative", "cost of sales",
-      "depreciation", "wage", "staff", "rent", "insurance", "utilities",
-    ];
+    // Fallback keyword sets — only used when account UUID is not resolvable
     const INCOME_SECTION_KEYWORDS = ["revenue", "income", "sales", "trading income", "other income"];
-    // These are summary rows we want to skip when collecting income (to avoid double-counting)
     const SUMMARY_KEYWORDS = ["gross profit", "net profit", "total"];
 
     function isSummaryRow(title: string): boolean {
@@ -584,18 +585,17 @@ export class XeroService {
       return SUMMARY_KEYWORDS.some(k => lower.includes(k));
     }
 
-    function isExpenseSection(title: string): boolean {
-      const lower = title.toLowerCase();
-      if (INCOME_SECTION_KEYWORDS.some(k => lower.includes(k))) return false;
-      if (SUMMARY_KEYWORDS.some(k => lower.includes(k))) return false;
-      if (EXPENSE_KEYWORDS.some(k => lower.includes(k))) return true;
-      return true;
-    }
-
-    function isIncomeSection(title: string): boolean {
+    function isIncomeSectionTitle(title: string): boolean {
       const lower = title.toLowerCase();
       if (SUMMARY_KEYWORDS.some(k => lower.includes(k))) return false;
       return INCOME_SECTION_KEYWORDS.some(k => lower.includes(k));
+    }
+
+    function isExpenseSectionTitle(title: string): boolean {
+      const lower = title.toLowerCase();
+      if (INCOME_SECTION_KEYWORDS.some(k => lower.includes(k))) return false;
+      if (SUMMARY_KEYWORDS.some(k => lower.includes(k))) return false;
+      return true;
     }
 
     function extractMonthAmounts(cells: any[]): Record<string, number> {
@@ -613,28 +613,42 @@ export class XeroService {
       return result;
     }
 
-    function parseExpenseRow(cells: any[]) {
-      const accountName = cells[0]?.Value || "";
-      const accountUuid = cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
-      const accountCode = (accountUuid && uuidToCode.get(accountUuid)) || accountUuid;
-      if (!accountCode && !accountName) return;
-      const key = accountCode || accountName;
-      if (!byAccount[key]) {
-        byAccount[key] = { name: accountName, amounts: {} };
-        accounts.push({ code: accountCode, name: accountName });
-      }
-      const monthAmts = extractMonthAmounts(cells);
-      for (const [monthKey, val] of Object.entries(monthAmts)) {
-        byAccount[key].amounts[monthKey] = (byAccount[key].amounts[monthKey] || 0) + val;
-      }
+    function getAccountUuid(cells: any[]): string {
+      return cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
     }
 
-    function parseIncomeRow(cells: any[]) {
+    function parseRow(cells: any[], insideExpense: boolean, insideIncome: boolean) {
       const rowTitle = cells[0]?.Value || "";
       if (isSummaryRow(rowTitle)) return;
-      const monthAmts = extractMonthAmounts(cells);
-      for (const [monthKey, val] of Object.entries(monthAmts)) {
-        incomeTotals[monthKey] = (incomeTotals[monthKey] || 0) + val;
+
+      const accountUuid = getAccountUuid(cells);
+      const accountType = accountUuid ? uuidToType.get(accountUuid) : undefined;
+
+      // Primary classification: use Xero's Type field if available
+      const isIncomeByType = accountType ? INCOME_TYPES.has(accountType) : false;
+      const isExpenseByType = accountType ? !INCOME_TYPES.has(accountType) : false;
+
+      // Determine effective classification
+      const effectiveIncome = isIncomeByType || (!accountType && insideIncome);
+      const effectiveExpense = isExpenseByType || (!accountType && insideExpense);
+
+      if (effectiveIncome) {
+        const monthAmts = extractMonthAmounts(cells);
+        for (const [monthKey, val] of Object.entries(monthAmts)) {
+          incomeTotals[monthKey] = (incomeTotals[monthKey] || 0) + val;
+        }
+      } else if (effectiveExpense) {
+        const accountCode = (accountUuid && uuidToCode.get(accountUuid)) || accountUuid;
+        if (!accountCode && !rowTitle) return;
+        const key = accountCode || rowTitle;
+        if (!byAccount[key]) {
+          byAccount[key] = { name: rowTitle, amounts: {} };
+          accounts.push({ code: accountCode, name: rowTitle });
+        }
+        const monthAmts = extractMonthAmounts(cells);
+        for (const [monthKey, val] of Object.entries(monthAmts)) {
+          byAccount[key].amounts[monthKey] = (byAccount[key].amounts[monthKey] || 0) + val;
+        }
       }
     }
 
@@ -642,12 +656,11 @@ export class XeroService {
       for (const row of rows) {
         if (row.RowType === "Section") {
           const sectionTitle: string = row.Title || row.Cells?.[0]?.Value || "";
-          const nextExpense = sectionTitle ? isExpenseSection(sectionTitle) : insideExpense;
-          const nextIncome = sectionTitle ? isIncomeSection(sectionTitle) : insideIncome;
+          const nextIncome = sectionTitle ? isIncomeSectionTitle(sectionTitle) : insideIncome;
+          const nextExpense = sectionTitle ? isExpenseSectionTitle(sectionTitle) : insideExpense;
           if (row.Rows) parseSection(row.Rows, nextExpense, nextIncome);
         } else if (row.RowType === "Row" && row.Cells) {
-          if (insideExpense) parseExpenseRow(row.Cells);
-          else if (insideIncome) parseIncomeRow(row.Cells);
+          parseRow(row.Cells, insideExpense, insideIncome);
         } else if (row.Rows) {
           parseSection(row.Rows, insideExpense, insideIncome);
         }

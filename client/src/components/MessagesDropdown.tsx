@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useSocket } from "@/lib/socket";
 import { useLocation } from "wouter";
 import { MessageSquare, Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,11 +12,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatDistanceToNow } from "date-fns";
-import type { Channel, Message } from "@shared/schema";
+import type { Message } from "@shared/schema";
 
 interface RecentMessage extends Message {
   channelName?: string;
@@ -29,8 +27,6 @@ export function MessagesDropdown() {
   const [open, setOpen] = useState(false);
   const [quickReplyChannelId, setQuickReplyChannelId] = useState<string | null>(null);
   const [quickReplyText, setQuickReplyText] = useState("");
-  const { sendMessage } = useSocket();
-
   // Fetch recent messages across all channels
   const { data: recentMessages = [] } = useQuery<RecentMessage[]>({
     queryKey: ["/api/messages/recent"],
@@ -40,21 +36,28 @@ export function MessagesDropdown() {
   // Calculate total unread count
   const { data: unreadCounts = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/channels/unread/counts"],
-    refetchInterval: 30000, // Poll every 30 seconds (reduced from 5s to prevent browser overload)
+    refetchInterval: 30000,
   });
 
   const totalUnread = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
 
+  const sendMut = useMutation({
+    mutationFn: ({ channelId, content }: { channelId: string; content: string }) =>
+      apiRequest(`/api/channels/${channelId}/messages`, "POST", { content, mentions: [] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/messages/recent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      setQuickReplyText("");
+      setQuickReplyChannelId(null);
+    },
+  });
+
   // Send quick reply
-  const handleQuickReply = (e: React.FormEvent, messageId: string, channelId: string) => {
+  const handleQuickReply = (e: React.FormEvent, channelId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    if (!quickReplyText.trim()) return;
-
-    sendMessage(channelId, quickReplyText.trim());
-    setQuickReplyText("");
-    setQuickReplyChannelId(null);
+    if (!quickReplyText.trim() || sendMut.isPending) return;
+    sendMut.mutate({ channelId, content: quickReplyText.trim() });
   };
 
   // Navigate to channel
@@ -149,7 +152,7 @@ export function MessagesDropdown() {
                         {/* Quick Reply */}
                         {isReplying ? (
                           <form
-                            onSubmit={(e) => handleQuickReply(e, message.id, message.channelId)}
+                            onSubmit={(e) => handleQuickReply(e, message.channelId)}
                             className="mt-2"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -164,12 +167,11 @@ export function MessagesDropdown() {
                               />
                               <Button 
                                 type="submit" 
-                                size="icon" 
-                                className="h-8 w-8 flex-shrink-0"
-                                disabled={!quickReplyText.trim()}
+                                size="icon"
+                                disabled={!quickReplyText.trim() || sendMut.isPending}
                                 data-testid="button-send-reply"
                               >
-                                <Send className="h-3 w-3" />
+                                {sendMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                               </Button>
                             </div>
                           </form>
