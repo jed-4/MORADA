@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages } from "@/lib/socket";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -106,7 +107,8 @@ interface MessagesProps {
 
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
-  const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
+  const { toast } = useToast();
+  const { socket, isConnected, joinChannel, leaveChannel, startTyping, stopTyping, markAsRead } = useSocket();
   
   useEffect(() => {
     document.title = "BuildPro";
@@ -115,6 +117,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -461,63 +464,25 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }, 0);
   };
 
+  const sendViaRest = async (channelId: string, content: string, mentions: string[] = []) => {
+    const response = await fetch(`/api/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ content, mentions }),
+    });
+    if (!response.ok) throw new Error("Failed to send message");
+    return response.json() as Promise<Message>;
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || !selectedChannelId) return;
+    if (!messageInput.trim() || !selectedChannelId || isSending) return;
 
     stopTyping(selectedChannelId);
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
-    }
-
-    const taskCommandRegex = /^\/task\s+(.+)$/i;
-    const taskMatch = messageInput.match(taskCommandRegex);
-    
-    if (taskMatch) {
-      try {
-        const taskTitle = taskMatch[1].trim();
-        
-        if (!taskTitle) {
-          sendMessage(selectedChannelId, `❌ Task title cannot be empty. Usage: /task Your task description`);
-          setMessageInput("");
-          return;
-        }
-        
-        sendMessage(selectedChannelId, `🤖 Creating task: "${taskTitle}"...`);
-        
-        const currentChannel = channels.find(c => c.id === selectedChannelId);
-        const projectId = currentChannel?.projectId || null;
-        
-        const response = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            title: taskTitle,
-            type: "task",
-            status: "todo",
-            projectId: projectId,
-          })
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Failed to create task");
-        }
-        
-        const newTask = await response.json();
-        
-        const taskType = projectId ? "project" : "business";
-        sendMessage(selectedChannelId, `✅ Task created: "${newTask.title}" (${taskType} task, ID: ${newTask.id.slice(0, 8)})`);
-      } catch (error: any) {
-        console.error("Failed to create task:", error);
-        sendMessage(selectedChannelId, `❌ Failed to create task: ${error.message}`);
-      }
-      
-      setMessageInput("");
-      setShowMentionPicker(false);
-      return;
     }
 
     const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
@@ -527,9 +492,46 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       mentions.push(match[2]);
     }
 
-    sendMessage(selectedChannelId, messageInput, mentions);
+    const content = messageInput;
     setMessageInput("");
     setShowMentionPicker(false);
+    setIsSending(true);
+
+    // Optimistically add the message so the sender sees it immediately
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: Message = {
+      id: tempId,
+      channelId: selectedChannelId,
+      userId: user!.id,
+      content,
+      mentions,
+      createdAt: new Date().toISOString() as any,
+      userFirstName: user!.firstName || null,
+      userLastName: user!.lastName || null,
+      userEmail: user!.email || null,
+      hasCommand: content.startsWith('/'),
+      commandType: content.startsWith('/') ? content.split(' ')[0].substring(1) : null,
+    } as Message;
+    setLocalMessages(prev => [...prev, optimistic]);
+    scrollToBottom();
+
+    try {
+      const saved = await sendViaRest(selectedChannelId, content, mentions);
+      // Replace the optimistic placeholder with the real saved message
+      setLocalMessages(prev => prev.map(m => m.id === tempId ? saved : m));
+      // Mark as read since we just sent
+      markAsRead(selectedChannelId);
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      }, 100);
+    } catch (err) {
+      // Remove optimistic message and restore input on failure
+      setLocalMessages(prev => prev.filter(m => m.id !== tempId));
+      setMessageInput(content);
+      toast({ title: "Failed to send message", variant: "destructive" });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const getInitials = (firstName?: string | null, lastName?: string | null, email?: string | null) => {
@@ -956,7 +958,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={!messageInput.trim()}
+                      disabled={!messageInput.trim() || isSending}
                       className="h-9"
                       data-testid="button-send"
                     >

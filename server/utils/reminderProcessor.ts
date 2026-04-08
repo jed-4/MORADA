@@ -556,7 +556,7 @@ export async function syncOverheadActualsNightly() {
     const { db } = await import("../db");
     const { eq, and, isNotNull } = await import("drizzle-orm");
     const { xeroService } = await import("../services/xeroService");
-    const { xeroConnections, overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
+    const { xeroConnections, overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals } = await import("@shared/schema");
 
     // Get all companies that have Xero connected
     const allConnections = await db.select().from(xeroConnections);
@@ -567,7 +567,6 @@ export async function syncOverheadActualsNightly() {
       const companyId = connection.companyId;
       try {
         const now = new Date();
-        // Use Australian financial year (Jul 1 – Jun 30) to stay within Xero's 365-day P&L limit
         const fyYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
         const fromDate = `${fyYear}-07-01`;
         const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
@@ -606,6 +605,19 @@ export async function syncOverheadActualsNightly() {
               });
             totalSynced++;
           }
+        }
+
+        // Upsert income totals
+        for (const [monthKey, amount] of Object.entries(result.incomeTotals)) {
+          const [yyyy, mm] = monthKey.split("-").map(Number);
+          if (!yyyy || !mm || amount <= 0) continue;
+          const incomeCents = Math.round((amount as number) * 100);
+          await db.insert(companyIncomeActuals)
+            .values({ companyId, year: yyyy, month: mm, incomeCents, xeroImported: true, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
+              set: { incomeCents, xeroImported: true, updatedAt: new Date() },
+            });
         }
       } catch (err) {
         console.error(`[ReminderProcessor] Overhead actuals sync failed for company ${companyId}:`, err);

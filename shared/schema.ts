@@ -5941,6 +5941,23 @@ export const insertOverheadMonthActualSchema = createInsertSchema(overheadMonthA
 export type InsertOverheadMonthActual = z.infer<typeof insertOverheadMonthActualSchema>;
 export type OverheadMonthActual = typeof overheadMonthActuals.$inferSelect;
 
+export const companyIncomeActuals = pgTable("company_income_actuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  incomeCents: integer("income_cents").notNull().default(0),
+  xeroImported: boolean("xero_imported").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueCompanyMonth: uniqueIndex("company_income_actuals_company_year_month_unique").on(table.companyId, table.year, table.month),
+}));
+
+export const insertCompanyIncomeActualSchema = createInsertSchema(companyIncomeActuals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyIncomeActual = z.infer<typeof insertCompanyIncomeActualSchema>;
+export type CompanyIncomeActual = typeof companyIncomeActuals.$inferSelect;
+
 export const overheadMonthStatus = pgTable("overhead_month_status", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),

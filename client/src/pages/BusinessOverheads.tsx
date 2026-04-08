@@ -56,6 +56,10 @@ import {
   ToggleRight,
   RefreshCw,
   Lock,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  DollarSign,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,10 +77,11 @@ interface OhPipelineJob { id: string; name: string; estimatedValue: number; prob
 interface OverheadForecastOverride { id: string; itemId: string; year: number; month: number; forecastCents: number; }
 interface ContractedProject {
   id: string; name: string; projectStatus: string | null;
-  lockedContractPrice: number | null; // cents
-  percentComplete: number | null; // 0-100
-  remainingCents: number; // computed by backend: lockedContractPrice × (1 - %complete/100)
+  lockedContractPrice: number | null;
+  percentComplete: number | null;
+  remainingCents: number;
 }
+interface CompanyIncomeActual { id: string; companyId: string; year: number; month: number; incomeCents: number; xeroImported: boolean; }
 
 interface OverheadsData {
   categories: OverheadCategory[];
@@ -84,6 +89,7 @@ interface OverheadsData {
   actuals: OverheadMonthActual[];
   monthStatuses: OverheadMonthStatus[];
   settings: OhSettings | null;
+  incomeActuals: CompanyIncomeActual[];
 }
 
 type Frequency = "weekly" | "monthly" | "quarterly" | "annual";
@@ -584,18 +590,35 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
+  const [view, setView] = useState<"monthly" | "prev12">("monthly");
+  const [editingIncome, setEditingIncome] = useState<string | null>(null); // "year__month"
+  const [incomeInput, setIncomeInput] = useState("");
 
   const rolling12 = useMemo(() => rollingLast12(), []);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
   const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
-  // Months that have at least one non-zero actual entered (drives amber chip state)
+
+  // Income actuals map: "year__month" → cents
+  const incomeMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of (data.incomeActuals || [])) m.set(`${a.year}__${a.month}`, a.incomeCents);
+    return m;
+  }, [data.incomeActuals]);
+
+  // Months with xero-imported income (locked)
+  const incomeXeroSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of (data.incomeActuals || [])) if (a.xeroImported) s.add(`${a.year}__${a.month}`);
+    return s;
+  }, [data.incomeActuals]);
+
   const monthsWithActuals = useMemo(() => {
     const s = new Set<string>();
     for (const a of data.actuals) if (a.actualCents !== 0) s.add(`${a.year}__${a.month}`);
     return s;
   }, [data.actuals]);
-  // Months that have at least one drifted actual (drives drift indicator on column header)
+
   const monthsWithDrift = useMemo(() => {
     const s = new Set<string>();
     for (const a of data.actuals) if (a.driftedSinceConfirmed) s.add(`${a.year}__${a.month}`);
@@ -607,6 +630,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
     onError: () => toast({ title: "Failed to update month status", variant: "destructive" }),
   });
+
   const syncActualsMut = useMutation({
     mutationFn: () => apiRequest("/api/xero/sync-overhead-actuals", "POST", {}),
     onSuccess: (res: any) => {
@@ -617,28 +641,176 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onError: () => toast({ title: "Failed to sync Xero actuals", variant: "destructive" }),
   });
 
+  const incomeActualMut = useMutation({
+    mutationFn: (p: { year: number; month: number; incomeCents: number }) => apiRequest("/api/overheads/income-actual", "PUT", p),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
+      setEditingIncome(null);
+    },
+    onError: () => toast({ title: "Failed to save income", variant: "destructive" }),
+  });
+
   const monthBudget = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
 
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
 
+  // ─── Prev 12 Summary View ────────────────────────────────────────────────────
+  if (view === "prev12") {
+    const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
+    const totalOH12 = rolling12.reduce((s, { year, month }) => s + data.items.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
+    const avgIncome = totalIncome12 / 12;
+    const avgOH = totalOH12 / 12;
+    const netProfit12 = totalIncome12 - totalOH12;
+    const avgNetProfit = netProfit12 / 12;
+    const ohPct = totalIncome12 > 0 ? (totalOH12 / totalIncome12) * 100 : 0;
+
+    // MoM: compare last month vs month before
+    const lastM = rolling12[rolling12.length - 1];
+    const prevM = rolling12[rolling12.length - 2];
+    const lastIncome = lastM ? (incomeMap.get(`${lastM.year}__${lastM.month}`) || 0) : 0;
+    const prevIncome = prevM ? (incomeMap.get(`${prevM.year}__${prevM.month}`) || 0) : 0;
+    const lastOH = lastM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, lastM.year, lastM.month)) || 0), 0) : 0;
+    const prevOH = prevM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
+
+    function MoMArrow({ cur, prev, invert = false }: { cur: number; prev: number; invert?: boolean }) {
+      if (!prev) return <span className="text-muted-foreground/30 text-[10px]">—</span>;
+      const diff = cur - prev;
+      const pct = Math.abs((diff / prev) * 100).toFixed(0);
+      const up = diff > 0;
+      const good = invert ? !up : up;
+      return (
+        <span className={`inline-flex items-center gap-0.5 text-[10px] tabular-nums ${good ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+          {pct}%
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <p className="text-xs text-muted-foreground">Previous 12 months — totals, averages, and OH% of income</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setView("monthly")}>Monthly Grid</Button>
+            <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
+              {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: 560 }}>
+            {/* Header */}
+            <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
+              <div className="flex-1 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Total (12m)</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Avg / Month</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">% of Income</div>
+              <div className="w-20 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">MoM</div>
+            </div>
+
+            {/* Income row */}
+            <div className="flex items-center border-b border-border/40 bg-green-500/5" style={{ height: 36 }}>
+              <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />Income</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-green-600 dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
+              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
+            </div>
+
+            {/* Category rows */}
+            {data.categories.map(cat => {
+              const catItems = data.items.filter(i => i.categoryId === cat.id);
+              if (!catItems.length) return null;
+              const catTotal = rolling12.reduce((s, { year, month }) => s + catItems.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
+              const catAvg = catTotal / 12;
+              const catPct = totalIncome12 > 0 ? (catTotal / totalIncome12) * 100 : 0;
+              const lastCat = lastM ? catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, lastM.year, lastM.month)) || 0), 0) : 0;
+              const prevCat = prevM ? catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
+
+              return (
+                <div key={cat.id}>
+                  <div className="flex items-center bg-muted/20 border-b border-border/40" style={{ height: 28 }}>
+                    <div className="flex-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
+                    <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums font-medium">{catTotal > 0 ? fmtK(catTotal) : "—"}</div>
+                    <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{catAvg > 0 ? fmtK(catAvg) : "—"}</div>
+                    <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{catPct > 0 ? `${catPct.toFixed(1)}%` : "—"}</div>
+                    <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastCat} prev={prevCat} invert /></div>
+                  </div>
+                  {catItems.map(item => {
+                    const itemTotal = rolling12.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
+                    const itemAvg = itemTotal / 12;
+                    const itemPct = totalIncome12 > 0 ? (itemTotal / totalIncome12) * 100 : 0;
+                    const lastItem = lastM ? (actualMap.get(getKey(item.id, lastM.year, lastM.month)) || 0) : 0;
+                    const prevItem = prevM ? (actualMap.get(getKey(item.id, prevM.year, prevM.month)) || 0) : 0;
+                    return (
+                      <div key={item.id} className="flex items-center border-b border-border/20 hover-elevate" style={{ height: 30 }}>
+                        <div className="flex-1 px-3 pl-6 text-xs truncate text-muted-foreground">{item.name}</div>
+                        <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums">{itemTotal > 0 ? fmtK(itemTotal) : "—"}</div>
+                        <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{itemAvg > 0 ? fmtK(itemAvg) : "—"}</div>
+                        <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{itemPct > 0 ? `${itemPct.toFixed(1)}%` : "—"}</div>
+                        <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastItem} prev={prevItem} invert /></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {/* Total OH */}
+            <div className="flex items-center border-t-2 border-border bg-muted/30 font-semibold" style={{ height: 36 }}>
+              <div className="flex-1 px-3 text-xs">Total Overheads</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${totalOH12 > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{totalOH12 > 0 ? fmtK(totalOH12) : "—"}</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{avgOH > 0 ? fmtK(avgOH) : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{ohPct > 0 ? `${ohPct.toFixed(1)}%` : "—"}</div>
+              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastOH} prev={prevOH} invert /></div>
+            </div>
+
+            {/* Net Profit */}
+            <div className={`flex items-center border-t border-border/40 rounded-b-md font-semibold ${netProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
+              <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
+                {netProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
+                Net Profit
+              </div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${netProfit12 >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(netProfit12) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${netProfit12 >= 0 ? "text-green-600/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(avgNetProfit) : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{totalIncome12 > 0 ? `${(100 - ohPct).toFixed(1)}%` : "—"}</div>
+              <div className="w-20 flex-shrink-0 text-right px-3">
+                <MoMArrow cur={lastIncome - lastOH} prev={prevIncome - prevOH} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Monthly Grid View ───────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <p className="text-xs text-muted-foreground">Rolling 12-month view — last 12 complete months</p>
-          <p className="text-xs text-muted-foreground/60">Monthly budget: {fmtDollars(monthBudget)}/mo</p>
+          <p className="text-xs text-muted-foreground">Rolling 12-month P&L — last 12 complete months</p>
+          <p className="text-xs text-muted-foreground/60">Budget: {fmtDollars(monthBudget)}/mo overheads</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setView("prev12")}>
+            <Activity className="w-3.5 h-3.5 mr-1" />
+            Prev 12 Summary
+          </Button>
           <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
-            {syncActualsMut.isPending ? "Syncing…" : "Sync Actuals from Xero"}
+            {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
           </Button>
         </div>
       </div>
 
       <div className="overflow-x-auto">
         <div style={{ minWidth: 960 }}>
-          {/* Header */}
+          {/* Column headers */}
           <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
             <div className="w-44 flex-shrink-0 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
             {rolling12.map(({ year, month }) => {
@@ -646,7 +818,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               const isConfirmed = statusSet.has(key);
               const hasData = monthsWithActuals.has(key);
               const hasDrift = monthsWithDrift.has(key);
-              // green = confirmed (no drift); orange = confirmed but drifted; amber = has data but unconfirmed; muted = no data
               const chipCls = hasDrift
                 ? "text-orange-500 dark:text-orange-400"
                 : isConfirmed
@@ -656,11 +827,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     : "text-muted-foreground/30 hover:text-muted-foreground/60";
               const tipText = hasDrift
                 ? "Xero figures changed since confirmed — re-confirm to accept"
-                : isConfirmed
-                  ? "Confirmed — click to unconfirm"
-                  : hasData
-                    ? "Actuals entered but not yet confirmed — click to confirm"
-                    : "No actuals entered — click to confirm";
+                : isConfirmed ? "Confirmed — click to unconfirm"
+                : hasData ? "Actuals entered but not yet confirmed — click to confirm"
+                : "No actuals entered — click to confirm";
               return (
                 <div key={`${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-1">
                   <p className="text-[10px] font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
@@ -679,30 +848,82 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 </div>
               );
             })}
-            <div className="w-36 flex-shrink-0 text-center px-1 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Variance ($ / %)</div>
+            <div className="w-32 flex-shrink-0 text-center px-1 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">OH vs Budget</div>
           </div>
 
+          {/* Income row */}
+          <div className="flex items-center border-b border-border/40 bg-green-500/5" style={{ height: 34 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
+              <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />Income
+            </div>
+            {rolling12.map(({ year, month }) => {
+              const key = `${year}__${month}`;
+              const cents = incomeMap.get(key) || 0;
+              const isXero = incomeXeroSet.has(key);
+              const isEditing = editingIncome === key;
+              return (
+                <div key={key} className="flex-1 min-w-0 h-full flex items-center justify-center px-0.5">
+                  {isXero ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-[10px] tabular-nums text-green-600 dark:text-green-400 flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5 opacity-50" />
+                            {cents > 0 ? fmtK(cents) : "—"}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent><p className="text-xs">Synced from Xero</p></TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : isEditing ? (
+                    <input
+                      autoFocus
+                      className="w-full text-[10px] text-right bg-transparent outline-none border-b border-primary tabular-nums"
+                      value={incomeInput}
+                      onChange={e => setIncomeInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(incomeInput.replace(/[^0-9.]/g, "")) || 0;
+                        incomeActualMut.mutate({ year, month, incomeCents: Math.round(val * 100) });
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          const val = parseFloat(incomeInput.replace(/[^0-9.]/g, "")) || 0;
+                          incomeActualMut.mutate({ year, month, incomeCents: Math.round(val * 100) });
+                        }
+                        if (e.key === "Escape") setEditingIncome(null);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => { setEditingIncome(key); setIncomeInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
+                      className="w-full text-[10px] tabular-nums text-right text-green-600 dark:text-green-400 hover:opacity-80 transition-opacity">
+                      {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div className="w-32 flex-shrink-0" />
+          </div>
+
+          {/* Overhead categories */}
           {data.categories.map(cat => {
             const catItems = data.items.filter(i => i.categoryId === cat.id);
             if (!catItems.length) return null;
-
             return (
               <div key={cat.id}>
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
                   <div className="w-44 flex-shrink-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
                   {rolling12.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
-                  <div className="w-36 flex-shrink-0 h-5" />
+                  <div className="w-32 flex-shrink-0 h-5" />
                 </div>
-
                 {catItems.map(item => {
                   const itemBudgetMonthly = toMonthlyCents(item);
-                  // YTD total variance across rolling window
                   const totalActual = rolling12.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
                   const confirmedMonths = rolling12.filter(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) > 0).length;
                   const totalBudgetForActualMonths = confirmedMonths * itemBudgetMonthly;
                   const varianceDollars = confirmedMonths > 0 ? totalBudgetForActualMonths - totalActual : 0;
                   const variancePct = totalBudgetForActualMonths > 0 ? (varianceDollars / totalBudgetForActualMonths) * 100 : 0;
-
                   return (
                     <div key={item.id} className="flex items-center border-b border-border/30 hover-elevate" style={{ height: 32 }}>
                       <div className="w-44 flex-shrink-0 px-3 text-xs truncate">{item.name}</div>
@@ -716,29 +937,25 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                           </div>
                         );
                       })}
-                      <div className={`w-36 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
-                        {confirmedMonths > 0 ? (
-                          <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct > 0 ? "+" : ""}{variancePct.toFixed(0)}%)</span></span>
-                        ) : "—"}
+                      <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
+                        {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                       </div>
                     </div>
                   );
                 })}
-
-                {/* Category subtotal */}
-                <div className="flex items-center border-b border-border/40 bg-muted/10 font-medium" style={{ height: 28 }}>
+                <div className="flex items-center border-b border-border/40 bg-muted/10" style={{ height: 26 }}>
                   <div className="w-44 flex-shrink-0 px-3 text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</div>
                   {rolling12.map(({ year, month }) => {
                     const total = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0);
                     return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
                   })}
-                  <div className="w-36 flex-shrink-0" />
+                  <div className="w-32 flex-shrink-0" />
                 </div>
               </div>
             );
           })}
 
-          {/* Grand total */}
+          {/* Total overheads + budget rows */}
           {(() => {
             const grandActuals = rolling12.map(({ year, month }) => data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
             const grandBudgets = rolling12.map(() => monthBudget);
@@ -748,28 +965,59 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             const varianceDollars = totalBudget > 0 ? totalBudget - totalActual : 0;
             const variancePct = totalBudget > 0 ? (varianceDollars / totalBudget) * 100 : 0;
 
+            const incomeActuals = rolling12.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
+            const netProfits = rolling12.map(({ year, month }, i) => (incomeMap.get(`${year}__${month}`) || 0) - grandActuals[i]);
+            const ohPcts = rolling12.map(({ year, month }, i) => {
+              const income = incomeMap.get(`${year}__${month}`) || 0;
+              return income > 0 ? (grandActuals[i] / income) * 100 : null;
+            });
+
             return (
               <>
-                <div className="flex items-center border-t-2 border-border bg-muted/30 rounded-b-md font-semibold" style={{ height: 36 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-xs">Total Actuals</div>
+                <div className="flex items-center border-t-2 border-border bg-muted/30 font-semibold" style={{ height: 34 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-xs">Total Overheads</div>
                   {grandActuals.map((actual, idx) => (
                     <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > grandBudgets[idx] * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{actual > 0 ? fmtK(actual) : "—"}</div>
                   ))}
-                  <div className={`w-36 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
-                    {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} ({variancePct > 0 ? "+" : ""}{variancePct.toFixed(0)}%)</span> : "—"}
+                  <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
+                    {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                   </div>
                 </div>
-                <div className="flex items-center border-t border-border/30" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">Budget</div>
+                <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">OH Budget</div>
                   {grandBudgets.map((b, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-[10px] text-muted-foreground tabular-nums">{fmtK(b)}</div>)}
-                  <div className="w-36 flex-shrink-0" />
+                  <div className="w-32 flex-shrink-0" />
+                </div>
+                {/* OH% row */}
+                <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
+                  {ohPcts.map((pct, idx) => (
+                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
+                      {pct !== null ? `${pct.toFixed(0)}%` : "—"}
+                    </div>
+                  ))}
+                  <div className="w-32 flex-shrink-0" />
+                </div>
+                {/* Net Profit row */}
+                <div className="flex items-center border-t border-border/40 bg-muted/10 rounded-b-md font-medium" style={{ height: 30 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />Net Profit
+                  </div>
+                  {netProfits.map((np, idx) => {
+                    const hasIncome = incomeActuals[idx] > 0;
+                    return (
+                      <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                        {hasIncome ? fmtK(np) : "—"}
+                      </div>
+                    );
+                  })}
+                  <div className="w-32 flex-shrink-0" />
                 </div>
               </>
             );
           })()}
         </div>
       </div>
-
     </div>
   );
 }

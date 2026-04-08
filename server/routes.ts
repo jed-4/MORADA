@@ -154,7 +154,7 @@ import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
 import { setupMessagingHandlers } from "./messaging/socket";
-import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification } from "./socketManager";
+import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, getIO } from "./socketManager";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
   const rows = scheduleId
@@ -2462,35 +2462,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const project = await storage.createProject(projectData);
-      
-      // Auto-create channel for the project
-      try {
-        // Generate channel name from project name (e.g., "26 Ocean Drive" -> "26-ocean-drive")
-        const channelName = project.name
-          .toLowerCase()
-          .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
-          .replace(/\s+/g, '-') // Replace spaces with dashes
-          .substring(0, 50); // Limit length
-        
-        const channel = await storage.createChannel({
-          name: channelName,
-          type: "channel",
-          projectId: project.id,
-          description: `Project channel for ${project.name}`,
-          companyId: user.companyId
-        });
-        
-        // Add project owner to the channel
-        await storage.addChannelMember({
-          channelId: channel.id,
-          userId: userId
-        });
-        
-        console.log(`Auto-created channel ${channel.name} for project ${project.name}`);
-      } catch (channelError) {
-        // Log error but don't fail project creation
-        console.error("Error creating project channel:", channelError);
-      }
       
       // Auto-create Google Drive folder structure from default template
       try {
@@ -7861,32 +7832,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.params.userId
       });
       
-      // Auto-add user to project channel if it exists
-      try {
-        const user = await storage.getUser(access.grantedBy || '');
-        if (user?.companyId && access.projectId) {
-          const channels = await storage.getChannels(user.companyId);
-          const projectChannel = channels.find(c => c.projectId === access.projectId);
-          
-          if (projectChannel) {
-            // Check if user is already a member
-            const members = await storage.getChannelMembers(projectChannel.id);
-            const isMember = members.some(m => m.userId === req.params.userId);
-            
-            if (!isMember) {
-              await storage.addChannelMember({
-                channelId: projectChannel.id,
-                userId: req.params.userId
-              });
-              console.log(`Auto-added user ${req.params.userId} to project channel ${projectChannel.name}`);
-            }
-          }
-        }
-      } catch (channelError) {
-        // Log error but don't fail the access grant
-        console.error("Error adding user to project channel:", channelError);
-      }
-      
       res.status(201).json(access);
     } catch (error) {
       res.status(500).json({ error: "Failed to grant project access" });
@@ -7912,25 +7857,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedById);
       
-      // Auto-add user to project channel + send notification
+      // Send notification to added user
       try {
         const [granter, project] = await Promise.all([
           storage.getUser(grantedById),
           storage.getProject(projectId),
         ]);
         if (granter?.companyId) {
-          const channels = await storage.getChannels(granter.companyId);
-          const projectChannel = channels.find(c => c.projectId === projectId);
-
-          if (projectChannel) {
-            const members = await storage.getChannelMembers(projectChannel.id);
-            const isMember = members.some(m => m.userId === userId);
-            if (!isMember) {
-              await storage.addChannelMember({ channelId: projectChannel.id, userId });
-              console.log(`Auto-added user ${userId} to project channel ${projectChannel.name}`);
-            }
-          }
-
           // Notify the added user
           if (project) {
             const granterName = granter.firstName
@@ -20256,6 +20189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const channelId = req.params.channelId;
       
       const validationResult = insertMessageSchema.omit({ channelId: true, userId: true }).safeParse(req.body);
       if (!validationResult.success) {
@@ -20265,27 +20199,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Check for @mentions
       const content = validationResult.data.content;
-      const mentionRegex = /@(\w+)/g;
-      const mentions: string[] = [];
-      let match;
-      while ((match = mentionRegex.exec(content)) !== null) {
-        mentions.push(match[1]);
-      }
+      // Use explicit mentions array from client if provided, otherwise extract from content
+      const mentions: string[] = Array.isArray(req.body.mentions) ? req.body.mentions : (() => {
+        const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+        const found: string[] = [];
+        let match;
+        while ((match = mentionRegex.exec(content)) !== null) found.push(match[2]);
+        return found;
+      })();
 
-      // Check for /commands
       const hasCommand = content.startsWith('/');
       const commandType = hasCommand ? content.split(' ')[0].substring(1) : undefined;
 
       const message = await storage.createMessage({
         ...validationResult.data,
-        channelId: req.params.channelId,
+        channelId,
         userId,
         mentions,
         hasCommand,
         commandType
       });
+      
+      // Broadcast to all socket clients in the channel room for real-time delivery
+      const io = getIO();
+      if (io) {
+        io.to(`channel:${channelId}`).emit("new_message", message);
+      }
       
       res.status(201).json(message);
     } catch (error) {
@@ -22331,14 +22271,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings } = await import("@shared/schema");
+      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings, companyIncomeActuals } = await import("@shared/schema");
 
-      const [categories, items, actuals, statuses, settings] = await Promise.all([
+      const [categories, items, actuals, statuses, settings, incomeActuals] = await Promise.all([
         db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadCategories.sortOrder), asc(overheadCategories.createdAt)),
         db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.name)),
         db.select().from(overheadMonthActuals).innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id)).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)),
         db.select().from(overheadMonthStatus).where(eq(overheadMonthStatus.companyId, companyId)),
         db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1),
+        db.select().from(companyIncomeActuals).where(eq(companyIncomeActuals.companyId, companyId)),
       ]);
 
       res.json({
@@ -22347,6 +22288,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         actuals: actuals.map(r => r.overhead_month_actuals),
         monthStatuses: statuses,
         settings: settings[0] || null,
+        incomeActuals,
       });
     } catch (error: any) {
       console.error("Error fetching overheads:", error);
@@ -22561,7 +22503,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero not connected" });
 
-      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus } = await import("@shared/schema");
+      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals } = await import("@shared/schema");
 
       // Use Australian financial year (Jul 1 – Jun 30) to stay within Xero's 365-day P&L limit
       const now = new Date();
@@ -22589,7 +22531,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 
       for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
         const itemId = itemByCode.get(accountCode);
-        if (!itemId) continue; // no matching overhead item — skip
+        if (!itemId) continue;
 
         for (const [monthKey, amount] of Object.entries(accountData.amounts)) {
           const [yyyy, mm] = monthKey.split("-").map(Number);
@@ -22597,7 +22539,6 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           const actualCents = Math.round(amount * 100);
           const isConfirmed = confirmedSet.has(`${yyyy}__${mm}`);
 
-          // Detect drift: fetch existing actual to compare
           const [existing] = await db.select({ actualCents: overheadMonthActuals.actualCents })
             .from(overheadMonthActuals)
             .where(and(eq(overheadMonthActuals.itemId, itemId), eq(overheadMonthActuals.year, yyyy), eq(overheadMonthActuals.month, mm)));
@@ -22615,10 +22556,47 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
+      // Upsert income totals from P&L report
+      for (const [monthKey, amount] of Object.entries(result.incomeTotals)) {
+        const [yyyy, mm] = monthKey.split("-").map(Number);
+        if (!yyyy || !mm || amount <= 0) continue;
+        const incomeCents = Math.round(amount * 100);
+        await db.insert(companyIncomeActuals)
+          .values({ companyId, year: yyyy, month: mm, incomeCents, xeroImported: true, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
+            set: { incomeCents, xeroImported: true, updatedAt: new Date() },
+          });
+      }
+
       res.json({ synced, drifted });
     } catch (error: any) {
       console.error("Error syncing Xero overhead actuals:", error);
       res.status(500).json({ error: error.message || "Failed to sync actuals" });
+    }
+  });
+
+  // Manual income actual entry (PUT upserts for a given year/month)
+  app.put("/api/overheads/income-actual", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { year, month, incomeCents } = req.body;
+      if (!year || !month || incomeCents === undefined) return res.status(400).json({ error: "year, month, incomeCents required" });
+
+      const { companyIncomeActuals } = await import("@shared/schema");
+      const [upserted] = await db.insert(companyIncomeActuals)
+        .values({ companyId, year, month, incomeCents, xeroImported: false, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
+          set: { incomeCents, xeroImported: false, updatedAt: new Date() },
+        })
+        .returning();
+      res.json(upserted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save income actual" });
     }
   });
 
