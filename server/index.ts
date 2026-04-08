@@ -13,7 +13,7 @@ app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 // Serve uploaded files (avatars, gear photos, etc.)
 app.use('/uploads', express.static(path.resolve(import.meta.dirname, '..', 'uploads')));
 
-// Set Content Security Policy to allow blob URLs for PDF preview
+// Set Content Security Policy — frame-ancestors * allows canvas/iframe embedding
 app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
@@ -24,7 +24,8 @@ app.use((req, res, next) => {
     "font-src 'self' data:; " +
     "connect-src 'self' ws: wss:; " +
     "frame-src 'self' blob:; " +
-    "object-src 'self' blob:;"
+    "object-src 'self' blob:; " +
+    "frame-ancestors *;"
   );
   next();
 });
