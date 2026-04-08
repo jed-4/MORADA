@@ -113,8 +113,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   useEffect(() => {
     document.title = "BuildPro";
   }, []);
+
+  // Read ?channel= URL param on mount to support navigation from dropdown/notifications
+  const channelFromUrl = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("channel");
+  }, []);
   
-  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(channelFromUrl);
   const [messageInput, setMessageInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -166,7 +172,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     queryKey: ["/api/channels", channelQueryString],
     queryFn: async () => {
       const url = `/api/channels${channelQueryString ? `?${channelQueryString}` : ''}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch channels");
       return response.json();
     },
@@ -194,9 +200,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const filteredChannels = useMemo(() => {
     let result = [...channels];
     
-    // Hide empty chats (no messages)
+    // Hide empty chats (no messages), but always keep the currently selected channel visible
     if (hideEmptyChats) {
-      result = result.filter(channel => (channel.messageCount || 0) > 0);
+      result = result.filter(channel => (channel.messageCount || 0) > 0 || channel.id === selectedChannelId);
     }
     
     // Hide inactive chats (no activity in X days)
@@ -560,7 +566,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   };
 
   useEffect(() => {
-    if (channels.length > 0 && !selectedChannelId) {
+    if (channels.length === 0) return;
+    if (!selectedChannelId) {
+      // No channel selected — auto-select first available
+      setSelectedChannelId(channels[0].id);
+    } else if (!channels.find(c => c.id === selectedChannelId)) {
+      // URL param pointed to a channel the user can't access — fall back to first
       setSelectedChannelId(channels[0].id);
     }
   }, [channels, selectedChannelId]);

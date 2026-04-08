@@ -5980,15 +5980,22 @@ export class DbStorage implements IStorage {
     const now = new Date();
     
     for (const category of allCategories) {
-      await this.ensureOptionsForCategory(category, now);
+      try {
+        await this.ensureOptionsForCategory(category, now);
+      } catch (err: any) {
+        console.warn(`[init] Could not ensure options for category "${category.key}": ${err?.message || err}`);
+      }
     }
   }
 
   private async ensureOptionsForCategory(category: any, now: Date): Promise<void> {
     const requiredOptions = this.getRequiredOptionsForCategory(category.key, category.id);
     
-    for (const optionData of requiredOptions) {
-      // Check if this specific option exists by key within this category
+    // First pass: insert parent options (no parentId) so FK references resolve
+    const parentOptions = requiredOptions.filter((o: any) => !o.parentId);
+    const childOptions = requiredOptions.filter((o: any) => !!o.parentId);
+
+    for (const optionData of parentOptions) {
       const existing = await db.select().from(schema.fieldOptions)
         .where(and(
           eq(schema.fieldOptions.categoryId, category.id),
@@ -5997,13 +6004,57 @@ export class DbStorage implements IStorage {
         .limit(1);
         
       if (existing.length === 0) {
-        // Option doesn't exist, insert it
         await db.insert(schema.fieldOptions).values({
           ...optionData,
           isActive: true,
           createdAt: now,
           updatedAt: now,
         });
+      }
+    }
+
+    // Second pass: insert child options, resolving parent IDs from DB
+    for (const optionData of childOptions) {
+      const existingChild = await db.select().from(schema.fieldOptions)
+        .where(and(
+          eq(schema.fieldOptions.categoryId, category.id),
+          eq(schema.fieldOptions.key, optionData.key)
+        ))
+        .limit(1);
+
+      if (existingChild.length > 0) continue;
+
+      // Look up the actual parent ID by the parent's hardcoded key suffix
+      // e.g. parentId 'opt-project-status-pre-construction' → key 'pre_construction'
+      const hardcodedParentId: string = optionData.parentId;
+      // Find the parent option in the DB by matching the hardcoded ID (if it was inserted)
+      // OR by finding the sibling option in parentOptions for this category
+      const parentOption = parentOptions.find((p: any) => p.id === hardcodedParentId);
+      let resolvedParentId: string = hardcodedParentId;
+
+      if (parentOption) {
+        // Look up what was actually inserted for this parent key
+        const actualParent = await db.select().from(schema.fieldOptions)
+          .where(and(
+            eq(schema.fieldOptions.categoryId, category.id),
+            eq(schema.fieldOptions.key, parentOption.key)
+          ))
+          .limit(1);
+        if (actualParent.length > 0) {
+          resolvedParentId = actualParent[0].id;
+        }
+      }
+
+      try {
+        await db.insert(schema.fieldOptions).values({
+          ...optionData,
+          parentId: resolvedParentId,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (err: any) {
+        console.warn(`[init] Skipping child option "${optionData.key}" (parentId resolution failed): ${err?.message || err}`);
       }
     }
   }
