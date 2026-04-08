@@ -153,7 +153,6 @@ import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inA
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
-import { setupMessagingHandlers } from "./messaging/socket";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, getIO } from "./socketManager";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
@@ -23020,8 +23019,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication
-  const io = initializeSocketManager(httpServer, sessionMiddleware);
-  setupMessagingHandlers(io);
+  initializeSocketManager(httpServer, sessionMiddleware);
 
   return httpServer;
 }
