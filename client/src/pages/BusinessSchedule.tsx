@@ -255,7 +255,7 @@ export default function BusinessSchedule() {
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
-  const [showOffline, setShowOffline] = useState(false);
+  const [showOffline, setShowOffline] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 

@@ -523,19 +523,25 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
     // Optimistically add the message so the sender sees it immediately
     const tempId = `temp-${Date.now()}`;
+    const now = new Date();
     const optimistic: Message = {
       id: tempId,
       channelId: selectedChannelId,
       userId: user!.id,
       content,
       mentions,
-      createdAt: new Date().toISOString() as any,
+      threadParentId: null,
+      threadCount: 0,
+      hasCommand: content.startsWith('/'),
+      commandType: content.startsWith('/') ? content.split(' ')[0].substring(1) : null,
+      isEdited: false,
+      isDeleted: false,
       userFirstName: user!.firstName || null,
       userLastName: user!.lastName || null,
       userEmail: user!.email || null,
-      hasCommand: content.startsWith('/'),
-      commandType: content.startsWith('/') ? content.split(' ')[0].substring(1) : null,
-    } as Message;
+      createdAt: now,
+      updatedAt: now,
+    };
     setLocalMessages(prev => [...prev, optimistic]);
     scrollToBottom();
 

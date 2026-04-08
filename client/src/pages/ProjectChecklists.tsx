@@ -1018,7 +1018,7 @@ export default function ProjectChecklists() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {groupedByInstance.length === 0 ? (
+        {filteredGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
             <ClipboardList className="h-12 w-12 opacity-50" />
             <p className="text-sm">
