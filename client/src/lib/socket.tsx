@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient } from "@/lib/queryClient";
@@ -25,10 +25,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return;
 
-    // Create socket connection - no need to send userId, it comes from session
     const socketInstance = io({
       path: "/socket.io/",
-      withCredentials: true // Important: send cookies for session auth
+      withCredentials: true
     });
 
     socketInstance.on("connect", () => {
@@ -57,29 +56,31 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id]);
 
-  const joinChannel = (channelId: string) => {
+  // Stable references via useCallback so consumers' useEffects don't re-run
+  // on every SocketProvider re-render (e.g. isConnected flip on connect/disconnect).
+  const joinChannel = useCallback((channelId: string) => {
     socket?.emit("join_channel", channelId);
-  };
+  }, [socket]);
 
-  const leaveChannel = (channelId: string) => {
+  const leaveChannel = useCallback((channelId: string) => {
     socket?.emit("leave_channel", channelId);
-  };
+  }, [socket]);
 
-  const sendMessage = (channelId: string, content: string, mentions?: string[]) => {
+  const sendMessage = useCallback((channelId: string, content: string, mentions?: string[]) => {
     socket?.emit("send_message", { channelId, content, mentions: mentions || [] });
-  };
+  }, [socket]);
 
-  const startTyping = (channelId: string) => {
+  const startTyping = useCallback((channelId: string) => {
     socket?.emit("typing_start", channelId);
-  };
+  }, [socket]);
 
-  const stopTyping = (channelId: string) => {
+  const stopTyping = useCallback((channelId: string) => {
     socket?.emit("typing_stop", channelId);
-  };
+  }, [socket]);
 
-  const markAsRead = (channelId: string) => {
+  const markAsRead = useCallback((channelId: string) => {
     socket?.emit("mark_read", channelId);
-  };
+  }, [socket]);
 
   return (
     <SocketContext.Provider
@@ -107,16 +108,20 @@ export function useSocket() {
   return context;
 }
 
-// Hook for listening to new messages in a channel
+// Hook for listening to new messages in a channel.
+// Uses a ref for onMessage so the socket listener is only re-registered when
+// `socket` or `channelId` changes — not when the caller's inline callback changes.
 export function useChannelMessages(channelId: string | null, onMessage: (message: Message) => void) {
   const { socket } = useSocket();
+  const onMessageRef = useRef(onMessage);
+  useLayoutEffect(() => { onMessageRef.current = onMessage; });
 
   useEffect(() => {
     if (!socket || !channelId) return;
 
     const handleNewMessage = (message: Message) => {
       if (message.channelId === channelId) {
-        onMessage(message);
+        onMessageRef.current(message);
       }
     };
 
@@ -125,22 +130,29 @@ export function useChannelMessages(channelId: string | null, onMessage: (message
     return () => {
       socket.off("new_message", handleNewMessage);
     };
-  }, [socket, channelId, onMessage]);
+  }, [socket, channelId]);
 }
 
-// Hook for listening to ALL new messages (for unread badge updates)
+// Hook for listening to ALL new messages (for unread badge updates).
+// Same ref pattern — avoids re-registering listener on every render.
 export function useAllNewMessages(onMessage: (message: Message) => void) {
   const { socket } = useSocket();
+  const onMessageRef = useRef(onMessage);
+  useLayoutEffect(() => { onMessageRef.current = onMessage; });
 
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("new_message", onMessage);
+    const handleNewMessage = (message: Message) => {
+      onMessageRef.current(message);
+    };
+
+    socket.on("new_message", handleNewMessage);
 
     return () => {
-      socket.off("new_message", onMessage);
+      socket.off("new_message", handleNewMessage);
     };
-  }, [socket, onMessage]);
+  }, [socket]);
 }
 
 // Hook for typing indicators
@@ -162,13 +174,11 @@ export function useTypingIndicator(channelId: string | null) {
       if (data.channelId === channelId) {
         setTypingUsers(prev => new Set(prev).add(data.userId));
         
-        // Clear any existing timeout for this user
         const existingTimeout = timeoutHandles.get(data.userId);
         if (existingTimeout) {
           clearTimeout(existingTimeout);
         }
         
-        // Auto-clear after 3 seconds
         const timeout = setTimeout(() => {
           setTypingUsers(prev => {
             const next = new Set(prev);
@@ -184,7 +194,6 @@ export function useTypingIndicator(channelId: string | null) {
 
     const handleUserStoppedTyping = (data: { channelId: string; userId: string }) => {
       if (data.channelId === channelId) {
-        // Clear the timeout if it exists
         const existingTimeout = timeoutHandles.get(data.userId);
         if (existingTimeout) {
           clearTimeout(existingTimeout);
@@ -203,7 +212,6 @@ export function useTypingIndicator(channelId: string | null) {
     socket.on("user_stopped_typing", handleUserStoppedTyping);
 
     return () => {
-      // Clean up all timeouts on unmount or channel change
       timeoutHandles.forEach(timeout => clearTimeout(timeout));
       timeoutHandles.clear();
       
@@ -279,13 +287,15 @@ export function useTaskEvents() {
 
 export function useNotificationEvents(onNotification?: (notification: NotificationData) => void) {
   const { socket } = useSocket();
+  const onNotificationRef = useRef(onNotification);
+  useLayoutEffect(() => { onNotificationRef.current = onNotification; });
 
   useEffect(() => {
     if (!socket) return;
 
     const handleNewNotification = (notification: NotificationData) => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      onNotification?.(notification);
+      onNotificationRef.current?.(notification);
     };
 
     socket.on("notification:new", handleNewNotification);
@@ -293,7 +303,7 @@ export function useNotificationEvents(onNotification?: (notification: Notificati
     return () => {
       socket.off("notification:new", handleNewNotification);
     };
-  }, [socket, onNotification]);
+  }, [socket]);
 }
 
 export function TaskEventsListener({ children }: { children?: ReactNode }) {
