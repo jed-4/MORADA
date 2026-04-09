@@ -338,10 +338,31 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   useEffect(() => {
-    setLocalMessages(messages);
+    // Only top-level messages (no threadParentId) go into the main feed
+    setLocalMessages(messages.filter((m: Message) => !m.threadParentId));
   }, [messages]);
 
   useChannelMessages(selectedChannelId, (message) => {
+    if (message.threadParentId) {
+      // This is a threaded reply — route into the thread list if the thread is open
+      let isNewToThread = false;
+      setThreadMessages(prev => {
+        if (!prev[message.threadParentId!]) return prev; // thread not loaded; skip
+        if (prev[message.threadParentId!].some(r => r.id === message.id)) return prev;
+        isNewToThread = true;
+        return { ...prev, [message.threadParentId!]: [...prev[message.threadParentId!], message] };
+      });
+      // Bump threadCount on the parent only if it wasn't already in the thread list
+      // (avoids double-counting when the sender's own REST response already updated it)
+      if (isNewToThread) {
+        setLocalMessages(prev => prev.map(m =>
+          m.id === message.threadParentId
+            ? { ...m, threadCount: (m.threadCount || 0) + 1 }
+            : m
+        ));
+      }
+      return;
+    }
     setLocalMessages(prev => {
       // Deduplicate: skip if this real ID is already in the list
       // (can happen when sender receives their own REST-sent message via socket)
@@ -1348,6 +1369,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             {/* Inline thread expansion */}
                             {threadOpen && (
                               <div className="mt-1 ml-2 border-l-2 border-border pl-3 w-full space-y-2">
+                                {/* "Replying to [name]" context header */}
+                                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                  <MessageSquare className="h-3 w-3" />
+                                  <span>
+                                    Replying to{" "}
+                                    <span className="font-medium text-foreground">
+                                      {message.userFirstName && message.userLastName
+                                        ? `${message.userFirstName} ${message.userLastName}`
+                                        : message.userEmail || "Unknown"}
+                                    </span>
+                                  </span>
+                                </div>
                                 {loadingThreads.has(message.id) ? (
                                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                 ) : (

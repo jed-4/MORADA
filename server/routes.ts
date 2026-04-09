@@ -20277,9 +20277,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: verify requester is a member of the message's channel and return the message
+  async function requireMessageChannelAccess(
+    messageId: string,
+    userId: string,
+    companyId: string,
+    res: any
+  ): Promise<{ message: Message; channelId: string } | null> {
+    const message = await storage.getMessage(messageId);
+    if (!message) { res.status(404).json({ error: "Message not found" }); return null; }
+    const channel = await storage.getChannel(message.channelId, companyId);
+    if (!channel) { res.status(403).json({ error: "Forbidden" }); return null; }
+    const members = await storage.getChannelMembers(message.channelId);
+    if (!members.some((m: any) => m.userId === userId)) {
+      res.status(403).json({ error: "Not a member of this channel" }); return null;
+    }
+    return { message, channelId: message.channelId };
+  }
+
   // Message Reactions — GET returns all reactions for a message
   app.get("/api/messages/:id/reactions", requireAuth, async (req, res) => {
     try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
       const reactions = await storage.getMessageReactions(req.params.id);
       res.json(reactions);
     } catch (error) {
@@ -20291,17 +20313,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/messages/:id/reactions", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
       const { emoji } = req.body;
       if (!emoji || typeof emoji !== "string") {
         return res.status(400).json({ error: "emoji is required" });
       }
-      const user = (req.user as any).dbUser;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
+      const dbUser = (req.user as any).dbUser;
       const result = await storage.toggleMessageReaction(
         req.params.id,
         userId,
         emoji,
-        user?.firstName || null,
-        user?.lastName || null
+        dbUser?.firstName || null,
+        dbUser?.lastName || null
       );
       // Broadcast reaction update to channel room
       const io = getIO();
@@ -20325,7 +20350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channel = await storage.getChannel(req.params.channelId, companyId);
       if (!channel) return res.status(404).json({ error: "Channel not found" });
       const members = await storage.getChannelMembers(req.params.channelId);
-      if (!members.some(m => m.userId === userId)) {
+      if (!members.some((m: any) => m.userId === userId)) {
         return res.status(403).json({ error: "Not a member of this channel" });
       }
       const reactions = await storage.getChannelReactions(req.params.channelId);
@@ -20338,6 +20363,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Message Replies — GET returns threaded replies for a parent message
   app.get("/api/messages/:id/replies", requireAuth, async (req, res) => {
     try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
       const replies = await storage.getMessageReplies(req.params.id);
       res.json(replies);
     } catch (error) {
