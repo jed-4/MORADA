@@ -57,7 +57,7 @@ const REACTION_OPTIONS = [
   { id: "check",     Icon: Check,    label: "Got it" },
   { id: "eyes",      Icon: Eye,      label: "Looking" },
   { id: "heart",     Icon: Heart,    label: "Love" },
-  { id: "smile",     Icon: Smile,    label: "Haha" },
+  { id: "smile",     Icon: Smile,    label: "Laugh" },
   { id: "fire",      Icon: Flame,    label: "Fire" },
 ] as const;
 
@@ -479,16 +479,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         if (existing.some(r => r.id === reply.id)) return prev;
         return { ...prev, [parentMessageId]: [...existing, reply] };
       });
-      // threadCount is updated by the socket message_updated event from the server.
-      // We only do a local increment if the socket event hasn't already updated it,
-      // detected by whether the reply was already in the thread list.
-      setLocalMessages(prev => {
-        const alreadyDeliveredBySocket = threadMessages[parentMessageId]?.some(r => r.id === reply.id);
-        if (alreadyDeliveredBySocket) return prev; // socket already bumped threadCount
-        return prev.map(m =>
-          m.id === parentMessageId ? { ...m, threadCount: (m.threadCount || 0) + 1 } : m
-        );
-      });
+      // threadCount is NOT updated here — the server emits message_updated via socket
+      // with the authoritative count, which useMessageUpdated handles.
+      // Doing a local increment here risks double-counting when socket arrives first.
     } catch {
       setThreadInputs(prev => ({ ...prev, [parentMessageId]: content }));
       toast({ title: "Failed to send reply", variant: "destructive" });
