@@ -20414,10 +20414,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "objectPath and fileName are required" });
       }
 
-      // Build a served URL that goes through our authenticated object endpoint
-      const fileUrl = objectPath.startsWith("/objects/company/")
-        ? objectPath
-        : objectPath;
+      // Security: validate that the objectPath belongs to this company's namespace
+      // Expected format: /objects/company/<companyId>/uploads/<uuid>
+      const expectedPrefix = `/objects/company/${companyId}/`;
+      if (typeof objectPath !== "string" || !objectPath.startsWith(expectedPrefix)) {
+        return res.status(403).json({ error: "Invalid object path" });
+      }
+
+      // Build a served URL (same as the objectPath — served via authenticated route)
+      const fileUrl = objectPath;
 
       const attachment = await storage.createMessageAttachment({
         messageId: req.params.id,
