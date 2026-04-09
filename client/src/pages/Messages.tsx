@@ -628,18 +628,25 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     // Save display value so we can restore it if send fails
     const originalInput = messageInput;
 
-    // Convert display-format @Name back to storage format @[Name](userId:xxx)
+    // Convert display-format @Name back to storage format @[Name](userId:xxx).
+    // Sort by descending name length first to avoid prefix-collision (e.g. @Ann vs @Anna).
     let content = messageInput;
     const mentionIds: string[] = [];
-    for (const m of pendingMentions) {
-      const displayToken = `@${m.name}`;
-      const storageToken = `@[${m.name}](userId:${m.userId})`;
-      if (content.includes(displayToken)) {
-        content = content.replace(displayToken, storageToken);
+    const sortedMentions = [...pendingMentions].sort((a, b) => b.name.length - a.name.length);
+    for (const m of sortedMentions) {
+      // Escape any regex special characters in the name, then match @Name at a word boundary
+      // (followed by whitespace, end-of-string, or a non-word character) to avoid partial matches.
+      const escapedName = m.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const tokenRegex = new RegExp(`@${escapedName}(?=\\s|$|[^\\w])`, "g");
+      if (tokenRegex.test(content)) {
+        content = content.replace(
+          new RegExp(`@${escapedName}(?=\\s|$|[^\\w])`, "g"),
+          `@[${m.name}](userId:${m.userId})`
+        );
         mentionIds.push(m.userId);
       }
     }
-    // Also parse any pre-existing @[Name](userId:xxx) tokens (e.g. from restoring on failure)
+    // Also parse any pre-existing @[Name](userId:xxx) tokens (e.g. restored after send failure)
     const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
     let match;
     while ((match = mentionRegex.exec(content)) !== null) {
