@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -203,6 +204,423 @@ function ElapsedTimer({ clockInTime, style }: { clockInTime: string; style: obje
   return <Text style={style}>{elapsed}</Text>;
 }
 
+const GRID_START_HOUR = 5;
+const GRID_END_HOUR = 22;
+const TOTAL_HOURS = GRID_END_HOUR - GRID_START_HOUR;
+const HOUR_HEIGHT = 60;
+const GUTTER_WIDTH = 44;
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+interface WeeklyTimeGridProps {
+  timesheets: Timesheet[];
+  weekStart: Date;
+  weekEnd: Date;
+  setWeekOffset: (fn: (w: number) => number) => void;
+  totalHours: number;
+  getProjectName: (id: string) => string;
+  getCostCodeName: (id: string | null) => string | null;
+  onSelectTimesheet: (ts: Timesheet) => void;
+  colors: {
+    bg: string; card: string; text: string; secondary: string; border: string;
+    accent: string; green: string; red: string; inputBg: string;
+  };
+  isDark: boolean;
+  onRefresh: () => Promise<void>;
+  refreshing: boolean;
+}
+
+function WeeklyTimeGrid({
+  timesheets,
+  weekStart,
+  weekEnd,
+  setWeekOffset,
+  totalHours,
+  getProjectName,
+  getCostCodeName,
+  onSelectTimesheet,
+  colors,
+  isDark,
+  onRefresh,
+  refreshing,
+}: WeeklyTimeGridProps) {
+  const { width: screenWidth } = useWindowDimensions();
+  const gridWidth = screenWidth - GUTTER_WIDTH;
+  const dayWidth = gridWidth / 7;
+
+  const gridTotalHeight = TOTAL_HOURS * HOUR_HEIGHT;
+
+  const weekDates: Date[] = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      return d;
+    });
+  }, [weekStart]);
+
+  const timedEntries = useMemo(() =>
+    timesheets.filter(ts => ts.startTime != null),
+    [timesheets],
+  );
+
+  const untimedEntries = useMemo(() =>
+    timesheets.filter(ts => ts.startTime == null),
+    [timesheets],
+  );
+
+  function getStatusBg(status: string, dark: boolean): string {
+    switch (status) {
+      case 'approved': return dark ? '#14532d' : '#dcfce7';
+      case 'submitted': return dark ? '#451a03' : '#fef3c7';
+      case 'rejected': return dark ? '#7f1d1d' : '#fee2e2';
+      default: return dark ? '#374151' : '#f3f4f6';
+    }
+  }
+
+  function getStatusBorder(status: string, dark: boolean): string {
+    switch (status) {
+      case 'approved': return dark ? '#22c55e' : '#16a34a';
+      case 'submitted': return dark ? '#f59e0b' : '#d97706';
+      case 'rejected': return dark ? '#fca5a5' : '#b91c1c';
+      default: return dark ? '#6b7280' : '#9ca3af';
+    }
+  }
+
+  function getStatusText(status: string, dark: boolean): string {
+    switch (status) {
+      case 'approved': return dark ? '#86efac' : '#15803d';
+      case 'submitted': return dark ? '#fcd34d' : '#92400e';
+      case 'rejected': return dark ? '#fca5a5' : '#b91c1c';
+      default: return dark ? '#d1d5db' : '#4b5563';
+    }
+  }
+
+  function timeToMinutes(time: string): number {
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  function getBlockPosition(ts: Timesheet): { top: number; height: number } | null {
+    if (!ts.startTime) return null;
+    const startMin = timeToMinutes(ts.startTime);
+    const gridStartMin = GRID_START_HOUR * 60;
+    const gridEndMin = GRID_END_HOUR * 60;
+
+    let endMin: number;
+    if (ts.endTime) {
+      endMin = timeToMinutes(ts.endTime);
+      if (endMin <= startMin) {
+        endMin += 24 * 60;
+      }
+    } else {
+      const dur = parseFloat(ts.duration || '0');
+      endMin = startMin + dur * 60;
+    }
+
+    const clampedStart = Math.max(startMin, gridStartMin);
+    const clampedEnd = Math.min(endMin, gridEndMin);
+    if (clampedStart >= clampedEnd) return null;
+
+    const top = ((clampedStart - gridStartMin) / 60) * HOUR_HEIGHT;
+    const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 20);
+    return { top, height };
+  }
+
+  const today = toLocalDateStr(new Date());
+
+  const hourLabels = useMemo(() => {
+    const labels: { hour: number; label: string }[] = [];
+    for (let h = GRID_START_HOUR; h <= GRID_END_HOUR; h++) {
+      const period = h >= 12 ? 'pm' : 'am';
+      const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      labels.push({ hour: h, label: `${displayH}${period}` });
+    }
+    return labels;
+  }, []);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Week navigation */}
+      <View style={[gridStyles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={gridStyles.weekArrow}>
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </TouchableOpacity>
+        <View style={gridStyles.weekCenter}>
+          <Text style={[gridStyles.weekRange, { color: colors.text }]}>
+            {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
+          </Text>
+          <Text style={[gridStyles.weekHours, { color: colors.secondary }]}>
+            {totalHours.toFixed(1)} hours this week
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={gridStyles.weekArrow}>
+          <Ionicons name="chevron-forward" size={20} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Untimed entries strip — grouped by day column */}
+      {untimedEntries.length > 0 && (
+        <View style={[gridStyles.untimedStrip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ width: GUTTER_WIDTH, alignSelf: 'flex-start', paddingTop: 2 }}>
+            <Text style={[gridStyles.untimedLabel, { color: colors.secondary }]}>No{'\n'}time</Text>
+          </View>
+          <View style={{ flex: 1, flexDirection: 'row' }}>
+            {weekDates.map((date, dayIdx) => {
+              const dateStr = toLocalDateStr(date);
+              const dayEntries = untimedEntries.filter(ts => toLocalDateStr(new Date(ts.date)) === dateStr);
+              return (
+                <View key={dayIdx} style={[gridStyles.untimedDayCell, { width: dayWidth }]}>
+                  {dayEntries.map(ts => (
+                    <TouchableOpacity
+                      key={ts.id}
+                      style={[gridStyles.untimedChip, { backgroundColor: getStatusBg(ts.status, isDark), borderColor: getStatusBorder(ts.status, isDark) }]}
+                      onPress={() => onSelectTimesheet(ts)}
+                    >
+                      <Text style={[gridStyles.untimedChipText, { color: getStatusText(ts.status, isDark) }]} numberOfLines={2}>
+                        {getProjectName(ts.projectId)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Sticky day header row */}
+      <View style={[gridStyles.dayHeaderRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={{ width: GUTTER_WIDTH }} />
+        {weekDates.map((date, idx) => {
+          const dateStr = toLocalDateStr(date);
+          const isToday = dateStr === today;
+          return (
+            <View key={idx} style={[gridStyles.dayHeaderCell, { width: dayWidth }]}>
+              <Text style={[gridStyles.dayHeaderLabel, { color: isToday ? colors.accent : colors.secondary }]}>
+                {DAY_LABELS[idx]}
+              </Text>
+              <View style={[gridStyles.dayHeaderDate, isToday && { backgroundColor: colors.accent }]}>
+                <Text style={[gridStyles.dayHeaderDateText, { color: isToday ? '#fff' : colors.text }]}>
+                  {date.getDate()}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Time grid */}
+      <ScrollView
+        style={{ flex: 1 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        showsVerticalScrollIndicator
+      >
+        <View style={{ flexDirection: 'row', height: gridTotalHeight + 1 }}>
+          {/* Hour gutter */}
+          <View style={{ width: GUTTER_WIDTH }}>
+            {hourLabels.map(({ hour, label }) => (
+              <View
+                key={hour}
+                style={[
+                  gridStyles.gutterLabel,
+                  { top: (hour - GRID_START_HOUR) * HOUR_HEIGHT - 7, height: HOUR_HEIGHT },
+                ]}
+              >
+                <Text style={[gridStyles.gutterText, { color: colors.secondary }]}>{label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Day columns */}
+          {weekDates.map((date, colIdx) => {
+            const dateStr = toLocalDateStr(date);
+            const isToday = dateStr === today;
+            const colEntries = timedEntries.filter(ts => {
+              return toLocalDateStr(new Date(ts.date)) === dateStr;
+            });
+
+            return (
+              <View
+                key={colIdx}
+                style={[
+                  gridStyles.dayColumn,
+                  {
+                    width: dayWidth,
+                    height: gridTotalHeight,
+                    borderLeftColor: colors.border,
+                    backgroundColor: isToday ? (isDark ? 'rgba(177,150,210,0.05)' : 'rgba(155,127,196,0.04)') : 'transparent',
+                  },
+                ]}
+              >
+                {/* Hour lines */}
+                {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      gridStyles.hourLine,
+                      {
+                        top: i * HOUR_HEIGHT,
+                        borderTopColor: i % 1 === 0 ? colors.border : 'transparent',
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        width: dayWidth,
+                      },
+                    ]}
+                  />
+                ))}
+                {/* Half-hour lines */}
+                {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                  <View
+                    key={`half_${i}`}
+                    style={[
+                      gridStyles.halfHourLine,
+                      {
+                        top: i * HOUR_HEIGHT + HOUR_HEIGHT / 2,
+                        borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                        width: dayWidth,
+                      },
+                    ]}
+                  />
+                ))}
+
+                {/* Timesheet blocks */}
+                {colEntries.map(ts => {
+                  const pos = getBlockPosition(ts);
+                  if (!pos) return null;
+                  const projectName = getProjectName(ts.projectId);
+                  const ccName = getCostCodeName(ts.costCodeId);
+                  const bgColor = getStatusBg(ts.status, isDark);
+                  const borderColor = getStatusBorder(ts.status, isDark);
+                  const textColor = getStatusText(ts.status, isDark);
+                  const blockPad = 3;
+                  const innerWidth = dayWidth - blockPad * 2 - 2;
+
+                  return (
+                    <TouchableOpacity
+                      key={ts.id}
+                      style={[
+                        gridStyles.block,
+                        {
+                          top: pos.top,
+                          height: pos.height,
+                          width: dayWidth - blockPad * 2,
+                          left: blockPad,
+                          backgroundColor: bgColor,
+                          borderColor: borderColor,
+                        },
+                      ]}
+                      onPress={() => onSelectTimesheet(ts)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[gridStyles.blockProject, { color: textColor, maxWidth: innerWidth }]}
+                        numberOfLines={1}
+                      >
+                        {projectName}
+                      </Text>
+                      {pos.height > 32 && ccName ? (
+                        <Text
+                          style={[gridStyles.blockCostCode, { color: textColor, maxWidth: innerWidth }]}
+                          numberOfLines={1}
+                        >
+                          {ccName}
+                        </Text>
+                      ) : null}
+                      {pos.height > 52 && ts.description ? (
+                        <Text
+                          style={[gridStyles.blockDesc, { color: textColor, maxWidth: innerWidth }]}
+                          numberOfLines={2}
+                        >
+                          {ts.description}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const gridStyles = StyleSheet.create({
+  weekNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  weekArrow: { padding: 8 },
+  weekCenter: { flex: 1, alignItems: 'center' },
+  weekRange: { fontSize: 14, fontWeight: '500' },
+  weekHours: { fontSize: 12, marginTop: 2 },
+  untimedStrip: {
+    borderBottomWidth: 1,
+    paddingVertical: 6,
+    paddingLeft: 0,
+    paddingRight: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  untimedLabel: { fontSize: 11, fontWeight: '500', flexShrink: 0 },
+  untimedChips: { flexDirection: 'row', gap: 6, paddingRight: 8 },
+  untimedChip: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    maxWidth: 120,
+  },
+  untimedChipText: { fontSize: 11, fontWeight: '500' },
+  untimedDayCell: { paddingHorizontal: 1, gap: 2 },
+  dayHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingVertical: 4,
+  },
+  dayHeaderCell: {
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  dayHeaderLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.4 },
+  dayHeaderDate: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  dayHeaderDateText: { fontSize: 12, fontWeight: '600' },
+  dayColumn: {
+    position: 'relative',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  hourLine: {
+    position: 'absolute',
+    left: 0,
+  },
+  halfHourLine: {
+    position: 'absolute',
+    left: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  gutterLabel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'flex-end',
+    paddingRight: 6,
+  },
+  gutterText: { fontSize: 9, fontWeight: '500' },
+  block: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderRadius: 3,
+    overflow: 'hidden',
+    padding: 2,
+  },
+  blockProject: { fontSize: 9, fontWeight: '700', lineHeight: 12 },
+  blockCostCode: { fontSize: 8, lineHeight: 11, opacity: 0.85 },
+  blockDesc: { fontSize: 8, lineHeight: 11, opacity: 0.75 },
+});
+
 export default function TimesheetsScreen() {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
@@ -223,6 +641,7 @@ export default function TimesheetsScreen() {
   const [networkOnline, setNetworkOnline] = useState(true);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
   const [showLogSheet, setShowLogSheet] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -788,6 +1207,22 @@ export default function TimesheetsScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Timesheets</Text>
+        <View style={styles.headerToggle}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'list' && { backgroundColor: colors.accent }]}
+            onPress={() => setViewMode('list')}
+            accessibilityLabel="List view"
+          >
+            <Ionicons name="list" size={18} color={viewMode === 'list' ? '#fff' : colors.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'calendar' && { backgroundColor: colors.accent }]}
+            onPress={() => setViewMode('calendar')}
+            accessibilityLabel="Calendar view"
+          >
+            <Ionicons name="calendar" size={18} color={viewMode === 'calendar' ? '#fff' : colors.secondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {!networkOnline && (
@@ -812,128 +1247,145 @@ export default function TimesheetsScreen() {
         </TouchableOpacity>
       )}
 
-      <FlatList
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        data={filteredTimesheets}
-        keyExtractor={item => item.id}
-        renderItem={renderTimesheetItem}
-        initialNumToRender={10}
-        windowSize={5}
-        removeClippedSubviews
-        ListHeaderComponent={
-          <>
-            {/* Clock In/Out */}
-            <View style={[
-              styles.clockCard,
-              {
-                backgroundColor: activeTimesheet ? (isDark ? '#052e16' : '#f0fdf4') : colors.card,
-                borderColor: activeTimesheet ? colors.green : colors.border,
-                borderWidth: activeTimesheet ? 2 : 1,
-              },
-            ]}>
-              {activeTimesheet ? (
-                <>
-                  <View style={styles.clockHeader}>
-                    <View style={styles.clockStatusRow}>
-                      <View style={[styles.pulseDot, { backgroundColor: colors.green }]} />
-                      <Text style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
+      {viewMode === 'list' ? (
+        <FlatList
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          data={filteredTimesheets}
+          keyExtractor={item => item.id}
+          renderItem={renderTimesheetItem}
+          initialNumToRender={10}
+          windowSize={5}
+          removeClippedSubviews
+          ListHeaderComponent={
+            <>
+              {/* Clock In/Out */}
+              <View style={[
+                styles.clockCard,
+                {
+                  backgroundColor: activeTimesheet ? (isDark ? '#052e16' : '#f0fdf4') : colors.card,
+                  borderColor: activeTimesheet ? colors.green : colors.border,
+                  borderWidth: activeTimesheet ? 2 : 1,
+                },
+              ]}>
+                {activeTimesheet ? (
+                  <>
+                    <View style={styles.clockHeader}>
+                      <View style={styles.clockStatusRow}>
+                        <View style={[styles.pulseDot, { backgroundColor: colors.green }]} />
+                        <Text style={[styles.clockLabel, { color: colors.green }]}>Clocked In</Text>
+                      </View>
+                      <Text style={[styles.clockProject, { color: colors.secondary }]}>
+                        {getProjectName(activeTimesheet.projectId)}
+                      </Text>
                     </View>
-                    <Text style={[styles.clockProject, { color: colors.secondary }]}>
-                      {getProjectName(activeTimesheet.projectId)}
-                    </Text>
-                  </View>
-                  {activeTimesheet.clockInTime ? (
-                    <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
-                  ) : (
-                    <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
-                  )}
-                  <Text style={[styles.clockStarted, { color: colors.secondary }]}>
-                    Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.clockButton, { backgroundColor: colors.red, opacity: clockingOut ? 0.7 : 1 }]}
-                    onPress={handleClockOut}
-                    disabled={clockingOut}
-                  >
-                    {clockingOut ? (
-                      <ActivityIndicator color="#fff" />
+                    {activeTimesheet.clockInTime ? (
+                      <ElapsedTimer clockInTime={activeTimesheet.clockInTime} style={[styles.timerText, { color: colors.green }]} />
                     ) : (
-                      <>
-                        <Ionicons name="stop" size={22} color="#fff" />
-                        <Text style={styles.clockButtonText}>Clock Out</Text>
-                      </>
+                      <Text style={[styles.timerText, { color: colors.green }]}>00:00:00</Text>
                     )}
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <View style={styles.clockInRow}>
-                    <Ionicons name="time-outline" size={18} color={colors.secondary} />
-                    <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project and clock in</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowProjectPicker(true)}
-                  >
-                    <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
-                      {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
+                    <Text style={[styles.clockStarted, { color: colors.secondary }]}>
+                      Started {activeTimesheet.clockInTime ? formatTime12h(new Date(activeTimesheet.clockInTime).toTimeString().slice(0, 5)) : ''}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.secondary} />
-                  </TouchableOpacity>
-                  {clockInProjectId ? (
+                    <TouchableOpacity
+                      style={[styles.clockButton, { backgroundColor: colors.red, opacity: clockingOut ? 0.7 : 1 }]}
+                      onPress={handleClockOut}
+                      disabled={clockingOut}
+                    >
+                      {clockingOut ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="stop" size={22} color="#fff" />
+                          <Text style={styles.clockButtonText}>Clock Out</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.clockInRow}>
+                      <Ionicons name="time-outline" size={18} color={colors.secondary} />
+                      <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project and clock in</Text>
+                    </View>
                     <TouchableOpacity
                       style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                      onPress={() => setShowClockInCostCodePicker(true)}
+                      onPress={() => setShowProjectPicker(true)}
                     >
-                      <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
-                        {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
+                      <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
+                        {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
                       </Text>
                       <Ionicons name="chevron-down" size={18} color={colors.secondary} />
                     </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity
-                    style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
-                    onPress={handleClockIn}
-                    disabled={!clockInProjectId || !clockInCostCodeId || clockingIn}
-                  >
-                    {clockingIn ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
-                        <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
-            {/* Week Navigation */}
-            <View style={[styles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
-                <Ionicons name="chevron-back" size={20} color={colors.text} />
-              </TouchableOpacity>
-              <View style={styles.weekCenter}>
-                <Text style={[styles.weekRange, { color: colors.text }]}>
-                  {formatShortDate(weekStart)} - {formatShortDate(weekEnd)}
-                </Text>
-                <Text style={[styles.weekHours, { color: colors.secondary }]}>
-                  {totalHours.toFixed(1)} hours this week
-                </Text>
+                    {clockInProjectId ? (
+                      <TouchableOpacity
+                        style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                        onPress={() => setShowClockInCostCodePicker(true)}
+                      >
+                        <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
+                          {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
+                        </Text>
+                        <Ionicons name="chevron-down" size={18} color={colors.secondary} />
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
+                      onPress={handleClockIn}
+                      disabled={!clockInProjectId || !clockInCostCodeId || clockingIn}
+                    >
+                      {clockingIn ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
+                          <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
-              <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
-                <Ionicons name="chevron-forward" size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          </>
-        }
-        ListEmptyComponent={
-          <Text style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
-        }
-      />
+
+              {/* Week Navigation */}
+              <View style={[styles.weekNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.weekArrow}>
+                  <Ionicons name="chevron-back" size={20} color={colors.text} />
+                </TouchableOpacity>
+                <View style={styles.weekCenter}>
+                  <Text style={[styles.weekRange, { color: colors.text }]}>
+                    {formatShortDate(weekStart)} - {formatShortDate(weekEnd)}
+                  </Text>
+                  <Text style={[styles.weekHours, { color: colors.secondary }]}>
+                    {totalHours.toFixed(1)} hours this week
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.weekArrow}>
+                  <Ionicons name="chevron-forward" size={20} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+            </>
+          }
+          ListEmptyComponent={
+            <Text style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
+          }
+        />
+      ) : (
+        <WeeklyTimeGrid
+          timesheets={filteredTimesheets}
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          setWeekOffset={setWeekOffset}
+          totalHours={totalHours}
+          getProjectName={getProjectName}
+          getCostCodeName={getCostCodeName}
+          onSelectTimesheet={(ts) => { setSelectedTimesheet(ts); setShowDetail(true); }}
+          colors={colors}
+          isDark={isDark}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      )}
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.accent }]}
@@ -1323,6 +1775,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 22, fontWeight: '700' },
+  headerToggle: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    gap: 2,
+  },
+  toggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   fab: {
     position: 'absolute',
     bottom: 24,
