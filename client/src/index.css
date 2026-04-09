@@ -244,6 +244,168 @@
 
 }
 
+/* =========================================================
+ * WARM DARK PALETTE VARIANTS
+ * Applied via .dark-warm-a / .dark-warm-b / .dark-warm-c on <html>
+ * alongside the .dark class.
+ * ========================================================= */
+
+/* Variant A – Warm Muted Lavender
+   Backgrounds: warm taupe (hue ~28°)
+   Primary: soft muted lavender (270°, 38% sat, 68% light)
+   Foreground: warm cream */
+.dark.dark-warm-a {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 28 10% 16%;
+  --page-background: 28 10% 10%;
+  --foreground: 35 12% 90%;
+  --border: 28 8% 24%;
+  --card: 28 10% 20%;
+  --card-foreground: 35 12% 90%;
+  --card-border: 28 8% 26%;
+  --sidebar: 28 10% 18%;
+  --sidebar-foreground: 35 12% 90%;
+  --sidebar-border: 28 8% 24%;
+  --sidebar-primary: 270 38% 68%;
+  --sidebar-primary-foreground: 28 10% 16%;
+  --sidebar-accent: 28 10% 24%;
+  --sidebar-accent-foreground: 35 12% 90%;
+  --sidebar-ring: 270 38% 68%;
+  --popover: 28 10% 22%;
+  --popover-foreground: 35 12% 90%;
+  --popover-border: 28 8% 28%;
+  --primary: 270 38% 68%;
+  --primary-foreground: 28 10% 16%;
+  --secondary: 270 22% 28%;
+  --secondary-foreground: 35 12% 90%;
+  --muted: 28 8% 22%;
+  --muted-foreground: 35 10% 60%;
+  --accent: 270 38% 68%;
+  --accent-foreground: 28 10% 16%;
+  --input: 28 8% 28%;
+  --ring: 270 38% 68%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(28 15% 8% / 0.20);
+  --shadow-xs: 0px 1px 3px 0px hsl(28 15% 8% / 0.25);
+  --shadow-sm: 0px 1px 2px 0px hsl(28 15% 8% / 0.30), 0px 1px 3px -1px hsl(28 15% 8% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(28 15% 8% / 0.35), 0px 1px 2px -1px hsl(28 15% 8% / 0.30);
+  --shadow-md: 0px 4px 6px -1px hsl(28 15% 8% / 0.40), 0px 2px 4px -1px hsl(28 15% 8% / 0.25);
+  --shadow-lg: 0px 10px 15px -3px hsl(28 15% 8% / 0.40), 0px 4px 6px -2px hsl(28 15% 8% / 0.20);
+  --shadow-xl: 0px 20px 25px -5px hsl(28 15% 8% / 0.45), 0px 10px 10px -5px hsl(28 15% 8% / 0.15);
+  --shadow-2xl: 0px 25px 50px -12px hsl(28 15% 8% / 0.55);
+  --shadow-card: 0px 2px 4px -1px hsl(28 15% 8% / 0.30), 0px 1px 2px -1px hsl(28 15% 8% / 0.20);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(28 15% 8% / 0.40), 0px 2px 4px -1px hsl(28 15% 8% / 0.25);
+}
+
+/* Variant B – Dusty Mauve
+   Backgrounds: deeper warm taupe (hue ~22°)
+   Primary: dusty rose-purple (285°, 40% sat, 62% light)
+   Most indie/earthy feel */
+.dark.dark-warm-b {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 22 11% 15%;
+  --page-background: 22 11% 9%;
+  --foreground: 35 12% 90%;
+  --border: 22 9% 23%;
+  --card: 22 11% 19%;
+  --card-foreground: 35 12% 90%;
+  --card-border: 22 9% 25%;
+  --sidebar: 22 11% 17%;
+  --sidebar-foreground: 35 12% 90%;
+  --sidebar-border: 22 9% 23%;
+  --sidebar-primary: 285 40% 62%;
+  --sidebar-primary-foreground: 22 11% 15%;
+  --sidebar-accent: 22 11% 23%;
+  --sidebar-accent-foreground: 35 12% 90%;
+  --sidebar-ring: 285 40% 62%;
+  --popover: 22 11% 21%;
+  --popover-foreground: 35 12% 90%;
+  --popover-border: 22 9% 27%;
+  --primary: 285 40% 62%;
+  --primary-foreground: 22 11% 15%;
+  --secondary: 285 22% 26%;
+  --secondary-foreground: 35 12% 90%;
+  --muted: 22 9% 21%;
+  --muted-foreground: 35 10% 58%;
+  --accent: 285 40% 62%;
+  --accent-foreground: 22 11% 15%;
+  --input: 22 9% 27%;
+  --ring: 285 40% 62%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(22 15% 7% / 0.20);
+  --shadow-xs: 0px 1px 3px 0px hsl(22 15% 7% / 0.25);
+  --shadow-sm: 0px 1px 2px 0px hsl(22 15% 7% / 0.30), 0px 1px 3px -1px hsl(22 15% 7% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(22 15% 7% / 0.35), 0px 1px 2px -1px hsl(22 15% 7% / 0.30);
+  --shadow-md: 0px 4px 6px -1px hsl(22 15% 7% / 0.40), 0px 2px 4px -1px hsl(22 15% 7% / 0.25);
+  --shadow-lg: 0px 10px 15px -3px hsl(22 15% 7% / 0.40), 0px 4px 6px -2px hsl(22 15% 7% / 0.20);
+  --shadow-xl: 0px 20px 25px -5px hsl(22 15% 7% / 0.45), 0px 10px 10px -5px hsl(22 15% 7% / 0.15);
+  --shadow-2xl: 0px 25px 50px -12px hsl(22 15% 7% / 0.55);
+  --shadow-card: 0px 2px 4px -1px hsl(22 15% 7% / 0.30), 0px 1px 2px -1px hsl(22 15% 7% / 0.20);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(22 15% 7% / 0.40), 0px 2px 4px -1px hsl(22 15% 7% / 0.25);
+}
+
+/* Variant C – Warm Violet
+   Backgrounds: balanced warm taupe (hue ~30°)
+   Primary: warm violet (258°, 36% sat, 70% light)
+   Closest to current lilac but warmed up */
+.dark.dark-warm-c {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 30 10% 16%;
+  --page-background: 30 10% 10%;
+  --foreground: 35 12% 90%;
+  --border: 30 8% 24%;
+  --card: 30 10% 20%;
+  --card-foreground: 35 12% 90%;
+  --card-border: 30 8% 26%;
+  --sidebar: 30 10% 18%;
+  --sidebar-foreground: 35 12% 90%;
+  --sidebar-border: 30 8% 24%;
+  --sidebar-primary: 258 36% 70%;
+  --sidebar-primary-foreground: 30 10% 16%;
+  --sidebar-accent: 30 10% 24%;
+  --sidebar-accent-foreground: 35 12% 90%;
+  --sidebar-ring: 258 36% 70%;
+  --popover: 30 10% 22%;
+  --popover-foreground: 35 12% 90%;
+  --popover-border: 30 8% 28%;
+  --primary: 258 36% 70%;
+  --primary-foreground: 30 10% 16%;
+  --secondary: 258 20% 28%;
+  --secondary-foreground: 35 12% 90%;
+  --muted: 30 8% 22%;
+  --muted-foreground: 35 10% 60%;
+  --accent: 258 36% 70%;
+  --accent-foreground: 30 10% 16%;
+  --input: 30 8% 28%;
+  --ring: 258 36% 70%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(30 15% 8% / 0.20);
+  --shadow-xs: 0px 1px 3px 0px hsl(30 15% 8% / 0.25);
+  --shadow-sm: 0px 1px 2px 0px hsl(30 15% 8% / 0.30), 0px 1px 3px -1px hsl(30 15% 8% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(30 15% 8% / 0.35), 0px 1px 2px -1px hsl(30 15% 8% / 0.30);
+  --shadow-md: 0px 4px 6px -1px hsl(30 15% 8% / 0.40), 0px 2px 4px -1px hsl(30 15% 8% / 0.25);
+  --shadow-lg: 0px 10px 15px -3px hsl(30 15% 8% / 0.40), 0px 4px 6px -2px hsl(30 15% 8% / 0.20);
+  --shadow-xl: 0px 20px 25px -5px hsl(30 15% 8% / 0.45), 0px 10px 10px -5px hsl(30 15% 8% / 0.15);
+  --shadow-2xl: 0px 25px 50px -12px hsl(30 15% 8% / 0.55);
+  --shadow-card: 0px 2px 4px -1px hsl(30 15% 8% / 0.30), 0px 1px 2px -1px hsl(30 15% 8% / 0.20);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(30 15% 8% / 0.40), 0px 2px 4px -1px hsl(30 15% 8% / 0.25);
+}
+
 @layer base {
   * {
     @apply border-border;

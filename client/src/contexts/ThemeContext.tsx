@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
+export type WarmVariant = "none" | "a" | "b" | "c";
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -12,12 +13,16 @@ type ThemeProviderState = {
   theme: Theme;
   resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
+  warmVariant: WarmVariant;
+  setWarmVariant: (variant: WarmVariant) => void;
 };
 
 const initialState: ThemeProviderState = {
   theme: "system",
   resolvedTheme: "light",
   setTheme: () => null,
+  warmVariant: "none",
+  setWarmVariant: () => null,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
@@ -35,9 +40,34 @@ function getStoredTheme(defaultTheme: Theme): Theme {
       return stored;
     }
   } catch {
-    // localStorage may not be available
   }
   return defaultTheme;
+}
+
+function getStoredWarmVariant(): WarmVariant {
+  if (typeof window === "undefined") return "none";
+  try {
+    const stored = localStorage.getItem("dark-warm-variant");
+    if (stored === "a" || stored === "b" || stored === "c") return stored;
+  } catch {
+  }
+  return "none";
+}
+
+const WARM_VARIANT_CLASSES: Record<WarmVariant, string | null> = {
+  none: null,
+  a: "dark-warm-a",
+  b: "dark-warm-b",
+  c: "dark-warm-c",
+};
+
+function applyWarmVariantClass(resolved: ResolvedTheme, variant: WarmVariant) {
+  const root = window.document.documentElement;
+  root.classList.remove("dark-warm-a", "dark-warm-b", "dark-warm-c");
+  if (resolved === "dark" && variant !== "none") {
+    const cls = WARM_VARIANT_CLASSES[variant];
+    if (cls) root.classList.add(cls);
+  }
 }
 
 export function ThemeProvider({
@@ -46,6 +76,7 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(() => getStoredTheme(defaultTheme));
+  const [warmVariant, setWarmVariantState] = useState<WarmVariant>(() => getStoredWarmVariant());
 
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
     const currentTheme = getStoredTheme(defaultTheme);
@@ -64,6 +95,7 @@ export function ThemeProvider({
       root.classList.remove("light", "dark");
       root.classList.add(resolved);
       setResolvedTheme(resolved);
+      applyWarmVariantClass(resolved, warmVariant);
     };
 
     if (theme === "system") {
@@ -80,7 +112,7 @@ export function ThemeProvider({
     } else {
       applyTheme(theme);
     }
-  }, [theme]);
+  }, [theme, warmVariant]);
 
   const value = {
     theme,
@@ -90,10 +122,19 @@ export function ThemeProvider({
         try {
           localStorage.setItem("theme", newTheme);
         } catch {
-          // localStorage may not be available
         }
       }
       setThemeState(newTheme);
+    },
+    warmVariant,
+    setWarmVariant: (variant: WarmVariant) => {
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("dark-warm-variant", variant);
+        } catch {
+        }
+      }
+      setWarmVariantState(variant);
     },
   };
 

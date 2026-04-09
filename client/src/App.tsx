@@ -96,6 +96,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
+import { WarmPaletteSwitcher } from "@/components/WarmPaletteSwitcher";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
@@ -444,6 +445,7 @@ function AuthWrapper() {
           <SocketProvider>
             <TaskEventsListener />
             <GlobalMessageNotifier />
+            <WarmPaletteSwitcher />
             <SidebarProvider style={style as React.CSSProperties}>
             <div 
               className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] p-2 gap-2"
