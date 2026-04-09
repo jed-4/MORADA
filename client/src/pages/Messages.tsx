@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -343,6 +343,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [taskFormDueDate, setTaskFormDueDate] = useState("");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   
+  // Scheduled message state
+  const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [scheduledSectionOpen, setScheduledSectionOpen] = useState(true);
+
   // Channel filter settings (persisted in localStorage)
   const [hideEmptyChats, setHideEmptyChats] = useState(() => {
     return localStorage.getItem("messages-hide-empty") === "true";
@@ -535,6 +542,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     staleTime: 30_000,
   });
 
+  // Scheduled messages for current user in the selected channel
+  const scheduledQueryKey = ["/api/channels", selectedChannelId, "scheduled"];
+  const { data: scheduledMessages = [] } = useQuery<Message[]>({
+    queryKey: scheduledQueryKey,
+    queryFn: async () => {
+      const res = await fetch(`/api/channels/${selectedChannelId}/scheduled`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedChannelId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
   // Toggle pin mutation — optimistic update applied immediately with rollback on failure
   const pinnedQueryKey = ["/api/channels", selectedChannelId, "pinned"];
 
@@ -595,6 +616,79 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       toast({ title: "Failed to update pin", variant: "destructive" });
     },
   });
+
+  // Cancel scheduled message mutation (optimistic removal)
+  const cancelScheduledMutation = useMutation({
+    mutationFn: async (messageId: string) => {
+      const res = await fetch(`/api/messages/${messageId}/scheduled`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to cancel");
+    },
+    onMutate: async (messageId: string) => {
+      const prev = queryClient.getQueryData<Message[]>(scheduledQueryKey) ?? [];
+      queryClient.setQueryData<Message[]>(scheduledQueryKey, old => (old ?? []).filter(m => m.id !== messageId));
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.prev) queryClient.setQueryData<Message[]>(scheduledQueryKey, context.prev);
+      toast({ title: "Failed to cancel scheduled message", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: scheduledQueryKey });
+    },
+  });
+
+  // Handle scheduling a message
+  const handleScheduleMessage = async () => {
+    if (!messageInput.trim() || !selectedChannelId || !scheduleDate || !scheduleTime) return;
+    const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
+    if (isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
+      toast({ title: "Please choose a future date and time", variant: "destructive" });
+      return;
+    }
+
+    // Build content + mentions same as handleSendMessage
+    let content = messageInput;
+    const mentionIds: string[] = [];
+    const sortedMentions = [...pendingMentions].sort((a, b) => b.name.length - a.name.length);
+    for (const m of sortedMentions) {
+      const escapedName = m.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const tokenRegex = new RegExp(`@${escapedName}(?=\\s|$|[^\\w])`, "g");
+      if (tokenRegex.test(content)) {
+        content = content.replace(new RegExp(`@${escapedName}(?=\\s|$|[^\\w])`, "g"), `@[${m.name}](userId:${m.userId})`);
+        mentionIds.push(m.userId);
+      }
+    }
+    const mentionRegex2 = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+    let mm;
+    while ((mm = mentionRegex2.exec(content)) !== null) {
+      if (!mentionIds.includes(mm[2])) mentionIds.push(mm[2]);
+    }
+
+    setIsScheduling(true);
+    try {
+      const res = await fetch(`/api/channels/${selectedChannelId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content, mentions: mentionIds, scheduledAt: scheduledAt.toISOString() }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setMessageInput("");
+      setPendingMentions([]);
+      setSchedulePopoverOpen(false);
+      setScheduleDate("");
+      setScheduleTime("");
+      queryClient.invalidateQueries({ queryKey: scheduledQueryKey });
+      toast({ title: "Message scheduled", description: `Will be sent on ${scheduledAt.toLocaleString("en-AU")}` });
+    } catch {
+      toast({ title: "Failed to schedule message", variant: "destructive" });
+    } finally {
+      setIsScheduling(false);
+    }
+  };
 
   // Scroll to a message in the main feed and briefly highlight it
   const scrollToMessage = useCallback((messageId: string) => {
@@ -1120,6 +1214,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       isEdited: false,
       isDeleted: false,
       isBot: false,
+      isPinned: false,
+      pinnedAt: null,
+      pinnedByUserId: null,
+      scheduledAt: null,
+      scheduledStatus: null,
       userFirstName: user!.firstName || null,
       userLastName: user!.lastName || null,
       userEmail: user!.email || null,
@@ -1826,6 +1925,46 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 </div>
               )}
 
+              {/* Scheduled Messages Section */}
+              {scheduledMessages.length > 0 && (
+                <div className="border-t bg-background">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover-elevate"
+                    onClick={() => setScheduledSectionOpen(v => !v)}
+                  >
+                    {scheduledSectionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    <Clock className="h-3 w-3" />
+                    <span>{scheduledMessages.length} scheduled {scheduledMessages.length === 1 ? 'message' : 'messages'}</span>
+                  </button>
+                  {scheduledSectionOpen && (
+                    <div className="px-3 pb-2 space-y-1.5">
+                      {scheduledMessages.map((msg) => (
+                        <div key={msg.id} className="flex items-start gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-sm">
+                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-foreground text-xs leading-snug line-clamp-2 break-words">
+                              {msg.content}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Scheduled for {msg.scheduledAt ? new Date(msg.scheduledAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => cancelScheduledMutation.mutate(msg.id)}
+                            aria-label="Cancel scheduled message"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Message Input - Compact h-9 design */}
               <div className="p-3 border-t bg-background">
                 <form onSubmit={handleSendMessage} className="relative">
@@ -1897,6 +2036,52 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       className="h-9 flex-1"
                       data-testid="input-message"
                     />
+                    {/* Schedule popover */}
+                    <Popover open={schedulePopoverOpen} onOpenChange={setSchedulePopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          disabled={!messageInput.trim()}
+                          aria-label="Schedule message"
+                          data-testid="button-schedule"
+                        >
+                          <Clock className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-72 p-4 space-y-3">
+                        <p className="text-sm font-medium">Schedule message</p>
+                        <div className="space-y-2">
+                          <label className="text-xs text-muted-foreground">Date</label>
+                          <input
+                            type="date"
+                            value={scheduleDate}
+                            onChange={e => setScheduleDate(e.target.value)}
+                            min={new Date().toISOString().split("T")[0]}
+                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs text-muted-foreground">Time</label>
+                          <input
+                            type="time"
+                            value={scheduleTime}
+                            onChange={e => setScheduleTime(e.target.value)}
+                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          className="w-full"
+                          disabled={!scheduleDate || !scheduleTime || isScheduling}
+                          onClick={handleScheduleMessage}
+                        >
+                          {isScheduling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Clock className="h-4 w-4 mr-2" />}
+                          Schedule send
+                        </Button>
+                      </PopoverContent>
+                    </Popover>
                     <Button
                       type="submit"
                       size="sm"

@@ -20262,6 +20262,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Determine if this is a scheduled message
+      const scheduledAtRaw = req.body.scheduledAt as string | undefined;
+      const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+      const isScheduled = scheduledAt && !isNaN(scheduledAt.getTime()) && scheduledAt > new Date();
+
       const message = await storage.createMessage({
         ...validationResult.data,
         channelId,
@@ -20269,8 +20274,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mentions,
         hasCommand,
         commandType,
-        isBot: false  // always false for user-initiated messages; prevents client spoofing
+        isBot: false,  // always false for user-initiated messages; prevents client spoofing
+        scheduledAt: isScheduled ? scheduledAt : null,
+        scheduledStatus: isScheduled ? 'pending' : null,
       });
+
+      // If scheduled, return immediately without broadcasting
+      if (isScheduled) {
+        return res.status(201).json(message);
+      }
       
       // Broadcast to all socket clients in the channel room for real-time delivery
       const io = getIO();
@@ -20503,6 +20515,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(pinned);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch pinned messages" });
+    }
+  });
+
+  // Scheduled messages — GET returns user's pending scheduled messages in a channel
+  app.get("/api/channels/:channelId/scheduled", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const channel = await storage.getChannel(req.params.channelId, companyId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+      const members = await storage.getChannelMembers(req.params.channelId);
+      if (!members.some(m => m.userId === userId)) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
+      const scheduled = await storage.getChannelScheduledMessages(req.params.channelId, userId);
+      res.json(scheduled);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch scheduled messages" });
+    }
+  });
+
+  // Scheduled messages — DELETE cancels a pending scheduled message (owner only)
+  app.delete("/api/messages/:id/scheduled", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const result = await storage.cancelScheduledMessage(req.params.id, userId);
+      if (!result) {
+        return res.status(404).json({ error: "Scheduled message not found or already sent" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to cancel scheduled message" });
     }
   });
 

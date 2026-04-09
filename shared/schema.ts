@@ -4361,6 +4361,10 @@ export const messages = pgTable("messages", {
   hasCommand: boolean("has_command").notNull().default(false), // True if message starts with /
   commandType: text("command_type"), // "task", "remind", etc.
   
+  // Scheduled message support
+  scheduledAt: timestamp("scheduled_at"),
+  scheduledStatus: text("scheduled_status"), // 'pending' | 'sent' | 'cancelled'
+
   // Message metadata
   isEdited: boolean("is_edited").notNull().default(false),
   isDeleted: boolean("is_deleted").notNull().default(false),
@@ -4389,6 +4393,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   updatedAt: true,
 }).extend({
   mentions: z.array(z.string()).optional(),
+  scheduledAt: z.union([z.string().datetime(), z.date()]).optional().nullable(),
 });
 
 export type InsertMessage = z.infer<typeof insertMessageSchema>;

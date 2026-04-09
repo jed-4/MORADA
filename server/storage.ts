@@ -1045,6 +1045,11 @@ export interface IStorage {
   getMessageReplies(messageId: string): Promise<Message[]>;
   getPinnedMessages(channelId: string): Promise<Message[]>;
   toggleMessagePin(messageId: string, userId: string, isChannelOwner: boolean): Promise<Message | { error: string } | undefined>;
+  // Scheduled messages
+  getPendingScheduledMessages(): Promise<Message[]>;
+  getChannelScheduledMessages(channelId: string, userId: string): Promise<Message[]>;
+  cancelScheduledMessage(messageId: string, userId: string): Promise<Message | undefined>;
+  markScheduledMessagesSent(messageIds: string[]): Promise<void>;
   // Message Reactions
   getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
   getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
@@ -18490,19 +18495,19 @@ export class DbStorage implements IStorage {
   // Messages
   async getMessages(channelId: string, limit: number = 100, before?: string): Promise<Message[]> {
     try {
-      let query = db.select().from(schema.messages)
-        .where(
-          and(
-            eq(schema.messages.channelId, channelId),
-            eq(schema.messages.isDeleted, false)
-          )
-        );
+      // Exclude pending scheduled messages from the main feed
+      const baseConditions = and(
+        eq(schema.messages.channelId, channelId),
+        eq(schema.messages.isDeleted, false),
+        or(isNull(schema.messages.scheduledStatus), ne(schema.messages.scheduledStatus, 'pending'))
+      );
+
+      let query = db.select().from(schema.messages).where(baseConditions);
       
       if (before) {
         query = query.where(
           and(
-            eq(schema.messages.channelId, channelId),
-            eq(schema.messages.isDeleted, false),
+            baseConditions,
             sql`${schema.messages.createdAt} < (SELECT created_at FROM ${schema.messages} WHERE id = ${before})`
           )
         );
@@ -18540,7 +18545,8 @@ export class DbStorage implements IStorage {
         .where(
           and(
             eq(schema.messages.channelId, channelId),
-            eq(schema.messages.isDeleted, false)
+            eq(schema.messages.isDeleted, false),
+            or(isNull(schema.messages.scheduledStatus), ne(schema.messages.scheduledStatus, 'pending'))
           )
         );
       return Number(result[0]?.count || 0);
@@ -18638,6 +18644,67 @@ export class DbStorage implements IStorage {
       return result[0] as Message | undefined;
     } catch (error) {
       console.error("Database error in toggleMessagePin:", error);
+      throw error;
+    }
+  }
+
+  async getPendingScheduledMessages(): Promise<Message[]> {
+    try {
+      const now = new Date();
+      const result = await db.select().from(schema.messages)
+        .where(and(
+          eq(schema.messages.scheduledStatus, 'pending'),
+          lte(schema.messages.scheduledAt, now)
+        ))
+        .orderBy(asc(schema.messages.scheduledAt));
+      return result as Message[];
+    } catch (error) {
+      console.error("Database error in getPendingScheduledMessages:", error);
+      throw error;
+    }
+  }
+
+  async getChannelScheduledMessages(channelId: string, userId: string): Promise<Message[]> {
+    try {
+      const result = await db.select().from(schema.messages)
+        .where(and(
+          eq(schema.messages.channelId, channelId),
+          eq(schema.messages.userId, userId),
+          eq(schema.messages.scheduledStatus, 'pending')
+        ))
+        .orderBy(asc(schema.messages.scheduledAt));
+      return result as Message[];
+    } catch (error) {
+      console.error("Database error in getChannelScheduledMessages:", error);
+      throw error;
+    }
+  }
+
+  async cancelScheduledMessage(messageId: string, userId: string): Promise<Message | undefined> {
+    try {
+      const result = await db.update(schema.messages)
+        .set({ scheduledStatus: 'cancelled', updatedAt: new Date() })
+        .where(and(
+          eq(schema.messages.id, messageId),
+          eq(schema.messages.userId, userId),
+          eq(schema.messages.scheduledStatus, 'pending')
+        ))
+        .returning();
+      return result[0] as Message | undefined;
+    } catch (error) {
+      console.error("Database error in cancelScheduledMessage:", error);
+      throw error;
+    }
+  }
+
+  async markScheduledMessagesSent(messageIds: string[]): Promise<void> {
+    if (messageIds.length === 0) return;
+    try {
+      await db.update(schema.messages)
+        .set({ scheduledStatus: 'sent', scheduledAt: null, updatedAt: new Date() })
+        .where(inArray(schema.messages.id, messageIds));
+    } catch (error) {
+      console.error("Database error in markScheduledMessagesSent:", error);
       throw error;
     }
   }
