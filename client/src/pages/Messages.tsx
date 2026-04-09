@@ -288,6 +288,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     document.title = "BuildPro";
   }, []);
 
+  // Merge new attachments into an existing list, deduplicating by id
+  const mergeAttachments = (existing: MessageAttachment[], incoming: MessageAttachment[]): MessageAttachment[] => {
+    const seen = new Set(existing.map(a => a.id));
+    return [...existing, ...incoming.filter(a => !seen.has(a.id))];
+  };
+
   // Read ?channel= URL param on mount to support navigation from dropdown/notifications
   const channelFromUrl = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -528,7 +534,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (incomingAttachments && incomingAttachments.length > 0) {
         setAttachmentsMap(prev => ({
           ...prev,
-          [message.id]: [...(prev[message.id] || []), ...incomingAttachments],
+          [message.id]: mergeAttachments(prev[message.id] || [], incomingAttachments),
         }));
       }
       return;
@@ -543,7 +549,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     if (incomingAttachments && incomingAttachments.length > 0) {
       setAttachmentsMap(prev => ({
         ...prev,
-        [message.id]: [...(prev[message.id] || []), ...incomingAttachments],
+        [message.id]: mergeAttachments(prev[message.id] || [], incomingAttachments),
       }));
     }
     scrollToBottom();
@@ -909,7 +915,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (reply.attachments && reply.attachments.length > 0) {
         setAttachmentsMap(prev => ({
           ...prev,
-          [reply.id]: [...(prev[reply.id] || []), ...reply.attachments],
+          [reply.id]: mergeAttachments(prev[reply.id] || [], reply.attachments),
         }));
       }
       // threadCount is NOT updated here — the server emits message_updated via socket
@@ -1502,7 +1508,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (saved.attachments && saved.attachments.length > 0) {
         setAttachmentsMap(prev => ({
           ...prev,
-          [saved.id]: [...(prev[saved.id] || []), ...saved.attachments],
+          [saved.id]: mergeAttachments(prev[saved.id] || [], saved.attachments),
         }));
       }
     } catch (err) {
@@ -2203,10 +2209,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                                       href={att.fileUrl}
                                                       target="_blank"
                                                       rel="noopener noreferrer"
-                                                      className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-background/50 hover-elevate max-w-[240px]"
                                                     >
-                                                      <FileText className="h-3 w-3 shrink-0" />
-                                                      <span className="truncate max-w-[160px]">{att.fileName}</span>
+                                                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                      <div className="flex flex-col min-w-0">
+                                                        <span className="text-xs font-medium truncate">{att.fileName}</span>
+                                                        {att.fileSize && (
+                                                          <span className="text-[10px] text-muted-foreground">
+                                                            {att.fileSize < 1024 * 1024
+                                                              ? `${Math.round(att.fileSize / 1024)} KB`
+                                                              : `${(att.fileSize / (1024 * 1024)).toFixed(1)} MB`}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                      <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground ml-auto" />
                                                     </a>
                                                   );
                                                 })}
