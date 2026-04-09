@@ -1430,7 +1430,6 @@ export default function Timesheets() {
                 return "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300";
               return "bg-muted/60 border-border text-muted-foreground";
             };
-            };
 
             return (
               <div className="flex flex-col">
