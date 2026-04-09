@@ -366,6 +366,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [taskFormProjectId, setTaskFormProjectId] = useState("");
   const [taskFormAssigneeId, setTaskFormAssigneeId] = useState("");
   const [taskFormDueDate, setTaskFormDueDate] = useState("");
+  const [taskFormDescription, setTaskFormDescription] = useState("");
+  const [taskFormPriority, setTaskFormPriority] = useState("medium");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   
   // Scheduled message state
@@ -496,8 +498,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   useEffect(() => {
-    // Only top-level messages (no threadParentId) go into the main feed
-    setLocalMessages(messages.filter((m: MessageWithAttachments) => !m.threadParentId));
+    const queryMessages = messages.filter((m: MessageWithAttachments) => !m.threadParentId);
+    setLocalMessages(prev => {
+      // Detect channel switch: prev has messages from a different channel → start fresh
+      const prevChannelId = prev.find(m => !m.id.startsWith('temp-'))?.channelId;
+      const queryChannelId = queryMessages[0]?.channelId;
+      if (!prevChannelId || !queryChannelId || prevChannelId !== queryChannelId || prev.length === 0) {
+        return queryMessages;
+      }
+      // Same channel — merge: query data is authoritative for existing IDs;
+      // keep any socket-only messages not yet returned by the API
+      const queryIds = new Set(queryMessages.map(m => m.id));
+      const socketExtra = prev.filter(m => !queryIds.has(m.id) && !m.id.startsWith('temp-'));
+      if (socketExtra.length === 0) return queryMessages;
+      return [...queryMessages, ...socketExtra].sort(
+        (a, b) => new Date(a.createdAt as Date).getTime() - new Date(b.createdAt as Date).getTime()
+      );
+    });
     // Populate attachments map from API data
     const newMap: Record<string, MessageAttachment[]> = {};
     for (const m of messages) {
@@ -570,7 +587,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const { data: allProjects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
-    enabled: createTaskFromMsg !== null,
     staleTime: 60_000,
   });
 
@@ -794,12 +810,16 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }, 150);
   }, []);
 
-  // Also reset reactions when switching channels
+  // Reset per-channel UI state when switching channels
   useEffect(() => {
     setReactionsMap({});
     setOpenThreads(new Set());
     setThreadMessages({});
     setThreadInputs({});
+    setMessageInput("");
+    setPendingMentions([]);
+    setShowMentionPicker(false);
+    setPendingAttachments([]);
   }, [selectedChannelId]);
 
   // Real-time reaction updates from other users
@@ -937,11 +957,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       const taskBody: Record<string, unknown> = {
         type: "task",
         title: taskFormTitle.trim(),
+        priority: taskFormPriority || "medium",
         scope: effectiveProjectId ? "project" : "business",
       };
       if (effectiveProjectId) taskBody.projectId = effectiveProjectId;
       if (effectiveAssigneeId) taskBody.assigneeId = effectiveAssigneeId;
       if (taskFormDueDate) taskBody.dueDate = taskFormDueDate;
+      if (taskFormDescription.trim()) taskBody.content = taskFormDescription.trim();
       // Pass channelId so the server creates a trusted bot message server-side
       if (selectedChannelId) taskBody.channelId = selectedChannelId;
 
@@ -962,6 +984,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       setTaskFormProjectId("");
       setTaskFormAssigneeId("");
       setTaskFormDueDate("");
+      setTaskFormDescription("");
+      setTaskFormPriority("medium");
     } catch {
       toast({ title: "Failed to create task", variant: "destructive" });
     } finally {
@@ -1225,7 +1249,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   const handleMessageInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
+    let value = e.target.value;
+    // Auto-capitalise the very first character
+    if (value.length === 1 && value[0] >= 'a' && value[0] <= 'z') {
+      value = value[0].toUpperCase() + value.slice(1);
+    }
     const cursorPos = e.target.selectionStart || 0;
     setMessageInput(value);
 
@@ -1334,10 +1362,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       mark({ progress: 30 });
 
       // Step 2: Upload file using XMLHttpRequest so we get progress events
+      // NOTE: Do NOT set Content-Type on the PUT — the Replit-signed GCS URL is signed
+      // without a content-type restriction, and providing one causes GCS to reject the upload.
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadURL);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.upload.onprogress = (ev) => {
           if (ev.lengthComputable) {
             const pct = Math.round(30 + (ev.loaded / ev.total) * 60);
@@ -2063,9 +2092,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                     const shortened = plain.length > 120 ? plain.substring(0, 120) + "…" : plain;
                                     setCreateTaskFromMsg({ id: message.id, content: message.content });
                                     setTaskFormTitle(shortened);
-                                    setTaskFormProjectId(projectId || "");
+                                    setTaskFormProjectId(selectedChannel?.projectId || projectId || "");
                                     setTaskFormAssigneeId("");
                                     setTaskFormDueDate("");
+                                    setTaskFormDescription("");
+                                    setTaskFormPriority("medium");
                                   }}
                                   className="p-1 rounded hover-elevate text-muted-foreground"
                                   data-testid={`button-create-task-${message.id}`}
@@ -2099,7 +2130,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
                             {/* Reaction pills */}
                             {Object.keys(reactionGroups).length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-0.5">
+                              <div className="flex flex-wrap gap-1.5 mt-1">
                                 {Object.entries(reactionGroups).map(([emojiId, group]) => (
                                   <button
                                     key={emojiId}
@@ -2107,16 +2138,16 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                     title={group.users.join(", ")}
                                     onClick={() => toggleReaction(message.id, emojiId)}
                                     className={`
-                                      inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border
+                                      inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border
                                       hover-elevate transition-colors
                                       ${group.myReaction
-                                        ? 'bg-primary/15 border-primary/30 text-primary'
-                                        : 'bg-muted/30 border-border text-muted-foreground'
+                                        ? 'bg-primary/20 border-primary/40 text-primary'
+                                        : 'bg-muted/50 border-border/70 text-foreground/70 hover:border-border'
                                       }
                                     `}
                                   >
-                                    <ReactionIcon id={emojiId} className="h-3 w-3" />
-                                    <span>{group.count}</span>
+                                    <ReactionIcon id={emojiId} className="h-3.5 w-3.5" />
+                                    <span className="tabular-nums">{group.count}</span>
                                   </button>
                                 ))}
                               </div>
@@ -2828,67 +2859,103 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       </Dialog>
 
       {/* Create Task from Message Dialog */}
-      <Dialog open={createTaskFromMsg !== null} onOpenChange={(open) => { if (!open) setCreateTaskFromMsg(null); }}>
-        <DialogContent data-testid="dialog-create-task-from-message">
+      <Dialog open={createTaskFromMsg !== null} onOpenChange={(open) => {
+        if (!open) {
+          setCreateTaskFromMsg(null);
+          setTaskFormDescription("");
+          setTaskFormPriority("medium");
+        }
+      }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-create-task-from-message">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ListTodo className="h-4 w-4 text-primary" />
-              Create Task
+              Create Task from Message
             </DialogTitle>
             <DialogDescription>
-              Create a task from this message. The task will appear in the channel.
+              This task will be linked to the channel and appear as a card in the chat.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="task-title">Task title *</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-title">Title *</Label>
               <Input
                 id="task-title"
                 value={taskFormTitle}
                 onChange={(e) => setTaskFormTitle(e.target.value)}
-                placeholder="Describe the task…"
+                placeholder="What needs to be done?"
+                autoFocus
                 data-testid="input-task-title"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="task-project">Project</Label>
-              <Select value={taskFormProjectId} onValueChange={setTaskFormProjectId}>
-                <SelectTrigger id="task-project" data-testid="select-task-project">
-                  <SelectValue placeholder="No project (business task)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No project</SelectItem>
-                  {allProjects.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="task-assignee">Assignee</Label>
-              <Select value={taskFormAssigneeId} onValueChange={setTaskFormAssigneeId}>
-                <SelectTrigger id="task-assignee" data-testid="select-task-assignee">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {allUsers.map((u: any) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="task-due-date">Due date</Label>
-              <Input
-                id="task-due-date"
-                type="date"
-                value={taskFormDueDate}
-                onChange={(e) => setTaskFormDueDate(e.target.value)}
-                data-testid="input-task-due-date"
+            <div className="space-y-1.5">
+              <Label htmlFor="task-description">Description</Label>
+              <Textarea
+                id="task-description"
+                value={taskFormDescription}
+                onChange={(e) => setTaskFormDescription(e.target.value)}
+                placeholder="Add more detail (optional)…"
+                className="resize-none text-sm min-h-[72px]"
+                data-testid="input-task-description"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="task-priority">Priority</Label>
+                <Select value={taskFormPriority} onValueChange={setTaskFormPriority}>
+                  <SelectTrigger id="task-priority" data-testid="select-task-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-due-date">Due date</Label>
+                <Input
+                  id="task-due-date"
+                  type="date"
+                  value={taskFormDueDate}
+                  onChange={(e) => setTaskFormDueDate(e.target.value)}
+                  data-testid="input-task-due-date"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="task-project">Project</Label>
+                <Select value={taskFormProjectId} onValueChange={setTaskFormProjectId}>
+                  <SelectTrigger id="task-project" data-testid="select-task-project">
+                    <SelectValue placeholder="Business task" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Business (no project)</SelectItem>
+                    {allProjects.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-assignee">Assignee</Label>
+                <Select value={taskFormAssigneeId} onValueChange={setTaskFormAssigneeId}>
+                  <SelectTrigger id="task-assignee" data-testid="select-task-assignee">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {allUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <DialogFooter>
