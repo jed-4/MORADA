@@ -153,7 +153,7 @@ import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inA
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
-import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, getIO } from "./socketManager";
+import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO } from "./socketManager";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
   const rows = scheduleId
@@ -20324,8 +20324,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const companyId = req.user!.companyId!;
       const { emoji } = req.body;
-      if (!emoji || typeof emoji !== "string") {
-        return res.status(400).json({ error: "emoji is required" });
+      const VALID_EMOJIS = ["thumbs_up", "check", "eyes", "heart", "smile", "fire"] as const;
+      if (!emoji || !VALID_EMOJIS.includes(emoji as typeof VALID_EMOJIS[number])) {
+        return res.status(400).json({ error: "Invalid emoji. Must be one of: " + VALID_EMOJIS.join(", ") });
       }
       const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
       if (!access) return;
@@ -20338,13 +20339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         typedUser.dbUser?.lastName || null
       );
       // Broadcast reaction update to channel room
-      const io = getIO();
-      if (io) {
-        io.to(`channel:${result.channelId}`).emit("reaction_updated", {
-          messageId: req.params.id,
-          reactions: result.reactions,
-        });
-      }
+      emitReactionUpdated(result.channelId, req.params.id, result.reactions);
       res.json({ reactions: result.reactions, action: result.action });
     } catch (error) {
       res.status(500).json({ error: "Failed to toggle reaction" });
