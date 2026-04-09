@@ -1498,7 +1498,10 @@ export default function Timesheets() {
                                     style={{ backgroundColor: dotColor }}
                                   />
                                 )}
-                                {getUserName(ts.userId).split(" ")[0]} · {formatDuration(getNetHours(ts))}
+                                <span className="font-bold">{getProjectName(ts.projectId)}</span>
+                                {getCostCodeName(ts.costCodeId) !== "-" && (
+                                  <span className="opacity-70"> · {getCostCodeName(ts.costCodeId)}</span>
+                                )}
                               </div>
                             );
                           })}
@@ -1593,17 +1596,17 @@ export default function Timesheets() {
                                   style={{ backgroundColor: dotColor }}
                                 />
                               )}
-                              <div className="font-semibold truncate leading-tight pr-2">
-                                {ts.startTime}{ts.endTime ? `–${ts.endTime}` : ""}
+                              <div className="font-bold truncate leading-tight pr-2">
+                                {getProjectName(ts.projectId)}
                               </div>
                               {height > 28 && (
-                                <div className="truncate leading-tight opacity-80">
-                                  {getUserName(ts.userId).split(" ")[0]}
+                                <div className="truncate leading-tight opacity-70">
+                                  {getCostCodeName(ts.costCodeId)}
                                 </div>
                               )}
                               {height > 42 && (
-                                <div className="truncate leading-tight opacity-70">
-                                  {getProjectName(ts.projectId)}
+                                <div className="truncate leading-tight opacity-50">
+                                  {ts.description}
                                 </div>
                               )}
                             </div>
