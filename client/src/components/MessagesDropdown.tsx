@@ -15,7 +15,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatDistanceToNow } from "date-fns";
-import type { Channel, Message } from "@shared/schema";
+import type { Channel, Message, User } from "@shared/schema";
 
 interface ChannelWithMeta extends Channel {
   isPinned?: boolean;
@@ -32,6 +32,12 @@ function getInitials(
   if (firstName) return firstName.substring(0, 2).toUpperCase();
   if (email) return email.substring(0, 2).toUpperCase();
   return "?";
+}
+
+function resolveDisplayName(user: User): string {
+  return user.firstName && user.lastName
+    ? `${user.firstName} ${user.lastName}`
+    : (user.email ?? "Unknown");
 }
 
 export function MessagesDropdown() {
@@ -55,21 +61,26 @@ export function MessagesDropdown() {
     enabled: open,
   });
 
-  const { data: allUsers = [] } = useQuery<any[]>({
+  const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
     enabled: open,
   });
 
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/channels", selectedChannelId, "messages"],
+    queryFn: () =>
+      fetch(`/api/channels/${selectedChannelId}/messages?limit=20`, {
+        credentials: "include",
+      }).then(r => r.json()),
     enabled: !!selectedChannelId && view === "chat",
   });
 
   const markReadMut = useMutation({
     mutationFn: (channelId: string) =>
-      fetch(`/api/channels/${channelId}/read`, { method: "POST", credentials: "include" }).then(
-        () => undefined
-      ),
+      fetch(`/api/channels/${channelId}/read`, {
+        method: "POST",
+        credentials: "include",
+      }).then(() => undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
     },
@@ -88,7 +99,7 @@ export function MessagesDropdown() {
 
   useEffect(() => {
     if (view === "chat" && messages.length > 0 && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "instant" });
+      messagesEndRef.current.scrollIntoView({ behavior: "auto" });
     }
   }, [messages, view]);
 
@@ -100,26 +111,23 @@ export function MessagesDropdown() {
     }
   }, [open]);
 
-  const getDmDisplayName = (channel: ChannelWithMeta): string => {
+  const getDmPartner = (channel: ChannelWithMeta): User | undefined => {
     const participants = channel.dmParticipants as string[] | null;
-    if (!participants || !user) return "Direct Message";
+    if (!participants || !user) return undefined;
     const otherId = participants.find(id => id !== user.id);
-    if (!otherId) return "Direct Message";
-    const other = allUsers.find((u: any) => u.id === otherId);
-    if (!other) return "Direct Message";
-    return other.firstName && other.lastName
-      ? `${other.firstName} ${other.lastName}`
-      : other.email;
+    if (!otherId) return undefined;
+    return allUsers.find(u => u.id === otherId);
+  };
+
+  const getDmDisplayName = (channel: ChannelWithMeta): string => {
+    const partner = getDmPartner(channel);
+    return partner ? resolveDisplayName(partner) : "Direct Message";
   };
 
   const getDmInitials = (channel: ChannelWithMeta): string => {
-    const participants = channel.dmParticipants as string[] | null;
-    if (!participants || !user) return "DM";
-    const otherId = participants.find(id => id !== user.id);
-    if (!otherId) return "DM";
-    const other = allUsers.find((u: any) => u.id === otherId);
-    if (!other) return "DM";
-    return getInitials(other.firstName, other.lastName, other.email);
+    const partner = getDmPartner(channel);
+    if (!partner) return "DM";
+    return getInitials(partner.firstName, partner.lastName, partner.email);
   };
 
   const sortedChannels = [...channels].sort((a, b) => {
@@ -276,14 +284,10 @@ export function MessagesDropdown() {
                     No messages yet
                   </p>
                 ) : (
-                  messages.map(msg => {
+                  messages.slice(-20).map(msg => {
                     const isOwn = msg.userId === user?.id;
-                    const sender = allUsers.find((u: any) => u.id === msg.userId);
-                    const senderName = sender
-                      ? sender.firstName && sender.lastName
-                        ? `${sender.firstName} ${sender.lastName}`
-                        : sender.email
-                      : "Unknown";
+                    const sender = allUsers.find(u => u.id === msg.userId);
+                    const senderName = sender ? resolveDisplayName(sender) : "Unknown";
 
                     return (
                       <div
