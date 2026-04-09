@@ -4364,6 +4364,7 @@ export const messages = pgTable("messages", {
   // Message metadata
   isEdited: boolean("is_edited").notNull().default(false),
   isDeleted: boolean("is_deleted").notNull().default(false),
+  isBot: boolean("is_bot").notNull().default(false), // True for system/bot messages
   
   // Cached user info for performance
   userFirstName: text("user_first_name"),

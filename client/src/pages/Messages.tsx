@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -126,6 +126,83 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
   }
   
   return parts.length > 0 ? parts : content;
+}
+
+// Extract a task UUID from message content (e.g. "/tasks/abc-123")
+const TASK_LINK_REGEX = /\/tasks\/([a-zA-Z0-9_-]{8,})/;
+
+function extractTaskLink(content: string): string | null {
+  const m = content.match(TASK_LINK_REGEX);
+  return m ? m[1] : null;
+}
+
+// Strip @[Name](userId:xxx) markup to plain text for pre-filling the task title
+function stripMentionMarkup(content: string): string {
+  return content.replace(/@\[([^\]]+)\]\(userId:[^)]+\)/g, "@$1");
+}
+
+// Compact task preview card rendered below messages containing /tasks/UUID links
+function TaskLinkPreview({ taskId }: { taskId: string }) {
+  const { data: task, isLoading, isError } = useQuery<any>({
+    queryKey: ["/api/tasks", taskId],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks/${taskId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("not found");
+      return res.json();
+    },
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="mt-1.5 rounded-md border bg-muted/20 p-2.5 w-56 animate-pulse">
+        <div className="h-3 bg-muted rounded w-3/4 mb-1.5" />
+        <div className="h-2.5 bg-muted rounded w-1/2" />
+      </div>
+    );
+  }
+  if (isError || !task) return null;
+
+  const title = task.title || "(Untitled)";
+  const status: string = task.status || "todo";
+  const assigneeName: string = task.assigneeName || (task.assigneeIds?.length ? "Assigned" : "Unassigned");
+  const dueDate: string | null = task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : null;
+  const statusColor: string =
+    status === "done" ? "text-green-600 dark:text-green-400" :
+    status === "in-progress" ? "text-blue-600 dark:text-blue-400" :
+    "text-muted-foreground";
+
+  return (
+    <a
+      href={`/tasks`}
+      className="mt-1.5 flex flex-col gap-1 rounded-md border bg-card p-2.5 w-64 hover-elevate no-underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-start gap-1.5">
+        <ListTodo className="h-3.5 w-3.5 shrink-0 text-primary mt-0.5" />
+        <span className="text-xs font-medium text-foreground leading-tight line-clamp-2">{title}</span>
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span className={`capitalize font-medium ${statusColor}`}>{status.replace("-", " ")}</span>
+        {assigneeName && (
+          <>
+            <span>·</span>
+            <span>{assigneeName}</span>
+          </>
+        )}
+        {dueDate && (
+          <>
+            <span>·</span>
+            <span className="flex items-center gap-0.5">
+              <Calendar className="h-2.5 w-2.5" />
+              {dueDate}
+            </span>
+          </>
+        )}
+      </div>
+    </a>
+  );
 }
 
 interface MessagesProps {
@@ -228,6 +305,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [loadingThreads, setLoadingThreads] = useState<Set<string>>(new Set());
   // Reaction picker open state: messageId or null
   const [reactionPickerOpen, setReactionPickerOpen] = useState<string | null>(null);
+
+  // Create task from message dialog state
+  const [createTaskFromMsg, setCreateTaskFromMsg] = useState<{ id: string; content: string } | null>(null);
+  const [taskFormTitle, setTaskFormTitle] = useState("");
+  const [taskFormProjectId, setTaskFormProjectId] = useState("");
+  const [taskFormAssigneeId, setTaskFormAssigneeId] = useState("");
+  const [taskFormDueDate, setTaskFormDueDate] = useState("");
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
   
   // Channel filter settings (persisted in localStorage)
   const [hideEmptyChats, setHideEmptyChats] = useState(() => {
@@ -385,6 +470,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     queryKey: ["/api/users"],
   });
 
+  const { data: allProjects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+    enabled: createTaskFromMsg !== null,
+    staleTime: 60_000,
+  });
+
   // Bulk-load reactions for all messages in the selected channel
   const { data: channelReactionsData } = useQuery<Record<string, MessageReaction[]>>({
     queryKey: ["/api/channels", selectedChannelId, "reactions"],
@@ -489,6 +580,54 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       setSendingThreads(prev => { const next = new Set(prev); next.delete(parentMessageId); return next; });
     }
   }, [threadInputs, toast]);
+
+  const handleCreateTaskFromMessage = async () => {
+    if (!taskFormTitle.trim() || !selectedChannelId) return;
+    setIsCreatingTask(true);
+    try {
+      const effectiveProjectId = taskFormProjectId && taskFormProjectId !== "__none__" ? taskFormProjectId : undefined;
+      const effectiveAssigneeId = taskFormAssigneeId && taskFormAssigneeId !== "__none__" ? taskFormAssigneeId : undefined;
+      const taskBody: Record<string, unknown> = {
+        type: "task",
+        title: taskFormTitle.trim(),
+        scope: effectiveProjectId ? "project" : "business",
+      };
+      if (effectiveProjectId) taskBody.projectId = effectiveProjectId;
+      if (effectiveAssigneeId) taskBody.assigneeId = effectiveAssigneeId;
+      if (taskFormDueDate) taskBody.dueDate = taskFormDueDate;
+
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(taskBody),
+      });
+      if (!res.ok) throw new Error("Failed to create task");
+      const task = await res.json();
+
+      // Post a system message referencing the created task
+      const botContent = `Task created: "${taskBody.title}"\n/tasks/${task.id}`;
+      await fetch(`/api/channels/${selectedChannelId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: botContent, isBot: true }),
+      });
+      // Refresh messages
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", selectedChannelId, "messages"] });
+
+      toast({ title: "Task created", description: `"${taskBody.title}" has been added to tasks.` });
+      setCreateTaskFromMsg(null);
+      setTaskFormTitle("");
+      setTaskFormProjectId("");
+      setTaskFormAssigneeId("");
+      setTaskFormDueDate("");
+    } catch {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
 
   const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
     // Optimistic update
@@ -872,6 +1011,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       commandType: content.startsWith('/') ? content.split(' ')[0].substring(1) : null,
       isEdited: false,
       isDeleted: false,
+      isBot: false,
       userFirstName: user!.firstName || null,
       userLastName: user!.lastName || null,
       userEmail: user!.email || null,
@@ -1229,8 +1369,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     </div>
                   ) : (
                     localMessages.map((message) => {
-                      const isOwn = message.userId === user?.id;
-                      const isBot = message.isBot;
+                      const isBot = !!message.isBot;
+                      const isOwn = !isBot && message.userId === user?.id;
                       const isHighlighted = newMessageIds.has(message.id);
                       const msgReactions = reactionsMap[message.id] || [];
                       const threadOpen = openThreads.has(message.id);
@@ -1295,7 +1435,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 </div>
                               </div>
 
-                              {/* Hover toolbar — visibility toggled (no layout shift) */}
+                              {/* Hover toolbar — visibility toggled (no layout shift); hidden for bot messages */}
+                              {!isBot && (
                               <div
                                 className={`
                                   absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
@@ -1357,8 +1498,34 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 >
                                   <MessageSquare className="h-3.5 w-3.5" />
                                 </button>
+                                <div className="w-px h-4 bg-border mx-0.5" />
+                                <button
+                                  type="button"
+                                  title="Create task from message"
+                                  onClick={() => {
+                                    const plain = stripMentionMarkup(message.content).trim();
+                                    const shortened = plain.length > 120 ? plain.substring(0, 120) + "…" : plain;
+                                    setCreateTaskFromMsg({ id: message.id, content: message.content });
+                                    setTaskFormTitle(shortened);
+                                    setTaskFormProjectId(projectId || "");
+                                    setTaskFormAssigneeId("");
+                                    setTaskFormDueDate("");
+                                  }}
+                                  className="p-1 rounded hover-elevate text-muted-foreground"
+                                  data-testid={`button-create-task-${message.id}`}
+                                >
+                                  <ListTodo className="h-3.5 w-3.5" />
+                                </button>
                               </div>
+                              )}
                             </div>
+
+                            {/* Task link preview card — shown when message content contains /tasks/UUID */}
+                            {(() => {
+                              const taskId = extractTaskLink(message.content);
+                              if (!taskId) return null;
+                              return <TaskLinkPreview taskId={taskId} />;
+                            })()}
 
                             {/* Reaction pills */}
                             {Object.keys(reactionGroups).length > 0 && (
@@ -1698,6 +1865,91 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               data-testid="button-start-dm"
             >
               {createDmMutation.isPending ? "Starting..." : "Start Conversation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Task from Message Dialog */}
+      <Dialog open={createTaskFromMsg !== null} onOpenChange={(open) => { if (!open) setCreateTaskFromMsg(null); }}>
+        <DialogContent data-testid="dialog-create-task-from-message">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListTodo className="h-4 w-4 text-primary" />
+              Create Task
+            </DialogTitle>
+            <DialogDescription>
+              Create a task from this message. The task will appear in the channel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="task-title">Task title *</Label>
+              <Input
+                id="task-title"
+                value={taskFormTitle}
+                onChange={(e) => setTaskFormTitle(e.target.value)}
+                placeholder="Describe the task…"
+                data-testid="input-task-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="task-project">Project</Label>
+              <Select value={taskFormProjectId} onValueChange={setTaskFormProjectId}>
+                <SelectTrigger id="task-project" data-testid="select-task-project">
+                  <SelectValue placeholder="No project (business task)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No project</SelectItem>
+                  {allProjects.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="task-assignee">Assignee</Label>
+              <Select value={taskFormAssigneeId} onValueChange={setTaskFormAssigneeId}>
+                <SelectTrigger id="task-assignee" data-testid="select-task-assignee">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
+                  {allUsers.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="task-due-date">Due date</Label>
+              <Input
+                id="task-due-date"
+                type="date"
+                value={taskFormDueDate}
+                onChange={(e) => setTaskFormDueDate(e.target.value)}
+                data-testid="input-task-due-date"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateTaskFromMsg(null)}
+              disabled={isCreatingTask}
+              data-testid="button-cancel-create-task"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateTaskFromMessage}
+              disabled={!taskFormTitle.trim() || isCreatingTask}
+              data-testid="button-confirm-create-task"
+            >
+              {isCreatingTask ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              {isCreatingTask ? "Creating…" : "Create Task"}
             </Button>
           </DialogFooter>
         </DialogContent>
