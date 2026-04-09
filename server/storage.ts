@@ -1055,6 +1055,10 @@ export interface IStorage {
   getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
   getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
   toggleMessageReaction(messageId: string, userId: string, emoji: string, userFirstName: string | null, userLastName: string | null): Promise<{ reactions: schema.MessageReaction[]; action: 'added' | 'removed'; channelId: string }>;
+  // Message Attachments
+  createMessageAttachment(attachment: schema.InsertMessageAttachment): Promise<schema.MessageAttachment>;
+  getMessageAttachments(messageId: string): Promise<schema.MessageAttachment[]>;
+  getAttachmentsForMessages(messageIds: string[]): Promise<Record<string, schema.MessageAttachment[]>>;
 
   // Purchase Orders CRUD
   getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]>;
@@ -18819,6 +18823,45 @@ export class DbStorage implements IStorage {
       return { reactions, action, channelId: message.channelId };
     } catch (error) {
       console.error("Database error in toggleMessageReaction:", error);
+      throw error;
+    }
+  }
+
+  async createMessageAttachment(attachment: schema.InsertMessageAttachment): Promise<schema.MessageAttachment> {
+    try {
+      const result = await db.insert(schema.messageAttachments).values(attachment).returning();
+      return result[0] as schema.MessageAttachment;
+    } catch (error) {
+      console.error("Database error in createMessageAttachment:", error);
+      throw error;
+    }
+  }
+
+  async getMessageAttachments(messageId: string): Promise<schema.MessageAttachment[]> {
+    try {
+      return await db.select().from(schema.messageAttachments)
+        .where(eq(schema.messageAttachments.messageId, messageId))
+        .orderBy(asc(schema.messageAttachments.createdAt)) as schema.MessageAttachment[];
+    } catch (error) {
+      console.error("Database error in getMessageAttachments:", error);
+      throw error;
+    }
+  }
+
+  async getAttachmentsForMessages(messageIds: string[]): Promise<Record<string, schema.MessageAttachment[]>> {
+    if (messageIds.length === 0) return {};
+    try {
+      const rows = await db.select().from(schema.messageAttachments)
+        .where(inArray(schema.messageAttachments.messageId, messageIds))
+        .orderBy(asc(schema.messageAttachments.createdAt)) as schema.MessageAttachment[];
+      const result: Record<string, schema.MessageAttachment[]> = {};
+      for (const row of rows) {
+        if (!result[row.messageId]) result[row.messageId] = [];
+        result[row.messageId].push(row);
+      }
+      return result;
+    } catch (error) {
+      console.error("Database error in getAttachmentsForMessages:", error);
       throw error;
     }
   }

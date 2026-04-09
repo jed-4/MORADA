@@ -36,7 +36,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X, Paperclip, FileText, Download, ZoomIn } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -50,7 +50,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDistanceToNow } from "date-fns";
-import type { Channel, Message, ChannelMember, MessageReaction } from "@shared/schema";
+import type { Channel, Message, ChannelMember, MessageReaction, MessageAttachment } from "@shared/schema";
+
+// Messages augmented with attachments returned by the API
+interface MessageWithAttachments extends Message {
+  attachments: MessageAttachment[];
+}
 
 // Fixed reaction set — icon-based (no emoji per design guidelines)
 const REACTION_OPTIONS = [
@@ -234,11 +239,24 @@ interface MessagesProps {
   projectId?: string;
 }
 
+// Attachment queued for upload alongside the next message
+interface PendingAttachment {
+  id: string;
+  file: File;
+  progress: number;
+  uploading: boolean;
+  error: boolean;
+  objectPath?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+}
+
 // Stable empty-collection constants so inline `= []` / `= {}` defaults
 // don't create a new reference on every render (which would make any
 // useEffect that lists them as deps fire on every single render,
 // causing infinite setState → "Maximum update depth exceeded" crashes).
-const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_MESSAGES: MessageWithAttachments[] = [];
 const EMPTY_CHANNELS: ChannelWithMeta[] = [];
 const EMPTY_UNREAD: Record<string, number> = {};
 const EMPTY_USERS: any[] = [];
@@ -351,6 +369,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledSectionOpen, setScheduledSectionOpen] = useState(true);
 
+  // Attachment state — files queued to send with the next message
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Lightbox state for image preview
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // Map of messageId → attachments (for real-time socket updates)
+  const [attachmentsMap, setAttachmentsMap] = useState<Record<string, MessageAttachment[]>>({});
+
   // Channel filter settings (persisted in localStorage)
   const [hideEmptyChats, setHideEmptyChats] = useState(() => {
     return localStorage.getItem("messages-hide-empty") === "true";
@@ -449,7 +475,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   });
 
-  const { data: messages = EMPTY_MESSAGES, isLoading: messagesLoading } = useQuery<Message[]>({
+  const { data: messages = EMPTY_MESSAGES, isLoading: messagesLoading } = useQuery<MessageWithAttachments[]>({
     queryKey: ["/api/channels", selectedChannelId, "messages"],
     enabled: !!selectedChannelId,
   });
@@ -461,7 +487,15 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   useEffect(() => {
     // Only top-level messages (no threadParentId) go into the main feed
-    setLocalMessages(messages.filter((m: Message) => !m.threadParentId));
+    setLocalMessages(messages.filter((m: MessageWithAttachments) => !m.threadParentId));
+    // Populate attachments map from API data
+    const newMap: Record<string, MessageAttachment[]> = {};
+    for (const m of messages) {
+      if (m.attachments && m.attachments.length > 0) {
+        newMap[m.id] = m.attachments;
+      }
+    }
+    setAttachmentsMap(prev => ({ ...prev, ...newMap }));
   }, [messages]);
 
   useChannelMessages(selectedChannelId, (message) => {
@@ -745,6 +779,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   useReactionUpdated((messageId, reactions) => {
     setReactionsMap(prev => ({ ...prev, [messageId]: reactions }));
   });
+
+  // Handle real-time attachment updates
+  useEffect(() => {
+    if (!socket) return;
+    const handleAttachmentsUpdated = (data: { messageId: string; attachment: MessageAttachment }) => {
+      setAttachmentsMap(prev => {
+        const existing = prev[data.messageId] || [];
+        if (existing.some(a => a.id === data.attachment.id)) return prev;
+        return { ...prev, [data.messageId]: [...existing, data.attachment] };
+      });
+    };
+    socket.on("message_attachments_updated", handleAttachmentsUpdated);
+    return () => { socket.off("message_attachments_updated", handleAttachmentsUpdated); };
+  }, [socket]);
 
   // Real-time message_updated (e.g. threadCount incremented after a reply)
   useMessageUpdated(selectedChannelId, (updated) => {
@@ -1187,9 +1235,67 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     return response.json() as Promise<Message>;
   };
 
+  // Upload a single pending attachment and save metadata to the server
+  const uploadAndSaveAttachment = async (pending: PendingAttachment, messageId: string): Promise<MessageAttachment | null> => {
+    try {
+      // Step 1: Get presigned URL
+      const urlResp = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: pending.file.name,
+          size: pending.file.size,
+          contentType: pending.file.type || "application/octet-stream",
+        }),
+      });
+      if (!urlResp.ok) throw new Error("Failed to get upload URL");
+      const { uploadURL, objectPath } = await urlResp.json();
+
+      // Step 2: Upload file to presigned URL
+      const putResp = await fetch(uploadURL, {
+        method: "PUT",
+        body: pending.file,
+        headers: { "Content-Type": pending.file.type || "application/octet-stream" },
+      });
+      if (!putResp.ok) throw new Error("Failed to upload file");
+
+      // Step 3: Save attachment metadata
+      const attResp = await fetch(`/api/messages/${messageId}/attachments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          objectPath,
+          fileName: pending.file.name,
+          fileSize: pending.file.size,
+          mimeType: pending.file.type || "application/octet-stream",
+        }),
+      });
+      if (!attResp.ok) throw new Error("Failed to save attachment");
+      return attResp.json() as Promise<MessageAttachment>;
+    } catch {
+      return null;
+    }
+  };
+
+  // Handle file selection from the hidden file input
+  const handleFileSelected = useCallback((files: FileList | null) => {
+    if (!files) return;
+    const newPending: PendingAttachment[] = Array.from(files).map(file => ({
+      id: `pending-${Date.now()}-${Math.random()}`,
+      file,
+      progress: 0,
+      uploading: false,
+      error: false,
+    }));
+    setPendingAttachments(prev => [...prev, ...newPending]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || !selectedChannelId || isSending) return;
+    if ((!messageInput.trim() && pendingAttachments.length === 0) || !selectedChannelId || isSending) return;
 
     stopTyping(selectedChannelId);
     if (typingTimeoutRef.current) {
@@ -1276,6 +1382,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
+
+      // Upload any queued attachments now that we have a real messageId
+      if (pendingAttachments.length > 0) {
+        const toUpload = [...pendingAttachments];
+        setPendingAttachments([]);
+        const uploaded: MessageAttachment[] = [];
+        for (const pa of toUpload) {
+          const att = await uploadAndSaveAttachment(pa, saved.id);
+          if (att) uploaded.push(att);
+        }
+        if (uploaded.length > 0) {
+          setAttachmentsMap(prev => ({
+            ...prev,
+            [saved.id]: [...(prev[saved.id] || []), ...uploaded],
+          }));
+        }
+      }
     } catch (err) {
       // Remove optimistic message, restore original display input AND pending mentions
       setLocalMessages(prev => prev.filter(m => m.id !== tempId));
@@ -1690,9 +1813,58 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   }
                                 `}
                               >
-                                <div className="break-words whitespace-pre-wrap">
-                                  {renderMessageWithMentions(message.content, user?.id)}
-                                </div>
+                                {message.content && (
+                                  <div className="break-words whitespace-pre-wrap">
+                                    {renderMessageWithMentions(message.content, user?.id)}
+                                  </div>
+                                )}
+                                {/* Attachments */}
+                                {(attachmentsMap[message.id] || []).length > 0 && (
+                                  <div className={`flex flex-col gap-1.5 ${message.content ? 'mt-2' : ''}`}>
+                                    {(attachmentsMap[message.id] || []).map((att) => {
+                                      const isImage = att.mimeType?.startsWith("image/");
+                                      return isImage ? (
+                                        <button
+                                          key={att.id}
+                                          type="button"
+                                          className="block rounded-md overflow-hidden max-w-[280px] group/img relative"
+                                          onClick={() => setLightboxUrl(att.fileUrl)}
+                                        >
+                                          <img
+                                            src={att.fileUrl}
+                                            alt={att.fileName}
+                                            className="max-h-[200px] w-auto object-cover rounded-md"
+                                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                          />
+                                          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-center justify-center">
+                                            <ZoomIn className="h-5 w-5 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                                          </div>
+                                        </button>
+                                      ) : (
+                                        <a
+                                          key={att.id}
+                                          href={att.fileUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-background/50 hover-elevate max-w-[280px]"
+                                        >
+                                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="text-xs font-medium truncate">{att.fileName}</span>
+                                            {att.fileSize && (
+                                              <span className="text-[10px] text-muted-foreground">
+                                                {att.fileSize < 1024 * 1024
+                                                  ? `${Math.round(att.fileSize / 1024)} KB`
+                                                  : `${(att.fileSize / (1024 * 1024)).toFixed(1)} MB`}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground ml-auto" />
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                                 {/* Pinned indicator inside bubble */}
                                 {message.isPinned && (
                                   <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
@@ -1895,9 +2067,45 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                             <div className="text-[10px] text-muted-foreground mb-1">
                                               Replying to <span className="font-medium text-foreground/70">{parentName}</span>
                                             </div>
-                                            <div className="break-words whitespace-pre-wrap">
-                                              {renderMessageWithMentions(reply.content, user?.id)}
-                                            </div>
+                                            {reply.content && (
+                                              <div className="break-words whitespace-pre-wrap">
+                                                {renderMessageWithMentions(reply.content, user?.id)}
+                                              </div>
+                                            )}
+                                            {/* Attachments in thread replies */}
+                                            {(attachmentsMap[reply.id] || []).length > 0 && (
+                                              <div className={`flex flex-col gap-1 ${reply.content ? 'mt-1.5' : ''}`}>
+                                                {(attachmentsMap[reply.id] || []).map((att) => {
+                                                  const isImg = att.mimeType?.startsWith("image/");
+                                                  return isImg ? (
+                                                    <button
+                                                      key={att.id}
+                                                      type="button"
+                                                      className="block rounded overflow-hidden max-w-[200px]"
+                                                      onClick={() => setLightboxUrl(att.fileUrl)}
+                                                    >
+                                                      <img
+                                                        src={att.fileUrl}
+                                                        alt={att.fileName}
+                                                        className="max-h-[140px] w-auto object-cover rounded"
+                                                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                      />
+                                                    </button>
+                                                  ) : (
+                                                    <a
+                                                      key={att.id}
+                                                      href={att.fileUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                                    >
+                                                      <FileText className="h-3 w-3 shrink-0" />
+                                                      <span className="truncate max-w-[160px]">{att.fileName}</span>
+                                                    </a>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
                                           </div>
                                           <span className="text-[10px] text-muted-foreground">
                                             {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
@@ -2080,6 +2288,40 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
               {/* Message Input - Compact h-9 design */}
               <div className="p-3 border-t bg-background">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                  className="hidden"
+                  onChange={e => handleFileSelected(e.target.files)}
+                />
+                {/* Pending attachment chips */}
+                {pendingAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {pendingAttachments.map(pa => (
+                      <div
+                        key={pa.id}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/30 text-xs max-w-[160px]"
+                      >
+                        {pa.file.type.startsWith("image/") ? (
+                          <ZoomIn className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate text-foreground">{pa.file.name}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setPendingAttachments(prev => prev.filter(p => p.id !== pa.id))}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <form onSubmit={handleSendMessage} className="relative">
                   {showMentionPicker && (broadcastMentionOptions.length > 0 || filteredMentionUsers.length > 0) && (
                     <div className="absolute bottom-full left-0 mb-2 w-64 bg-popover border rounded-lg shadow-lg max-h-48 overflow-auto z-50">
@@ -2124,6 +2366,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     </div>
                   )}
                   <div className="flex items-end gap-2">
+                    {/* Attach button */}
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Attach file"
+                      onClick={() => fileInputRef.current?.click()}
+                      data-testid="button-attach"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
                     <Textarea
                       ref={inputRef}
                       value={messageInput}
@@ -2214,11 +2467,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={!messageInput.trim() || isSending}
+                      disabled={(!messageInput.trim() && pendingAttachments.length === 0) || isSending}
                       className="h-9"
                       data-testid="button-send"
                     >
-                      <Send className="h-4 w-4" />
+                      {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     </Button>
                   </div>
                 </form>
@@ -2765,6 +3018,29 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Image lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-lg bg-black/40"
+            onClick={() => setLightboxUrl(null)}
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Attachment preview"
+            className="max-w-full max-h-full object-contain rounded-md"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

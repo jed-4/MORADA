@@ -4428,6 +4428,28 @@ export const insertMessageReactionSchema = createInsertSchema(messageReactions).
 export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 
+// Message Attachments — files/images shared in channel messages
+export const messageAttachments = pgTable("message_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),       // Served URL: /objects/company/:cid/...
+  fileName: text("file_name").notNull(),      // Original filename e.g. "photo.jpg"
+  fileSize: integer("file_size"),             // Bytes
+  mimeType: text("mime_type"),               // e.g. "image/jpeg", "application/pdf"
+  objectPath: text("object_path").notNull(), // Internal storage path
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  messageIdIndex: index("msg_attachments_message_id_idx").on(table.messageId),
+}));
+
+export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+export type MessageAttachment = typeof messageAttachments.$inferSelect;
+
 // RFQ (Request for Quote) System
 export const rfqStatusEnum = pgEnum("rfq_status", ["draft", "sent", "confirmed", "quoted", "accepted", "declined", "expired"]);
 export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "reminder_3d", "reminder_7d", "reminder_14d"]);

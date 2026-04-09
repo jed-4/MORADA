@@ -20172,7 +20172,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         limit ? parseInt(limit as string) : undefined,
         before as string | undefined
       );
-      res.json(messages);
+      // Augment messages with their attachments
+      const messageIds = messages.map(m => m.id);
+      const attachmentsMap = await storage.getAttachmentsForMessages(messageIds);
+      const messagesWithAttachments = messages.map(m => ({
+        ...m,
+        attachments: attachmentsMap[m.id] || [],
+      }));
+      res.json(messagesWithAttachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch messages" });
     }
@@ -20391,6 +20398,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete message" });
+    }
+  });
+
+  // POST /api/messages/:id/attachments — save attachment metadata after presigned-URL upload
+  app.post("/api/messages/:id/attachments", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
+
+      const { objectPath, fileName, fileSize, mimeType } = req.body;
+      if (!objectPath || !fileName) {
+        return res.status(400).json({ error: "objectPath and fileName are required" });
+      }
+
+      // Build a served URL that goes through our authenticated object endpoint
+      const fileUrl = objectPath.startsWith("/objects/company/")
+        ? objectPath
+        : objectPath;
+
+      const attachment = await storage.createMessageAttachment({
+        messageId: req.params.id,
+        fileUrl,
+        fileName,
+        fileSize: fileSize ?? null,
+        mimeType: mimeType ?? null,
+        objectPath,
+      });
+
+      // Broadcast updated attachments so real-time clients refresh
+      const io = getIO();
+      if (io) {
+        io.to(`channel:${access.channelId}`).emit("message_attachments_updated", {
+          messageId: req.params.id,
+          attachment,
+        });
+      }
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error("Error creating message attachment:", error);
+      res.status(500).json({ error: "Failed to save attachment" });
+    }
+  });
+
+  // GET /api/messages/:id/attachments — list attachments for a message
+  app.get("/api/messages/:id/attachments", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
+      const attachments = await storage.getMessageAttachments(req.params.id);
+      res.json(attachments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachments" });
     }
   });
 

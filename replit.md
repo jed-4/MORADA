@@ -135,4 +135,8 @@ Preferred communication style: Simple, everyday language.
 ### Integrations
 - **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
 - **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
+
+## Messaging Features
+- **Scheduled Messages**: Messages can be scheduled for future delivery via a datetime picker (calendar popover). Background processor (`ScheduledMessageProcessor`) checks every minute and delivers due messages via the existing socket broadcast. Schema: `scheduledAt` column on `messages` table.
+- **Message File Attachments** (web only): Full upload/view flow for attachments on channel messages and thread replies. Schema: `messageAttachments` table (id, messageId, fileName, fileUrl, mimeType, fileSize). Storage object route: `POST /api/uploads/request-url` → PUT to presigned URL → `POST /api/messages/:id/attachments`. `GET /api/channels/:channelId/messages` joins attachments. Images render inline with a fullscreen lightbox; documents render as download cards. Attach button (Paperclip) in compose area. Thread reply bubbles also render attachments from the shared `attachmentsMap` state.
 - **Replit Object Storage**: File upload support via presigned URLs using @uppy/core, @uppy/dashboard, @uppy/aws-s3.
