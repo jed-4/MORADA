@@ -905,6 +905,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       emitTaskCreated(user.companyId, task, user.id);
+
+      // If a channelId was supplied (task created from a message), post a server-side bot message
+      const sourceChannelId = typeof body.channelId === "string" ? body.channelId.trim() : "";
+      if (sourceChannelId) {
+        try {
+          const botContent = `Task created: "${task.title}"\n/tasks/${task.id}`;
+          const botMessage = await storage.createMessage({
+            channelId: sourceChannelId,
+            userId: user.id,
+            content: botContent,
+            mentions: [],
+            hasCommand: false,
+            commandType: undefined,
+            isBot: true,
+          });
+          const io = getIO();
+          if (io) io.to(`channel:${sourceChannelId}`).emit("new_message", botMessage);
+        } catch (botErr) {
+          console.error("[POST /api/tasks] Failed to create bot channel message:", botErr);
+          // Non-fatal: task was created, bot message failure shouldn't break the response
+        }
+      }
+
       res.status(201).json(task);
     } catch (error) {
       console.error("Error creating task:", error);
@@ -20237,7 +20260,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         mentions,
         hasCommand,
-        commandType
+        commandType,
+        isBot: false  // always false for user-initiated messages; prevents client spoofing
       });
       
       // Broadcast to all socket clients in the channel room for real-time delivery

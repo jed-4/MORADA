@@ -175,7 +175,7 @@ function TaskLinkPreview({ taskId }: { taskId: string }) {
 
   return (
     <a
-      href={`/tasks`}
+      href={`/tasks?taskId=${taskId}`}
       className="mt-1.5 flex flex-col gap-1 rounded-md border bg-card p-2.5 w-64 hover-elevate no-underline"
       onClick={(e) => e.stopPropagation()}
     >
@@ -595,6 +595,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (effectiveProjectId) taskBody.projectId = effectiveProjectId;
       if (effectiveAssigneeId) taskBody.assigneeId = effectiveAssigneeId;
       if (taskFormDueDate) taskBody.dueDate = taskFormDueDate;
+      // Pass channelId so the server creates a trusted bot message server-side
+      if (selectedChannelId) taskBody.channelId = selectedChannelId;
 
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -603,17 +605,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         body: JSON.stringify(taskBody),
       });
       if (!res.ok) throw new Error("Failed to create task");
-      const task = await res.json();
 
-      // Post a system message referencing the created task
-      const botContent = `Task created: "${taskBody.title}"\n/tasks/${task.id}`;
-      await fetch(`/api/channels/${selectedChannelId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ content: botContent, isBot: true }),
-      });
-      // Refresh messages
+      // Refresh messages (bot message was created server-side)
       queryClient.invalidateQueries({ queryKey: ["/api/channels", selectedChannelId, "messages"] });
 
       toast({ title: "Task created", description: `"${taskBody.title}" has been added to tasks.` });

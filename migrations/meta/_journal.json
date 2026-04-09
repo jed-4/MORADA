@@ -29,6 +29,13 @@
       "when": 1775709600000,
       "tag": "0003_message_reactions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775804400000,
+      "tag": "0004_message_is_bot",
+      "breakpoints": true
     }
   ]
 }
