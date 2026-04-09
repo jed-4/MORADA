@@ -878,15 +878,24 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       // Link uploaded attachments to the reply
       if (uploadedReplyAttachments.length > 0) {
         const linked: MessageAttachment[] = [];
+        let failCount = 0;
         for (const pa of uploadedReplyAttachments) {
           const att = await saveAttachmentRecord(reply.id, pa, pa.objectPath!);
           if (att) linked.push(att);
+          else failCount++;
         }
         if (linked.length > 0) {
           setAttachmentsMap(prev => ({
             ...prev,
             [reply.id]: [...(prev[reply.id] || []), ...linked],
           }));
+        }
+        if (failCount > 0) {
+          toast({
+            title: `${failCount} attachment${failCount > 1 ? 's' : ''} failed to save`,
+            description: "Your reply was sent, but some files could not be attached.",
+            variant: "destructive",
+          });
         }
       }
       // threadCount is NOT updated here — the server emits message_updated via socket
@@ -1487,12 +1496,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
       // Link any already-uploaded attachments to the new message
       const uploadedAttachments = pendingAttachments.filter(pa => pa.objectPath && !pa.error);
+      setPendingAttachments([]);
       if (uploadedAttachments.length > 0) {
-        setPendingAttachments([]);
         const linked: MessageAttachment[] = [];
+        let failCount = 0;
         for (const pa of uploadedAttachments) {
           const att = await saveAttachmentRecord(saved.id, pa, pa.objectPath!);
           if (att) linked.push(att);
+          else failCount++;
         }
         if (linked.length > 0) {
           setAttachmentsMap(prev => ({
@@ -1500,8 +1511,15 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             [saved.id]: [...(prev[saved.id] || []), ...linked],
           }));
         }
-      } else {
-        setPendingAttachments([]);
+        if (failCount > 0) {
+          toast({
+            title: failCount === uploadedAttachments.length
+              ? "Attachments failed to save"
+              : `${failCount} attachment${failCount > 1 ? 's' : ''} failed to save`,
+            description: "Your message was sent, but some files could not be attached. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (err) {
       // Remove optimistic message, restore original display input AND pending mentions
