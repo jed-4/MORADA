@@ -26,10 +26,11 @@
           root.classList.add(resolvedTheme);
           if (resolvedTheme === 'dark') {
             var variant = localStorage.getItem('dark-warm-variant');
-            root.classList.remove('dark-warm-a', 'dark-warm-b', 'dark-warm-c');
+            root.classList.remove('dark-warm-a', 'dark-warm-b', 'dark-warm-c', 'dark-warm-d');
             if (variant === 'a') root.classList.add('dark-warm-a');
             else if (variant === 'b') root.classList.add('dark-warm-b');
             else if (variant === 'c') root.classList.add('dark-warm-c');
+            else if (variant === 'd') root.classList.add('dark-warm-d');
           }
         } catch(e) {}
       })();

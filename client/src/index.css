@@ -404,6 +404,58 @@
   --shadow-card-hover: 0px 4px 8px -1px hsl(28 18% 7% / 0.44), 0px 2px 4px -1px hsl(28 18% 7% / 0.28);
 }
 
+/* Variant D – Dark Slate (Figma-inspired)
+   Backgrounds: near-neutral charcoal (220°, sat 5%) — almost no colour cast
+   Primary: muted slate-blue (228°, 38% sat, 54% light) — like Figma's active item
+   The professional, tool-like look */
+.dark.dark-warm-d {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 220 5% 16%;
+  --page-background: 220 6% 10%;
+  --foreground: 220 8% 92%;
+  --border: 220 5% 24%;
+  --card: 220 5% 20%;
+  --card-foreground: 220 8% 92%;
+  --card-border: 220 5% 27%;
+  --sidebar: 220 5% 14%;
+  --sidebar-foreground: 220 8% 92%;
+  --sidebar-border: 220 5% 22%;
+  --sidebar-primary: 228 38% 54%;
+  --sidebar-primary-foreground: 220 8% 96%;
+  --sidebar-accent: 220 5% 22%;
+  --sidebar-accent-foreground: 220 8% 92%;
+  --sidebar-ring: 228 38% 54%;
+  --popover: 220 5% 18%;
+  --popover-foreground: 220 8% 92%;
+  --popover-border: 220 5% 26%;
+  --primary: 228 38% 54%;
+  --primary-foreground: 220 8% 96%;
+  --secondary: 228 22% 26%;
+  --secondary-foreground: 220 8% 92%;
+  --muted: 220 5% 22%;
+  --muted-foreground: 220 8% 62%;
+  --accent: 228 38% 54%;
+  --accent-foreground: 220 8% 96%;
+  --input: 220 5% 28%;
+  --ring: 228 38% 54%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(220 8% 5% / 0.25);
+  --shadow-xs: 0px 1px 3px 0px hsl(220 8% 5% / 0.30);
+  --shadow-sm: 0px 1px 2px 0px hsl(220 8% 5% / 0.35), 0px 1px 3px -1px hsl(220 8% 5% / 0.28);
+  --shadow: 0px 1px 3px 0px hsl(220 8% 5% / 0.40), 0px 1px 2px -1px hsl(220 8% 5% / 0.32);
+  --shadow-md: 0px 4px 6px -1px hsl(220 8% 5% / 0.44), 0px 2px 4px -1px hsl(220 8% 5% / 0.28);
+  --shadow-lg: 0px 10px 15px -3px hsl(220 8% 5% / 0.44), 0px 4px 6px -2px hsl(220 8% 5% / 0.22);
+  --shadow-xl: 0px 20px 25px -5px hsl(220 8% 5% / 0.48), 0px 10px 10px -5px hsl(220 8% 5% / 0.18);
+  --shadow-2xl: 0px 25px 50px -12px hsl(220 8% 5% / 0.58);
+  --shadow-card: 0px 2px 4px -1px hsl(220 8% 5% / 0.34), 0px 1px 2px -1px hsl(220 8% 5% / 0.24);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(220 8% 5% / 0.44), 0px 2px 4px -1px hsl(220 8% 5% / 0.28);
+}
+
 @layer base {
   * {
     @apply border-border;

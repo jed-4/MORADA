@@ -30,6 +30,13 @@ const VARIANTS: { id: WarmVariant; label: string; description: string; bgColor: 
     bgColor: "#2c211a",
     accentColor: "#9585cc",
   },
+  {
+    id: "d",
+    label: "D",
+    description: "Dark Slate — near-neutral charcoal, muted slate-blue accent (Figma-style)",
+    bgColor: "#262628",
+    accentColor: "#6878a8",
+  },
 ];
 
 export function WarmPaletteSwitcher() {
