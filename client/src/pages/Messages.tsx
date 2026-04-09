@@ -21,6 +21,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -28,7 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2 } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -161,8 +168,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isCreateDmOpen, setIsCreateDmOpen] = useState(false);
   const [selectedDmUserId, setSelectedDmUserId] = useState<string>("");
   
-  const [isAddPeopleOpen, setIsAddPeopleOpen] = useState(false);
-  const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
+  const [isChannelPanelOpen, setIsChannelPanelOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [channelRenameValue, setChannelRenameValue] = useState("");
   
@@ -280,7 +286,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const { data: channelMembers = [] } = useQuery<ChannelMember[]>({
     queryKey: ["/api/channels", selectedChannelId, "members"],
-    enabled: !!selectedChannelId && (isAddPeopleOpen || isChannelSettingsOpen),
+    enabled: !!selectedChannelId && isChannelPanelOpen,
   });
 
   useEffect(() => {
@@ -960,22 +966,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   </div>
                   <NotificationSettingsButton />
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
-                    className="h-7"
-                    onClick={() => setIsAddPeopleOpen(true)}
-                    data-testid="button-add-people"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
                     onClick={() => {
                       setChannelRenameValue(selectedChannel?.name ?? "");
                       setIsDeleteConfirmOpen(false);
-                      setIsChannelSettingsOpen(true);
+                      setIsChannelPanelOpen(true);
                     }}
                     data-testid="button-channel-settings"
                   >
@@ -1246,23 +1242,38 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         </DialogContent>
       </Dialog>
 
-      {/* Add People Dialog */}
-      <Dialog open={isAddPeopleOpen} onOpenChange={setIsAddPeopleOpen}>
-        <DialogContent data-testid="dialog-add-people" className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Manage Members</DialogTitle>
-            <DialogDescription>
-              Add or remove team members from #{selectedChannel?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2 space-y-4">
-            {/* Current Members */}
-            {channelMembers.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
-                  Current members ({channelMembers.length})
+      {/* Combined Channel Panel — Sheet */}
+      <Sheet
+        open={isChannelPanelOpen}
+        onOpenChange={(open) => {
+          setIsChannelPanelOpen(open);
+          if (!open) setIsDeleteConfirmOpen(false);
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="w-80 p-0 flex flex-col"
+          data-testid="sheet-channel-panel"
+        >
+          <SheetHeader className="px-5 pt-5 pb-4 border-b shrink-0">
+            <SheetTitle className="text-base">
+              {selectedChannel?.type === "dm"
+                ? "Conversation"
+                : `#${selectedChannel?.name}`}
+            </SheetTitle>
+          </SheetHeader>
+
+          <ScrollArea className="flex-1">
+            <div className="px-5 py-4 space-y-6">
+
+              {/* ── Members ── */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Members
                 </p>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+
+                {/* Current members */}
+                <div className="space-y-1">
                   {channelMembers.map((member) => {
                     const memberUser = allUsers.find((u: any) => u.id === member.userId);
                     const displayName = memberUser
@@ -1273,16 +1284,21 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     const isCurrentUser = member.userId === user?.id;
                     const isOwner = member.role === "owner";
                     return (
-                      <div key={member.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-muted/20">
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between gap-2 py-1.5 rounded-md"
+                      >
                         <div className="flex items-center gap-2 min-w-0">
-                          <Avatar className="h-6 w-6 shrink-0">
-                            <AvatarFallback className="text-[10px]">
+                          <Avatar className="h-7 w-7 shrink-0">
+                            <AvatarFallback className="text-[11px]">
                               {getInitials(memberUser?.firstName, memberUser?.lastName, memberUser?.email)}
                             </AvatarFallback>
                           </Avatar>
                           <span className="text-sm truncate">{displayName}</span>
                           {isOwner && (
-                            <Badge variant="secondary" className="text-[10px] shrink-0">owner</Badge>
+                            <Badge variant="secondary" className="text-[10px] shrink-0 px-1.5">
+                              owner
+                            </Badge>
                           )}
                         </div>
                         {!isCurrentUser && !isOwner && selectedChannel && (
@@ -1301,178 +1317,154 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     );
                   })}
                 </div>
-              </div>
-            )}
 
-            {/* Add New Members */}
-            {(() => {
-              const nonMembers = allUsers.filter(
-                (u: any) => !channelMembers.some(m => m.userId === u.id)
-              );
-              if (nonMembers.length === 0) return (
-                <p className="text-sm text-muted-foreground text-center py-2">
-                  All team members are already in this channel.
-                </p>
-              );
-              return (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
-                    Add members
-                  </p>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {nonMembers.map((u: any) => {
-                      const displayName = u.firstName && u.lastName
-                        ? `${u.firstName} ${u.lastName}`
-                        : u.email;
-                      return (
-                        <div key={u.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover-elevate">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Avatar className="h-6 w-6 shrink-0">
-                              <AvatarFallback className="text-[10px]">
-                                {getInitials(u.firstName, u.lastName, u.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm truncate">{displayName}</span>
+                {/* Add non-members */}
+                {(() => {
+                  const nonMembers = allUsers.filter(
+                    (u: any) => !channelMembers.some(m => m.userId === u.id)
+                  );
+                  if (nonMembers.length === 0) return null;
+                  return (
+                    <div className="space-y-1 pt-1">
+                      <p className="text-xs text-muted-foreground px-0 pb-0.5">Add people</p>
+                      {nonMembers.map((u: any) => {
+                        const displayName = u.firstName && u.lastName
+                          ? `${u.firstName} ${u.lastName}`
+                          : u.email;
+                        return (
+                          <div
+                            key={u.id}
+                            className="flex items-center justify-between gap-2 py-1.5 rounded-md"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Avatar className="h-7 w-7 shrink-0">
+                                <AvatarFallback className="text-[11px]">
+                                  {getInitials(u.firstName, u.lastName, u.email)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm truncate text-muted-foreground">{displayName}</span>
+                            </div>
+                            {selectedChannel && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs shrink-0"
+                                disabled={addMemberMutation.isPending}
+                                onClick={() => addMemberMutation.mutate({ channelId: selectedChannel.id, userId: u.id })}
+                                data-testid={`button-add-member-${u.id}`}
+                              >
+                                Add
+                              </Button>
+                            )}
                           </div>
-                          {selectedChannel && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs shrink-0"
-                              disabled={addMemberMutation.isPending}
-                              onClick={() => addMemberMutation.mutate({ channelId: selectedChannel.id, userId: u.id })}
-                              data-testid={`button-add-member-${u.id}`}
-                            >
-                              Add
-                            </Button>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* ── Channel Settings (rename — non-DM only) ── */}
+              {selectedChannel?.type !== "dm" && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Settings
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="channel-rename" className="text-xs">Channel name</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="channel-rename"
+                          value={channelRenameValue}
+                          onChange={(e) => setChannelRenameValue(e.target.value)}
+                          placeholder="Channel name"
+                          className="h-9 text-sm"
+                          data-testid="input-channel-rename"
+                        />
+                        <Button
+                          size="sm"
+                          disabled={
+                            !channelRenameValue.trim() ||
+                            channelRenameValue.trim() === selectedChannel?.name ||
+                            renameChannelMutation.isPending
+                          }
+                          onClick={() => selectedChannel && renameChannelMutation.mutate({
+                            channelId: selectedChannel.id,
+                            name: channelRenameValue.trim(),
+                          })}
+                          data-testid="button-rename-channel"
+                        >
+                          {renameChannelMutation.isPending
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : "Save"}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })()}
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setIsAddPeopleOpen(false)} data-testid="button-close-add-people">
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Channel Settings Dialog */}
-      <Dialog open={isChannelSettingsOpen} onOpenChange={setIsChannelSettingsOpen}>
-        <DialogContent data-testid="dialog-channel-settings">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedChannel?.type === "dm" ? "Conversation Settings" : "Channel Settings"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedChannel?.type === "dm"
-                ? "Manage this direct message conversation"
-                : `Manage settings for #${selectedChannel?.name}`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            {/* Rename - only for non-DM channels */}
-            {selectedChannel?.type !== "dm" && (
-              <div className="space-y-2">
-                <Label htmlFor="channel-rename">Channel name</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="channel-rename"
-                    value={channelRenameValue}
-                    onChange={(e) => setChannelRenameValue(e.target.value)}
-                    placeholder="Channel name"
-                    className="h-9"
-                    data-testid="input-channel-rename"
-                  />
-                  <Button
-                    size="sm"
-                    disabled={
-                      !channelRenameValue.trim() ||
-                      channelRenameValue.trim() === selectedChannel?.name ||
-                      renameChannelMutation.isPending
-                    }
-                    onClick={() => selectedChannel && renameChannelMutation.mutate({
-                      channelId: selectedChannel.id,
-                      name: channelRenameValue.trim(),
-                    })}
-                    data-testid="button-rename-channel"
-                  >
-                    {renameChannelMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Delete zone */}
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-              <div>
-                <p className="text-sm font-medium text-destructive">
-                  {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {selectedChannel?.type === "dm"
-                    ? "Permanently delete this conversation and all its messages. This cannot be undone."
-                    : "Permanently delete this channel and all its messages. This cannot be undone."}
-                </p>
-              </div>
-              {!isDeleteConfirmOpen ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-destructive/50 text-destructive"
-                  onClick={() => setIsDeleteConfirmOpen(true)}
-                  data-testid="button-delete-channel-prompt"
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
-                  {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
-                </Button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={deleteChannelMutation.isPending}
-                    onClick={() => selectedChannel && deleteChannelMutation.mutate(selectedChannel.id)}
-                    data-testid="button-delete-channel-confirm"
-                  >
-                    {deleteChannelMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5 mr-2" />
-                    )}
-                    Confirm delete
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsDeleteConfirmOpen(false)}
-                    data-testid="button-delete-channel-cancel"
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                </>
               )}
+
+              {/* ── Danger zone ── */}
+              <Separator />
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {selectedChannel?.type === "dm" ? "Danger" : "Danger zone"}
+                </p>
+                <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-destructive">
+                      {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {selectedChannel?.type === "dm"
+                        ? "Permanently removes this conversation and all messages."
+                        : "Permanently removes this channel and all messages."}
+                    </p>
+                  </div>
+                  {!isDeleteConfirmOpen ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive border-destructive/30 hover:border-destructive/50"
+                      onClick={() => setIsDeleteConfirmOpen(true)}
+                      data-testid="button-delete-channel-prompt"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deleteChannelMutation.isPending}
+                        onClick={() => selectedChannel && deleteChannelMutation.mutate(selectedChannel.id)}
+                        data-testid="button-delete-channel-confirm"
+                      >
+                        {deleteChannelMutation.isPending
+                          ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5 mr-1.5" />}
+                        Confirm delete
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsDeleteConfirmOpen(false)}
+                        data-testid="button-delete-channel-cancel"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsChannelSettingsOpen(false);
-                setIsDeleteConfirmOpen(false);
-              }}
-              data-testid="button-close-settings"
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
