@@ -171,6 +171,8 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const [creating, setCreating] = useState(false);
   const [showNewStatusPicker, setShowNewStatusPicker] = useState(false);
   const [showNewPriorityPicker, setShowNewPriorityPicker] = useState(false);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [showNewDatePicker, setShowNewDatePicker] = useState(false);
 
   // ─── Derived helpers ────────────────────────────────────────────────────────
 
@@ -287,9 +289,12 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
     setEditStatus(selectedTask.status || defaultStatus);
     setEditPriority(selectedTask.priority || 'medium');
     setEditDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : '');
-    setEditDescription(selectedTask.contentText || selectedTask.content || '');
+    setEditDescription(stripHtml(selectedTask.contentText || selectedTask.content || ''));
     setEditChecklist(selectedTask.checklist ? [...selectedTask.checklist] : []);
     setEditChecklistInput('');
+    setShowStatusPicker(false);
+    setShowPriorityPicker(false);
+    setShowEditDatePicker(false);
     setIsEditing(true);
   };
 
@@ -775,35 +780,86 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                     <View style={styles.editField}>
                       <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
                       <TouchableOpacity
-                        style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                        onPress={() => setShowStatusPicker(true)}
+                        style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showStatusPicker ? colors.accent : colors.border }]}
+                        onPress={() => { setShowStatusPicker(v => !v); setShowPriorityPicker(false); }}
                       >
                         <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
                         <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(editStatus)}</Text>
-                        <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                        <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                       </TouchableOpacity>
+                      {showStatusPicker && (
+                        <View style={[styles.inlinePickerList, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                          {pickerStatusOptions.map(opt => (
+                            <TouchableOpacity
+                              key={opt.key}
+                              style={[styles.inlinePickerItem, { borderBottomColor: colors.border }, editStatus === opt.key ? { backgroundColor: colors.accent + '15' } : null]}
+                              onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
+                            >
+                              <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                              <Text style={[styles.inlinePickerText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>{opt.name}</Text>
+                              {editStatus === opt.key && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
                     </View>
                     <View style={styles.editField}>
                       <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
                       <TouchableOpacity
-                        style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                        onPress={() => setShowPriorityPicker(true)}
+                        style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showPriorityPicker ? colors.accent : colors.border }]}
+                        onPress={() => { setShowPriorityPicker(v => !v); setShowStatusPicker(false); }}
                       >
                         <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
                         <Text style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[editPriority] || editPriority}</Text>
-                        <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                        <Ionicons name={showPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                       </TouchableOpacity>
+                      {showPriorityPicker && (
+                        <View style={[styles.inlinePickerList, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                          {PRIORITY_ORDER.map(p => (
+                            <TouchableOpacity
+                              key={p}
+                              style={[styles.inlinePickerItem, { borderBottomColor: colors.border }, editPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
+                              onPress={() => { setEditPriority(p); setShowPriorityPicker(false); }}
+                            >
+                              <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
+                              <Text style={[styles.inlinePickerText, { color: editPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                              {editPriority === p && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
                     </View>
                     <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date (YYYY-MM-DD)</Text>
-                      <TextInput
-                        style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                        value={editDueDate}
-                        onChangeText={setEditDueDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.muted}
-                        keyboardType="numbers-and-punctuation"
-                      />
+                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
+                      <TouchableOpacity
+                        style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showEditDatePicker ? colors.accent : colors.border }]}
+                        onPress={() => { setShowEditDatePicker(v => !v); setShowStatusPicker(false); setShowPriorityPicker(false); }}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                        <Text style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
+                          {editDueDate ? new Date(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
+                        </Text>
+                        {editDueDate ? (
+                          <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setEditDueDate(''); setShowEditDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="close-circle" size={16} color={colors.muted} />
+                          </TouchableOpacity>
+                        ) : (
+                          <Ionicons name={showEditDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                        )}
+                      </TouchableOpacity>
+                      {showEditDatePicker && (
+                        <DateTimePicker
+                          value={editDueDate ? new Date(editDueDate) : new Date()}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                          themeVariant={isDark ? 'dark' : 'light'}
+                          onChange={(_event, date) => {
+                            if (Platform.OS === 'android') setShowEditDatePicker(false);
+                            if (date) setEditDueDate(date.toISOString().slice(0, 10));
+                          }}
+                          style={{ marginTop: 4 }}
+                        />
+                      )}
                     </View>
                     <View style={styles.editField}>
                       <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
@@ -890,49 +946,6 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {/* Status picker */}
-      <Modal visible={showStatusPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowStatusPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>Status</Text>
-            {pickerStatusOptions.map(opt => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.pickerOption, editStatus === opt.key ? { backgroundColor: colors.accent + '15' } : null]}
-                onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
-              >
-                <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
-                  {opt.name}
-                </Text>
-                {editStatus === opt.key ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Priority picker */}
-      <Modal visible={showPriorityPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowPriorityPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>Priority</Text>
-            {PRIORITY_ORDER.map(p => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.pickerOption, editPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
-                onPress={() => { setEditPriority(p); setShowPriorityPicker(false); }}
-              >
-                <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                <Text style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
-                  {PRIORITY_LABELS[p]}
-                </Text>
-                {editPriority === p ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Create Task Modal */}
       <Modal visible={showCreateModal} animationType="slide" transparent>
@@ -965,35 +978,89 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
                 <View style={styles.editField}>
                   <Text style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
                   <TouchableOpacity
-                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowNewStatusPicker(true)}
+                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewStatusPicker ? colors.accent : colors.border }]}
+                    onPress={() => { setShowNewStatusPicker(v => !v); setShowNewPriorityPicker(false); }}
                   >
                     <View style={[styles.selectDot, { backgroundColor: getStatusColor(newStatus || defaultStatus) }]} />
                     <Text style={[styles.editSelectText, { color: colors.text }]}>{getStatusLabel(newStatus || defaultStatus)}</Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                    <Ionicons name={showNewStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                   </TouchableOpacity>
+                  {showNewStatusPicker && (
+                    <View style={[styles.inlinePickerList, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      {pickerStatusOptions.map(opt => {
+                        const active = (newStatus || defaultStatus) === opt.key;
+                        return (
+                          <TouchableOpacity
+                            key={opt.key}
+                            style={[styles.inlinePickerItem, { borderBottomColor: colors.border }, active ? { backgroundColor: colors.accent + '15' } : null]}
+                            onPress={() => { setNewStatus(opt.key); setShowNewStatusPicker(false); }}
+                          >
+                            <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                            <Text style={[styles.inlinePickerText, { color: active ? colors.accent : colors.text }]}>{opt.name}</Text>
+                            {active && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
                 <View style={styles.editField}>
                   <Text style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
                   <TouchableOpacity
-                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowNewPriorityPicker(true)}
+                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewPriorityPicker ? colors.accent : colors.border }]}
+                    onPress={() => { setShowNewPriorityPicker(v => !v); setShowNewStatusPicker(false); }}
                   >
                     <View style={[styles.selectDot, { backgroundColor: getPriorityColor(newPriority) }]} />
                     <Text style={[styles.editSelectText, { color: colors.text }]}>{PRIORITY_LABELS[newPriority] || newPriority}</Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                    <Ionicons name={showNewPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                   </TouchableOpacity>
+                  {showNewPriorityPicker && (
+                    <View style={[styles.inlinePickerList, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      {PRIORITY_ORDER.map(p => (
+                        <TouchableOpacity
+                          key={p}
+                          style={[styles.inlinePickerItem, { borderBottomColor: colors.border }, newPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
+                          onPress={() => { setNewPriority(p); setShowNewPriorityPicker(false); }}
+                        >
+                          <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
+                          <Text style={[styles.inlinePickerText, { color: newPriority === p ? colors.accent : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                          {newPriority === p && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
                 <View style={styles.editField}>
-                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date (YYYY-MM-DD)</Text>
-                  <TextInput
-                    style={[styles.editInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                    value={newDueDate}
-                    onChangeText={setNewDueDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="numbers-and-punctuation"
-                  />
+                  <Text style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
+                  <TouchableOpacity
+                    style={[styles.editSelect, { backgroundColor: colors.inputBg, borderColor: showNewDatePicker ? colors.accent : colors.border }]}
+                    onPress={() => { setShowNewDatePicker(v => !v); setShowNewStatusPicker(false); setShowNewPriorityPicker(false); }}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                    <Text style={[styles.editSelectText, { color: newDueDate ? colors.text : colors.muted }]}>
+                      {newDueDate ? new Date(newDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
+                    </Text>
+                    {newDueDate ? (
+                      <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setNewDueDate(''); setShowNewDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle" size={16} color={colors.muted} />
+                      </TouchableOpacity>
+                    ) : (
+                      <Ionicons name={showNewDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                    )}
+                  </TouchableOpacity>
+                  {showNewDatePicker && (
+                    <DateTimePicker
+                      value={newDueDate ? new Date(newDueDate) : new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      themeVariant={isDark ? 'dark' : 'light'}
+                      onChange={(_event, date) => {
+                        if (Platform.OS === 'android') setShowNewDatePicker(false);
+                        if (date) setNewDueDate(date.toISOString().slice(0, 10));
+                      }}
+                      style={{ marginTop: 4 }}
+                    />
+                  )}
                 </View>
                 <View style={styles.editField}>
                   <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
@@ -1061,52 +1128,6 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {/* New task status picker */}
-      <Modal visible={showNewStatusPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowNewStatusPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>Status</Text>
-            {pickerStatusOptions.map(opt => {
-              const active = (newStatus || defaultStatus) === opt.key;
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  style={[styles.pickerOption, active ? { backgroundColor: colors.accent + '15' } : null]}
-                  onPress={() => { setNewStatus(opt.key); setShowNewStatusPicker(false); }}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                  <Text style={[styles.pickerOptionText, { color: active ? colors.accent : colors.text }]}>
-                    {opt.name}
-                  </Text>
-                  {active ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* New task priority picker */}
-      <Modal visible={showNewPriorityPicker} transparent animationType="fade">
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowNewPriorityPicker(false)}>
-          <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>Priority</Text>
-            {PRIORITY_ORDER.map(p => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.pickerOption, newPriority === p ? { backgroundColor: colors.accent + '15' } : null]}
-                onPress={() => { setNewPriority(p); setShowNewPriorityPicker(false); }}
-              >
-                <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-                <Text style={[styles.pickerOptionText, { color: newPriority === p ? colors.accent : colors.text }]}>
-                  {PRIORITY_LABELS[p]}
-                </Text>
-                {newPriority === p ? <Ionicons name="checkmark" size={20} color={colors.accent} /> : null}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -1293,11 +1314,9 @@ const styles = StyleSheet.create({
   editSaveBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   editSaveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  // Pickers
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 32 },
-  pickerSheet: { borderRadius: 16, overflow: 'hidden' },
-  pickerTitle: { fontSize: 14, fontWeight: '700', paddingHorizontal: 16, paddingVertical: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  pickerOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  pickerOptionText: { flex: 1, fontSize: 15 },
+  // Inline pickers (accordion-style, no separate modal)
+  inlinePickerList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
+  inlinePickerItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  inlinePickerText: { flex: 1, fontSize: 15 },
 
 });
