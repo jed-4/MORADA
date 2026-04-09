@@ -8,6 +8,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Tasks } from "@/pages/Tasks";
 import { Timesheets } from "@/pages/Timesheets";
 import { Messages } from "@/pages/Messages";
+import { MessageThread } from "@/pages/MessageThread";
 import { Projects } from "@/pages/Projects";
 import { ProjectView } from "@/pages/ProjectView";
 import { ComingSoon } from "@/pages/ComingSoon";
@@ -30,6 +31,9 @@ function MobileApp() {
                 <Route path="/tasks" component={Tasks} />
                 <Route path="/timesheets" component={Timesheets} />
                 <Route path="/messages" component={Messages} />
+                <Route path="/messages/:channelId">
+                  {(params) => <MessageThread channelId={params.channelId} />}
+                </Route>
                 <Route path="/profile">
                   {() => <ComingSoon title="Profile" description="Manage your profile settings and preferences" />}
                 </Route>

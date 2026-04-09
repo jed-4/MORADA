@@ -105,6 +105,15 @@ interface MessagesProps {
   projectId?: string;
 }
 
+// Stable empty-collection constants so inline `= []` / `= {}` defaults
+// don't create a new reference on every render (which would make any
+// useEffect that lists them as deps fire on every single render,
+// causing infinite setState → "Maximum update depth exceeded" crashes).
+const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_CHANNELS: ChannelWithMeta[] = [];
+const EMPTY_UNREAD: Record<string, number> = {};
+const EMPTY_USERS: any[] = [];
+
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -186,7 +195,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   }
   const channelQueryString = channelQueryParams.toString();
 
-  const { data: channels = [], isLoading: channelsLoading } = useQuery<ChannelWithMeta[]>({
+  const { data: channels = EMPTY_CHANNELS, isLoading: channelsLoading } = useQuery<ChannelWithMeta[]>({
     queryKey: ["/api/channels", channelQueryString],
     queryFn: async () => {
       const url = `/api/channels${channelQueryString ? `?${channelQueryString}` : ''}`;
@@ -197,7 +206,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   // Fetch unread counts - must be before filteredChannels useMemo
-  const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
+  const { data: unreadCounts = EMPTY_UNREAD, isLoading: unreadLoading } = useQuery<Record<string, number>>({
     queryKey: ["/api/channels/unread/counts"],
   });
 
@@ -262,15 +271,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   });
 
-  const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
+  const { data: messages = EMPTY_MESSAGES, isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/channels", selectedChannelId, "messages"],
     enabled: !!selectedChannelId,
   });
 
   useEffect(() => {
-    if (messages) {
-      setLocalMessages(messages);
-    }
+    setLocalMessages(messages);
   }, [messages]);
 
   useChannelMessages(selectedChannelId, (message) => {
@@ -292,7 +299,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const typingUserIds = useTypingIndicator(selectedChannelId);
 
-  const { data: allUsers = [] } = useQuery<any[]>({
+  const { data: allUsers = EMPTY_USERS } = useQuery<any[]>({
     queryKey: ["/api/users"],
   });
 
@@ -630,11 +637,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
-  const filteredMentionUsers = allUsers.filter((u: any) => {
+  const filteredMentionUsers = useMemo(() => allUsers.filter((u: any) => {
     if (!mentionSearch) return true;
     const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
     return fullName.includes(mentionSearch) || (u.email || '').toLowerCase().includes(mentionSearch);
-  });
+  }), [allUsers, mentionSearch]);
 
   const typingUsers = (Array.isArray(typingUserIds) ? typingUserIds : [])
     .map((id: string) => allUsers.find((u: any) => u.id === id))

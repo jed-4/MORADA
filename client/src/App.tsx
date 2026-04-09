@@ -241,7 +241,6 @@ function Router() {
       <Route path="/projects/:projectId/checklists" component={Dashboard} />
       
       {/* Global Project sections - Coming Soon */}
-      <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/takeoff" component={Takeoff} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/project/:projectId" component={ProjectEstimates} />
@@ -256,10 +255,10 @@ function Router() {
       <Route path="/proposals" component={Proposals} />
       <Route path="/proposals/new" component={ProposalDetail} />
       <Route path="/proposals/:id" component={ProposalDetail} />
-      <Route path="/schedule" component={() => <ComingSoonPage section="schedule" />} />
+      <Route path="/schedule">{() => <ComingSoonPage section="schedule" />}</Route>
       <Route path="/selections" component={Selections} />
       <Route path="/selections/:id" component={SelectionDetail} />
-      <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
+      <Route path="/allowances">{() => <ComingSoonPage section="allowances" />}</Route>
       <Route path="/purchase-orders" component={PurchaseOrders} />
       <Route path="/purchase-orders/new" component={PurchaseOrderDetail} />
       <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
@@ -272,12 +271,12 @@ function Router() {
       <Route path="/client-invoices" component={ClientInvoices} />
       <Route path="/client-invoices/new" component={ClientInvoiceDetail} />
       <Route path="/client-invoices/:id" component={ClientInvoiceDetail} />
-      <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
+      <Route path="/invoices">{() => <ComingSoonPage section="invoices" />}</Route>
       <Route path="/site-diary" component={SiteDiaryEntries} />
       <Route path="/timesheets" component={Timesheets} />
-      <Route path="/budget" component={() => <ComingSoonPage section="budget" />} />
-      <Route path="/files" component={() => <ComingSoonPage section="files" />} />
-      <Route path="/team" component={() => <ComingSoonPage section="team" />} />
+      <Route path="/budget">{() => <ComingSoonPage section="budget" />}</Route>
+      <Route path="/files">{() => <ComingSoonPage section="files" />}</Route>
+      <Route path="/team">{() => <ComingSoonPage section="team" />}</Route>
 
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
@@ -313,10 +312,10 @@ function Router() {
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />
-      <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
-      <Route path="/emails" component={() => <ComingSoonPage section="emails" />} />
-      <Route path="/crm" component={() => <ComingSoonPage section="crm" />} />
-      <Route path="/business-team" component={() => <ComingSoonPage section="business-team" />} />
+      <Route path="/checklists">{() => <ComingSoonPage section="checklists" />}</Route>
+      <Route path="/emails">{() => <ComingSoonPage section="emails" />}</Route>
+      <Route path="/crm">{() => <ComingSoonPage section="crm" />}</Route>
+      <Route path="/business-team">{() => <ComingSoonPage section="business-team" />}</Route>
 
       {/* Fallback to 404 */}
       <Route component={NotFound} />

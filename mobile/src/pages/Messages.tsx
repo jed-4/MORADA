@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { MobileHeader } from "@/components/MobileHeader";
 import { MobileButton } from "@/components/ui/MobileButton";
 import { Plus, Search, Hash, User, ChevronDown, ChevronUp, Archive } from "lucide-react";
@@ -9,6 +10,7 @@ import type { Channel } from "@shared/schema";
 
 export function Messages() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [showOlderMessages, setShowOlderMessages] = useState(false);
 
@@ -86,8 +88,7 @@ export function Messages() {
   };
 
   const handleChannelClick = (channelId: string) => {
-    // TODO: Navigate to channel detail view
-    console.log("Navigate to channel:", channelId);
+    setLocation(`/messages/${channelId}`);
   };
 
   return (
