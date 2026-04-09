@@ -63,13 +63,24 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     }
   });
 
-  io.on("connection", (socket: Socket) => {
+  io.on("connection", async (socket: Socket) => {
     console.log(`User connected: ${socket.data.userId}`);
     
     socket.join(`company:${socket.data.companyId}`);
     socket.join(`user:${socket.data.userId}`);
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
     addConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
+
+    // Auto-join all channel rooms this user is a member of on connect so that
+    // new_message events arrive even when the client is not on the Messages page.
+    try {
+      const userChannels = await storage.getChannels(socket.data.companyId, socket.data.userId);
+      for (const ch of userChannels) {
+        socket.join(`channel:${ch.id}`);
+      }
+    } catch {
+      // Non-fatal — explicit join_channel calls are still available as fallback
+    }
 
     // Channel room management — clients join/leave rooms so REST-posted messages
     // can be broadcast to all members of a channel in real-time.

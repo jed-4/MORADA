@@ -1051,7 +1051,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     
     if (isNotificationSupported()) {
       setNotificationPermission(Notification.permission);
-      if (Notification.permission === "default") {
+      const dismissed = localStorage.getItem("notification-banner-dismissed") === "1";
+      if (Notification.permission === "default" && !dismissed) {
         setShowNotificationBanner(true);
       }
     }
@@ -1066,7 +1067,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
     
     if (message.userId === user?.id) return;
-    if (selectedChannelId === message.channelId) return;
+    // Skip notification only when the user is actively viewing this exact channel (window focused)
+    if (document.hasFocus() && selectedChannelId === message.channelId) return;
     
     const channel = channels.find(c => c.id === message.channelId);
     if (!channel) return;
@@ -1613,7 +1615,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setShowNotificationBanner(false)}
+                onClick={() => {
+                  localStorage.setItem("notification-banner-dismissed", "1");
+                  setShowNotificationBanner(false);
+                }}
                 data-testid="button-dismiss-banner"
               >
                 Dismiss
