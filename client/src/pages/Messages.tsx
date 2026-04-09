@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -312,7 +313,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [mentionSearch, setMentionSearch] = useState("");
   const [mentionStartPos, setMentionStartPos] = useState(0);
   const [pendingMentions, setPendingMentions] = useState<{ name: string; userId: string }[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Reactions: messageId -> reactions array
   const [reactionsMap, setReactionsMap] = useState<Record<string, MessageReaction[]>>({});
@@ -993,10 +994,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const createChannelMutation = useMutation({
     mutationFn: async ({ name, isClientFacing }: { name: string; isClientFacing: boolean }) => {
+      const body: Record<string, unknown> = { name, type: "channel", isClientFacing };
+      if (projectId) body.projectId = projectId;
       const response = await fetch("/api/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: "channel", isClientFacing }),
+        body: JSON.stringify(body),
         credentials: "include"
       });
       if (!response.ok) throw new Error("Failed to create channel");
@@ -1111,7 +1114,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   });
 
-  const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursorPos = e.target.selectionStart || 0;
     setMessageInput(value);
@@ -1226,6 +1229,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     setMessageInput("");
     setShowMentionPicker(false);
     setIsSending(true);
+    if (inputRef.current) { inputRef.current.style.height = "auto"; }
 
     // Optimistically add the message so the sender sees it immediately
     const tempId = `temp-${Date.now()}`;
@@ -2119,30 +2123,46 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
-                    <Input
+                  <div className="flex items-end gap-2">
+                    <Textarea
                       ref={inputRef}
                       value={messageInput}
                       onChange={handleMessageInputChange}
                       onKeyDown={(e) => {
-                        if (!showMentionPicker) return;
-                        if (e.key === "Escape") {
+                        if (e.key === "Escape" && showMentionPicker) {
                           e.preventDefault();
                           setShowMentionPicker(false);
-                        } else if (e.key === "Enter") {
-                          if (broadcastMentionOptions.length > 0) {
-                            e.preventDefault();
-                            insertBroadcastMention(broadcastMentionOptions[0].id);
-                          } else if (filteredMentionUsers.length > 0) {
-                            e.preventDefault();
-                            const first = filteredMentionUsers[0];
-                            insertMention(first.id, first.firstName, first.lastName, first.email);
-                          }
-                          // If no options match, allow Enter to fall through and submit the form
+                          return;
                         }
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          if (showMentionPicker) {
+                            if (broadcastMentionOptions.length > 0) {
+                              e.preventDefault();
+                              insertBroadcastMention(broadcastMentionOptions[0].id);
+                            } else if (filteredMentionUsers.length > 0) {
+                              e.preventDefault();
+                              const first = filteredMentionUsers[0];
+                              insertMention(first.id, first.firstName, first.lastName, first.email);
+                            } else {
+                              e.preventDefault();
+                              handleSendMessage(e as unknown as React.FormEvent);
+                            }
+                          } else {
+                            e.preventDefault();
+                            handleSendMessage(e as unknown as React.FormEvent);
+                          }
+                        }
+                        // Shift+Enter inserts newline (default textarea behaviour — no override needed)
                       }}
                       placeholder="Type a message... (@ to mention, /task to create task)"
-                      className="h-9 flex-1"
+                      rows={1}
+                      className="flex-1 min-h-[36px] max-h-[120px] resize-none overflow-y-auto py-2 text-sm leading-5"
+                      style={{ height: "auto" }}
+                      onInput={(e) => {
+                        const el = e.currentTarget;
+                        el.style.height = "auto";
+                        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                      }}
                       data-testid="input-message"
                     />
                     {/* Schedule popover */}

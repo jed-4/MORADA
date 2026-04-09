@@ -41,6 +41,7 @@ interface TeamUser {
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
+  route?: { params?: { projectId?: string } };
 };
 
 function timeAgo(dateStr?: string | null): string {
@@ -66,7 +67,8 @@ function getInitials(name: string): string {
     .join('');
 }
 
-export default function MessagesScreen({ navigation }: Props) {
+export default function MessagesScreen({ navigation, route }: Props) {
+  const projectId = route?.params?.projectId;
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -142,7 +144,9 @@ export default function MessagesScreen({ navigation }: Props) {
     if (!name) return;
     setCreatingChannel(true);
     try {
-      const res = await apiRequest('/api/channels', 'POST', { name, type: 'channel' });
+      const body: Record<string, unknown> = { name, type: 'channel' };
+      if (projectId) body.projectId = projectId;
+      const res = await apiRequest('/api/channels', 'POST', body);
       if (res.ok) {
         setShowNewChannelModal(false);
         setNewChannelName('');
@@ -156,7 +160,7 @@ export default function MessagesScreen({ navigation }: Props) {
     } finally {
       setCreatingChannel(false);
     }
-  }, [newChannelName, fetchData]);
+  }, [newChannelName, fetchData, projectId]);
 
   const handleOpenDm = useCallback(async (otherUserId: string) => {
     setCreatingDm(true);
