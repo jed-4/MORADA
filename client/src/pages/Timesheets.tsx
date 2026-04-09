@@ -34,7 +34,7 @@ import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
+import type { Timesheet, Project, User as UserType, CostCode, CompanySettings } from "@shared/schema";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -372,6 +372,11 @@ export default function Timesheets() {
     queryKey: ["/api/cost-codes"],
   });
 
+  // Fetch company settings for brand colour fallback
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
   const { data: canApproveTimesheets = false } = useQuery<boolean>({
     queryKey: ["/api/user/can-approve-timesheets"],
   });
@@ -526,6 +531,27 @@ export default function Timesheets() {
     if (!pId) return "Business";
     const project = projects.find((p) => p.id === pId);
     return project?.name || "Unknown Project";
+  };
+
+  const isValidHex = (hex: string): boolean => /^#[0-9A-Fa-f]{6}$/.test(hex);
+
+  const hexToRgba = (hex: string, alpha: number): string => {
+    if (!isValidHex(hex)) return `rgba(100,116,139,${alpha})`;
+    const clean = hex.replace("#", "");
+    const r = parseInt(clean.substring(0, 2), 16);
+    const g = parseInt(clean.substring(2, 4), 16);
+    const b = parseInt(clean.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+
+  const getProjectColor = (pId: string | null): string | null => {
+    if (pId) {
+      const project = projects.find((p) => p.id === pId);
+      if (project?.color && isValidHex(project.color)) return project.color;
+    }
+    const brand = companySettings?.brandColor;
+    if (brand && isValidHex(brand)) return brand;
+    return null;
   };
 
   const getUserName = (userId: string) => {
@@ -1349,32 +1375,31 @@ export default function Timesheets() {
 
             const weekEnd = addDays(calendarWeek, 6);
             const calendarTimesheets = filteredTimesheets.filter(ts => {
-              const tsDate = new Date(ts.date);
-              return tsDate >= calendarWeek && tsDate <= weekEnd;
+              const tsDateLocal = format(parseISO(ts.date), "yyyy-MM-dd");
+              const weekStartKey = format(calendarWeek, "yyyy-MM-dd");
+              const weekEndKey = format(weekEnd, "yyyy-MM-dd");
+              return tsDateLocal >= weekStartKey && tsDateLocal <= weekEndKey;
             });
 
             // Split into timed vs untimed
             const timedSheets = calendarTimesheets.filter(ts => ts.startTime);
             const untimedSheets = calendarTimesheets.filter(ts => !ts.startTime);
 
-            // Group untimed by day
+            // Group untimed by day (timezone-safe)
             const untimedByDay = new Map<string, Timesheet[]>();
             untimedSheets.forEach(ts => {
-              const dk = format(new Date(ts.date), "yyyy-MM-dd");
+              const dk = format(parseISO(ts.date), "yyyy-MM-dd");
               if (!untimedByDay.has(dk)) untimedByDay.set(dk, []);
               untimedByDay.get(dk)!.push(ts);
             });
 
             const hasUntimed = untimedSheets.length > 0;
 
-            const statusColors = (status: string) => {
-              if (status === "approved")
-                return "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300";
-              if (status === "submitted")
-                return "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300";
-              if (status === "rejected")
-                return "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300";
-              return "bg-muted/60 border-border text-muted-foreground";
+            const statusDotColor = (status: string): string => {
+              if (status === "approved") return "#22c55e";
+              if (status === "submitted") return "#f59e0b";
+              if (status === "rejected") return "#ef4444";
+              return "transparent";
             };
 
             return (
@@ -1453,16 +1478,30 @@ export default function Timesheets() {
                           key={dk}
                           className={`flex-1 border-r border-border last:border-r-0 p-1 min-h-[28px] ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
                         >
-                          {dayUntimed.map(ts => (
-                            <div
-                              key={ts.id}
-                              onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                              className={`text-[9px] px-1 py-0.5 mb-0.5 rounded border cursor-pointer truncate hover-elevate ${statusColors(ts.status)}`}
-                              title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
-                            >
-                              {getUserName(ts.userId).split(" ")[0]} · {formatDuration(getNetHours(ts))}
-                            </div>
-                          ))}
+                          {dayUntimed.map(ts => {
+                            const projColor = getProjectColor(ts.projectId);
+                            const dotColor = statusDotColor(ts.status);
+                            return (
+                              <div
+                                key={ts.id}
+                                onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                                className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                style={projColor ? {
+                                  backgroundColor: hexToRgba(projColor, 0.15),
+                                  borderLeft: `3px solid ${projColor}`,
+                                } : undefined}
+                                title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
+                              >
+                                {dotColor !== "transparent" && (
+                                  <span
+                                    className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full"
+                                    style={{ backgroundColor: dotColor }}
+                                  />
+                                )}
+                                {getUserName(ts.userId).split(" ")[0]} · {formatDuration(getNetHours(ts))}
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })}
@@ -1491,7 +1530,7 @@ export default function Timesheets() {
                   {calendarDays.map(day => {
                     const dk = format(day, "yyyy-MM-dd");
                     const isToday = isSameDay(day, new Date());
-                    const dayTimed = timedSheets.filter(ts => format(new Date(ts.date), "yyyy-MM-dd") === dk);
+                    const dayTimed = timedSheets.filter(ts => format(parseISO(ts.date), "yyyy-MM-dd") === dk);
 
                     return (
                       <div
@@ -1532,15 +1571,29 @@ export default function Timesheets() {
                           const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
                           const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
 
+                          const projColor = getProjectColor(ts.projectId);
+                          const dotColor = statusDotColor(ts.status);
+
                           return (
                             <div
                               key={ts.id}
                               onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                              className={`absolute left-0.5 right-0.5 rounded border text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate ${statusColors(ts.status)}`}
-                              style={{ top, height }}
+                              className={`absolute left-0.5 right-0.5 rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                              style={projColor ? {
+                                top,
+                                height,
+                                backgroundColor: hexToRgba(projColor, 0.15),
+                                borderLeft: `3px solid ${projColor}`,
+                              } : { top, height }}
                               title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
                             >
-                              <div className="font-semibold truncate leading-tight">
+                              {dotColor !== "transparent" && (
+                                <span
+                                  className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: dotColor }}
+                                />
+                              )}
+                              <div className="font-semibold truncate leading-tight pr-2">
                                 {ts.startTime}{ts.endTime ? `–${ts.endTime}` : ""}
                               </div>
                               {height > 28 && (
