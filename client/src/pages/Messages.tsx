@@ -1882,13 +1882,15 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           e.preventDefault();
                           setShowMentionPicker(false);
                         } else if (e.key === "Enter") {
-                          e.preventDefault();
                           if (broadcastMentionOptions.length > 0) {
+                            e.preventDefault();
                             insertBroadcastMention(broadcastMentionOptions[0].id);
                           } else if (filteredMentionUsers.length > 0) {
+                            e.preventDefault();
                             const first = filteredMentionUsers[0];
                             insertMention(first.id, first.firstName, first.lastName, first.email);
                           }
+                          // If no options match, allow Enter to fall through and submit the form
                         }
                       }}
                       placeholder="Type a message... (@ to mention, /task to create task)"

@@ -40,6 +40,61 @@ function resolveDisplayName(user: User): string {
     : (user.email ?? "Unknown");
 }
 
+// Render message content with highlighted user/broadcast mentions
+function renderDropdownMessageContent(content: string, currentUserId?: string): (string | JSX.Element)[] | string {
+  const userMentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+  const parts: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+  let segIdx = 0;
+
+  const renderBroadcasts = (text: string, keyPrefix: string): (string | JSX.Element)[] => {
+    const broadcastRegex = /@(channel|here)\b/g;
+    const result: (string | JSX.Element)[] = [];
+    let last = 0;
+    let bm;
+    while ((bm = broadcastRegex.exec(text)) !== null) {
+      if (bm.index > last) result.push(text.substring(last, bm.index));
+      result.push(
+        <span key={`${keyPrefix}-bc-${bm.index}`} className="inline-flex items-center px-1 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-foreground">
+          @{bm[1]}
+        </span>
+      );
+      last = bm.index + bm[0].length;
+    }
+    if (last < text.length) result.push(text.substring(last));
+    return result;
+  };
+
+  let match;
+  while ((match = userMentionRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(...renderBroadcasts(content.substring(lastIndex, match.index), `seg-${segIdx++}`));
+    }
+    const name = match[1];
+    const userId = match[2];
+    const isCurrentUser = userId === currentUserId;
+    parts.push(
+      <span
+        key={`user-${match.index}`}
+        className={`inline-flex items-center px-1 py-0.5 rounded text-[11px] font-medium ${
+          isCurrentUser
+            ? 'bg-primary/20 text-primary border border-primary/20'
+            : 'bg-muted/60 text-foreground'
+        }`}
+      >
+        @{name}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(...renderBroadcasts(content.substring(lastIndex), `seg-${segIdx++}`));
+  }
+
+  return parts.length > 0 ? parts : content;
+}
+
 export function MessagesDropdown() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
@@ -314,7 +369,7 @@ export function MessagesDropdown() {
                                 : "bg-muted/40 text-foreground"
                             }`}
                           >
-                            {msg.content}
+                            {renderDropdownMessageContent(msg.content, user?.id)}
                           </div>
                           <span className="text-[10px] text-muted-foreground">
                             {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
