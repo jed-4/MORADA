@@ -855,7 +855,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     const content = (threadInputs[parentMessageId] || "").trim();
     const replyPending = threadPendingAttachments[parentMessageId] || [];
     const uploadedReplyAttachments = replyPending.filter(pa => pa.objectPath && !pa.error);
-    if (!content && uploadedReplyAttachments.length === 0) return;
+    const stillUploading = replyPending.some(pa => pa.uploading);
+    if ((!content && uploadedReplyAttachments.length === 0) || stillUploading) return;
     setSendingThreads(prev => new Set(prev).add(parentMessageId));
     setThreadInputs(prev => ({ ...prev, [parentMessageId]: "" }));
     setThreadPendingAttachments(prev => ({ ...prev, [parentMessageId]: [] }));
@@ -2298,6 +2299,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                       disabled={
                                         (!threadInputs[message.id]?.trim() &&
                                           (threadPendingAttachments[message.id] || []).filter(p => p.objectPath && !p.error).length === 0) ||
+                                        (threadPendingAttachments[message.id] || []).some(p => p.uploading) ||
                                         sendingThreads.has(message.id)
                                       }
                                       onClick={() => sendReply(message.id, message.channelId)}
