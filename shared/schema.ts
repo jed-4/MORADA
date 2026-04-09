@@ -4367,6 +4367,7 @@ export const messages = pgTable("messages", {
   isBot: boolean("is_bot").notNull().default(false), // True for system/bot messages
   isPinned: boolean("is_pinned").notNull().default(false),
   pinnedAt: timestamp("pinned_at"),
+  pinnedByUserId: varchar("pinned_by_user_id").references(() => users.id, { onDelete: "set null" }),
   
   // Cached user info for performance
   userFirstName: text("user_first_name"),

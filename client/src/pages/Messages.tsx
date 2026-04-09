@@ -512,17 +512,35 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     staleTime: 30_000,
   });
 
-  // Toggle pin mutation — updates local message list optimistically
+  // Toggle pin mutation — optimistic update applied immediately with rollback on failure
   const pinMessageMutation = useMutation({
     mutationFn: async (messageId: string) => {
       const res = await apiRequest(`/api/messages/${messageId}/pin`, "POST");
       return res as Message;
     },
+    onMutate: async (messageId: string) => {
+      // Snapshot previous state for rollback
+      const previousMessages = localMessages;
+      // Optimistically toggle isPinned on the message
+      setLocalMessages(prev =>
+        prev.map(m =>
+          m.id === messageId
+            ? { ...m, isPinned: !m.isPinned, pinnedAt: m.isPinned ? null : new Date() }
+            : m
+        )
+      );
+      return { previousMessages };
+    },
     onSuccess: (updated: Message) => {
+      // Sync with authoritative server data
       setLocalMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
       queryClient.invalidateQueries({ queryKey: ["/api/channels", selectedChannelId, "pinned"] });
     },
-    onError: () => {
+    onError: (_err, _messageId, context) => {
+      // Rollback on failure
+      if (context?.previousMessages) {
+        setLocalMessages(context.previousMessages);
+      }
       toast({ title: "Failed to update pin", variant: "destructive" });
     },
   });

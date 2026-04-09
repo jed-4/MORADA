@@ -1044,7 +1044,7 @@ export interface IStorage {
   deleteMessage(id: string): Promise<boolean>;
   getMessageReplies(messageId: string): Promise<Message[]>;
   getPinnedMessages(channelId: string): Promise<Message[]>;
-  toggleMessagePin(messageId: string): Promise<Message | undefined>;
+  toggleMessagePin(messageId: string, userId: string, isChannelOwner: boolean): Promise<Message | { error: string } | undefined>;
   // Message Reactions
   getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
   getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
@@ -18612,17 +18612,25 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async toggleMessagePin(messageId: string): Promise<Message | undefined> {
+  async toggleMessagePin(messageId: string, userId: string, isChannelOwner: boolean): Promise<Message | { error: string } | undefined> {
     try {
       const existing = await db.select().from(schema.messages)
         .where(eq(schema.messages.id, messageId))
         .limit(1);
       if (!existing[0]) return undefined;
       const currentlyPinned = existing[0].isPinned;
+      // Unpin authorization: only the pinner or a channel owner/admin may unpin
+      if (currentlyPinned) {
+        const isPinner = existing[0].pinnedByUserId === userId;
+        if (!isPinner && !isChannelOwner) {
+          return { error: "Only the user who pinned this message or a channel owner can unpin it" };
+        }
+      }
       const result = await db.update(schema.messages)
         .set({
           isPinned: !currentlyPinned,
           pinnedAt: currentlyPinned ? null : new Date(),
+          pinnedByUserId: currentlyPinned ? null : userId,
           updatedAt: new Date(),
         })
         .where(eq(schema.messages.id, messageId))

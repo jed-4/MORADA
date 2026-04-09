@@ -20411,15 +20411,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Pin/unpin a message — POST toggles isPinned; requires channel membership
+  // Unpin is additionally restricted: only the original pinner or a channel owner/admin may unpin
   app.post("/api/messages/:id/pin", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
       const companyId = req.user!.companyId!;
       const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
       if (!access) return;
-      const updated = await storage.toggleMessagePin(req.params.id);
-      if (!updated) return res.status(404).json({ error: "Message not found" });
-      res.json(updated);
+      const members = await storage.getChannelMembers(access.channelId);
+      const myMember = members.find(m => m.userId === userId);
+      const isChannelOwner = myMember?.role === "owner" || myMember?.role === "admin";
+      const result = await storage.toggleMessagePin(req.params.id, userId, isChannelOwner);
+      if (!result) return res.status(404).json({ error: "Message not found" });
+      if ("error" in result) return res.status(403).json({ error: result.error });
+      res.json(result);
     } catch (error) {
       res.status(500).json({ error: "Failed to toggle pin" });
     }
