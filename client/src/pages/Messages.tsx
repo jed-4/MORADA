@@ -369,9 +369,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledSectionOpen, setScheduledSectionOpen] = useState(true);
 
-  // Attachment state — files queued to send with the next message
+  // Attachment state — files queued to send with the next message (upload starts on file select)
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Thread reply attachment state: parentMessageId → PendingAttachment[]
+  const [threadPendingAttachments, setThreadPendingAttachments] = useState<Record<string, PendingAttachment[]>>({});
+  // Hidden file input refs per thread reply (by parentMessageId)
+  const threadFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   // Lightbox state for image preview
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   // Map of messageId → attachments (for real-time socket updates)
@@ -839,9 +843,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   const sendReply = useCallback(async (parentMessageId: string, channelId: string) => {
     const content = (threadInputs[parentMessageId] || "").trim();
-    if (!content) return;
+    const replyPending = threadPendingAttachments[parentMessageId] || [];
+    const uploadedReplyAttachments = replyPending.filter(pa => pa.objectPath && !pa.error);
+    if (!content && uploadedReplyAttachments.length === 0) return;
     setSendingThreads(prev => new Set(prev).add(parentMessageId));
     setThreadInputs(prev => ({ ...prev, [parentMessageId]: "" }));
+    setThreadPendingAttachments(prev => ({ ...prev, [parentMessageId]: [] }));
     try {
       const res = await fetch(`/api/channels/${channelId}/messages`, {
         method: "POST",
@@ -857,16 +864,29 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         if (existing.some(r => r.id === reply.id)) return prev;
         return { ...prev, [parentMessageId]: [...existing, reply] };
       });
+      // Link uploaded attachments to the reply
+      if (uploadedReplyAttachments.length > 0) {
+        const linked: MessageAttachment[] = [];
+        for (const pa of uploadedReplyAttachments) {
+          const att = await saveAttachmentRecord(reply.id, pa, pa.objectPath!);
+          if (att) linked.push(att);
+        }
+        if (linked.length > 0) {
+          setAttachmentsMap(prev => ({
+            ...prev,
+            [reply.id]: [...(prev[reply.id] || []), ...linked],
+          }));
+        }
+      }
       // threadCount is NOT updated here — the server emits message_updated via socket
       // with the authoritative count, which useMessageUpdated handles.
-      // Doing a local increment here risks double-counting when socket arrives first.
     } catch {
       setThreadInputs(prev => ({ ...prev, [parentMessageId]: content }));
       toast({ title: "Failed to send reply", variant: "destructive" });
     } finally {
       setSendingThreads(prev => { const next = new Set(prev); next.delete(parentMessageId); return next; });
     }
-  }, [threadInputs, toast]);
+  }, [threadInputs, threadPendingAttachments, toast]);
 
   const handleCreateTaskFromMessage = async () => {
     if (!taskFormTitle.trim() || !selectedChannelId) return;
@@ -1235,8 +1255,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     return response.json() as Promise<Message>;
   };
 
-  // Upload a single pending attachment and save metadata to the server
-  const uploadAndSaveAttachment = async (pending: PendingAttachment, messageId: string): Promise<MessageAttachment | null> => {
+  /**
+   * Upload a single file to object storage immediately.
+   * Updates setPending in-place with progress/uploading/error/objectPath.
+   * Returns the final objectPath on success, null on failure.
+   */
+  const uploadFileToStorage = async (
+    pendingId: string,
+    file: File,
+    setPending: React.Dispatch<React.SetStateAction<PendingAttachment[]>>,
+  ): Promise<string | null> => {
+    const mark = (patch: Partial<PendingAttachment>) =>
+      setPending(prev => prev.map(p => p.id === pendingId ? { ...p, ...patch } : p));
+
+    mark({ uploading: true, progress: 0, error: false });
     try {
       // Step 1: Get presigned URL
       const urlResp = await fetch("/api/uploads/request-url", {
@@ -1244,23 +1276,47 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          name: pending.file.name,
-          size: pending.file.size,
-          contentType: pending.file.type || "application/octet-stream",
+          name: file.name,
+          size: file.size,
+          contentType: file.type || "application/octet-stream",
         }),
       });
       if (!urlResp.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlResp.json();
+      const { uploadURL, objectPath } = await urlResp.json() as { uploadURL: string; objectPath: string };
 
-      // Step 2: Upload file to presigned URL
-      const putResp = await fetch(uploadURL, {
-        method: "PUT",
-        body: pending.file,
-        headers: { "Content-Type": pending.file.type || "application/octet-stream" },
+      mark({ progress: 30 });
+
+      // Step 2: Upload file using XMLHttpRequest so we get progress events
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadURL);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round(30 + (ev.loaded / ev.total) * 60);
+            mark({ progress: pct });
+          }
+        };
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed"));
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.send(file);
       });
-      if (!putResp.ok) throw new Error("Failed to upload file");
 
-      // Step 3: Save attachment metadata
+      mark({ progress: 100, uploading: false, objectPath });
+      return objectPath;
+    } catch {
+      mark({ uploading: false, error: true });
+      return null;
+    }
+  };
+
+  /** Save an already-uploaded attachment record to a message. */
+  const saveAttachmentRecord = async (
+    messageId: string,
+    pending: PendingAttachment,
+    objectPath: string,
+  ): Promise<MessageAttachment | null> => {
+    try {
       const attResp = await fetch(`/api/messages/${messageId}/attachments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1279,23 +1335,58 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   };
 
-  // Handle file selection from the hidden file input
+  // Handle file selection for the MAIN compose area — upload immediately on select
   const handleFileSelected = useCallback((files: FileList | null) => {
     if (!files) return;
     const newPending: PendingAttachment[] = Array.from(files).map(file => ({
       id: `pending-${Date.now()}-${Math.random()}`,
       file,
       progress: 0,
-      uploading: false,
+      uploading: true,
       error: false,
     }));
     setPendingAttachments(prev => [...prev, ...newPending]);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
+    // Start uploading each file immediately
+    for (const pa of newPending) {
+      uploadFileToStorage(pa.id, pa.file, setPendingAttachments);
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle file selection for a THREAD REPLY compose area — upload immediately on select
+  const handleThreadFileSelected = useCallback((parentMessageId: string, files: FileList | null) => {
+    if (!files) return;
+    const newPending: PendingAttachment[] = Array.from(files).map(file => ({
+      id: `pending-${Date.now()}-${Math.random()}`,
+      file,
+      progress: 0,
+      uploading: true,
+      error: false,
+    }));
+    setThreadPendingAttachments(prev => ({
+      ...prev,
+      [parentMessageId]: [...(prev[parentMessageId] || []), ...newPending],
+    }));
+    const input = threadFileInputRefs.current[parentMessageId];
+    if (input) input.value = "";
+    // Start uploading each file immediately
+    for (const pa of newPending) {
+      uploadFileToStorage(
+        pa.id,
+        pa.file,
+        (updater) => setThreadPendingAttachments(prev => {
+          const arr = prev[parentMessageId] || [];
+          const updated = typeof updater === "function" ? (updater as (p: PendingAttachment[]) => PendingAttachment[])(arr) : updater;
+          return { ...prev, [parentMessageId]: updated };
+        }),
+      );
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!messageInput.trim() && pendingAttachments.length === 0) || !selectedChannelId || isSending) return;
+    const readyAttachments = pendingAttachments.filter(p => p.objectPath && !p.error);
+    if ((!messageInput.trim() && readyAttachments.length === 0) || !selectedChannelId || isSending) return;
 
     stopTyping(selectedChannelId);
     if (typingTimeoutRef.current) {
@@ -1383,21 +1474,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
 
-      // Upload any queued attachments now that we have a real messageId
-      if (pendingAttachments.length > 0) {
-        const toUpload = [...pendingAttachments];
+      // Link any already-uploaded attachments to the new message
+      const uploadedAttachments = pendingAttachments.filter(pa => pa.objectPath && !pa.error);
+      if (uploadedAttachments.length > 0) {
         setPendingAttachments([]);
-        const uploaded: MessageAttachment[] = [];
-        for (const pa of toUpload) {
-          const att = await uploadAndSaveAttachment(pa, saved.id);
-          if (att) uploaded.push(att);
+        const linked: MessageAttachment[] = [];
+        for (const pa of uploadedAttachments) {
+          const att = await saveAttachmentRecord(saved.id, pa, pa.objectPath!);
+          if (att) linked.push(att);
         }
-        if (uploaded.length > 0) {
+        if (linked.length > 0) {
           setAttachmentsMap(prev => ({
             ...prev,
-            [saved.id]: [...(prev[saved.id] || []), ...uploaded],
+            [saved.id]: [...(prev[saved.id] || []), ...linked],
           }));
         }
+      } else {
+        setPendingAttachments([]);
       }
     } catch (err) {
       // Remove optimistic message, restore original display input AND pending mentions
@@ -2115,31 +2208,96 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                     );
                                   })
                                 )}
-                                {/* Reply input */}
-                                <div className="flex items-center gap-2 pt-1">
-                                  <Input
-                                    value={threadInputs[message.id] || ""}
-                                    onChange={(e) => setThreadInputs(prev => ({ ...prev, [message.id]: e.target.value }))}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        sendReply(message.id, message.channelId);
-                                      }
-                                    }}
-                                    placeholder="Reply..."
-                                    className="h-8 text-sm flex-1"
+                                {/* Reply compose area */}
+                                <div className="flex flex-col gap-1 pt-1">
+                                  {/* Thread pending attachment chips */}
+                                  {(threadPendingAttachments[message.id] || []).length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {(threadPendingAttachments[message.id] || []).map(pa => (
+                                        <div
+                                          key={pa.id}
+                                          className="flex flex-col gap-0.5 px-1.5 py-0.5 rounded border bg-muted/30 text-[10px] max-w-[140px]"
+                                        >
+                                          <div className="flex items-center gap-1">
+                                            {pa.error ? (
+                                              <X className="h-2.5 w-2.5 shrink-0 text-destructive" />
+                                            ) : pa.uploading ? (
+                                              <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin text-muted-foreground" />
+                                            ) : (
+                                              <FileText className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
+                                            )}
+                                            <span className="truncate">{pa.file.name}</span>
+                                            <button
+                                              type="button"
+                                              className="shrink-0 text-muted-foreground hover:text-destructive"
+                                              onClick={() => setThreadPendingAttachments(prev => ({
+                                                ...prev,
+                                                [message.id]: (prev[message.id] || []).filter(p => p.id !== pa.id),
+                                              }))}
+                                            >
+                                              <X className="h-2.5 w-2.5" />
+                                            </button>
+                                          </div>
+                                          {pa.uploading && (
+                                            <div className="w-full h-0.5 bg-muted rounded-full overflow-hidden">
+                                              <div
+                                                className="h-full bg-primary transition-all duration-200"
+                                                style={{ width: `${pa.progress}%` }}
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* Hidden file input for thread reply */}
+                                  <input
+                                    ref={el => { threadFileInputRefs.current[message.id] = el; }}
+                                    type="file"
+                                    multiple
+                                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                                    className="hidden"
+                                    onChange={e => handleThreadFileSelected(message.id, e.target.files)}
                                   />
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    disabled={!threadInputs[message.id]?.trim() || sendingThreads.has(message.id)}
-                                    onClick={() => sendReply(message.id, message.channelId)}
-                                  >
-                                    {sendingThreads.has(message.id)
-                                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      : <Send className="h-3.5 w-3.5" />
-                                    }
-                                  </Button>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      aria-label="Attach file to reply"
+                                      className="h-7 w-7"
+                                      onClick={() => threadFileInputRefs.current[message.id]?.click()}
+                                    >
+                                      <Paperclip className="h-3 w-3" />
+                                    </Button>
+                                    <Input
+                                      value={threadInputs[message.id] || ""}
+                                      onChange={(e) => setThreadInputs(prev => ({ ...prev, [message.id]: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" && !e.shiftKey) {
+                                          e.preventDefault();
+                                          sendReply(message.id, message.channelId);
+                                        }
+                                      }}
+                                      placeholder="Reply..."
+                                      className="h-8 text-sm flex-1"
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      disabled={
+                                        (!threadInputs[message.id]?.trim() &&
+                                          (threadPendingAttachments[message.id] || []).filter(p => p.objectPath && !p.error).length === 0) ||
+                                        sendingThreads.has(message.id)
+                                      }
+                                      onClick={() => sendReply(message.id, message.channelId)}
+                                    >
+                                      {sendingThreads.has(message.id)
+                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        : <Send className="h-3.5 w-3.5" />
+                                      }
+                                    </Button>
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -2297,27 +2455,46 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   className="hidden"
                   onChange={e => handleFileSelected(e.target.files)}
                 />
-                {/* Pending attachment chips */}
+                {/* Pending attachment chips with upload progress */}
                 {pendingAttachments.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {pendingAttachments.map(pa => (
                       <div
                         key={pa.id}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/30 text-xs max-w-[160px]"
+                        className="flex flex-col gap-0.5 px-2 py-1 rounded-md border bg-muted/30 text-xs max-w-[180px]"
                       >
-                        {pa.file.type.startsWith("image/") ? (
-                          <ZoomIn className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <div className="flex items-center gap-1.5">
+                          {pa.error ? (
+                            <X className="h-3 w-3 shrink-0 text-destructive" />
+                          ) : pa.uploading ? (
+                            <Loader2 className="h-3 w-3 shrink-0 text-muted-foreground animate-spin" />
+                          ) : pa.file.type.startsWith("image/") ? (
+                            <ZoomIn className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className={`truncate ${pa.error ? 'text-destructive' : 'text-foreground'}`}>
+                            {pa.file.name}
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => setPendingAttachments(prev => prev.filter(p => p.id !== pa.id))}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                        {pa.uploading && (
+                          <div className="w-full h-0.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-200"
+                              style={{ width: `${pa.progress}%` }}
+                            />
+                          </div>
                         )}
-                        <span className="truncate text-foreground">{pa.file.name}</span>
-                        <button
-                          type="button"
-                          className="shrink-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => setPendingAttachments(prev => prev.filter(p => p.id !== pa.id))}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                        {pa.error && (
+                          <span className="text-[10px] text-destructive">Upload failed</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2467,7 +2644,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={(!messageInput.trim() && pendingAttachments.length === 0) || isSending}
+                      disabled={
+                        (!messageInput.trim() && pendingAttachments.filter(p => p.objectPath && !p.error).length === 0) ||
+                        pendingAttachments.some(p => p.uploading) ||
+                        isSending
+                      }
                       className="h-9"
                       data-testid="button-send"
                     >
