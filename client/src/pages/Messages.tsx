@@ -48,8 +48,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator,
 } from "@/components/ui/select";
-import { formatDistanceToNow } from "date-fns";
+import { format, isToday, isYesterday, isThisWeek } from "date-fns";
 import type { Channel, Message, ChannelMember, MessageReaction, MessageAttachment } from "@shared/schema";
 
 // Messages augmented with attachments returned by the API
@@ -261,6 +262,21 @@ const EMPTY_CHANNELS: ChannelWithMeta[] = [];
 const EMPTY_UNREAD: Record<string, number> = {};
 const EMPTY_USERS: any[] = [];
 
+/** Format a message timestamp the way Google Chat does:
+ *  - Today       → "2:35 PM"
+ *  - Yesterday   → "Yesterday 2:35 PM"
+ *  - This week   → "Mon 2:35 PM"
+ *  - Older       → "5 Apr 2:35 PM"
+ */
+function formatMessageTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const time = format(d, "h:mm a");
+  if (isToday(d)) return time;
+  if (isYesterday(d)) return `Yesterday ${time}`;
+  if (isThisWeek(d, { weekStartsOn: 1 })) return `${format(d, "EEE")} ${time}`;
+  return `${format(d, "d MMM")} ${time}`;
+}
+
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -302,6 +318,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(channelFromUrl);
   const [messageInput, setMessageInput] = useState("");
+  // Per-channel draft store — survives channel switches
+  const channelDrafts = useRef<Map<string, string>>(new Map());
+  const messageInputRef = useRef<string>("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -810,13 +829,26 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }, 150);
   }, []);
 
-  // Reset per-channel UI state when switching channels
+  // Track which channel was selected previously so we can save its draft
+  const prevSelectedChannelId = useRef<string | null>(null);
+
+  // Reset per-channel UI state when switching channels; save/restore drafts
   useEffect(() => {
+    // Save the outgoing draft (messageInputRef always has the current value)
+    if (prevSelectedChannelId.current) {
+      channelDrafts.current.set(prevSelectedChannelId.current, messageInputRef.current);
+    }
+    prevSelectedChannelId.current = selectedChannelId;
+
+    // Restore draft for the incoming channel (or empty string if none)
+    const savedDraft = selectedChannelId ? (channelDrafts.current.get(selectedChannelId) ?? "") : "";
+
     setReactionsMap({});
     setOpenThreads(new Set());
     setThreadMessages({});
     setThreadInputs({});
-    setMessageInput("");
+    setMessageInput(savedDraft);
+    messageInputRef.current = savedDraft;
     setPendingMentions([]);
     setShowMentionPicker(false);
     setPendingAttachments([]);
@@ -957,13 +989,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       const taskBody: Record<string, unknown> = {
         type: "task",
         title: taskFormTitle.trim(),
+        content: taskFormDescription.trim(),   // required field; empty string is fine
         priority: taskFormPriority || "medium",
         scope: effectiveProjectId ? "project" : "business",
       };
       if (effectiveProjectId) taskBody.projectId = effectiveProjectId;
       if (effectiveAssigneeId) taskBody.assigneeId = effectiveAssigneeId;
       if (taskFormDueDate) taskBody.dueDate = taskFormDueDate;
-      if (taskFormDescription.trim()) taskBody.content = taskFormDescription.trim();
       // Pass channelId so the server creates a trusted bot message server-side
       if (selectedChannelId) taskBody.channelId = selectedChannelId;
 
@@ -1256,6 +1288,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
     const cursorPos = e.target.selectionStart || 0;
     setMessageInput(value);
+    messageInputRef.current = value;
 
     const textBeforeCursor = value.substring(0, cursorPos);
     const lastAtPos = textBeforeCursor.lastIndexOf('@');
@@ -1361,9 +1394,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
       mark({ progress: 30 });
 
-      // Step 2: Upload file using XMLHttpRequest so we get progress events
-      // NOTE: Do NOT set Content-Type on the PUT — the Replit-signed GCS URL is signed
-      // without a content-type restriction, and providing one causes GCS to reject the upload.
+      // Step 2: Upload file to GCS using XMLHttpRequest so we get progress events.
+      // Send as a plain Blob with no type so the browser doesn't add a Content-Type
+      // header — Replit's signed URL is signed without a content-type constraint and
+      // GCS will reject the PUT if a Content-Type header is present but doesn't match.
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadURL);
@@ -1373,14 +1407,22 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             mark({ progress: pct });
           }
         };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed"));
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.send(file);
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`GCS upload failed with status ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        // Wrap in a typeless Blob so the browser does not set Content-Type automatically
+        xhr.send(new Blob([file], { type: "" }));
       });
 
       mark({ progress: 100, uploading: false, objectPath });
       return objectPath;
-    } catch {
+    } catch (err) {
+      console.error("[upload] Failed:", err);
       mark({ uploading: false, error: true });
       return null;
     }
@@ -2265,8 +2307,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                               </div>
                                             )}
                                           </div>
-                                          <span className="text-[10px] text-muted-foreground">
-                                            {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
+                                          <span
+                                            className="text-[10px] text-muted-foreground"
+                                            title={format(new Date(reply.createdAt), "EEE d MMM yyyy, h:mm a")}
+                                          >
+                                            {formatMessageTime(reply.createdAt)}
                                           </span>
                                         </div>
                                       </div>
@@ -2368,8 +2413,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                               </div>
                             )}
 
-                            <span className="text-[10px] text-muted-foreground">
-                              {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
+                            <span
+                              className="text-[10px] text-muted-foreground"
+                              title={format(new Date(message.createdAt), "EEE d MMM yyyy, h:mm a")}
+                            >
+                              {formatMessageTime(message.createdAt)}
                             </span>
                           </div>
                         </div>
@@ -2930,10 +2978,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 <Label htmlFor="task-project">Project</Label>
                 <Select value={taskFormProjectId} onValueChange={setTaskFormProjectId}>
                   <SelectTrigger id="task-project" data-testid="select-task-project">
-                    <SelectValue placeholder="Business task" />
+                    <SelectValue placeholder={user?.companyNickname ?? "Business"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Business (no project)</SelectItem>
+                    <SelectItem value="__none__">{user?.companyNickname ?? "Business"}</SelectItem>
+                    {allProjects.length > 0 && <SelectSeparator />}
                     {allProjects.map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
