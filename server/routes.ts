@@ -20291,7 +20291,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/messages/:id", requireAuth, async (req, res) => {
     try {
-      const validationResult = insertMessageSchema.partial().safeParse(req.body);
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      // Verify requester is a channel member and the original message author
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
+      if (access.message.userId !== userId) {
+        return res.status(403).json({ error: "You can only edit your own messages" });
+      }
+      // Only allow editing safe content fields; pin-state fields are managed via /pin endpoint
+      const editableSchema = insertMessageSchema.pick({ content: true, isEdited: true }).partial();
+      const validationResult = editableSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
