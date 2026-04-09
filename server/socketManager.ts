@@ -191,3 +191,16 @@ export function emitReactionUpdated(channelId: string, messageId: string, reacti
   if (!io) return;
   io.to(`channel:${channelId}`).emit("reaction_updated", { messageId, reactions });
 }
+
+// Returns the user IDs of all sockets currently in the channel room (for @here detection)
+export function getConnectedUserIdsInChannel(channelId: string): string[] {
+  if (!io) return [];
+  const room = io.sockets.adapter.rooms.get(`channel:${channelId}`);
+  if (!room) return [];
+  const userIds = new Set<string>();
+  for (const socketId of room) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket?.data.userId) userIds.add(socket.data.userId as string);
+  }
+  return [...userIds];
+}

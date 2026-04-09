@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -88,16 +88,39 @@ import {
   type NotificationPreferences,
 } from "@/lib/notifications";
 
+// Render plain-text segments, highlighting @channel and @here tokens
+function renderTextWithBroadcasts(text: string, keyPrefix: string): (string | JSX.Element)[] {
+  const broadcastRegex = /@(channel|here)\b/g;
+  const result: (string | JSX.Element)[] = [];
+  let last = 0;
+  let bm;
+  while ((bm = broadcastRegex.exec(text)) !== null) {
+    if (bm.index > last) result.push(text.substring(last, bm.index));
+    result.push(
+      <span
+        key={`${keyPrefix}-bc-${bm.index}`}
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-muted/60 text-foreground"
+      >
+        @{bm[1]}
+      </span>
+    );
+    last = bm.index + bm[0].length;
+  }
+  if (last < text.length) result.push(text.substring(last));
+  return result;
+}
+
 // Helper to parse and render mentions in messages
 function renderMessageWithMentions(content: string, currentUserId?: string) {
   const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
+  let segmentIdx = 0;
   let match;
   
   while ((match = mentionRegex.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(content.substring(lastIndex, match.index));
+      parts.push(...renderTextWithBroadcasts(content.substring(lastIndex, match.index), `seg-${segmentIdx++}`));
     }
     
     const name = match[1];
@@ -106,7 +129,7 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
     
     parts.push(
       <span 
-        key={match.index}
+        key={`user-${match.index}`}
         className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
           isCurrentUser 
             ? 'bg-primary/20 text-primary border border-primary/20' 
@@ -122,7 +145,7 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
   }
   
   if (lastIndex < content.length) {
-    parts.push(content.substring(lastIndex));
+    parts.push(...renderTextWithBroadcasts(content.substring(lastIndex), `seg-${segmentIdx++}`));
   }
   
   return parts.length > 0 ? parts : content;
@@ -1181,6 +1204,24 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     return fullName.includes(mentionSearch) || (u.email || '').toLowerCase().includes(mentionSearch);
   }), [allUsers, mentionSearch]);
 
+  // Broadcast mention options (@channel / @here) that appear above users in the picker
+  const broadcastMentionOptions = useMemo(() => {
+    const all = [
+      { id: 'channel' as const, label: 'channel', description: 'Notify all channel members' },
+      { id: 'here' as const, label: 'here', description: 'Notify active members' },
+    ];
+    if (!mentionSearch) return all;
+    return all.filter(o => o.id.startsWith(mentionSearch));
+  }, [mentionSearch]);
+
+  const insertBroadcastMention = (token: 'channel' | 'here') => {
+    const beforeMention = messageInput.substring(0, mentionStartPos);
+    const afterMention = messageInput.substring(inputRef.current?.selectionStart || messageInput.length);
+    setMessageInput(beforeMention + `@${token} ` + afterMention);
+    setShowMentionPicker(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   const typingUsers = (Array.isArray(typingUserIds) ? typingUserIds : [])
     .map((id: string) => allUsers.find((u: any) => u.id === id))
     .filter(Boolean)
@@ -1788,9 +1829,28 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               {/* Message Input - Compact h-9 design */}
               <div className="p-3 border-t bg-background">
                 <form onSubmit={handleSendMessage} className="relative">
-                  {showMentionPicker && filteredMentionUsers.length > 0 && (
+                  {showMentionPicker && (broadcastMentionOptions.length > 0 || filteredMentionUsers.length > 0) && (
                     <div className="absolute bottom-full left-0 mb-2 w-64 bg-popover border rounded-lg shadow-lg max-h-48 overflow-auto z-50">
                       <div className="p-1">
+                        {broadcastMentionOptions.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover-elevate text-left"
+                            onClick={() => insertBroadcastMention(opt.id)}
+                          >
+                            <div className="h-6 w-6 flex items-center justify-center shrink-0 rounded-full bg-muted">
+                              <Megaphone className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-medium">@{opt.label}</span>
+                              <span className="text-xs text-muted-foreground truncate">{opt.description}</span>
+                            </div>
+                          </button>
+                        ))}
+                        {broadcastMentionOptions.length > 0 && filteredMentionUsers.length > 0 && (
+                          <div className="mx-2 my-1 border-t" />
+                        )}
                         {filteredMentionUsers.slice(0, 5).map((u: any) => (
                           <button
                             key={u.id}
@@ -1821,10 +1881,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setShowMentionPicker(false);
-                        } else if (e.key === "Enter" && filteredMentionUsers.length > 0) {
+                        } else if (e.key === "Enter") {
                           e.preventDefault();
-                          const first = filteredMentionUsers[0];
-                          insertMention(first.id, first.firstName, first.lastName, first.email);
+                          if (broadcastMentionOptions.length > 0) {
+                            insertBroadcastMention(broadcastMentionOptions[0].id);
+                          } else if (filteredMentionUsers.length > 0) {
+                            const first = filteredMentionUsers[0];
+                            insertMention(first.id, first.firstName, first.lastName, first.email);
+                          }
                         }
                       }}
                       placeholder="Type a message... (@ to mention, /task to create task)"

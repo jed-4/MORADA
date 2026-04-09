@@ -153,7 +153,7 @@ import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inA
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
-import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO } from "./socketManager";
+import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsInChannel } from "./socketManager";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
   const rows = scheduleId
@@ -20282,7 +20282,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (parent) io.to(`channel:${channelId}`).emit("message_updated", parent);
         }
       }
-      
+
+      // @channel / @here mention broadcast notifications
+      if (/@(?:channel|here)\b/.test(content)) {
+        try {
+          const hasChannelMention = /@channel\b/.test(content);
+          const senderUser = req.user as any;
+          const senderName = senderUser.firstName && senderUser.lastName
+            ? `${senderUser.firstName} ${senderUser.lastName}`
+            : senderUser.email || 'Someone';
+
+          const channelData = await storage.getChannel(channelId, req.user!.companyId!);
+          const channelDisplayName = channelData?.name || 'a channel';
+          const allMembers = await storage.getChannelMembers(channelId);
+
+          let targetUserIds: string[];
+          if (hasChannelMention) {
+            targetUserIds = allMembers.map(m => m.userId).filter(id => id !== userId);
+          } else {
+            // @here: only notify currently-connected members
+            const connectedIds = new Set(getConnectedUserIdsInChannel(channelId));
+            targetUserIds = allMembers.map(m => m.userId).filter(id => id !== userId && connectedIds.has(id));
+          }
+
+          const mentionToken = hasChannelMention ? '@channel' : '@here';
+          for (const targetId of targetUserIds) {
+            try {
+              const notification = await storage.createNotification({
+                userId: targetId,
+                companyId: req.user!.companyId!,
+                type: 'mention',
+                title: `${mentionToken} in #${channelDisplayName}`,
+                message: `${senderName} mentioned ${mentionToken}`,
+                link: `/messages?channel=${channelId}`,
+                entityType: 'message',
+                entityId: message.id,
+                isRead: false,
+                createdByUserId: userId,
+              });
+              emitNotification(targetId, notification);
+            } catch {
+              // Non-critical — skip failed individual notification
+            }
+          }
+        } catch (notifError) {
+          console.error('[Messages] @channel/@here notification error:', notifError);
+        }
+      }
+
       res.status(201).json(message);
     } catch (error) {
       res.status(500).json({ error: "Failed to create message" });
