@@ -20282,14 +20282,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     messageId: string,
     userId: string,
     companyId: string,
-    res: any
+    res: import("express").Response
   ): Promise<{ message: Message; channelId: string } | null> {
     const message = await storage.getMessage(messageId);
     if (!message) { res.status(404).json({ error: "Message not found" }); return null; }
     const channel = await storage.getChannel(message.channelId, companyId);
     if (!channel) { res.status(403).json({ error: "Forbidden" }); return null; }
     const members = await storage.getChannelMembers(message.channelId);
-    if (!members.some((m: any) => m.userId === userId)) {
+    if (!members.some(m => m.userId === userId)) {
       res.status(403).json({ error: "Not a member of this channel" }); return null;
     }
     return { message, channelId: message.channelId };
@@ -20320,13 +20320,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
       if (!access) return;
-      const dbUser = (req.user as any).dbUser;
+      const typedUser = req.user as Express.User & { dbUser?: { firstName?: string; lastName?: string } };
       const result = await storage.toggleMessageReaction(
         req.params.id,
         userId,
         emoji,
-        dbUser?.firstName || null,
-        dbUser?.lastName || null
+        typedUser.dbUser?.firstName || null,
+        typedUser.dbUser?.lastName || null
       );
       // Broadcast reaction update to channel room
       const io = getIO();

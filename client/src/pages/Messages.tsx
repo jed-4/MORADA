@@ -413,7 +413,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
   // Real-time reaction updates from other users
   useReactionUpdated((messageId, reactions) => {
-    setReactionsMap(prev => ({ ...prev, [messageId]: reactions as MessageReaction[] }));
+    setReactionsMap(prev => ({ ...prev, [messageId]: reactions }));
   });
 
   // Real-time message_updated (e.g. threadCount incremented after a reply)
@@ -1303,17 +1303,50 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   ${isOwn ? 'right-full mr-2' : 'left-full ml-2'}
                                 `}
                               >
-                                {REACTION_OPTIONS.map(({ id, Icon, label }) => (
-                                  <button
-                                    key={id}
-                                    type="button"
-                                    title={label}
-                                    onClick={() => toggleReaction(message.id, id)}
-                                    className="p-1 rounded hover-elevate text-muted-foreground"
+                                {/* Single reaction picker trigger */}
+                                <Popover
+                                  open={reactionPickerOpen === message.id}
+                                  onOpenChange={(open) => setReactionPickerOpen(open ? message.id : null)}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      title="Add reaction"
+                                      className="p-1 rounded hover-elevate text-muted-foreground"
+                                    >
+                                      <Smile className="h-3.5 w-3.5" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className="w-auto p-1.5"
+                                    side={isOwn ? "left" : "right"}
+                                    align="center"
                                   >
-                                    <Icon className="h-3.5 w-3.5" />
-                                  </button>
-                                ))}
+                                    <div className="flex items-center gap-1">
+                                      {REACTION_OPTIONS.map(({ id: emojiId, Icon, label }) => {
+                                        const myReaction = (reactionsMap[message.id] || []).some(
+                                          r => r.userId === user?.id && r.emoji === emojiId
+                                        );
+                                        return (
+                                          <button
+                                            key={emojiId}
+                                            type="button"
+                                            title={label}
+                                            onClick={() => {
+                                              toggleReaction(message.id, emojiId);
+                                              setReactionPickerOpen(null);
+                                            }}
+                                            className={`p-1.5 rounded hover-elevate ${
+                                              myReaction ? 'text-primary' : 'text-muted-foreground'
+                                            }`}
+                                          >
+                                            <Icon className="h-4 w-4" />
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                                 <div className="w-px h-4 bg-border mx-0.5" />
                                 <button
                                   type="button"
@@ -1386,6 +1419,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 ) : (
                                   (threadMessages[message.id] || []).map((reply) => {
                                     const replyIsOwn = reply.userId === user?.id;
+                                    const parentName = message.userFirstName && message.userLastName
+                                      ? `${message.userFirstName} ${message.userLastName}`
+                                      : message.userEmail || "Unknown";
                                     return (
                                       <div key={reply.id} className="flex gap-2 items-start">
                                         <Avatar className="h-6 w-6 shrink-0">
@@ -1400,12 +1436,16 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                               : reply.userEmail || 'Unknown'}
                                           </span>
                                           <div className={`
-                                            px-2.5 py-1.5 rounded-lg text-sm
+                                            px-2.5 pt-1 pb-1.5 rounded-lg text-sm
                                             ${replyIsOwn
                                               ? 'bg-primary/10 text-foreground border border-primary/20'
                                               : 'bg-muted/20 text-foreground'
                                             }
                                           `}>
+                                            {/* "Reply to [name]" label inside each reply bubble */}
+                                            <div className="text-[10px] text-muted-foreground mb-1">
+                                              Replying to <span className="font-medium text-foreground/70">{parentName}</span>
+                                            </div>
                                             <div className="break-words whitespace-pre-wrap">
                                               {renderMessageWithMentions(reply.content, user?.id)}
                                             </div>

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient } from "@/lib/queryClient";
-import type { Message, Task } from "@shared/schema";
+import type { Message, Task, MessageReaction } from "@shared/schema";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -340,7 +340,7 @@ export function TaskEventsListener({ children }: { children?: ReactNode }) {
 
 // Hook for real-time reaction updates (reaction_updated event)
 export function useReactionUpdated(
-  onUpdate: (messageId: string, reactions: any[]) => void
+  onUpdate: (messageId: string, reactions: MessageReaction[]) => void
 ) {
   const { socket } = useSocket();
   const onUpdateRef = useRef(onUpdate);
@@ -348,7 +348,7 @@ export function useReactionUpdated(
 
   useEffect(() => {
     if (!socket) return;
-    const handle = (data: { messageId: string; reactions: any[] }) => {
+    const handle = (data: { messageId: string; reactions: MessageReaction[] }) => {
       onUpdateRef.current(data.messageId, data.reactions);
     };
     socket.on("reaction_updated", handle);
