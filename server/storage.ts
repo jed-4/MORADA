@@ -1043,6 +1043,8 @@ export interface IStorage {
   updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined>;
   deleteMessage(id: string): Promise<boolean>;
   getMessageReplies(messageId: string): Promise<Message[]>;
+  getPinnedMessages(channelId: string): Promise<Message[]>;
+  toggleMessagePin(messageId: string): Promise<Message | undefined>;
   // Message Reactions
   getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
   getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
@@ -18590,6 +18592,44 @@ export class DbStorage implements IStorage {
       return result as Message[];
     } catch (error) {
       console.error("Database error in getMessageReplies:", error);
+      throw error;
+    }
+  }
+
+  async getPinnedMessages(channelId: string): Promise<Message[]> {
+    try {
+      const result = await db.select().from(schema.messages)
+        .where(and(
+          eq(schema.messages.channelId, channelId),
+          eq(schema.messages.isPinned, true),
+          eq(schema.messages.isDeleted, false)
+        ))
+        .orderBy(desc(schema.messages.pinnedAt));
+      return result as Message[];
+    } catch (error) {
+      console.error("Database error in getPinnedMessages:", error);
+      throw error;
+    }
+  }
+
+  async toggleMessagePin(messageId: string): Promise<Message | undefined> {
+    try {
+      const existing = await db.select().from(schema.messages)
+        .where(eq(schema.messages.id, messageId))
+        .limit(1);
+      if (!existing[0]) return undefined;
+      const currentlyPinned = existing[0].isPinned;
+      const result = await db.update(schema.messages)
+        .set({
+          isPinned: !currentlyPinned,
+          pinnedAt: currentlyPinned ? null : new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.messages.id, messageId))
+        .returning();
+      return result[0] as Message | undefined;
+    } catch (error) {
+      console.error("Database error in toggleMessagePin:", error);
       throw error;
     }
   }

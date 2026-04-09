@@ -306,6 +306,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   // Reaction picker open state: messageId or null
   const [reactionPickerOpen, setReactionPickerOpen] = useState<string | null>(null);
 
+  // Highlighted message (scroll-to from pinned panel)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Pinned messages panel collapsible state
+  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(true);
+
   // Create task from message dialog state
   const [createTaskFromMsg, setCreateTaskFromMsg] = useState<{ id: string; content: string } | null>(null);
   const [taskFormTitle, setTaskFormTitle] = useState("");
@@ -493,6 +499,46 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       setReactionsMap(prev => ({ ...prev, ...channelReactionsData }));
     }
   }, [channelReactionsData]);
+
+  // Pinned messages for the selected channel (loaded when panel is open)
+  const { data: pinnedMessages = [] } = useQuery<Message[]>({
+    queryKey: ["/api/channels", selectedChannelId, "pinned"],
+    queryFn: async () => {
+      const res = await fetch(`/api/channels/${selectedChannelId}/pinned`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedChannelId && isChannelPanelOpen,
+    staleTime: 30_000,
+  });
+
+  // Toggle pin mutation — updates local message list optimistically
+  const pinMessageMutation = useMutation({
+    mutationFn: async (messageId: string) => {
+      const res = await apiRequest(`/api/messages/${messageId}/pin`, "POST");
+      return res as Message;
+    },
+    onSuccess: (updated: Message) => {
+      setLocalMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", selectedChannelId, "pinned"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to update pin", variant: "destructive" });
+    },
+  });
+
+  // Scroll to a message in the main feed and briefly highlight it
+  const scrollToMessage = useCallback((messageId: string) => {
+    setIsChannelPanelOpen(false);
+    setTimeout(() => {
+      const el = messageRefs.current[messageId];
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedMessageId(messageId);
+        setTimeout(() => setHighlightedMessageId(null), 2000);
+      }
+    }, 150);
+  }, []);
 
   // Also reset reactions when switching channels
   useEffect(() => {
@@ -1365,6 +1411,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       const isBot = !!message.isBot;
                       const isOwn = !isBot && message.userId === user?.id;
                       const isHighlighted = newMessageIds.has(message.id);
+                      const isPinnedHighlight = highlightedMessageId === message.id;
                       const msgReactions = reactionsMap[message.id] || [];
                       const threadOpen = openThreads.has(message.id);
                       const threadCount = message.threadCount || 0;
@@ -1386,7 +1433,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       return (
                         <div
                           key={message.id}
-                          className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse' : ''} group/msg`}
+                          ref={(el) => { messageRefs.current[message.id] = el; }}
+                          className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
                           data-testid={`message-${message.id}`}
                         >
                           {!isOwn && !isBot && (
@@ -1426,6 +1474,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 <div className="break-words whitespace-pre-wrap">
                                   {renderMessageWithMentions(message.content, user?.id)}
                                 </div>
+                                {/* Pinned indicator inside bubble */}
+                                {message.isPinned && (
+                                  <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
+                                    <Pin className="h-2.5 w-2.5" />
+                                    <span>Pinned</span>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Hover toolbar — visibility toggled (no layout shift); hidden for bot messages */}
@@ -1508,6 +1563,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   data-testid={`button-create-task-${message.id}`}
                                 >
                                   <ListTodo className="h-3.5 w-3.5" />
+                                </button>
+                                <div className="w-px h-4 bg-border mx-0.5" />
+                                <button
+                                  type="button"
+                                  title={message.isPinned ? "Unpin message" : "Pin message"}
+                                  onClick={() => pinMessageMutation.mutate(message.id)}
+                                  disabled={pinMessageMutation.isPending}
+                                  className={`p-1 rounded hover-elevate ${message.isPinned ? 'text-primary' : 'text-muted-foreground'}`}
+                                  data-testid={`button-pin-${message.id}`}
+                                >
+                                  {message.isPinned
+                                    ? <PinOff className="h-3.5 w-3.5" />
+                                    : <Pin className="h-3.5 w-3.5" />
+                                  }
                                 </button>
                               </div>
                               )}
@@ -1971,6 +2040,73 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
           <ScrollArea className="flex-1">
             <div className="px-5 py-4 space-y-6">
+
+              {/* ── Pinned Messages ── */}
+              {selectedChannel && (
+                <>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 w-full text-left hover-elevate rounded-sm"
+                      onClick={() => setPinnedPanelOpen(v => !v)}
+                    >
+                      <Pin className="h-3 w-3 text-muted-foreground" />
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                        Pinned Messages
+                      </p>
+                      {pinnedPanelOpen
+                        ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        : <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      }
+                    </button>
+                    {pinnedPanelOpen && (
+                      <div className="space-y-1">
+                        {pinnedMessages.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">No pinned messages yet.</p>
+                        ) : (
+                          pinnedMessages.map((pm) => {
+                            const pmName = pm.userFirstName && pm.userLastName
+                              ? `${pm.userFirstName} ${pm.userLastName}`
+                              : pm.userEmail || "Unknown";
+                            const snippet = pm.content.length > 80
+                              ? pm.content.substring(0, 80) + "…"
+                              : pm.content;
+                            return (
+                              <div
+                                key={pm.id}
+                                className="flex items-start gap-2 py-1.5 rounded-md hover-elevate cursor-pointer"
+                                onClick={() => scrollToMessage(pm.id)}
+                              >
+                                <Avatar className="h-6 w-6 shrink-0 mt-0.5">
+                                  <AvatarFallback className="text-[10px]">
+                                    {getInitials(pm.userFirstName, pm.userLastName, pm.userEmail)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                  <span className="text-xs font-medium text-foreground truncate">{pmName}</span>
+                                  <span className="text-xs text-muted-foreground line-clamp-2 leading-snug">{snippet}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  title="Unpin"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    pinMessageMutation.mutate(pm.id);
+                                  }}
+                                  className="p-1 rounded hover-elevate text-muted-foreground shrink-0"
+                                >
+                                  <PinOff className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               {/* ── Members ── */}
               <div className="space-y-2">

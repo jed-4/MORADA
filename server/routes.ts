@@ -20410,6 +20410,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Pin/unpin a message — POST toggles isPinned; requires channel membership
+  app.post("/api/messages/:id/pin", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
+      if (!access) return;
+      const updated = await storage.toggleMessagePin(req.params.id);
+      if (!updated) return res.status(404).json({ error: "Message not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to toggle pin" });
+    }
+  });
+
+  // Get all pinned messages in a channel — requires channel membership
+  app.get("/api/channels/:channelId/pinned", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const channel = await storage.getChannel(req.params.channelId, companyId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+      const members = await storage.getChannelMembers(req.params.channelId);
+      if (!members.some(m => m.userId === userId)) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
+      const pinned = await storage.getPinnedMessages(req.params.channelId);
+      res.json(pinned);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch pinned messages" });
+    }
+  });
+
   // Seed default task tags and template statuses (admin only)
   app.post("/api/seed/task-management", requireAuth, requireAdmin, async (req, res) => {
     try {

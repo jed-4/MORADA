@@ -36,6 +36,13 @@
       "when": 1775804400000,
       "tag": "0004_message_is_bot",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1744156800000,
+      "tag": "0005_message_pinning",
+      "breakpoints": true
     }
   ]
 }
