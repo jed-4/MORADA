@@ -1402,6 +1402,36 @@ export default function Timesheets() {
               return "transparent";
             };
 
+            // Derive sorted unique users from visible timesheets (capped at 5)
+            const uniqueUserIds = Array.from(
+              new Set(calendarTimesheets.map(ts => ts.userId))
+            ).sort((a, b) => getUserName(a).localeCompare(getUserName(b)));
+            const laneUsers = uniqueUserIds.slice(0, 5);
+            const tooManyUsers = uniqueUserIds.length > 5;
+            const useLanes = laneUsers.length >= 2 && !tooManyUsers;
+
+            // Helper: get first name or initials for a userId
+            const getUserLabel = (userId: number) => {
+              const name = getUserName(userId);
+              const parts = name.trim().split(/\s+/);
+              if (parts[0] && parts[0].length > 0) return parts[0];
+              return name.substring(0, 2).toUpperCase();
+            };
+
+            // flex weight per day: Sunday = 0.5, others = 1
+            const dayFlex = (day: Date) => getDay(day) === 0 ? 0.5 : 1;
+
+            const statusColors = (status: string) => {
+              if (status === "approved")
+                return "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300";
+              if (status === "submitted")
+                return "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300";
+              if (status === "rejected")
+                return "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300";
+              return "bg-muted/60 border-border text-muted-foreground";
+            };
+            };
+
             return (
               <div className="flex flex-col">
                 {/* Week Navigation — sticks to top of outer scroll container */}
@@ -1442,10 +1472,12 @@ export default function Timesheets() {
                   <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="border-r border-border" />
                   {calendarDays.map(day => {
                     const isToday = isSameDay(day, new Date());
+                    const flex = dayFlex(day);
                     return (
                       <div
                         key={day.toISOString()}
-                        className={`flex-1 text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium ${
+                        style={{ flex }}
+                        className={`text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium min-w-0 ${
                           isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                         }`}
                       >
@@ -1455,10 +1487,31 @@ export default function Timesheets() {
                         <div className={`text-[10px] font-semibold ${isToday ? "text-blue-600 dark:text-blue-400" : ""}`}>
                           {format(day, "d")}
                         </div>
+                        {/* Per-user lane labels (only when 2–5 users) */}
+                        {useLanes && (
+                          <div className="flex border-t border-border/50 mt-0.5 pt-0.5">
+                            {laneUsers.map(uid => (
+                              <div
+                                key={uid}
+                                className="flex-1 text-[8px] text-muted-foreground truncate px-0.5 text-center border-r border-border/30 last:border-r-0"
+                                title={getUserName(uid)}
+                              >
+                                {getUserLabel(uid)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Too-many-users notice (supplemental, calendar still renders with overlap) */}
+                {tooManyUsers && (
+                  <div className="flex items-center justify-center py-1.5 bg-muted/20 border-b border-border text-[10px] text-muted-foreground italic">
+                    Filter to 5 or fewer users to enable lanes
+                  </div>
+                )}
 
                 {/* All-day / untimed row */}
                 {hasUntimed && (
@@ -1473,38 +1526,67 @@ export default function Timesheets() {
                       const dk = format(day, "yyyy-MM-dd");
                       const dayUntimed = untimedByDay.get(dk) || [];
                       const isToday = isSameDay(day, new Date());
+                      const flex = dayFlex(day);
                       return (
                         <div
                           key={dk}
-                          className={`flex-1 border-r border-border last:border-r-0 p-1 min-h-[28px] ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
+                          style={{ flex }}
+                          className={`border-r border-border last:border-r-0 min-h-[28px] min-w-0 flex ${isToday ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}
                         >
-                          {dayUntimed.map(ts => {
-                            const projColor = getProjectColor(ts.projectId);
-                            const dotColor = statusDotColor(ts.status);
-                            return (
-                              <div
-                                key={ts.id}
-                                onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
-                                style={projColor ? {
-                                  backgroundColor: hexToRgba(projColor, 0.15),
-                                  borderLeft: `3px solid ${projColor}`,
-                                } : undefined}
-                                title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
-                              >
-                                {dotColor !== "transparent" && (
-                                  <span
-                                    className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full"
-                                    style={{ backgroundColor: dotColor }}
-                                  />
-                                )}
-                                <span className="font-bold">{getProjectName(ts.projectId)}</span>
-                                {getCostCodeName(ts.costCodeId) !== "-" && (
-                                  <span className="opacity-70"> · {getCostCodeName(ts.costCodeId)}</span>
-                                )}
-                              </div>
-                            );
-                          })}
+                          {useLanes ? (
+                            laneUsers.map(uid => {
+                              const userEntries = dayUntimed.filter(ts => ts.userId === uid);
+                              return (
+                                <div key={uid} className="flex-1 p-0.5 border-r border-border/30 last:border-r-0 min-w-0">
+                                  {userEntries.map(ts => {
+                                    const projColor = getProjectColor(ts.projectId);
+                                    const dotColor = statusDotColor(ts.status);
+                                    return (
+                                      <div
+                                        key={ts.id}
+                                        onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                                        className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                        style={projColor ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` } : undefined}
+                                        title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
+                                      >
+                                        {dotColor !== "transparent" && (
+                                          <span className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                                        )}
+                                        <span className="font-bold">{getProjectName(ts.projectId)}</span>
+                                        {getCostCodeName(ts.costCodeId) !== "-" && (
+                                          <span className="opacity-70"> · {getCostCodeName(ts.costCodeId)}</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="flex-1 p-1">
+                              {dayUntimed.map(ts => {
+                                const projColor = getProjectColor(ts.projectId);
+                                const dotColor = statusDotColor(ts.status);
+                                return (
+                                  <div
+                                    key={ts.id}
+                                    onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                                    className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                    style={projColor ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` } : undefined}
+                                    title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
+                                  >
+                                    {dotColor !== "transparent" && (
+                                      <span className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                                    )}
+                                    <span className="font-bold">{getProjectName(ts.projectId)}</span>
+                                    {getCostCodeName(ts.costCodeId) !== "-" && (
+                                      <span className="opacity-70"> · {getCostCodeName(ts.costCodeId)}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1534,11 +1616,13 @@ export default function Timesheets() {
                     const dk = format(day, "yyyy-MM-dd");
                     const isToday = isSameDay(day, new Date());
                     const dayTimed = timedSheets.filter(ts => format(parseISO(ts.date), "yyyy-MM-dd") === dk);
+                    const flex = dayFlex(day);
 
                     return (
                       <div
                         key={dk}
-                        className={`flex-1 border-r border-border last:border-r-0 relative ${isToday ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                        style={{ flex }}
+                        className={`border-r border-border last:border-r-0 relative min-w-0 ${isToday ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
                       >
                         {/* Hour lines */}
                         {Array.from({ length: totalHours }, (_, i) => (
@@ -1554,6 +1638,15 @@ export default function Timesheets() {
                             key={`h${i}`}
                             className="absolute left-0 right-0 border-t border-border/25"
                             style={{ top: i * HOUR_PX + HOUR_PX / 2 }}
+                          />
+                        ))}
+
+                        {/* Lane dividers when in lane mode */}
+                        {useLanes && laneUsers.map((uid, laneIdx) => laneIdx > 0 && (
+                          <div
+                            key={`lane-div-${uid}`}
+                            className="absolute top-0 bottom-0 border-l border-border/30 pointer-events-none"
+                            style={{ left: `${(laneIdx / laneUsers.length) * 100}%` }}
                           />
                         ))}
 
@@ -1576,18 +1669,36 @@ export default function Timesheets() {
 
                           const projColor = getProjectColor(ts.projectId);
                           const dotColor = statusDotColor(ts.status);
+                          // Compute horizontal position based on lane
+                          let leftPct = 0;
+                          let widthPct = 100;
+                          if (useLanes) {
+                            const laneIdx = laneUsers.indexOf(ts.userId);
+                            if (laneIdx !== -1) {
+                              widthPct = 100 / laneUsers.length;
+                              leftPct = laneIdx * widthPct;
+                            }
+                          }
+                          const INSET = 1;
 
                           return (
                             <div
                               key={ts.id}
                               onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                              className={`absolute left-0.5 right-0.5 rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                              className={`absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
                               style={projColor ? {
                                 top,
                                 height,
+                                left: `calc(${leftPct}% + ${INSET}px)`,
+                                width: `calc(${widthPct}% - ${INSET * 2}px)`,
                                 backgroundColor: hexToRgba(projColor, 0.15),
                                 borderLeft: `3px solid ${projColor}`,
-                              } : { top, height }}
+                              } : {
+                                top,
+                                height,
+                                left: `calc(${leftPct}% + ${INSET}px)`,
+                                width: `calc(${widthPct}% - ${INSET * 2}px)`,
+                              }}
                               title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
                             >
                               {dotColor !== "transparent" && (
@@ -1615,6 +1726,7 @@ export default function Timesheets() {
                       </div>
                     );
                   })}
+
                 </div>
               </div>
             );
