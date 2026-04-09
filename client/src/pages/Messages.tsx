@@ -164,6 +164,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isAddPeopleOpen, setIsAddPeopleOpen] = useState(false);
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [channelRenameValue, setChannelRenameValue] = useState("");
   
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [showNotificationBanner, setShowNotificationBanner] = useState(false);
@@ -275,6 +276,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const { data: messages = EMPTY_MESSAGES, isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/channels", selectedChannelId, "messages"],
     enabled: !!selectedChannelId,
+  });
+
+  const { data: channelMembers = [] } = useQuery<ChannelMember[]>({
+    queryKey: ["/api/channels", selectedChannelId, "members"],
+    enabled: !!selectedChannelId && (isAddPeopleOpen || isChannelSettingsOpen),
   });
 
   useEffect(() => {
@@ -453,6 +459,52 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       setIsChannelSettingsOpen(false);
       setIsDeleteConfirmOpen(false);
     }
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: async ({ channelId, userId }: { channelId: string; userId: string }) => {
+      const response = await fetch(`/api/channels/${channelId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role: "member" }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to add member");
+      return response.json();
+    },
+    onSuccess: (_, { channelId }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", channelId, "members"] });
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async ({ channelId, userId }: { channelId: string; userId: string }) => {
+      const response = await fetch(`/api/channels/${channelId}/members/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to remove member");
+    },
+    onSuccess: (_, { channelId }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", channelId, "members"] });
+    },
+  });
+
+  const renameChannelMutation = useMutation({
+    mutationFn: async ({ channelId, name }: { channelId: string; name: string }) => {
+      const response = await fetch(`/api/channels/${channelId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to rename channel");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      setIsChannelSettingsOpen(false);
+    },
   });
 
   const seedSampleDataMutation = useMutation({
@@ -920,7 +972,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     size="sm"
                     variant="ghost"
                     className="h-7"
-                    onClick={() => setIsChannelSettingsOpen(true)}
+                    onClick={() => {
+                      setChannelRenameValue(selectedChannel?.name ?? "");
+                      setIsDeleteConfirmOpen(false);
+                      setIsChannelSettingsOpen(true);
+                    }}
                     data-testid="button-channel-settings"
                   >
                     <Settings className="h-4 w-4" />
@@ -1192,21 +1248,115 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
       {/* Add People Dialog */}
       <Dialog open={isAddPeopleOpen} onOpenChange={setIsAddPeopleOpen}>
-        <DialogContent data-testid="dialog-add-people">
+        <DialogContent data-testid="dialog-add-people" className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add People</DialogTitle>
+            <DialogTitle>Manage Members</DialogTitle>
             <DialogDescription>
-              Invite team members to this channel
+              Add or remove team members from #{selectedChannel?.name}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              This feature is coming soon. All team members currently have access to all channels.
-            </p>
+          <div className="py-2 space-y-4">
+            {/* Current Members */}
+            {channelMembers.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
+                  Current members ({channelMembers.length})
+                </p>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {channelMembers.map((member) => {
+                    const memberUser = allUsers.find((u: any) => u.id === member.userId);
+                    const displayName = memberUser
+                      ? (memberUser.firstName && memberUser.lastName
+                          ? `${memberUser.firstName} ${memberUser.lastName}`
+                          : memberUser.email)
+                      : member.userId;
+                    const isCurrentUser = member.userId === user?.id;
+                    const isOwner = member.role === "owner";
+                    return (
+                      <div key={member.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-muted/20">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Avatar className="h-6 w-6 shrink-0">
+                            <AvatarFallback className="text-[10px]">
+                              {getInitials(memberUser?.firstName, memberUser?.lastName, memberUser?.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm truncate">{displayName}</span>
+                          {isOwner && (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">owner</Badge>
+                          )}
+                        </div>
+                        {!isCurrentUser && !isOwner && selectedChannel && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-destructive shrink-0"
+                            disabled={removeMemberMutation.isPending}
+                            onClick={() => removeMemberMutation.mutate({ channelId: selectedChannel.id, userId: member.userId })}
+                            data-testid={`button-remove-member-${member.userId}`}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add New Members */}
+            {(() => {
+              const nonMembers = allUsers.filter(
+                (u: any) => !channelMembers.some(m => m.userId === u.id)
+              );
+              if (nonMembers.length === 0) return (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  All team members are already in this channel.
+                </p>
+              );
+              return (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
+                    Add members
+                  </p>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {nonMembers.map((u: any) => {
+                      const displayName = u.firstName && u.lastName
+                        ? `${u.firstName} ${u.lastName}`
+                        : u.email;
+                      return (
+                        <div key={u.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover-elevate">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Avatar className="h-6 w-6 shrink-0">
+                              <AvatarFallback className="text-[10px]">
+                                {getInitials(u.firstName, u.lastName, u.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm truncate">{displayName}</span>
+                          </div>
+                          {selectedChannel && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs shrink-0"
+                              disabled={addMemberMutation.isPending}
+                              onClick={() => addMemberMutation.mutate({ channelId: selectedChannel.id, userId: u.id })}
+                              data-testid={`button-add-member-${u.id}`}
+                            >
+                              Add
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <Button onClick={() => setIsAddPeopleOpen(false)} data-testid="button-close-add-people">
-              Close
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1225,7 +1375,40 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 : `Manage settings for #${selectedChannel?.name}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-3">
+          <div className="py-4 space-y-4">
+            {/* Rename - only for non-DM channels */}
+            {selectedChannel?.type !== "dm" && (
+              <div className="space-y-2">
+                <Label htmlFor="channel-rename">Channel name</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="channel-rename"
+                    value={channelRenameValue}
+                    onChange={(e) => setChannelRenameValue(e.target.value)}
+                    placeholder="Channel name"
+                    className="h-9"
+                    data-testid="input-channel-rename"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={
+                      !channelRenameValue.trim() ||
+                      channelRenameValue.trim() === selectedChannel?.name ||
+                      renameChannelMutation.isPending
+                    }
+                    onClick={() => selectedChannel && renameChannelMutation.mutate({
+                      channelId: selectedChannel.id,
+                      name: channelRenameValue.trim(),
+                    })}
+                    data-testid="button-rename-channel"
+                  >
+                    {renameChannelMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Delete zone */}
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
               <div>
                 <p className="text-sm font-medium text-destructive">
