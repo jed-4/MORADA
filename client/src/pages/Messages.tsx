@@ -502,7 +502,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     setAttachmentsMap(prev => ({ ...prev, ...newMap }));
   }, [messages]);
 
-  useChannelMessages(selectedChannelId, (message) => {
+  useChannelMessages(selectedChannelId, (rawMessage) => {
+    // The socket payload may include an `attachments` array from the server
+    const { attachments: incomingAttachments, ...message } = rawMessage as MessageWithAttachments;
+
     if (message.threadParentId) {
       // This is a threaded reply — route into the thread list if the thread is open
       let isNewToThread = false;
@@ -521,6 +524,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             : m
         ));
       }
+      // Hydrate attachmentsMap for thread reply if attachments present
+      if (incomingAttachments && incomingAttachments.length > 0) {
+        setAttachmentsMap(prev => ({
+          ...prev,
+          [message.id]: [...(prev[message.id] || []), ...incomingAttachments],
+        }));
+      }
       return;
     }
     setLocalMessages(prev => {
@@ -529,6 +539,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (prev.some(m => m.id === message.id)) return prev;
       return [...prev, message];
     });
+    // Hydrate attachmentsMap from socket payload so receivers see attachments immediately
+    if (incomingAttachments && incomingAttachments.length > 0) {
+      setAttachmentsMap(prev => ({
+        ...prev,
+        [message.id]: [...(prev[message.id] || []), ...incomingAttachments],
+      }));
+    }
     scrollToBottom();
     
     if (selectedChannelId) {
@@ -860,43 +877,40 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     setSendingThreads(prev => new Set(prev).add(parentMessageId));
     setThreadInputs(prev => ({ ...prev, [parentMessageId]: "" }));
     setThreadPendingAttachments(prev => ({ ...prev, [parentMessageId]: [] }));
+
+    // Build attachment paths to send atomically with the reply
+    const pendingAttachmentPaths = uploadedReplyAttachments.map(pa => ({
+      objectPath: pa.objectPath!,
+      fileName: pa.file.name,
+      fileSize: pa.file.size,
+      mimeType: pa.file.type || "application/octet-stream",
+    }));
+
     try {
       const res = await fetch(`/api/channels/${channelId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content, threadParentId: parentMessageId }),
+        body: JSON.stringify({
+          content,
+          threadParentId: parentMessageId,
+          ...(pendingAttachmentPaths.length ? { pendingAttachmentPaths } : {}),
+        }),
       });
       if (!res.ok) throw new Error("Failed");
-      const reply: Message = await res.json();
+      const reply = await res.json() as MessageWithAttachments;
       setThreadMessages(prev => {
         const existing = prev[parentMessageId] || [];
         // Deduplicate: if socket already delivered this reply, don't add twice
         if (existing.some(r => r.id === reply.id)) return prev;
         return { ...prev, [parentMessageId]: [...existing, reply] };
       });
-      // Link uploaded attachments to the reply
-      if (uploadedReplyAttachments.length > 0) {
-        const linked: MessageAttachment[] = [];
-        let failCount = 0;
-        for (const pa of uploadedReplyAttachments) {
-          const att = await saveAttachmentRecord(reply.id, pa, pa.objectPath!);
-          if (att) linked.push(att);
-          else failCount++;
-        }
-        if (linked.length > 0) {
-          setAttachmentsMap(prev => ({
-            ...prev,
-            [reply.id]: [...(prev[reply.id] || []), ...linked],
-          }));
-        }
-        if (failCount > 0) {
-          toast({
-            title: `${failCount} attachment${failCount > 1 ? 's' : ''} failed to save`,
-            description: "Your reply was sent, but some files could not be attached.",
-            variant: "destructive",
-          });
-        }
+      // Hydrate attachmentsMap from the atomic response
+      if (reply.attachments && reply.attachments.length > 0) {
+        setAttachmentsMap(prev => ({
+          ...prev,
+          [reply.id]: [...(prev[reply.id] || []), ...reply.attachments],
+        }));
       }
       // threadCount is NOT updated here — the server emits message_updated via socket
       // with the authoritative count, which useMessageUpdated handles.
@@ -1264,15 +1278,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }, 0);
   };
 
-  const sendViaRest = async (channelId: string, content: string, mentions: string[] = []) => {
+  const sendViaRest = async (
+    channelId: string,
+    content: string,
+    mentions: string[] = [],
+    pendingAttachmentPaths?: Array<{ objectPath: string; fileName: string; fileSize: number; mimeType: string }>,
+  ) => {
     const response = await fetch(`/api/channels/${channelId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ content, mentions }),
+      body: JSON.stringify({ content, mentions, ...(pendingAttachmentPaths?.length ? { pendingAttachmentPaths } : {}) }),
     });
     if (!response.ok) throw new Error("Failed to send message");
-    return response.json() as Promise<Message>;
+    return response.json() as Promise<MessageWithAttachments>;
   };
 
   /**
@@ -1326,31 +1345,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       return objectPath;
     } catch {
       mark({ uploading: false, error: true });
-      return null;
-    }
-  };
-
-  /** Save an already-uploaded attachment record to a message. */
-  const saveAttachmentRecord = async (
-    messageId: string,
-    pending: PendingAttachment,
-    objectPath: string,
-  ): Promise<MessageAttachment | null> => {
-    try {
-      const attResp = await fetch(`/api/messages/${messageId}/attachments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          objectPath,
-          fileName: pending.file.name,
-          fileSize: pending.file.size,
-          mimeType: pending.file.type || "application/octet-stream",
-        }),
-      });
-      if (!attResp.ok) throw new Error("Failed to save attachment");
-      return attResp.json() as Promise<MessageAttachment>;
-    } catch {
       return null;
     }
   };
@@ -1478,8 +1472,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     setLocalMessages(prev => [...prev, optimistic]);
     scrollToBottom();
 
+    // Collect ready attachments to send atomically with the message
+    const uploadedAttachments = pendingAttachments.filter(pa => pa.objectPath && !pa.error);
+    const pendingAttachmentPaths = uploadedAttachments.map(pa => ({
+      objectPath: pa.objectPath!,
+      fileName: pa.file.name,
+      fileSize: pa.file.size,
+      mimeType: pa.file.type || "application/octet-stream",
+    }));
+    setPendingAttachments([]);
+
     try {
-      const saved = await sendViaRest(selectedChannelId, content, mentions);
+      const saved = await sendViaRest(selectedChannelId, content, mentions, pendingAttachmentPaths);
       // Remove the temp placeholder; if socket already delivered the real message, don't add a dup
       setLocalMessages(prev => {
         const withoutTemp = prev.filter(m => m.id !== tempId);
@@ -1494,32 +1498,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
 
-      // Link any already-uploaded attachments to the new message
-      const uploadedAttachments = pendingAttachments.filter(pa => pa.objectPath && !pa.error);
-      setPendingAttachments([]);
-      if (uploadedAttachments.length > 0) {
-        const linked: MessageAttachment[] = [];
-        let failCount = 0;
-        for (const pa of uploadedAttachments) {
-          const att = await saveAttachmentRecord(saved.id, pa, pa.objectPath!);
-          if (att) linked.push(att);
-          else failCount++;
-        }
-        if (linked.length > 0) {
-          setAttachmentsMap(prev => ({
-            ...prev,
-            [saved.id]: [...(prev[saved.id] || []), ...linked],
-          }));
-        }
-        if (failCount > 0) {
-          toast({
-            title: failCount === uploadedAttachments.length
-              ? "Attachments failed to save"
-              : `${failCount} attachment${failCount > 1 ? 's' : ''} failed to save`,
-            description: "Your message was sent, but some files could not be attached. Please try again.",
-            variant: "destructive",
-          });
-        }
+      // Attachments are returned from the message create response — hydrate attachmentsMap
+      if (saved.attachments && saved.attachments.length > 0) {
+        setAttachmentsMap(prev => ({
+          ...prev,
+          [saved.id]: [...(prev[saved.id] || []), ...saved.attachments],
+        }));
       }
     } catch (err) {
       // Remove optimistic message, restore original display input AND pending mentions

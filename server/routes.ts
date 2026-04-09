@@ -20292,15 +20292,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scheduledStatus: isScheduled ? 'pending' : null,
       });
 
+      // Atomically link any pre-uploaded attachments to the new message
+      // Expected format for each: { objectPath, fileName, fileSize?, mimeType? }
+      const companyId = req.user!.companyId!;
+      const expectedPrefix = `/objects/company/${companyId}/`;
+      const rawPendingPaths: unknown[] = Array.isArray(req.body.pendingAttachmentPaths) ? req.body.pendingAttachmentPaths : [];
+      const savedAttachments: import("../shared/schema").MessageAttachment[] = [];
+      for (const item of rawPendingPaths) {
+        if (!item || typeof item !== "object") continue;
+        const { objectPath, fileName, fileSize, mimeType } = item as Record<string, unknown>;
+        if (typeof objectPath !== "string" || !objectPath.startsWith(expectedPrefix)) continue;
+        if (typeof fileName !== "string" || !fileName) continue;
+        try {
+          const att = await storage.createMessageAttachment({
+            messageId: message.id,
+            fileUrl: objectPath,
+            fileName,
+            fileSize: typeof fileSize === "number" ? fileSize : null,
+            mimeType: typeof mimeType === "string" ? mimeType : null,
+            objectPath,
+          });
+          savedAttachments.push(att);
+        } catch {
+          // Non-fatal: individual attachment failures don't break message delivery
+        }
+      }
+
+      const messageWithAttachments = { ...message, attachments: savedAttachments };
+
       // If scheduled, return immediately without broadcasting
       if (isScheduled) {
-        return res.status(201).json(message);
+        return res.status(201).json(messageWithAttachments);
       }
       
       // Broadcast to all socket clients in the channel room for real-time delivery
       const io = getIO();
       if (io) {
-        io.to(`channel:${channelId}`).emit("new_message", message);
+        io.to(`channel:${channelId}`).emit("new_message", messageWithAttachments);
         // If this is a threaded reply, also broadcast the updated parent so thread counts refresh
         if (message.threadParentId) {
           const parent = await storage.getMessage(message.threadParentId);
@@ -20356,7 +20384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.status(201).json(message);
+      res.status(201).json(messageWithAttachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to create message" });
     }
