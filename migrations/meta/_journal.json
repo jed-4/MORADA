@@ -22,6 +22,13 @@
       "when": 1774952051109,
       "tag": "0002_aberrant_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775709600000,
+      "tag": "0003_message_reactions",
+      "breakpoints": true
     }
   ]
 }

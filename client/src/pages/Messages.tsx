@@ -473,14 +473,22 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       });
       if (!res.ok) throw new Error("Failed");
       const reply: Message = await res.json();
-      setThreadMessages(prev => ({
-        ...prev,
-        [parentMessageId]: [...(prev[parentMessageId] || []), reply],
-      }));
-      // Increment threadCount on the local parent message
-      setLocalMessages(prev => prev.map(m =>
-        m.id === parentMessageId ? { ...m, threadCount: (m.threadCount || 0) + 1 } : m
-      ));
+      setThreadMessages(prev => {
+        const existing = prev[parentMessageId] || [];
+        // Deduplicate: if socket already delivered this reply, don't add twice
+        if (existing.some(r => r.id === reply.id)) return prev;
+        return { ...prev, [parentMessageId]: [...existing, reply] };
+      });
+      // threadCount is updated by the socket message_updated event from the server.
+      // We only do a local increment if the socket event hasn't already updated it,
+      // detected by whether the reply was already in the thread list.
+      setLocalMessages(prev => {
+        const alreadyDeliveredBySocket = threadMessages[parentMessageId]?.some(r => r.id === reply.id);
+        if (alreadyDeliveredBySocket) return prev; // socket already bumped threadCount
+        return prev.map(m =>
+          m.id === parentMessageId ? { ...m, threadCount: (m.threadCount || 0) + 1 } : m
+        );
+      });
     } catch {
       setThreadInputs(prev => ({ ...prev, [parentMessageId]: content }));
       toast({ title: "Failed to send reply", variant: "destructive" });

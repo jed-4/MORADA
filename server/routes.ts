@@ -20359,7 +20359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channel = await storage.getChannel(req.params.channelId, companyId);
       if (!channel) return res.status(404).json({ error: "Channel not found" });
       const members = await storage.getChannelMembers(req.params.channelId);
-      if (!members.some((m: any) => m.userId === userId)) {
+      if (!members.some(m => m.userId === userId)) {
         return res.status(403).json({ error: "Not a member of this channel" });
       }
       const reactions = await storage.getChannelReactions(req.params.channelId);
