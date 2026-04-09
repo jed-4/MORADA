@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -172,8 +172,12 @@ export default function Tasks() {
   const [location, setLocation] = useLocation();
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  // Use projectId from URL params if available, otherwise fall back to currentProject
-  const effectiveProjectId = params.projectId || currentProject?.id;
+  // Use projectId from URL params if available, then query-string ?projectId=, then currentProject
+  const queryProjectId = useMemo(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get("projectId") || undefined;
+  }, [location]);
+  const effectiveProjectId = params.projectId || queryProjectId || currentProject?.id;
   const [activeView, setActiveView] = useState<"list" | "kanban" | "calendar">("list");
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);

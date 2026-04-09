@@ -203,9 +203,14 @@ function TaskLinkPreview({ taskId }: { taskId: string }) {
     status === "in-progress" ? "text-blue-600 dark:text-blue-400" :
     "text-muted-foreground";
 
+  // Route to the correct tasks page based on task context
+  const taskHref = task.projectId
+    ? `/tasks?projectId=${task.projectId}&taskId=${taskId}`
+    : `/business/tasks?taskId=${taskId}`;
+
   return (
     <a
-      href={`/tasks?taskId=${taskId}`}
+      href={taskHref}
       className="mt-1.5 flex flex-col gap-1 rounded-md border bg-card p-2.5 w-64 hover-elevate no-underline"
       onClick={(e) => e.stopPropagation()}
     >
@@ -1394,35 +1399,28 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
       mark({ progress: 30 });
 
-      // Step 2: Upload file to GCS using XMLHttpRequest so we get progress events.
-      // Send as a plain Blob with no type so the browser doesn't add a Content-Type
-      // header — Replit's signed URL is signed without a content-type constraint and
-      // GCS will reject the PUT if a Content-Type header is present but doesn't match.
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadURL);
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) {
-            const pct = Math.round(30 + (ev.loaded / ev.total) * 60);
-            mark({ progress: pct });
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`GCS upload failed with status ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error("Network error during upload"));
-        // Wrap in a typeless Blob so the browser does not set Content-Type automatically
-        xhr.send(new Blob([file], { type: "" }));
+      // Step 2: Upload file to GCS via fetch PUT.
+      // We send the raw file body without any explicit Content-Type header so the
+      // browser uses the file's natural MIME type and GCS (signed without a
+      // content-type constraint) accepts whatever the browser sends.
+      mark({ progress: 50 });
+      const arrayBuffer = await file.arrayBuffer();
+      const putResp = await fetch(uploadURL, {
+        method: "PUT",
+        body: arrayBuffer,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
       });
+      if (!putResp.ok) {
+        const body = await putResp.text().catch(() => "");
+        console.error("[upload] GCS PUT failed:", putResp.status, body.substring(0, 500));
+        throw new Error(`GCS upload failed: ${putResp.status} ${body.substring(0, 200)}`);
+      }
+      mark({ progress: 90 });
 
       mark({ progress: 100, uploading: false, objectPath });
       return objectPath;
     } catch (err) {
-      console.error("[upload] Failed:", err);
+      console.error("[upload] Failed:", err instanceof Error ? err.message : String(err));
       mark({ uploading: false, error: true });
       return null;
     }
