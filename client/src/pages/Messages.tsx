@@ -648,7 +648,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     const mentions = mentionIds;
 
     setMessageInput("");
-    setPendingMentions([]);
     setShowMentionPicker(false);
     setIsSending(true);
 
@@ -684,15 +683,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         if (withoutTemp.some(m => m.id === saved.id)) return withoutTemp;
         return [...withoutTemp, saved];
       });
+      // Mentions consumed — clear tracking
+      setPendingMentions([]);
       // Mark as read since we just sent
       markAsRead(selectedChannelId);
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
     } catch (err) {
-      // Remove optimistic message and restore original display input on failure
+      // Remove optimistic message, restore original display input AND pending mentions
       setLocalMessages(prev => prev.filter(m => m.id !== tempId));
       setMessageInput(originalInput);
+      setPendingMentions(pendingMentions);
       toast({ title: "Failed to send message", variant: "destructive" });
     } finally {
       setIsSending(false);
@@ -1120,15 +1122,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       value={messageInput}
                       onChange={handleMessageInputChange}
                       onKeyDown={(e) => {
-                        if (showMentionPicker && filteredMentionUsers.length > 0) {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            const first = filteredMentionUsers[0] as any;
-                            insertMention(first.id, first.firstName, first.lastName, first.email);
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            setShowMentionPicker(false);
-                          }
+                        if (!showMentionPicker) return;
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setShowMentionPicker(false);
+                        } else if (e.key === "Enter" && filteredMentionUsers.length > 0) {
+                          e.preventDefault();
+                          const first = filteredMentionUsers[0];
+                          insertMention(first.id, first.firstName, first.lastName, first.email);
                         }
                       }}
                       placeholder="Type a message... (@ to mention, /task to create task)"
