@@ -192,6 +192,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
   const [mentionStartPos, setMentionStartPos] = useState(0);
+  const [pendingMentions, setPendingMentions] = useState<{ name: string; userId: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   
   // Channel filter settings (persisted in localStorage)
@@ -587,17 +588,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   };
   
   const insertMention = (userId: string, firstName: string | null, lastName: string | null, email: string | null) => {
-    const name = firstName && lastName 
-      ? `${firstName} ${lastName}` 
+    const name = firstName && lastName
+      ? `${firstName} ${lastName}`
       : email || 'Unknown';
-    
+
     const beforeMention = messageInput.substring(0, mentionStartPos);
     const afterMention = messageInput.substring(inputRef.current?.selectionStart || messageInput.length);
-    const mention = `@[${name}](userId:${userId})`;
-    
-    setMessageInput(beforeMention + mention + ' ' + afterMention);
+
+    setMessageInput(beforeMention + `@${name} ` + afterMention);
+    setPendingMentions(prev => [...prev, { name, userId }]);
     setShowMentionPicker(false);
-    
+
     setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
@@ -624,15 +625,30 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       typingTimeoutRef.current = null;
     }
 
-    const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
-    const mentions: string[] = [];
-    let match;
-    while ((match = mentionRegex.exec(messageInput)) !== null) {
-      mentions.push(match[2]);
-    }
+    // Save display value so we can restore it if send fails
+    const originalInput = messageInput;
 
-    const content = messageInput;
+    // Convert display-format @Name back to storage format @[Name](userId:xxx)
+    let content = messageInput;
+    const mentionIds: string[] = [];
+    for (const m of pendingMentions) {
+      const displayToken = `@${m.name}`;
+      const storageToken = `@[${m.name}](userId:${m.userId})`;
+      if (content.includes(displayToken)) {
+        content = content.replace(displayToken, storageToken);
+        mentionIds.push(m.userId);
+      }
+    }
+    // Also parse any pre-existing @[Name](userId:xxx) tokens (e.g. from restoring on failure)
+    const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+    let match;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      if (!mentionIds.includes(match[2])) mentionIds.push(match[2]);
+    }
+    const mentions = mentionIds;
+
     setMessageInput("");
+    setPendingMentions([]);
     setShowMentionPicker(false);
     setIsSending(true);
 
@@ -674,9 +690,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       }, 100);
     } catch (err) {
-      // Remove optimistic message and restore input on failure
+      // Remove optimistic message and restore original display input on failure
       setLocalMessages(prev => prev.filter(m => m.id !== tempId));
-      setMessageInput(content);
+      setMessageInput(originalInput);
       toast({ title: "Failed to send message", variant: "destructive" });
     } finally {
       setIsSending(false);
@@ -1103,6 +1119,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       ref={inputRef}
                       value={messageInput}
                       onChange={handleMessageInputChange}
+                      onKeyDown={(e) => {
+                        if (showMentionPicker && filteredMentionUsers.length > 0) {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const first = filteredMentionUsers[0] as any;
+                            insertMention(first.id, first.firstName, first.lastName, first.email);
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setShowMentionPicker(false);
+                          }
+                        }
+                      }}
                       placeholder="Type a message... (@ to mention, /task to create task)"
                       className="h-9 flex-1"
                       data-testid="input-message"
