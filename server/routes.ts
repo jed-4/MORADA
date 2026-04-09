@@ -19874,6 +19874,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         role: 'owner'
       });
+
+      // For DM channels, also add all other participants as members so they
+      // can see the conversation (getChannels filters by membership).
+      if (validationResult.data.type === 'dm' && Array.isArray(validationResult.data.dmParticipants)) {
+        const otherParticipants = (validationResult.data.dmParticipants as string[]).filter(p => p !== userId);
+        await Promise.all(
+          otherParticipants.map(participantId =>
+            storage.addChannelMember({ channelId: channel.id, userId: participantId, role: 'member' })
+          )
+        );
+      }
       
       res.status(201).json(channel);
     } catch (error) {

@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User, Pin, PinOff, Filter, EyeOff, Clock } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -163,6 +163,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   
   const [isAddPeopleOpen, setIsAddPeopleOpen] = useState(false);
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [showNotificationBanner, setShowNotificationBanner] = useState(false);
@@ -434,6 +435,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     onSuccess: (newChannel) => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       setSelectedChannelId(newChannel.id);
+    }
+  });
+
+  const deleteChannelMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      const response = await fetch(`/api/channels/${channelId}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      setSelectedChannelId(null);
+      setIsChannelSettingsOpen(false);
+      setIsDeleteConfirmOpen(false);
     }
   });
 
@@ -1198,18 +1216,75 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       <Dialog open={isChannelSettingsOpen} onOpenChange={setIsChannelSettingsOpen}>
         <DialogContent data-testid="dialog-channel-settings">
           <DialogHeader>
-            <DialogTitle>Channel Settings</DialogTitle>
+            <DialogTitle>
+              {selectedChannel?.type === "dm" ? "Conversation Settings" : "Channel Settings"}
+            </DialogTitle>
             <DialogDescription>
-              Configure settings for #{selectedChannel?.name}
+              {selectedChannel?.type === "dm"
+                ? "Manage this direct message conversation"
+                : `Manage settings for #${selectedChannel?.name}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              Channel settings coming soon. You'll be able to manage permissions, notifications, and more.
-            </p>
+          <div className="py-4 space-y-3">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-destructive">
+                  {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedChannel?.type === "dm"
+                    ? "Permanently delete this conversation and all its messages. This cannot be undone."
+                    : "Permanently delete this channel and all its messages. This cannot be undone."}
+                </p>
+              </div>
+              {!isDeleteConfirmOpen ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/50 text-destructive"
+                  onClick={() => setIsDeleteConfirmOpen(true)}
+                  data-testid="button-delete-channel-prompt"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  {selectedChannel?.type === "dm" ? "Delete conversation" : "Delete channel"}
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={deleteChannelMutation.isPending}
+                    onClick={() => selectedChannel && deleteChannelMutation.mutate(selectedChannel.id)}
+                    data-testid="button-delete-channel-confirm"
+                  >
+                    {deleteChannelMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    )}
+                    Confirm delete
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDeleteConfirmOpen(false)}
+                    data-testid="button-delete-channel-cancel"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setIsChannelSettingsOpen(false)} data-testid="button-close-settings">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsChannelSettingsOpen(false);
+                setIsDeleteConfirmOpen(false);
+              }}
+              data-testid="button-close-settings"
+            >
               Close
             </Button>
           </DialogFooter>
