@@ -64,8 +64,10 @@ import {
   isNotificationSupported,
   requestNotificationPermission,
   areNotificationsGranted,
+  getNotificationPreferences,
+  saveNotificationPreferences,
+  type NotificationPreferences,
 } from "@/lib/notifications";
-import { NotificationSettingsButton } from "@/components/NotificationSettings";
 
 // Helper to parse and render mentions in messages
 function renderMessageWithMentions(content: string, currentUserId?: string) {
@@ -171,6 +173,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [isChannelPanelOpen, setIsChannelPanelOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [channelRenameValue, setChannelRenameValue] = useState("");
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(getNotificationPreferences);
+
+  useEffect(() => {
+    if (isChannelPanelOpen) setNotifPrefs(getNotificationPreferences());
+  }, [isChannelPanelOpen]);
+
+  const updateNotifPref = (key: keyof NotificationPreferences, value: boolean) => {
+    const updated = { ...notifPrefs, [key]: value };
+    setNotifPrefs(updated);
+    saveNotificationPreferences(updated);
+  };
   
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [showNotificationBanner, setShowNotificationBanner] = useState(false);
@@ -964,7 +977,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isReconnecting ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
                     <span>{isConnected ? 'Connected' : isReconnecting ? 'Reconnecting…' : 'Disconnected'}</span>
                   </div>
-                  <NotificationSettingsButton />
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1405,6 +1417,32 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   </div>
                 </>
               )}
+
+              {/* ── Notifications ── */}
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Notifications
+                </p>
+                {[
+                  { key: "push" as const, label: "Browser notifications", description: "Desktop alerts for new messages" },
+                  { key: "sound" as const, label: "Notification sound", description: "Play a sound on new messages" },
+                  { key: "highlights" as const, label: "Message highlights", description: "Highlight new messages in chat" },
+                  { key: "mentionSound" as const, label: "@Mention alert", description: "Extra alert when you're mentioned" },
+                ].map(({ key, label, description }) => (
+                  <div key={key} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-none">{label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                    </div>
+                    <Switch
+                      checked={notifPrefs[key]}
+                      onCheckedChange={(v) => updateNotifPref(key, v)}
+                      data-testid={`switch-${key}`}
+                    />
+                  </div>
+                ))}
+              </div>
 
               {/* ── Danger zone ── */}
               <Separator />
