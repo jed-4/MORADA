@@ -4390,6 +4390,35 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
 
+// Message Reactions — icon-based reactions on channel messages
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // Stored as a short text id e.g. "thumbs_up", "check", "eyes", "heart", "laugh", "fire"
+    emoji: varchar("emoji", { length: 30 }).notNull(),
+    userFirstName: text("user_first_name"),
+    userLastName: text("user_last_name"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueUserMessageEmoji: uniqueIndex("msg_reactions_user_msg_emoji_unique").on(
+      table.messageId, table.userId, table.emoji
+    ),
+    messageIdIndex: index("msg_reactions_message_id_idx").on(table.messageId),
+  })
+);
+
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
+export type MessageReaction = typeof messageReactions.$inferSelect;
+
 // RFQ (Request for Quote) System
 export const rfqStatusEnum = pgEnum("rfq_status", ["draft", "sent", "confirmed", "quoted", "accepted", "declined", "expired"]);
 export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "reminder_3d", "reminder_7d", "reminder_14d"]);

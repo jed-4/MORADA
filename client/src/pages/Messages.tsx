@@ -1,7 +1,7 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages } from "@/lib/socket";
+import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages, useReactionUpdated, useMessageUpdated } from "@/lib/socket";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2 } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -49,7 +49,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDistanceToNow } from "date-fns";
-import type { Channel, Message, ChannelMember } from "@shared/schema";
+import type { Channel, Message, ChannelMember, MessageReaction } from "@shared/schema";
+
+// Fixed reaction set — icon-based (no emoji per design guidelines)
+const REACTION_OPTIONS = [
+  { id: "thumbs_up", Icon: ThumbsUp, label: "Thumbs up" },
+  { id: "check",     Icon: Check,    label: "Got it" },
+  { id: "eyes",      Icon: Eye,      label: "Looking" },
+  { id: "heart",     Icon: Heart,    label: "Love" },
+  { id: "smile",     Icon: Smile,    label: "Haha" },
+  { id: "fire",      Icon: Flame,    label: "Fire" },
+] as const;
+
+type ReactionId = typeof REACTION_OPTIONS[number]["id"];
+
+function ReactionIcon({ id, className }: { id: string; className?: string }) {
+  const opt = REACTION_OPTIONS.find(r => r.id === id);
+  if (!opt) return null;
+  const { Icon } = opt;
+  return <Icon className={className} />;
+}
 
 // Extended channel type with isPinned, lastMessageAt, and messageCount from API
 interface ChannelWithMeta extends Channel {
@@ -194,6 +213,21 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [mentionStartPos, setMentionStartPos] = useState(0);
   const [pendingMentions, setPendingMentions] = useState<{ name: string; userId: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reactions: messageId -> reactions array
+  const [reactionsMap, setReactionsMap] = useState<Record<string, MessageReaction[]>>({});
+  // Open reply threads: Set of parent messageIds whose thread is expanded
+  const [openThreads, setOpenThreads] = useState<Set<string>>(new Set());
+  // Thread replies: messageId -> array of reply messages
+  const [threadMessages, setThreadMessages] = useState<Record<string, Message[]>>({});
+  // Thread reply inputs: messageId -> text
+  const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
+  // Which threads are currently sending
+  const [sendingThreads, setSendingThreads] = useState<Set<string>>(new Set());
+  // Which thread is loading replies
+  const [loadingThreads, setLoadingThreads] = useState<Set<string>>(new Set());
+  // Reaction picker open state: messageId or null
+  const [reactionPickerOpen, setReactionPickerOpen] = useState<string | null>(null);
   
   // Channel filter settings (persisted in localStorage)
   const [hideEmptyChats, setHideEmptyChats] = useState(() => {
@@ -329,6 +363,150 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const { data: allUsers = EMPTY_USERS } = useQuery<any[]>({
     queryKey: ["/api/users"],
   });
+
+  // Bulk-load reactions for all messages in the selected channel
+  const { data: channelReactionsData } = useQuery<Record<string, MessageReaction[]>>({
+    queryKey: ["/api/channels", selectedChannelId, "reactions"],
+    queryFn: async () => {
+      const res = await fetch(`/api/channels/${selectedChannelId}/reactions`, { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!selectedChannelId,
+  });
+
+  // Sync bulk reactions into local map when query data arrives
+  useEffect(() => {
+    if (channelReactionsData) {
+      setReactionsMap(prev => ({ ...prev, ...channelReactionsData }));
+    }
+  }, [channelReactionsData]);
+
+  // Also reset reactions when switching channels
+  useEffect(() => {
+    setReactionsMap({});
+    setOpenThreads(new Set());
+    setThreadMessages({});
+    setThreadInputs({});
+  }, [selectedChannelId]);
+
+  // Real-time reaction updates from other users
+  useReactionUpdated((messageId, reactions) => {
+    setReactionsMap(prev => ({ ...prev, [messageId]: reactions as MessageReaction[] }));
+  });
+
+  // Real-time message_updated (e.g. threadCount incremented after a reply)
+  useMessageUpdated(selectedChannelId, (updated) => {
+    setLocalMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+    // Also update thread messages if the updated message is a thread parent
+    setThreadMessages(prev => {
+      const updated2: Record<string, Message[]> = {};
+      for (const [parentId, replies] of Object.entries(prev)) {
+        updated2[parentId] = replies.map(r => r.id === updated.id ? updated : r);
+      }
+      return updated2;
+    });
+  });
+
+  // Load replies for a thread
+  const loadThreadReplies = useCallback(async (messageId: string) => {
+    setLoadingThreads(prev => new Set(prev).add(messageId));
+    try {
+      const res = await fetch(`/api/messages/${messageId}/replies`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      const replies: Message[] = await res.json();
+      setThreadMessages(prev => ({ ...prev, [messageId]: replies }));
+    } catch {
+      // silent — thread stays closed
+    } finally {
+      setLoadingThreads(prev => { const next = new Set(prev); next.delete(messageId); return next; });
+    }
+  }, []);
+
+  const toggleThread = useCallback((messageId: string) => {
+    setOpenThreads(prev => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+        if (!threadMessages[messageId]) {
+          loadThreadReplies(messageId);
+        }
+      }
+      return next;
+    });
+  }, [threadMessages, loadThreadReplies]);
+
+  const sendReply = useCallback(async (parentMessageId: string, channelId: string) => {
+    const content = (threadInputs[parentMessageId] || "").trim();
+    if (!content) return;
+    setSendingThreads(prev => new Set(prev).add(parentMessageId));
+    setThreadInputs(prev => ({ ...prev, [parentMessageId]: "" }));
+    try {
+      const res = await fetch(`/api/channels/${channelId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content, threadParentId: parentMessageId }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const reply: Message = await res.json();
+      setThreadMessages(prev => ({
+        ...prev,
+        [parentMessageId]: [...(prev[parentMessageId] || []), reply],
+      }));
+      // Increment threadCount on the local parent message
+      setLocalMessages(prev => prev.map(m =>
+        m.id === parentMessageId ? { ...m, threadCount: (m.threadCount || 0) + 1 } : m
+      ));
+    } catch {
+      setThreadInputs(prev => ({ ...prev, [parentMessageId]: content }));
+      toast({ title: "Failed to send reply", variant: "destructive" });
+    } finally {
+      setSendingThreads(prev => { const next = new Set(prev); next.delete(parentMessageId); return next; });
+    }
+  }, [threadInputs, toast]);
+
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    // Optimistic update
+    const currentReactions = reactionsMap[messageId] || [];
+    const myReaction = currentReactions.find(r => r.userId === user?.id && r.emoji === emoji);
+    if (myReaction) {
+      setReactionsMap(prev => ({
+        ...prev,
+        [messageId]: (prev[messageId] || []).filter(r => !(r.userId === user?.id && r.emoji === emoji)),
+      }));
+    } else {
+      const optimistic: MessageReaction = {
+        id: `opt-${Date.now()}`,
+        messageId,
+        userId: user?.id || "",
+        emoji,
+        userFirstName: user?.firstName || null,
+        userLastName: user?.lastName || null,
+        createdAt: new Date(),
+      };
+      setReactionsMap(prev => ({
+        ...prev,
+        [messageId]: [...(prev[messageId] || []), optimistic],
+      }));
+    }
+    try {
+      const res = await fetch(`/api/messages/${messageId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ emoji }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const { reactions }: { reactions: MessageReaction[] } = await res.json();
+      setReactionsMap(prev => ({ ...prev, [messageId]: reactions }));
+    } catch {
+      // Revert optimistic update on failure
+      setReactionsMap(prev => ({ ...prev, [messageId]: currentReactions }));
+    }
+  }, [reactionsMap, user]);
 
   useEffect(() => {
     if (!selectedChannelId || !socket) return;
@@ -476,7 +654,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
       setSelectedChannelId(null);
-      setIsChannelSettingsOpen(false);
+      setIsChannelPanelOpen(false);
       setIsDeleteConfirmOpen(false);
     }
   });
@@ -523,7 +701,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
-      setIsChannelSettingsOpen(false);
     },
   });
 
@@ -1033,11 +1210,28 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       const isOwn = message.userId === user?.id;
                       const isBot = message.isBot;
                       const isHighlighted = newMessageIds.has(message.id);
+                      const msgReactions = reactionsMap[message.id] || [];
+                      const threadOpen = openThreads.has(message.id);
+                      const threadCount = message.threadCount || 0;
+
+                      // Group reactions by emoji id
+                      const reactionGroups: Record<string, { count: number; myReaction: boolean; users: string[] }> = {};
+                      for (const r of msgReactions) {
+                        if (!reactionGroups[r.emoji]) {
+                          reactionGroups[r.emoji] = { count: 0, myReaction: false, users: [] };
+                        }
+                        reactionGroups[r.emoji].count++;
+                        if (r.userId === user?.id) reactionGroups[r.emoji].myReaction = true;
+                        const name = r.userFirstName && r.userLastName
+                          ? `${r.userFirstName} ${r.userLastName}`
+                          : r.userId;
+                        reactionGroups[r.emoji].users.push(name);
+                      }
                       
                       return (
                         <div
                           key={message.id}
-                          className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse' : ''}`}
+                          className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse' : ''} group/msg`}
                           data-testid={`message-${message.id}`}
                         >
                           {!isOwn && !isBot && (
@@ -1060,21 +1254,166 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   : message.userEmail || 'Unknown'}
                               </span>
                             )}
-                            <div
-                              className={`
-                                px-3 py-2 rounded-xl text-sm
-                                ${isOwn 
-                                  ? 'bg-primary/10 text-foreground border border-primary/20' 
-                                  : isBot
-                                    ? 'bg-primary/5 text-foreground border border-primary/20'
-                                    : 'bg-muted/30 text-foreground'
-                                }
-                              `}
-                            >
-                              <div className="break-words whitespace-pre-wrap">
-                                {renderMessageWithMentions(message.content, user?.id)}
+
+                            {/* Message bubble + hover toolbar */}
+                            <div className="relative">
+                              <div
+                                className={`
+                                  px-3 py-2 rounded-xl text-sm
+                                  ${isOwn 
+                                    ? 'bg-primary/10 text-foreground border border-primary/20' 
+                                    : isBot
+                                      ? 'bg-primary/5 text-foreground border border-primary/20'
+                                      : 'bg-muted/30 text-foreground'
+                                  }
+                                `}
+                              >
+                                <div className="break-words whitespace-pre-wrap">
+                                  {renderMessageWithMentions(message.content, user?.id)}
+                                </div>
+                              </div>
+
+                              {/* Hover toolbar — visibility toggled (no layout shift) */}
+                              <div
+                                className={`
+                                  absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
+                                  bg-background border rounded-lg shadow-sm p-0.5 z-10
+                                  invisible group-hover/msg:visible
+                                  ${isOwn ? 'right-full mr-2' : 'left-full ml-2'}
+                                `}
+                              >
+                                {REACTION_OPTIONS.map(({ id, Icon, label }) => (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    title={label}
+                                    onClick={() => toggleReaction(message.id, id)}
+                                    className="p-1 rounded hover-elevate text-muted-foreground"
+                                  >
+                                    <Icon className="h-3.5 w-3.5" />
+                                  </button>
+                                ))}
+                                <div className="w-px h-4 bg-border mx-0.5" />
+                                <button
+                                  type="button"
+                                  title="Reply in thread"
+                                  onClick={() => toggleThread(message.id)}
+                                  className="p-1 rounded hover-elevate text-muted-foreground"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </div>
+
+                            {/* Reaction pills */}
+                            {Object.keys(reactionGroups).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                {Object.entries(reactionGroups).map(([emojiId, group]) => (
+                                  <button
+                                    key={emojiId}
+                                    type="button"
+                                    title={group.users.join(", ")}
+                                    onClick={() => toggleReaction(message.id, emojiId)}
+                                    className={`
+                                      inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border
+                                      hover-elevate transition-colors
+                                      ${group.myReaction
+                                        ? 'bg-primary/15 border-primary/30 text-primary'
+                                        : 'bg-muted/30 border-border text-muted-foreground'
+                                      }
+                                    `}
+                                  >
+                                    <ReactionIcon id={emojiId} className="h-3 w-3" />
+                                    <span>{group.count}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Thread replies toggle */}
+                            {threadCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => toggleThread(message.id)}
+                                className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+                              >
+                                {threadOpen
+                                  ? <ChevronDown className="h-3 w-3" />
+                                  : <ChevronRight className="h-3 w-3" />
+                                }
+                                {threadCount} {threadCount === 1 ? 'reply' : 'replies'}
+                              </button>
+                            )}
+
+                            {/* Inline thread expansion */}
+                            {threadOpen && (
+                              <div className="mt-1 ml-2 border-l-2 border-border pl-3 w-full space-y-2">
+                                {loadingThreads.has(message.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                ) : (
+                                  (threadMessages[message.id] || []).map((reply) => {
+                                    const replyIsOwn = reply.userId === user?.id;
+                                    return (
+                                      <div key={reply.id} className="flex gap-2 items-start">
+                                        <Avatar className="h-6 w-6 shrink-0">
+                                          <AvatarFallback className="text-[10px] bg-muted/60">
+                                            {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex flex-col gap-0.5 flex-1">
+                                          <span className="text-[11px] font-medium text-foreground">
+                                            {reply.userFirstName && reply.userLastName
+                                              ? `${reply.userFirstName} ${reply.userLastName}`
+                                              : reply.userEmail || 'Unknown'}
+                                          </span>
+                                          <div className={`
+                                            px-2.5 py-1.5 rounded-lg text-sm
+                                            ${replyIsOwn
+                                              ? 'bg-primary/10 text-foreground border border-primary/20'
+                                              : 'bg-muted/20 text-foreground'
+                                            }
+                                          `}>
+                                            <div className="break-words whitespace-pre-wrap">
+                                              {renderMessageWithMentions(reply.content, user?.id)}
+                                            </div>
+                                          </div>
+                                          <span className="text-[10px] text-muted-foreground">
+                                            {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                                {/* Reply input */}
+                                <div className="flex items-center gap-2 pt-1">
+                                  <Input
+                                    value={threadInputs[message.id] || ""}
+                                    onChange={(e) => setThreadInputs(prev => ({ ...prev, [message.id]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        sendReply(message.id, message.channelId);
+                                      }
+                                    }}
+                                    placeholder="Reply..."
+                                    className="h-8 text-sm flex-1"
+                                  />
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    disabled={!threadInputs[message.id]?.trim() || sendingThreads.has(message.id)}
+                                    onClick={() => sendReply(message.id, message.channelId)}
+                                  >
+                                    {sendingThreads.has(message.id)
+                                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      : <Send className="h-3.5 w-3.5" />
+                                    }
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
                             <span className="text-[10px] text-muted-foreground">
                               {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
                             </span>

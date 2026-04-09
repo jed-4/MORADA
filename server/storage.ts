@@ -1042,6 +1042,11 @@ export interface IStorage {
   createMessage(message: InsertMessage): Promise<Message>;
   updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined>;
   deleteMessage(id: string): Promise<boolean>;
+  getMessageReplies(messageId: string): Promise<Message[]>;
+  // Message Reactions
+  getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
+  getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
+  toggleMessageReaction(messageId: string, userId: string, emoji: string, userFirstName: string | null, userLastName: string | null): Promise<{ reactions: schema.MessageReaction[]; action: 'added' | 'removed'; channelId: string }>;
 
   // Purchase Orders CRUD
   getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]>;
@@ -18558,9 +18563,125 @@ export class DbStorage implements IStorage {
       const result = await db.insert(schema.messages)
         .values(messageWithUserInfo)
         .returning();
-      return result[0] as Message;
+      const created = result[0] as Message;
+
+      // If this is a reply, increment the parent's threadCount
+      if (message.threadParentId) {
+        await db.update(schema.messages)
+          .set({ threadCount: sql`${schema.messages.threadCount} + 1`, updatedAt: new Date() })
+          .where(eq(schema.messages.id, message.threadParentId));
+      }
+
+      return created;
     } catch (error) {
       console.error("Database error in createMessage:", error);
+      throw error;
+    }
+  }
+
+  async getMessageReplies(messageId: string): Promise<Message[]> {
+    try {
+      const result = await db.select().from(schema.messages)
+        .where(and(
+          eq(schema.messages.threadParentId, messageId),
+          eq(schema.messages.isDeleted, false)
+        ))
+        .orderBy(asc(schema.messages.createdAt));
+      return result as Message[];
+    } catch (error) {
+      console.error("Database error in getMessageReplies:", error);
+      throw error;
+    }
+  }
+
+  async getMessageReactions(messageId: string): Promise<schema.MessageReaction[]> {
+    try {
+      const result = await db.select().from(schema.messageReactions)
+        .where(eq(schema.messageReactions.messageId, messageId))
+        .orderBy(asc(schema.messageReactions.createdAt));
+      return result as schema.MessageReaction[];
+    } catch (error) {
+      console.error("Database error in getMessageReactions:", error);
+      throw error;
+    }
+  }
+
+  async getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>> {
+    try {
+      // Join reactions with messages to filter by channelId
+      const result = await db.select({
+        id: schema.messageReactions.id,
+        messageId: schema.messageReactions.messageId,
+        userId: schema.messageReactions.userId,
+        emoji: schema.messageReactions.emoji,
+        userFirstName: schema.messageReactions.userFirstName,
+        userLastName: schema.messageReactions.userLastName,
+        createdAt: schema.messageReactions.createdAt,
+      }).from(schema.messageReactions)
+        .innerJoin(schema.messages, eq(schema.messageReactions.messageId, schema.messages.id))
+        .where(eq(schema.messages.channelId, channelId))
+        .orderBy(asc(schema.messageReactions.createdAt));
+
+      const grouped: Record<string, schema.MessageReaction[]> = {};
+      for (const r of result) {
+        if (!grouped[r.messageId]) grouped[r.messageId] = [];
+        grouped[r.messageId].push(r as schema.MessageReaction);
+      }
+      return grouped;
+    } catch (error) {
+      console.error("Database error in getChannelReactions:", error);
+      throw error;
+    }
+  }
+
+  async toggleMessageReaction(
+    messageId: string,
+    userId: string,
+    emoji: string,
+    userFirstName: string | null,
+    userLastName: string | null
+  ): Promise<{ reactions: schema.MessageReaction[]; action: 'added' | 'removed'; channelId: string }> {
+    try {
+      // Get the message to retrieve channelId
+      const message = await this.getMessage(messageId);
+      if (!message) throw new Error("Message not found");
+
+      // Check if reaction already exists
+      const existing = await db.select().from(schema.messageReactions)
+        .where(and(
+          eq(schema.messageReactions.messageId, messageId),
+          eq(schema.messageReactions.userId, userId),
+          eq(schema.messageReactions.emoji, emoji)
+        ))
+        .limit(1);
+
+      let action: 'added' | 'removed';
+      if (existing.length > 0) {
+        // Remove the reaction
+        await db.delete(schema.messageReactions)
+          .where(and(
+            eq(schema.messageReactions.messageId, messageId),
+            eq(schema.messageReactions.userId, userId),
+            eq(schema.messageReactions.emoji, emoji)
+          ));
+        action = 'removed';
+      } else {
+        // Add the reaction
+        await db.insert(schema.messageReactions).values({
+          messageId,
+          userId,
+          emoji,
+          userFirstName,
+          userLastName,
+        });
+        action = 'added';
+      }
+
+      // Return the updated reactions for this message
+      const reactions = await this.getMessageReactions(messageId);
+      return { reactions, action, channelId: message.channelId };
+    } catch (error) {
+      console.error("Database error in toggleMessageReaction:", error);
       throw error;
     }
   }

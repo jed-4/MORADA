@@ -20235,6 +20235,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const io = getIO();
       if (io) {
         io.to(`channel:${channelId}`).emit("new_message", message);
+        // If this is a threaded reply, also broadcast the updated parent so thread counts refresh
+        if (message.threadParentId) {
+          const parent = await storage.getMessage(message.threadParentId);
+          if (parent) io.to(`channel:${channelId}`).emit("message_updated", parent);
+        }
       }
       
       res.status(201).json(message);
@@ -20269,6 +20274,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete message" });
+    }
+  });
+
+  // Message Reactions — GET returns all reactions for a message
+  app.get("/api/messages/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      const reactions = await storage.getMessageReactions(req.params.id);
+      res.json(reactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch reactions" });
+    }
+  });
+
+  // Message Reactions — POST toggles current user's reaction (add if missing, remove if present)
+  app.post("/api/messages/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { emoji } = req.body;
+      if (!emoji || typeof emoji !== "string") {
+        return res.status(400).json({ error: "emoji is required" });
+      }
+      const user = (req.user as any).dbUser;
+      const result = await storage.toggleMessageReaction(
+        req.params.id,
+        userId,
+        emoji,
+        user?.firstName || null,
+        user?.lastName || null
+      );
+      // Broadcast reaction update to channel room
+      const io = getIO();
+      if (io) {
+        io.to(`channel:${result.channelId}`).emit("reaction_updated", {
+          messageId: req.params.id,
+          reactions: result.reactions,
+        });
+      }
+      res.json({ reactions: result.reactions, action: result.action });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to toggle reaction" });
+    }
+  });
+
+  // Bulk reactions for all messages in a channel
+  app.get("/api/channels/:channelId/reactions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const channel = await storage.getChannel(req.params.channelId, companyId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+      const members = await storage.getChannelMembers(req.params.channelId);
+      if (!members.some(m => m.userId === userId)) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
+      const reactions = await storage.getChannelReactions(req.params.channelId);
+      res.json(reactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch channel reactions" });
+    }
+  });
+
+  // Message Replies — GET returns threaded replies for a parent message
+  app.get("/api/messages/:id/replies", requireAuth, async (req, res) => {
+    try {
+      const replies = await storage.getMessageReplies(req.params.id);
+      res.json(replies);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch replies" });
     }
   });
 

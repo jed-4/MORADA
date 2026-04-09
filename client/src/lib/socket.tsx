@@ -337,3 +337,42 @@ export function TaskEventsListener({ children }: { children?: ReactNode }) {
   useTaskEvents();
   return <>{children}</>;
 }
+
+// Hook for real-time reaction updates (reaction_updated event)
+export function useReactionUpdated(
+  onUpdate: (messageId: string, reactions: any[]) => void
+) {
+  const { socket } = useSocket();
+  const onUpdateRef = useRef(onUpdate);
+  useLayoutEffect(() => { onUpdateRef.current = onUpdate; });
+
+  useEffect(() => {
+    if (!socket) return;
+    const handle = (data: { messageId: string; reactions: any[] }) => {
+      onUpdateRef.current(data.messageId, data.reactions);
+    };
+    socket.on("reaction_updated", handle);
+    return () => { socket.off("reaction_updated", handle); };
+  }, [socket]);
+}
+
+// Hook for message_updated events (e.g. threadCount changes after a reply)
+export function useMessageUpdated(
+  channelId: string | null,
+  onUpdate: (message: Message) => void
+) {
+  const { socket } = useSocket();
+  const onUpdateRef = useRef(onUpdate);
+  useLayoutEffect(() => { onUpdateRef.current = onUpdate; });
+
+  useEffect(() => {
+    if (!socket || !channelId) return;
+    const handle = (message: Message) => {
+      if (message.channelId === channelId) {
+        onUpdateRef.current(message);
+      }
+    };
+    socket.on("message_updated", handle);
+    return () => { socket.off("message_updated", handle); };
+  }, [socket, channelId]);
+}

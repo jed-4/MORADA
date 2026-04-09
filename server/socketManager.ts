@@ -186,3 +186,8 @@ export function emitNotification(userId: string, notification: any) {
   if (!io) return;
   io.to(`user:${userId}`).emit("notification:new", notification);
 }
+
+export function emitReactionUpdated(channelId: string, messageId: string, reactions: any[]) {
+  if (!io) return;
+  io.to(`channel:${channelId}`).emit("reaction_updated", { messageId, reactions });
+}
