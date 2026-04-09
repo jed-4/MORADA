@@ -6683,6 +6683,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Server-side file upload — browser sends the raw file; server writes to GCS.
+  // This avoids the CORS issues of direct-to-GCS signed-URL uploads.
+  const messageFileUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  });
+  app.post(
+    "/api/uploads/file",
+    requireAuth,
+    requireTeamMember,
+    messageFileUpload.single("file"),
+    async (req: any, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: "No file provided" });
+        }
+        const { originalname, buffer, mimetype } = req.file;
+        const companyId = req.user.companyId;
+        const objectPath = await objectStorageService.uploadObjectEntity(
+          buffer,
+          mimetype || "application/octet-stream",
+          companyId,
+        );
+        res.json({ objectPath, name: originalname, contentType: mimetype });
+      } catch (error) {
+        console.error("[upload/file] Error:", error);
+        res.status(500).json({ error: "Failed to upload file" });
+      }
+    }
+  );
+
   // Serve uploaded objects (authenticated, company-scoped)
   app.get("/objects/company/:companyId/*", requireAuth, async (req: any, res) => {
     try {

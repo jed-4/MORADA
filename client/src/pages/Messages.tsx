@@ -1383,39 +1383,27 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
     mark({ uploading: true, progress: 0, error: false });
     try {
-      // Step 1: Get presigned URL
-      const urlResp = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type || "application/octet-stream",
-        }),
-      });
-      if (!urlResp.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlResp.json() as { uploadURL: string; objectPath: string };
+      // Upload via our Express server — avoids all CORS issues with direct-to-GCS.
+      const formData = new FormData();
+      formData.append("file", file, file.name);
 
       mark({ progress: 30 });
 
-      // Step 2: Upload file to GCS via fetch PUT.
-      // We send the raw file body without any explicit Content-Type header so the
-      // browser uses the file's natural MIME type and GCS (signed without a
-      // content-type constraint) accepts whatever the browser sends.
-      mark({ progress: 50 });
-      const arrayBuffer = await file.arrayBuffer();
-      const putResp = await fetch(uploadURL, {
-        method: "PUT",
-        body: arrayBuffer,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+      const uploadResp = await fetch("/api/uploads/file", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
       });
-      if (!putResp.ok) {
-        const body = await putResp.text().catch(() => "");
-        console.error("[upload] GCS PUT failed:", putResp.status, body.substring(0, 500));
-        throw new Error(`GCS upload failed: ${putResp.status} ${body.substring(0, 200)}`);
+
+      mark({ progress: 80 });
+
+      if (!uploadResp.ok) {
+        const body = await uploadResp.text().catch(() => "");
+        console.error("[upload] Server upload failed:", uploadResp.status, body.substring(0, 500));
+        throw new Error(`Upload failed: ${uploadResp.status} ${body.substring(0, 200)}`);
       }
-      mark({ progress: 90 });
+
+      const { objectPath } = await uploadResp.json() as { objectPath: string };
 
       mark({ progress: 100, uploading: false, objectPath });
       return objectPath;
