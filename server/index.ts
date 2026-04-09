@@ -8,6 +8,21 @@ import path from "path";
 import fs from "fs";
 
 const app = express();
+
+// Capture raw body for Xero webhook HMAC verification before JSON parsing
+// Must be registered before express.json() middleware
+app.use('/api/xero/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req: Request, _res: Response, next: NextFunction) => {
+  if (Buffer.isBuffer(req.body)) {
+    (req as any).rawBody = req.body.toString('utf8');
+    try {
+      req.body = JSON.parse((req as any).rawBody);
+    } catch {
+      req.body = {};
+    }
+  }
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 

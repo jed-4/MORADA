@@ -58,7 +58,9 @@ import {
   ClipboardList,
   Folder,
   MoreHorizontal,
-  Clock
+  Clock,
+  Copy,
+  Link,
 } from "lucide-react";
 import {
   DndContext,
@@ -862,6 +864,34 @@ export default function Settings() {
               <p className="text-sm text-muted-foreground">
                 Bills with "Send to Xero" checked will be synced when saved.
               </p>
+
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Link className="h-4 w-4 text-muted-foreground" />
+                  <h4 className="font-medium text-sm">Webhook URL</h4>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Register this URL in your Xero developer app under <strong>Webhooks</strong> to receive real-time payment and status updates automatically.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-muted rounded px-2 py-1.5 font-mono break-all">
+                    {`${window.location.origin}/api/xero/webhook`}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/xero/webhook`);
+                      toast({ title: "Webhook URL copied" });
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Set <code className="bg-muted px-1 rounded">XERO_WEBHOOK_KEY</code> in environment settings with the key from the Xero developer portal to enable signature validation.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="border rounded-lg p-4 bg-muted/30">

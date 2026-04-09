@@ -144,11 +144,26 @@ export class XeroService {
     if (!connection) {
       throw new Error(`Xero connection not found: ${connectionId}`);
     }
+    if (!connection.isActive) {
+      throw new Error(`Xero connection ${connectionId} is not active — please reconnect Xero in Settings`);
+    }
+    if (!connection.tenantId) {
+      throw new Error(`Xero connection ${connectionId} is missing tenantId — please reconnect Xero in Settings`);
+    }
 
+    // Refresh 5 minutes before expiry (increased from 60s) to reduce production clock-skew failures
     const now = new Date();
-    const bufferMs = 60 * 1000;
-    if (connection.tokenExpiresAt.getTime() - bufferMs <= now.getTime()) {
-      connection = await this.refreshAccessToken(connectionId);
+    const bufferMs = 5 * 60 * 1000;
+    if (!connection.tokenExpiresAt || connection.tokenExpiresAt.getTime() - bufferMs <= now.getTime()) {
+      try {
+        connection = await this.refreshAccessToken(connectionId);
+      } catch (refreshErr: any) {
+        // If refresh fails due to invalid_grant (revoked / expired refresh token), throw a clear error
+        if (refreshErr.message?.includes("invalid_grant") || refreshErr.message?.includes("401")) {
+          throw new Error("Xero refresh token has expired — please reconnect Xero in Settings");
+        }
+        throw refreshErr;
+      }
     }
 
     return connection.accessToken;

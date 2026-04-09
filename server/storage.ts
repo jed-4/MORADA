@@ -689,6 +689,7 @@ export interface IStorage {
   // Client Invoices CRUD
   getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]>;
   getClientInvoice(id: string): Promise<ClientInvoice | undefined>;
+  getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
   updateClientInvoice(id: string, invoice: Partial<InsertClientInvoice>): Promise<ClientInvoice | undefined>;
   deleteClientInvoice(id: string): Promise<boolean>;
@@ -1185,6 +1186,7 @@ export interface IStorage {
 
   // Xero Connection operations
   getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined>;
+  getXeroConnectionByTenantId(tenantId: string): Promise<import("@shared/schema").XeroConnection | undefined>;
   getXeroConnection(id: string): Promise<import("@shared/schema").XeroConnection | undefined>;
   createXeroConnection(data: import("@shared/schema").InsertXeroConnection): Promise<import("@shared/schema").XeroConnection>;
   updateXeroConnection(id: string, data: Partial<import("@shared/schema").XeroConnection>): Promise<import("@shared/schema").XeroConnection | undefined>;
@@ -5659,6 +5661,9 @@ export class MemStorage implements IStorage {
   }
 
   async getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    return undefined;
+  }
+  async getXeroConnectionByTenantId(tenantId: string): Promise<import("@shared/schema").XeroConnection | undefined> {
     return undefined;
   }
   async getXeroConnection(id: string): Promise<import("@shared/schema").XeroConnection | undefined> {
@@ -13634,6 +13639,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.clientInvoices)
+        .where(eq(schema.clientInvoices.xeroInvoiceId, xeroInvoiceId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getClientInvoiceByXeroId:", error);
+      return undefined;
+    }
+  }
+
   async createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice> {
     try {
       const result = await db.insert(schema.clientInvoices)
@@ -20788,6 +20806,22 @@ export class DbStorage implements IStorage {
       return connection;
     } catch (error) {
       console.error("Database error in getXeroConnectionByCompanyId:", error);
+      throw error;
+    }
+  }
+
+  async getXeroConnectionByTenantId(tenantId: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    try {
+      const [connection] = await db.select()
+        .from(schema.xeroConnections)
+        .where(and(
+          eq(schema.xeroConnections.tenantId, tenantId),
+          eq(schema.xeroConnections.isActive, true)
+        ))
+        .limit(1);
+      return connection;
+    } catch (error) {
+      console.error("Database error in getXeroConnectionByTenantId:", error);
       throw error;
     }
   }

@@ -2099,6 +2099,7 @@ export const clientInvoices = pgTable("client_invoices", {
   notes: text("notes"),
   sendToXero: boolean("send_to_xero").notNull().default(false),
   xeroInvoiceId: text("xero_invoice_id"),
+  xeroInvoiceNumber: text("xero_invoice_number"),
   lockedContractPrice: integer("locked_contract_price"), // Snapshot of estimate total when estimate is approved/locked
   columnConfig: jsonb("column_config").default([]), // Array of { id, visible, order } for configurable invoice columns
   showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference

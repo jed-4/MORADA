@@ -212,6 +212,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
+    // Xero webhook — must be publicly accessible so Xero can POST without a session
+    if (path === '/xero/webhook') {
+      return next();
+    }
+
     // DEVELOPMENT-ONLY BYPASSES - Inject dev user when not authenticated
     if (process.env.NODE_ENV === 'development') {
       // If user is already authenticated, use their data
@@ -22394,6 +22399,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return res.status(400).json({ error: "invoiceId is required" });
       }
 
+      // Always get a fresh connection to ensure tenantId and tokens are up to date
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) {
         return res.status(400).json({ error: "Xero is not connected" });
@@ -22404,6 +22410,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return res.status(404).json({ error: "Client invoice not found" });
       }
 
+      // If invoice already has a Xero ID, redirect to update route logic
       if (invoice.xeroInvoiceId) {
         return res.status(400).json({ error: "Invoice already pushed to Xero", xeroInvoiceId: invoice.xeroInvoiceId });
       }
@@ -22414,6 +22421,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       let clientXeroContactId: string | undefined;
 
       const project = await storage.getProject(invoice.projectId);
+      // Explicit ownership check: ensure the invoice's project belongs to this company
+      if (!project || (project as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - invoice does not belong to your company" });
+      }
       if (project?.clientId) {
         try {
           const client = await storage.getContact(project.clientId, companyId);
@@ -22500,6 +22511,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (xeroInvoice?.InvoiceID) {
         await storage.updateClientInvoice(invoiceId, {
           xeroInvoiceId: xeroInvoice.InvoiceID,
+          xeroInvoiceNumber: xeroInvoice.InvoiceNumber || null,
           sendToXero: true,
         } as any);
       }
@@ -22512,6 +22524,349 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error pushing client invoice to Xero:", error);
       res.status(500).json({ error: error.message || "Failed to push client invoice to Xero" });
+    }
+  });
+
+  // Xero: Update an existing client invoice in Xero (upsert)
+  app.patch("/api/xero/update-client-invoice/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Client invoice not found" });
+      if (!invoice.xeroInvoiceId) return res.status(400).json({ error: "Invoice has not been pushed to Xero yet. Use push route first." });
+
+      const lineItems = await storage.getClientInvoiceItems(invoice.id);
+
+      let clientName = "Unknown Client";
+      let clientXeroContactId: string | undefined;
+      const project = await storage.getProject(invoice.projectId);
+      // Explicit ownership check: ensure the invoice's project belongs to this company
+      if (!project || (project as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - invoice does not belong to your company" });
+      }
+      if (project?.clientId) {
+        try {
+          const client = await storage.getContact(project.clientId, companyId);
+          if (client) {
+            clientName = client.company || client.name || `${client.firstName || ""} ${client.lastName || ""}`.trim() || "Unknown Client";
+            clientXeroContactId = (client as any).xeroContactId || undefined;
+          }
+        } catch {}
+      }
+
+      if (!clientXeroContactId) {
+        return res.status(422).json({
+          error: "UNMAPPED_CONTACT",
+          message: "Client is not linked to a Xero contact. Please link the client contact to Xero first.",
+          clientName,
+          projectId: invoice.projectId,
+        });
+      }
+
+      let projectXeroTrackingOptionId: string | undefined;
+      if (project && connection.trackingCategory2Id) {
+        try {
+          if ((project as any).xeroTrackingOptionId) {
+            projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
+          } else {
+            const option = await xeroService.createTrackingOption(connection.id, connection.trackingCategory2Id, project.name);
+            if (option?.TrackingOptionID) {
+              projectXeroTrackingOptionId = option.TrackingOptionID;
+              await storage.updateProject(invoice.projectId, {
+                xeroTrackingOptionId: option.TrackingOptionID,
+                xeroTrackingOptionName: project.name,
+              } as any);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to get/create Xero tracking option:", e);
+        }
+      }
+
+      const formatDate = (d: Date | string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split("T")[0];
+        const date = d instanceof Date ? d : new Date(d);
+        return date.toISOString().split("T")[0];
+      };
+
+      const xeroLineItems = lineItems.map((item: any) => {
+        const tracking: any[] = [];
+        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
+          tracking.push({ TrackingCategoryID: connection.trackingCategory2Id, TrackingOptionID: projectXeroTrackingOptionId });
+        }
+        return {
+          description: item.description || "",
+          quantity: typeof item.quantity === "number" ? item.quantity : 1,
+          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+          taxType: item.taxable ? "OUTPUT" : "NONE",
+          accountCode: (item as any).xeroAccountCode || undefined,
+          tracking: tracking.length > 0 ? tracking : undefined,
+        };
+      });
+
+      if (xeroLineItems.length === 0) return res.status(400).json({ error: "Invoice has no line items to sync" });
+
+      // Xero's POST /Invoices with InvoiceID performs an upsert
+      const accessToken = await xeroService.getValidToken(connection.id);
+      const invoicePayload: any = {
+        InvoiceID: invoice.xeroInvoiceId,
+        Type: "ACCREC",
+        Contact: { ContactID: clientXeroContactId },
+        Date: formatDate(invoice.invoiceDate),
+        LineItems: xeroLineItems.map((li: any) => ({
+          Description: li.description,
+          Quantity: li.quantity,
+          UnitAmount: li.unitAmount,
+          TaxType: li.taxType,
+          ...(li.accountCode ? { AccountCode: li.accountCode } : {}),
+          ...(li.tracking?.length ? { Tracking: li.tracking } : {}),
+        })),
+        LineAmountTypes: "Exclusive",
+        Status: "AUTHORISED",
+        InvoiceNumber: invoice.invoiceNumber,
+        Reference: invoice.invoiceNumber,
+      };
+      if (invoice.dueDate) invoicePayload.DueDate = formatDate(invoice.dueDate);
+
+      const updateResponse = await fetch("https://api.xero.com/api.xro/2.0/Invoices", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ Invoices: [invoicePayload] }),
+      });
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        throw new Error(`Xero API error: ${updateResponse.status} ${errorText}`);
+      }
+
+      const updateData = (await updateResponse.json()) as any;
+      const xeroInvoice = updateData.Invoices?.[0];
+
+      await storage.updateClientInvoice(invoice.id, {
+        sendToXero: true,
+        xeroInvoiceNumber: xeroInvoice?.InvoiceNumber || null,
+      } as any);
+
+      res.json({
+        success: true,
+        xeroInvoiceId: xeroInvoice?.InvoiceID,
+        xeroInvoiceNumber: xeroInvoice?.InvoiceNumber,
+      });
+    } catch (error: any) {
+      console.error("Error updating client invoice in Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to update client invoice in Xero" });
+    }
+  });
+
+  // Xero: Pull client invoice state from Xero (status, paid amount, balance)
+  app.post("/api/xero/pull-client-invoice/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (!invoice.xeroInvoiceId) return res.status(400).json({ error: "Invoice has not been pushed to Xero" });
+
+      // Explicit ownership check: ensure the invoice's project belongs to this company
+      const invoiceProject = await storage.getProject(invoice.projectId);
+      if (!invoiceProject || (invoiceProject as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - invoice does not belong to your company" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const xeroInvoice = await xeroService.getInvoice(connection.id, invoice.xeroInvoiceId);
+      if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
+
+      const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+      const xeroStatus: string = xeroInvoice.Status;
+      const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
+
+      let newLocalStatus: string = invoice.status;
+      if (xeroStatus === "PAID") {
+        newLocalStatus = "paid";
+      } else if (amountPaidCents > 0) {
+        newLocalStatus = "partial";
+      } else if (xeroStatus === "VOIDED") {
+        newLocalStatus = "draft";
+      }
+
+      const updates: any = {
+        paidAmount: amountPaidCents,
+        balanceAmount: Math.max(0, amountDueCents),
+        status: newLocalStatus,
+      };
+
+      if (amountPaidCents > (invoice.paidAmount || 0)) {
+        const diff = amountPaidCents - (invoice.paidAmount || 0);
+        await storage.createClientInvoicePayment({
+          invoiceId: invoice.id,
+          amount: diff,
+          paymentDate: new Date(),
+          paymentMethod: "Xero Sync",
+          reference: "Synced from Xero",
+          notes: null,
+          isVoided: false,
+          recordedBy: user?.id || null,
+        } as any);
+      }
+
+      await storage.updateClientInvoice(invoice.id, updates);
+
+      res.json({
+        success: true,
+        xeroStatus,
+        amountPaidCents,
+        amountDueCents,
+        newLocalStatus,
+      });
+    } catch (error: any) {
+      console.error("Error pulling client invoice from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to pull client invoice from Xero" });
+    }
+  });
+
+  // Xero: Webhook endpoint for receiving Xero change notifications
+  // Must be publicly accessible (no requireAuth) so Xero can POST to it
+  app.post("/api/xero/webhook", async (req, res) => {
+    try {
+      const webhookKey = process.env.XERO_WEBHOOK_KEY;
+      const xeroSignature = req.headers["x-xero-signature"] as string | undefined;
+
+      // Fail-closed webhook authentication: XERO_WEBHOOK_KEY must be set; all requests must carry a valid signature.
+      // This prevents unauthenticated mutations of invoice payment/status data from this public endpoint.
+      if (!webhookKey) {
+        console.error("[Xero Webhook] XERO_WEBHOOK_KEY is not configured — rejecting request. Set this environment variable to enable webhook processing.");
+        return res.status(503).json({ error: "Webhook not configured — XERO_WEBHOOK_KEY is missing" });
+      }
+
+      if (!xeroSignature) {
+        console.warn("[Xero Webhook] Missing x-xero-signature header — rejecting unauthenticated request");
+        return res.status(401).json({ error: "Missing webhook signature" });
+      }
+
+      const { createHmac, timingSafeEqual } = await import("crypto");
+      // Xero signs the raw request bytes. Use the raw body captured before JSON parsing.
+      // Falls back to re-serialized JSON only if rawBody is not available.
+      const rawBody = (req as any).rawBody ?? JSON.stringify(req.body);
+      const expectedSignature = createHmac("sha256", webhookKey).update(rawBody).digest("base64");
+      // Use timing-safe comparison to prevent timing attacks on signature verification
+      const signaturesMatch = (() => {
+        try {
+          const expected = Buffer.from(expectedSignature, "base64");
+          const actual = Buffer.from(xeroSignature, "base64");
+          return expected.length === actual.length && timingSafeEqual(expected, actual);
+        } catch {
+          return false;
+        }
+      })();
+      if (!signaturesMatch) {
+        console.warn("[Xero Webhook] Invalid signature — rejecting request");
+        return res.status(401).json({ error: "Invalid webhook signature" });
+      }
+
+      const payload = req.body;
+      if (!payload?.events || !Array.isArray(payload.events)) {
+        return res.status(200).json({ processed: 0 });
+      }
+
+      // tenantId at the payload level identifies which Xero org sent this webhook
+      const payloadTenantId: string | undefined = payload.tenantId;
+
+      // Resolve the Xero connection from the tenant ID embedded in the webhook payload.
+      // This is reliable because each Xero organisation has a unique tenantId.
+      let connection: Awaited<ReturnType<typeof storage.getXeroConnectionByTenantId>> | null = null;
+      if (payloadTenantId) {
+        connection = await storage.getXeroConnectionByTenantId(payloadTenantId).catch(() => null) || null;
+      }
+
+      let processed = 0;
+
+      for (const event of payload.events) {
+        if (event.resourceType !== "INVOICE") continue;
+
+        const xeroInvoiceId: string = event.resourceId;
+        if (!xeroInvoiceId) continue;
+
+        // Find the local invoice with this Xero ID
+        const localInvoice = await storage.getClientInvoiceByXeroId(xeroInvoiceId).catch(() => null);
+        if (!localInvoice) continue;
+
+        try {
+          // Prefer connection resolved from payload tenantId; fall back to per-event tenantId
+          let resolvedConnection = connection;
+          if (!resolvedConnection && event.tenantId) {
+            resolvedConnection = await storage.getXeroConnectionByTenantId(event.tenantId).catch(() => null) || null;
+          }
+          if (!resolvedConnection) {
+            console.warn(`[Xero Webhook] No active Xero connection found for invoice ${xeroInvoiceId}`);
+            continue;
+          }
+
+          const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
+          if (!xeroInvoice) continue;
+
+          const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+          const amountDueCents = Math.round((xeroInvoice.AmountDue || 0) * 100);
+          const xeroStatus: string = xeroInvoice.Status;
+
+          // Map Xero invoice statuses to local statuses
+          let newLocalStatus: string = localInvoice.status;
+          if (xeroStatus === "PAID") {
+            newLocalStatus = "paid";
+          } else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
+            newLocalStatus = "draft"; // Reverting to draft is the safest option for voided/deleted
+          } else if (xeroStatus === "AUTHORISED" && amountPaidCents > 0 && amountDueCents > 0) {
+            newLocalStatus = "partial";
+          } else if (xeroStatus === "AUTHORISED" || xeroStatus === "SUBMITTED") {
+            // Keep the current status but record payment changes if any
+            newLocalStatus = localInvoice.status;
+          }
+
+          if (amountPaidCents > (localInvoice.paidAmount || 0)) {
+            const diff = amountPaidCents - (localInvoice.paidAmount || 0);
+            await storage.createClientInvoicePayment({
+              invoiceId: localInvoice.id,
+              amount: diff,
+              paymentDate: new Date(),
+              paymentMethod: "Xero Webhook",
+              reference: `Xero webhook: ${event.eventType || "updated"}`,
+              notes: null,
+              isVoided: false,
+              recordedBy: null,
+            } as any);
+          }
+
+          await storage.updateClientInvoice(localInvoice.id, {
+            paidAmount: amountPaidCents,
+            balanceAmount: Math.max(0, amountDueCents),
+            status: newLocalStatus,
+          } as any);
+
+          processed++;
+        } catch (err) {
+          console.error(`[Xero Webhook] Failed to process invoice ${xeroInvoiceId}:`, err);
+        }
+      }
+
+      res.status(200).json({ processed });
+    } catch (error: any) {
+      console.error("[Xero Webhook] Error processing webhook:", error);
+      res.status(200).json({ processed: 0 });
     }
   });
 

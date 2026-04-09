@@ -35,6 +35,7 @@ import {
   ArrowUpDown,
   LayoutGrid,
 } from "lucide-react";
+import { SiXero } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -241,6 +242,7 @@ export default function ClientInvoiceDetail() {
   const [invoiceType, setInvoiceType] = useState<"progress_payments" | "cost_plus">("progress_payments");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [xeroPushing, setXeroPushing] = useState(false);
+  const [sendToXero, setSendToXero] = useState(false);
 
   // ── new UI state ─────────────────────────────────────────────────────────────
   const [introCollapsed, setIntroCollapsed] = useState(true);
@@ -516,6 +518,8 @@ export default function ClientInvoiceDetail() {
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
       if (invoice.closingText) setClosingCollapsed(false);
+      // Restore sendToXero toggle from persisted value
+      setSendToXero(!!invoice.sendToXero);
     }
   }, [invoice, isEditMode, form]);
 
@@ -858,6 +862,7 @@ export default function ClientInvoiceDetail() {
     columnConfig: columnConfig,
     showAmountsIncTax: showAmountsIncTax,
     contractClaimRows: contractClaimRows,
+    sendToXero: sendToXero,
   });
 
   const createMutation = useMutation({
@@ -869,8 +874,7 @@ export default function ClientInvoiceDetail() {
         status: "draft",
       };
 
-      const invoiceRes = await apiRequest("/api/client-invoices", "POST", invoiceData);
-      const newInvoice = (await invoiceRes.json()) as ClientInvoice;
+      const newInvoice = (await apiRequest("/api/client-invoices", "POST", invoiceData)) as ClientInvoice;
 
       for (let i = 0; i < customLines.length; i++) {
         const item = customLines[i];
@@ -929,7 +933,7 @@ export default function ClientInvoiceDetail() {
 
       return newInvoice;
     },
-    onSuccess: (inv) => {
+    onSuccess: async (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       if (user?.id) {
         logActivity({
@@ -943,7 +947,19 @@ export default function ClientInvoiceDetail() {
           metadata: {},
         });
       }
-      toast({ title: "Success", description: "Invoice created successfully" });
+
+      // Auto-push to Xero if sendToXero is enabled on create
+      if (sendToXero && xeroStatus?.connected && inv.id) {
+        try {
+          const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: inv.id });
+          toast({ title: "Created & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
+        } catch (xeroErr: any) {
+          toast({ title: "Created, but Xero push failed", description: xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Success", description: "Invoice created successfully" });
+      }
+
       handleCancel();
     },
     onError: (error: Error) => {
@@ -960,12 +976,11 @@ export default function ClientInvoiceDetail() {
           Math.round(calculateTotal() * 100) - (invoice?.paidAmount || 0),
       };
 
-      const invoiceRes = await apiRequest(
+      const updatedInvoice = (await apiRequest(
         `/api/client-invoices/${effectiveInvoiceId}`,
         "PATCH",
         invoiceData
-      );
-      const updatedInvoice = (await invoiceRes.json()) as ClientInvoice;
+      )) as ClientInvoice;
 
       // Sync custom lines
       const existingIds = existingCustomLines.map((item) => item.id);
@@ -1044,7 +1059,7 @@ export default function ClientInvoiceDetail() {
 
       return updatedInvoice;
     },
-    onSuccess: (inv) => {
+    onSuccess: async (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
@@ -1061,7 +1076,28 @@ export default function ClientInvoiceDetail() {
           metadata: {},
         });
       }
-      toast({ title: "Success", description: "Invoice updated successfully" });
+
+      // Auto-sync to Xero if sendToXero is enabled
+      if (sendToXero && xeroStatus?.connected && effectiveInvoiceId) {
+        try {
+          const xeroInvoiceId = (inv as ClientInvoice).xeroInvoiceId;
+          if (xeroInvoiceId) {
+            // Update existing Xero invoice — apiRequest throws on error, returns parsed JSON on success
+            const data = await apiRequest(`/api/xero/update-client-invoice/${effectiveInvoiceId}`, "PATCH");
+            toast({ title: "Saved & synced to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || xeroInvoiceId} updated` });
+          } else {
+            // Push as new Xero invoice
+            const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: effectiveInvoiceId });
+            queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+            toast({ title: "Saved & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
+          }
+        } catch (xeroErr: any) {
+          toast({ title: "Saved, but Xero sync failed", description: xeroErr.message || "Unknown Xero error", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Success", description: "Invoice updated successfully" });
+      }
+
       handleCancel();
     },
     onError: (error: Error) => {
@@ -1071,8 +1107,7 @@ export default function ClientInvoiceDetail() {
 
   const voidPaymentMutation = useMutation({
     mutationFn: async (paymentId: string) => {
-      const res = await apiRequest(`/api/client-invoice-payments/${paymentId}/void`, "PATCH");
-      return res.json();
+      return await apiRequest(`/api/client-invoice-payments/${paymentId}/void`, "PATCH");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
@@ -1095,12 +1130,11 @@ export default function ClientInvoiceDetail() {
         notes: data.notes,
       };
 
-      const paymentRes = await apiRequest(
+      const newPayment = (await apiRequest(
         `/api/client-invoices/${effectiveInvoiceId}/payments`,
         "POST",
         paymentData
-      );
-      const newPayment = (await paymentRes.json()) as ClientInvoicePayment;
+      )) as ClientInvoicePayment;
 
       const currentPaid = invoice?.paidAmount || 0;
       const newPaid = currentPaid + Math.round(data.amount * 100);
@@ -1141,7 +1175,7 @@ export default function ClientInvoiceDetail() {
         status: "sent",
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
@@ -1158,7 +1192,24 @@ export default function ClientInvoiceDetail() {
           metadata: {},
         });
       }
-      toast({ title: "Success", description: "Invoice sent successfully" });
+
+      // Auto-sync to Xero on send if sendToXero is enabled
+      if (sendToXero && xeroStatus?.connected && effectiveInvoiceId) {
+        try {
+          if (invoice?.xeroInvoiceId) {
+            await apiRequest(`/api/xero/update-client-invoice/${effectiveInvoiceId}`, "PATCH");
+            toast({ title: "Sent & synced to Xero", description: "Invoice marked as sent and synced to Xero" });
+          } else {
+            const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: effectiveInvoiceId });
+            toast({ title: "Sent & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
+          }
+        } catch (xeroErr: any) {
+          toast({ title: "Sent, but Xero sync failed", description: xeroErr.message || "Invoice sent — you can sync to Xero manually", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Success", description: "Invoice sent successfully" });
+      }
+
       handleCancel();
     },
     onError: (error: Error) => {
@@ -1213,19 +1264,17 @@ export default function ClientInvoiceDetail() {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
     try {
-      const res = await apiRequest("/api/xero/push-client-invoice", "POST", {
+      // apiRequest throws on non-2xx and returns parsed JSON on success
+      const data = await apiRequest("/api/xero/push-client-invoice", "POST", {
         invoiceId: effectiveInvoiceId,
       });
-      const data = await res.json();
-      if (data.success) {
-        toast({
-          title: "Sent to Xero",
-          description: `Invoice pushed to Xero successfully (${data.xeroInvoiceNumber || data.xeroInvoiceId})`,
-        });
-        queryClient.invalidateQueries({
-          queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
-        });
-      }
+      toast({
+        title: "Sent to Xero",
+        description: `Invoice pushed to Xero successfully (${data.xeroInvoiceNumber || data.xeroInvoiceId})`,
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
+      });
     } catch (error: any) {
       toast({
         title: "Failed to send to Xero",
@@ -1238,13 +1287,9 @@ export default function ClientInvoiceDetail() {
   };
 
   const syncPaymentMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest(`/api/xero/sync-client-invoice-payment/${effectiveInvoiceId}`, "POST");
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as any).error || "Failed to sync");
-      }
-      return res.json() as Promise<{ synced: boolean; diff: number; xeroStatus: string }>;
+    mutationFn: async (): Promise<{ synced: boolean; diff: number; xeroStatus: string }> => {
+      // apiRequest throws on non-2xx and returns parsed JSON on success
+      return await apiRequest(`/api/xero/sync-client-invoice-payment/${effectiveInvoiceId}`, "POST");
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
@@ -1257,6 +1302,25 @@ export default function ClientInvoiceDetail() {
     },
     onError: (error: Error) => {
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const pullFromXeroMutation = useMutation({
+    mutationFn: async (): Promise<{ success: boolean; xeroStatus: string; amountPaidCents: number; newLocalStatus: string }> => {
+      // apiRequest throws on non-2xx and returns parsed JSON on success
+      return await apiRequest(`/api/xero/pull-client-invoice/${effectiveInvoiceId}`, "POST");
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({
+        title: "Synced from Xero",
+        description: `Status: ${data.xeroStatus} — Paid: $${(data.amountPaidCents / 100).toFixed(2)}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync from Xero failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1543,7 +1607,7 @@ export default function ClientInvoiceDetail() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {isEditMode && invoice?.status === "draft" && (
                   <button
                     type="button"
@@ -1556,7 +1620,67 @@ export default function ClientInvoiceDetail() {
                     <span>Send Invoice</span>
                   </button>
                 )}
-                {isEditMode && xeroStatus?.connected && !(invoice as any)?.xeroInvoiceId && (
+
+                {/* Xero Sync toggle — shown in both create and edit mode; disabled when Xero not connected */}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className={cn(
+                        "flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
+                        xeroStatus?.connected
+                          ? "text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                          : "text-muted-foreground border-border opacity-60 cursor-not-allowed"
+                      )}>
+                        <Switch
+                          id="sendToXero"
+                          checked={sendToXero}
+                          onCheckedChange={xeroStatus?.connected ? setSendToXero : undefined}
+                          disabled={!xeroStatus?.connected}
+                          className="scale-75 data-[state=checked]:bg-blue-600"
+                          data-testid="toggle-send-to-xero"
+                        />
+                        <label htmlFor="sendToXero" className={cn("select-none whitespace-nowrap flex items-center gap-1", xeroStatus?.connected ? "cursor-pointer" : "cursor-not-allowed")}>
+                          <SiXero className="w-3 h-3" />
+                          Sync to Xero
+                        </label>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {!xeroStatus?.connected
+                        ? "Connect Xero in Settings to enable automatic sync"
+                        : sendToXero
+                        ? "Invoice will auto-sync to Xero on save"
+                        : "Enable to auto-push this invoice to Xero on save"}
+                    </TooltipContent>
+                  </Tooltip>
+
+                {/* Synced badge with Xero invoice number */}
+                {isEditMode && invoice?.xeroInvoiceId && (
+                  <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
+                    <SiXero className="w-3 h-3" />
+                    {invoice.xeroInvoiceNumber ? `#${invoice.xeroInvoiceNumber}` : "Synced"}
+                  </span>
+                )}
+
+                {/* Sync from Xero button — shown when xeroInvoiceId is set */}
+                {isEditMode && invoice?.xeroInvoiceId && xeroStatus?.connected && (
+                  <button
+                    type="button"
+                    onClick={() => pullFromXeroMutation.mutate()}
+                    disabled={pullFromXeroMutation.isPending}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-muted-foreground"
+                    data-testid="button-sync-from-xero"
+                  >
+                    {pullFromXeroMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    <span>Sync from Xero</span>
+                  </button>
+                )}
+
+                {/* Manual push button — only shown when sendToXero is off and no xeroInvoiceId */}
+                {isEditMode && xeroStatus?.connected && !invoice?.xeroInvoiceId && !sendToXero && (
                   <button
                     type="button"
                     onClick={handlePushToXero}
@@ -1569,31 +1693,8 @@ export default function ClientInvoiceDetail() {
                     ) : (
                       <Send className="w-3 h-3" />
                     )}
-                    <span>Send to Xero</span>
+                    <span>Push to Xero</span>
                   </button>
-                )}
-                {isEditMode && (invoice as any)?.xeroInvoiceId && (
-                  <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-0.5 px-1">
-                    Synced to Xero
-                  </span>
-                )}
-                {!isEditMode && (invoice as any)?.xeroInvoiceId && xeroStatus?.connected && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => syncPaymentMutation.mutate()}
-                    disabled={syncPaymentMutation.isPending}
-                    data-testid="button-sync-payment-from-xero"
-                    className="h-7 text-xs gap-1.5"
-                  >
-                    {syncPaymentMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-3 h-3" />
-                    )}
-                    Sync from Xero
-                  </Button>
                 )}
               </div>
             </div>
