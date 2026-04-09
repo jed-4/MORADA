@@ -18496,11 +18496,11 @@ export class DbStorage implements IStorage {
   // Messages
   async getMessages(channelId: string, limit: number = 100, before?: string): Promise<Message[]> {
     try {
-      // Exclude pending scheduled messages from the main feed
+      // Only show unscheduled messages or scheduled messages that have been sent
       const baseConditions = and(
         eq(schema.messages.channelId, channelId),
         eq(schema.messages.isDeleted, false),
-        or(isNull(schema.messages.scheduledStatus), ne(schema.messages.scheduledStatus, 'pending'))
+        or(isNull(schema.messages.scheduledStatus), eq(schema.messages.scheduledStatus, 'sent'))
       );
 
       let query = db.select().from(schema.messages).where(baseConditions);
@@ -18547,7 +18547,7 @@ export class DbStorage implements IStorage {
           and(
             eq(schema.messages.channelId, channelId),
             eq(schema.messages.isDeleted, false),
-            or(isNull(schema.messages.scheduledStatus), ne(schema.messages.scheduledStatus, 'pending'))
+            or(isNull(schema.messages.scheduledStatus), eq(schema.messages.scheduledStatus, 'sent'))
           )
         );
       return Number(result[0]?.count || 0);
