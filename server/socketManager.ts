@@ -5,17 +5,25 @@ import type { Task } from "@shared/schema";
 
 let io: SocketIOServer | null = null;
 
-// Company-level connected user registry: companyId -> Set of connected userIds
-// Used by @here to determine which channel members are currently online
-const connectedByCompany = new Map<string, Set<string>>();
+// Company-level connected user registry: companyId -> (userId -> Set<socketId>)
+// Tracks all socket IDs per user so that multi-tab/multi-device sessions are handled
+// correctly — a user is only considered "offline" when ALL their sockets disconnect.
+const connectedByCompany = new Map<string, Map<string, Set<string>>>();
 
-function addConnectedUser(companyId: string, userId: string): void {
-  if (!connectedByCompany.has(companyId)) connectedByCompany.set(companyId, new Set());
-  connectedByCompany.get(companyId)!.add(userId);
+function addConnectedUser(companyId: string, userId: string, socketId: string): void {
+  if (!connectedByCompany.has(companyId)) connectedByCompany.set(companyId, new Map());
+  const users = connectedByCompany.get(companyId)!;
+  if (!users.has(userId)) users.set(userId, new Set());
+  users.get(userId)!.add(socketId);
 }
 
-function removeConnectedUser(companyId: string, userId: string): void {
-  connectedByCompany.get(companyId)?.delete(userId);
+function removeConnectedUser(companyId: string, userId: string, socketId: string): void {
+  const users = connectedByCompany.get(companyId);
+  if (!users) return;
+  const sockets = users.get(userId);
+  if (!sockets) return;
+  sockets.delete(socketId);
+  if (sockets.size === 0) users.delete(userId);
 }
 
 export function initializeSocketManager(httpServer: HttpServer, sessionMiddleware: any): SocketIOServer {
@@ -61,7 +69,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
     socket.join(`company:${socket.data.companyId}`);
     socket.join(`user:${socket.data.userId}`);
     console.log(`User ${socket.data.userId} joined company room: company:${socket.data.companyId}`);
-    addConnectedUser(socket.data.companyId, socket.data.userId);
+    addConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
 
     // Channel room management — clients join/leave rooms so REST-posted messages
     // can be broadcast to all members of a channel in real-time.
@@ -159,7 +167,7 @@ export function initializeSocketManager(httpServer: HttpServer, sessionMiddlewar
 
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.data.userId}`);
-      removeConnectedUser(socket.data.companyId, socket.data.userId);
+      removeConnectedUser(socket.data.companyId, socket.data.userId, socket.id);
     });
   });
 
@@ -210,6 +218,9 @@ export function emitReactionUpdated(channelId: string, messageId: string, reacti
 // Returns the user IDs of all currently connected users within a company.
 // Used for @here mention targeting: connected users intersected with channel membership
 // gives the set of online members to notify.
+// Multi-socket safe: a user is only included while at least one socket remains connected.
 export function getConnectedUserIdsForCompany(companyId: string): string[] {
-  return [...(connectedByCompany.get(companyId) ?? [])];
+  const users = connectedByCompany.get(companyId);
+  if (!users) return [];
+  return [...users.keys()];
 }
