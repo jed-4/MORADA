@@ -20222,6 +20222,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hasCommand = content.startsWith('/');
       const commandType = hasCommand ? content.split(' ')[0].substring(1) : undefined;
 
+      // Validate threadParentId belongs to the same channel (prevent cross-channel thread pollution)
+      const threadParentId = validationResult.data.threadParentId ?? null;
+      if (threadParentId) {
+        const parentMsg = await storage.getMessage(threadParentId);
+        if (!parentMsg || parentMsg.channelId !== channelId) {
+          return res.status(400).json({ error: "threadParentId does not belong to this channel" });
+        }
+      }
+
       const message = await storage.createMessage({
         ...validationResult.data,
         channelId,
