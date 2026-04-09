@@ -906,22 +906,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       emitTaskCreated(user.companyId, task, user.id);
 
-      // If a channelId was supplied (task created from a message), post a server-side bot message
+      // If a channelId was supplied (task created from a message), post a server-side bot message.
+      // Requires channel to belong to the user's company AND user to be a member (prevents IDOR injection).
       const sourceChannelId = typeof body.channelId === "string" ? body.channelId.trim() : "";
       if (sourceChannelId) {
         try {
-          const botContent = `Task created: "${task.title}"\n/tasks/${task.id}`;
-          const botMessage = await storage.createMessage({
-            channelId: sourceChannelId,
-            userId: user.id,
-            content: botContent,
-            mentions: [],
-            hasCommand: false,
-            commandType: undefined,
-            isBot: true,
-          });
-          const io = getIO();
-          if (io) io.to(`channel:${sourceChannelId}`).emit("new_message", botMessage);
+          const channel = await storage.getChannel(sourceChannelId, user.companyId);
+          const members = channel ? await storage.getChannelMembers(sourceChannelId) : [];
+          const isMember = members.some((m: any) => m.userId === user.id);
+          if (channel && isMember) {
+            const botContent = `Task created: "${task.title}"\n/tasks/${task.id}`;
+            const botMessage = await storage.createMessage({
+              channelId: sourceChannelId,
+              userId: user.id,
+              content: botContent,
+              mentions: [],
+              hasCommand: false,
+              commandType: undefined,
+              isBot: true,
+            });
+            const io = getIO();
+            if (io) io.to(`channel:${sourceChannelId}`).emit("new_message", botMessage);
+          } else {
+            console.warn(`[POST /api/tasks] Bot message skipped: channel ${sourceChannelId} not found or user not a member`);
+          }
         } catch (botErr) {
           console.error("[POST /api/tasks] Failed to create bot channel message:", botErr);
           // Non-fatal: task was created, bot message failure shouldn't break the response
