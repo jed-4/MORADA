@@ -20,20 +20,24 @@ export async function processScheduledMessages() {
 
     const io = getIO();
     const sentIds: string[] = [];
+    const sendTime = new Date();
 
     for (const message of due) {
       try {
-        if (io) {
-          io.to(`channel:${message.channelId}`).emit("new_message", message);
-        }
         sentIds.push(message.id);
+        // Emit with corrected createdAt = send time so receivers see the message
+        // ordered by when it was actually delivered, not when it was composed.
+        const dispatchedMessage = { ...message, createdAt: sendTime, scheduledStatus: 'sent', scheduledAt: null };
+        if (io) {
+          io.to(`channel:${message.channelId}`).emit("new_message", dispatchedMessage);
+        }
       } catch (err) {
         console.error(`[ScheduledMessageProcessor] Error broadcasting message ${message.id}:`, err);
       }
     }
 
     if (sentIds.length > 0) {
-      await storage.markScheduledMessagesSent(sentIds);
+      await storage.markScheduledMessagesSent(sentIds, sendTime);
       console.log(`[ScheduledMessageProcessor] Marked ${sentIds.length} message(s) as sent`);
     }
   } catch (error) {

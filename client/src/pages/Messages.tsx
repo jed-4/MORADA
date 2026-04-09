@@ -640,6 +640,35 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     },
   });
 
+  // Edit scheduled message state: messageId -> { content, date, time }
+  const [editingScheduled, setEditingScheduled] = useState<Record<string, { content: string; date: string; time: string }>>({});
+
+  const updateScheduledMutation = useMutation({
+    mutationFn: async ({ messageId, content, scheduledAt }: { messageId: string; content?: string; scheduledAt?: string }) => {
+      const res = await fetch(`/api/messages/${messageId}/scheduled`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content, scheduledAt }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json() as Promise<Message>;
+    },
+    onSuccess: (updated: Message) => {
+      queryClient.setQueryData<Message[]>(scheduledQueryKey, old =>
+        (old ?? []).map(m => m.id === updated.id ? updated : m)
+      );
+      setEditingScheduled(prev => {
+        const next = { ...prev };
+        delete next[updated.id];
+        return next;
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to update scheduled message", variant: "destructive" });
+    },
+  });
+
   // Handle scheduling a message
   const handleScheduleMessage = async () => {
     if (!messageInput.trim() || !selectedChannelId || !scheduleDate || !scheduleTime) return;
@@ -1939,27 +1968,107 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   </button>
                   {scheduledSectionOpen && (
                     <div className="px-3 pb-2 space-y-1.5">
-                      {scheduledMessages.map((msg) => (
-                        <div key={msg.id} className="flex items-start gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-sm">
-                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-foreground text-xs leading-snug line-clamp-2 break-words">
-                              {msg.content}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">
-                              Scheduled for {msg.scheduledAt ? new Date(msg.scheduledAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
-                            </p>
+                      {scheduledMessages.map((msg) => {
+                        const isEditing = !!editingScheduled[msg.id];
+                        const editState = editingScheduled[msg.id];
+                        return (
+                          <div key={msg.id} className="rounded-md bg-muted/30 px-2.5 py-1.5 text-sm">
+                            {isEditing ? (
+                              <div className="space-y-1.5">
+                                <Input
+                                  value={editState.content}
+                                  onChange={e => setEditingScheduled(prev => ({ ...prev, [msg.id]: { ...prev[msg.id], content: e.target.value } }))}
+                                  className="h-8 text-xs"
+                                  placeholder="Message content"
+                                />
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="date"
+                                    value={editState.date}
+                                    onChange={e => setEditingScheduled(prev => ({ ...prev, [msg.id]: { ...prev[msg.id], date: e.target.value } }))}
+                                    min={new Date().toISOString().split("T")[0]}
+                                    className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                                  />
+                                  <input
+                                    type="time"
+                                    value={editState.time}
+                                    onChange={e => setEditingScheduled(prev => ({ ...prev, [msg.id]: { ...prev[msg.id], time: e.target.value } }))}
+                                    className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 text-xs flex-1"
+                                    disabled={!editState.content.trim() || !editState.date || !editState.time || updateScheduledMutation.isPending}
+                                    onClick={() => {
+                                      const newAt = new Date(`${editState.date}T${editState.time}:00`);
+                                      if (isNaN(newAt.getTime()) || newAt <= new Date()) {
+                                        toast({ title: "Please choose a future date and time", variant: "destructive" });
+                                        return;
+                                      }
+                                      updateScheduledMutation.mutate({ messageId: msg.id, content: editState.content, scheduledAt: newAt.toISOString() });
+                                    }}
+                                  >
+                                    {updateScheduledMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={() => setEditingScheduled(prev => { const n = { ...prev }; delete n[msg.id]; return n; })}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-foreground text-xs leading-snug line-clamp-2 break-words">
+                                    {msg.content}
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    Scheduled for {msg.scheduledAt ? new Date(msg.scheduledAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-foreground"
+                                    onClick={() => {
+                                      const d = msg.scheduledAt ? new Date(msg.scheduledAt) : new Date();
+                                      const pad = (n: number) => String(n).padStart(2, "0");
+                                      setEditingScheduled(prev => ({
+                                        ...prev,
+                                        [msg.id]: {
+                                          content: msg.content,
+                                          date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+                                          time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                                        },
+                                      }));
+                                    }}
+                                    aria-label="Edit scheduled message"
+                                  >
+                                    <Settings className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-destructive"
+                                    onClick={() => cancelScheduledMutation.mutate(msg.id)}
+                                    aria-label="Cancel scheduled message"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <button
-                            type="button"
-                            className="shrink-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => cancelScheduledMutation.mutate(msg.id)}
-                            aria-label="Cancel scheduled message"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

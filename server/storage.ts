@@ -1049,7 +1049,8 @@ export interface IStorage {
   getPendingScheduledMessages(): Promise<Message[]>;
   getChannelScheduledMessages(channelId: string, userId: string): Promise<Message[]>;
   cancelScheduledMessage(messageId: string, userId: string): Promise<Message | undefined>;
-  markScheduledMessagesSent(messageIds: string[]): Promise<void>;
+  updateScheduledMessage(messageId: string, userId: string, updates: { content?: string; scheduledAt?: Date }): Promise<Message | undefined>;
+  markScheduledMessagesSent(messageIds: string[], sendTime?: Date): Promise<void>;
   // Message Reactions
   getMessageReactions(messageId: string): Promise<schema.MessageReaction[]>;
   getChannelReactions(channelId: string): Promise<Record<string, schema.MessageReaction[]>>;
@@ -18697,11 +18698,32 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async markScheduledMessagesSent(messageIds: string[]): Promise<void> {
+  async updateScheduledMessage(messageId: string, userId: string, updates: { content?: string; scheduledAt?: Date }): Promise<Message | undefined> {
+    try {
+      const setValues: Record<string, unknown> = { updatedAt: new Date() };
+      if (updates.content !== undefined) setValues.content = updates.content;
+      if (updates.scheduledAt !== undefined) setValues.scheduledAt = updates.scheduledAt;
+      const result = await db.update(schema.messages)
+        .set(setValues)
+        .where(and(
+          eq(schema.messages.id, messageId),
+          eq(schema.messages.userId, userId),
+          eq(schema.messages.scheduledStatus, 'pending')
+        ))
+        .returning();
+      return result[0] as Message | undefined;
+    } catch (error) {
+      console.error("Database error in updateScheduledMessage:", error);
+      throw error;
+    }
+  }
+
+  async markScheduledMessagesSent(messageIds: string[], sendTime?: Date): Promise<void> {
     if (messageIds.length === 0) return;
+    const now = sendTime ?? new Date();
     try {
       await db.update(schema.messages)
-        .set({ scheduledStatus: 'sent', scheduledAt: null, updatedAt: new Date() })
+        .set({ scheduledStatus: 'sent', scheduledAt: null, createdAt: now, updatedAt: now })
         .where(inArray(schema.messages.id, messageIds));
     } catch (error) {
       console.error("Database error in markScheduledMessagesSent:", error);

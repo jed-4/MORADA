@@ -20264,8 +20264,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Determine if this is a scheduled message
       const scheduledAtRaw = req.body.scheduledAt as string | undefined;
+      if (scheduledAtRaw !== undefined) {
+        const parsed = new Date(scheduledAtRaw);
+        if (isNaN(parsed.getTime()) || parsed <= new Date()) {
+          return res.status(400).json({ error: "scheduledAt must be a valid future timestamp" });
+        }
+      }
       const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
-      const isScheduled = scheduledAt && !isNaN(scheduledAt.getTime()) && scheduledAt > new Date();
+      const isScheduled = !!scheduledAt;
 
       const message = await storage.createMessage({
         ...validationResult.data,
@@ -20547,6 +20553,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to cancel scheduled message" });
+    }
+  });
+
+  // Scheduled messages — PATCH edits content and/or scheduledAt of a pending message (owner only)
+  app.patch("/api/messages/:id/scheduled", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { content, scheduledAt: scheduledAtRaw } = req.body;
+
+      const updates: { content?: string; scheduledAt?: Date } = {};
+      if (content !== undefined) {
+        if (typeof content !== "string" || !content.trim()) {
+          return res.status(400).json({ error: "content must be a non-empty string" });
+        }
+        updates.content = content.trim();
+      }
+      if (scheduledAtRaw !== undefined) {
+        const parsed = new Date(scheduledAtRaw);
+        if (isNaN(parsed.getTime()) || parsed <= new Date()) {
+          return res.status(400).json({ error: "scheduledAt must be a valid future timestamp" });
+        }
+        updates.scheduledAt = parsed;
+      }
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "Provide content and/or scheduledAt to update" });
+      }
+
+      const result = await storage.updateScheduledMessage(req.params.id, userId, updates);
+      if (!result) {
+        return res.status(404).json({ error: "Scheduled message not found or already sent" });
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update scheduled message" });
     }
   });
 
