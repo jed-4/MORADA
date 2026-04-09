@@ -39,6 +39,14 @@ interface CompanySettings {
   brandColor?: string;
 }
 
+interface ChecklistItem {
+  id?: string;
+  text: string;
+  completed: boolean;
+  assigneeId?: string;
+  assigneeName?: string;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -49,6 +57,11 @@ interface Task {
   assigneeIds?: string[];
   ownerId?: string;
   assigneeId?: string;
+  content?: string;
+  contentText?: string;
+  checklist?: ChecklistItem[];
+  checklistInstanceId?: string;
+  checklistInstanceName?: string;
 }
 
 interface Notification {
@@ -185,6 +198,10 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showBreakModal, setShowBreakModal] = useState(false);
   const [selectedBreakMinutes, setSelectedBreakMinutes] = useState(0);
   const [selectedTimesheetDetail, setSelectedTimesheetDetail] = useState<TimesheetEntry | null>(null);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskDetail, setTaskDetail] = useState<Task | null>(null);
+  const [taskDetailLoading, setTaskDetailLoading] = useState(false);
+  const [savingChecklist, setSavingChecklist] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -265,6 +282,55 @@ export default function DashboardScreen({ navigation }: Props) {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: currentStatus } : t));
     }
   }, []);
+
+  const openTaskModal = useCallback(async (task: Task) => {
+    setTaskDetail(task);
+    setShowTaskModal(true);
+    setTaskDetailLoading(true);
+    try {
+      const full = await apiFetch<Task>(`/api/tasks/${task.id}`);
+      setTaskDetail(full);
+    } catch {
+      // keep the summary data we already have
+    } finally {
+      setTaskDetailLoading(false);
+    }
+  }, []);
+
+  const handleTaskModalToggleComplete = useCallback(async () => {
+    if (!taskDetail) return;
+    const currentStatus = taskDetail.status;
+    const newStatus = currentStatus === 'completed' || currentStatus === 'done' ? 'todo' : 'completed';
+    setTaskDetail(prev => prev ? { ...prev, status: newStatus } : prev);
+    setTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, status: newStatus } : t));
+    try {
+      const res = await apiRequest(`/api/tasks/${taskDetail.id}`, 'PATCH', { status: newStatus });
+      if (!res.ok) {
+        setTaskDetail(prev => prev ? { ...prev, status: currentStatus } : prev);
+        setTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, status: currentStatus } : t));
+      }
+    } catch {
+      setTaskDetail(prev => prev ? { ...prev, status: currentStatus } : prev);
+      setTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, status: currentStatus } : t));
+    }
+  }, [taskDetail]);
+
+  const handleChecklistItemToggle = useCallback(async (itemIndex: number) => {
+    if (!taskDetail || savingChecklist) return;
+    const checklist = (taskDetail.checklist || []).map((item, i) =>
+      i === itemIndex ? { ...item, completed: !item.completed } : item
+    );
+    setTaskDetail(prev => prev ? { ...prev, checklist } : prev);
+    setSavingChecklist(true);
+    try {
+      await apiRequest(`/api/tasks/${taskDetail.id}`, 'PATCH', { checklist });
+    } catch {
+      // revert on error
+      setTaskDetail(prev => prev ? { ...prev, checklist: taskDetail.checklist } : prev);
+    } finally {
+      setSavingChecklist(false);
+    }
+  }, [taskDetail, savingChecklist]);
 
   const handleClockOut = useCallback(async (breakMinutes: number = 0) => {
     if (!activeTimesheet || clockingOut) return;
@@ -611,7 +677,7 @@ export default function DashboardScreen({ navigation }: Props) {
                         <TouchableOpacity
                           key={task.id}
                           style={[styles.taskCard, { backgroundColor: colors.card, width: taskCardWidth }]}
-                          onPress={() => toggleTaskComplete(task.id, task.status)}
+                          onPress={() => openTaskModal(task)}
                           activeOpacity={0.7}
                         >
                           <View style={[styles.taskColorBar, { backgroundColor: projectColor + '45' }]} />
@@ -1040,6 +1106,168 @@ export default function DashboardScreen({ navigation }: Props) {
                 }
               </TouchableOpacity>
             </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Task Detail Modal */}
+      <Modal
+        visible={showTaskModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTaskModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowTaskModal(false)} />
+          <View style={[styles.taskModalSheet, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>
+                  {taskDetail?.title || ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowTaskModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            {taskDetailLoading ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.accent} />
+              </View>
+            ) : (
+              <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {/* Meta row: project + due date */}
+                <View style={styles.taskMetaRow}>
+                  {taskDetail?.projectId && (
+                    <View style={[styles.taskMetaBadge, { backgroundColor: getProjectColor(taskDetail.projectId) + '25', borderColor: getProjectColor(taskDetail.projectId) + '50' }]}>
+                      <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(taskDetail.projectId) }]} />
+                      <Text style={[styles.taskMetaBadgeText, { color: colors.text }]} numberOfLines={1}>
+                        {projects.find(p => p.id === taskDetail.projectId)?.name || 'Project'}
+                      </Text>
+                    </View>
+                  )}
+                  {taskDetail?.dueDate && (
+                    <View style={[styles.taskMetaBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <Ionicons name="calendar-outline" size={12} color={colors.secondary} style={{ marginRight: 4 }} />
+                      <Text style={[styles.taskMetaBadgeText, { color: colors.secondary }]}>
+                        {formatDateLabel(taskDetail.dueDate)}
+                      </Text>
+                    </View>
+                  )}
+                  {taskDetail?.priority && taskDetail.priority !== 'low' && (
+                    <View style={[styles.taskMetaBadge, {
+                      backgroundColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? '#ef444420' : taskDetail.priority === 'medium' ? '#f9731620' : colors.card,
+                      borderColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? '#ef444450' : taskDetail.priority === 'medium' ? '#f9731650' : colors.border,
+                    }]}>
+                      <Text style={[styles.taskMetaBadgeText, {
+                        color: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? '#ef4444' : taskDetail.priority === 'medium' ? '#f97316' : colors.secondary,
+                        textTransform: 'capitalize',
+                      }]}>
+                        {taskDetail.priority}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Description */}
+                {(taskDetail?.contentText || taskDetail?.content) ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={[styles.modalLabel, { color: colors.secondary, marginBottom: 6 }]}>Notes</Text>
+                    <Text style={[styles.taskDescText, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}>
+                      {taskDetail.contentText || taskDetail.content}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Checklist items */}
+                {taskDetail?.checklist && taskDetail.checklist.length > 0 ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text style={[styles.modalLabel, { color: colors.secondary }]}>Checklist</Text>
+                      <Text style={[styles.taskMetaBadgeText, { color: colors.secondary }]}>
+                        {taskDetail.checklist.filter(i => i.completed).length}/{taskDetail.checklist.length}
+                      </Text>
+                    </View>
+                    {taskDetail.checklist.map((item, idx) => (
+                      <TouchableOpacity
+                        key={item.id || idx}
+                        style={[styles.checklistRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                        onPress={() => handleChecklistItemToggle(idx)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.checklistBox, {
+                          borderColor: item.completed ? colors.accent : colors.muted,
+                          backgroundColor: item.completed ? colors.accent : 'transparent',
+                        }]}>
+                          {item.completed && <Ionicons name="checkmark" size={11} color="#fff" />}
+                        </View>
+                        <Text style={[styles.checklistItemText, {
+                          color: item.completed ? colors.muted : colors.text,
+                          textDecorationLine: item.completed ? 'line-through' : 'none',
+                          flex: 1,
+                        }]}>
+                          {item.text}
+                        </Text>
+                        {item.assigneeName ? (
+                          <Text style={[styles.taskMetaBadgeText, { color: colors.secondary, marginLeft: 8 }]} numberOfLines={1}>
+                            {item.assigneeName.split(' ')[0]}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+
+                {/* Linked checklist instance */}
+                {taskDetail?.checklistInstanceName ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={[styles.modalLabel, { color: colors.secondary, marginBottom: 6 }]}>Linked Checklist</Text>
+                    <View style={[styles.checklistRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      <Ionicons name="list-outline" size={16} color={colors.accent} style={{ marginRight: 10 }} />
+                      <Text style={[styles.checklistItemText, { color: colors.text, flex: 1 }]}>{taskDetail.checklistInstanceName}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View style={{ height: 8 }} />
+              </ScrollView>
+            )}
+
+            {/* Footer: mark complete toggle */}
+            {!taskDetailLoading && (
+              <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                  onPress={() => setShowTaskModal(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalConfirmBtn, {
+                    backgroundColor: isComplete(taskDetail?.status) ? colors.card : colors.accent + '30',
+                    borderColor: isComplete(taskDetail?.status) ? colors.border : colors.accent + '60',
+                  }]}
+                  onPress={handleTaskModalToggleComplete}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={isComplete(taskDetail?.status) ? 'refresh-outline' : 'checkmark-circle-outline'}
+                    size={15}
+                    color={isComplete(taskDetail?.status) ? colors.secondary : colors.accent}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.modalConfirmText, { color: isComplete(taskDetail?.status) ? colors.secondary : colors.accent }]}>
+                    {isComplete(taskDetail?.status) ? 'Mark Incomplete' : 'Mark Complete'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1551,5 +1779,65 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  taskModalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    maxHeight: '90%',
+  },
+  taskMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 14,
+  },
+  taskMetaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  taskMetaDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  taskMetaBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  taskDescText: {
+    fontSize: 14,
+    lineHeight: 20,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 6,
+  },
+  checklistBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  checklistItemText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
