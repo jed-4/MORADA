@@ -513,6 +513,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   });
 
   // Toggle pin mutation — optimistic update applied immediately with rollback on failure
+  const pinnedQueryKey = ["/api/channels", selectedChannelId, "pinned"];
+
   const pinMessageMutation = useMutation({
     mutationFn: async (messageId: string) => {
       const res = await apiRequest(`/api/messages/${messageId}/pin`, "POST");
@@ -521,25 +523,51 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     onMutate: async (messageId: string) => {
       // Snapshot previous state for rollback
       const previousMessages = localMessages;
-      // Optimistically toggle isPinned on the message
+      const previousPinned = queryClient.getQueryData<Message[]>(pinnedQueryKey) ?? [];
+      const targetMsg = localMessages.find(m => m.id === messageId);
+
+      // Optimistically toggle isPinned on the message in the main list
       setLocalMessages(prev =>
         prev.map(m =>
           m.id === messageId
-            ? { ...m, isPinned: !m.isPinned, pinnedAt: m.isPinned ? null : new Date() }
+            ? { ...m, isPinned: !m.isPinned, pinnedAt: m.isPinned ? null : new Date(), pinnedByUserId: m.isPinned ? null : (user?.id ?? null) }
             : m
         )
       );
-      return { previousMessages };
+      // Optimistically update the pinned panel cache
+      if (targetMsg) {
+        if (targetMsg.isPinned) {
+          // Remove from pinned list
+          queryClient.setQueryData<Message[]>(pinnedQueryKey, prev => (prev ?? []).filter(p => p.id !== messageId));
+        } else {
+          // Add to pinned list at the top
+          const optimistic: Message = { ...targetMsg, isPinned: true, pinnedAt: new Date(), pinnedByUserId: user?.id ?? null };
+          queryClient.setQueryData<Message[]>(pinnedQueryKey, prev => [optimistic, ...(prev ?? [])]);
+        }
+      }
+      return { previousMessages, previousPinned };
     },
     onSuccess: (updated: Message) => {
       // Sync with authoritative server data
       setLocalMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", selectedChannelId, "pinned"] });
+      // Sync pinned panel with authoritative server data
+      if (updated.isPinned) {
+        queryClient.setQueryData<Message[]>(pinnedQueryKey, prev =>
+          [updated, ...(prev ?? []).filter(p => p.id !== updated.id)]
+        );
+      } else {
+        queryClient.setQueryData<Message[]>(pinnedQueryKey, prev =>
+          (prev ?? []).filter(p => p.id !== updated.id)
+        );
+      }
     },
     onError: (_err, _messageId, context) => {
       // Rollback on failure
       if (context?.previousMessages) {
         setLocalMessages(context.previousMessages);
+      }
+      if (context?.previousPinned !== undefined) {
+        queryClient.setQueryData<Message[]>(pinnedQueryKey, context.previousPinned);
       }
       toast({ title: "Failed to update pin", variant: "destructive" });
     },
@@ -2079,16 +2107,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     </button>
                     {pinnedPanelOpen && (
                       <div className="space-y-1">
-                        {pinnedMessages.length === 0 ? (
-                          <p className="text-xs text-muted-foreground py-1">No pinned messages yet.</p>
-                        ) : (
-                          pinnedMessages.map((pm) => {
+                        {(() => {
+                          const myMembership = channelMembers.find(m => m.userId === user?.id);
+                          const amChannelOwner = myMembership?.role === "owner" || myMembership?.role === "admin";
+                          if (pinnedMessages.length === 0) {
+                            return <p className="text-xs text-muted-foreground py-1">No pinned messages yet.</p>;
+                          }
+                          return pinnedMessages.map((pm) => {
                             const pmName = pm.userFirstName && pm.userLastName
                               ? `${pm.userFirstName} ${pm.userLastName}`
                               : pm.userEmail || "Unknown";
                             const snippet = pm.content.length > 80
                               ? pm.content.substring(0, 80) + "…"
                               : pm.content;
+                            const canUnpin = amChannelOwner || pm.pinnedByUserId === user?.id;
                             return (
                               <div
                                 key={pm.id}
@@ -2104,21 +2136,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   <span className="text-xs font-medium text-foreground truncate">{pmName}</span>
                                   <span className="text-xs text-muted-foreground line-clamp-2 leading-snug">{snippet}</span>
                                 </div>
-                                <button
-                                  type="button"
-                                  title="Unpin"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    pinMessageMutation.mutate(pm.id);
-                                  }}
-                                  className="p-1 rounded hover-elevate text-muted-foreground shrink-0"
-                                >
-                                  <PinOff className="h-3.5 w-3.5" />
-                                </button>
+                                {canUnpin && (
+                                  <button
+                                    type="button"
+                                    title="Unpin"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      pinMessageMutation.mutate(pm.id);
+                                    }}
+                                    className="p-1 rounded hover-elevate text-muted-foreground shrink-0"
+                                  >
+                                    <PinOff className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </div>
                             );
-                          })
-                        )}
+                          });
+                        })()}
                       </div>
                     )}
                   </div>
