@@ -404,6 +404,163 @@
   --shadow-card-hover: 0px 4px 8px -1px hsl(28 18% 7% / 0.44), 0px 2px 4px -1px hsl(28 18% 7% / 0.28);
 }
 
+/* Variant E – Warm Dark (per design spec)
+   Backgrounds: very dark warm charcoal (#111110 base)
+   Primary: warm purple #9b7fd4
+   Foreground: warm cream #f0ede8 */
+.dark.dark-warm-e {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 35 3% 10%;
+  --page-background: 40 3% 7%;
+  --foreground: 37 18% 93%;
+  --border: 33 3% 22%;
+  --card: 35 3% 14%;
+  --card-foreground: 37 18% 93%;
+  --card-border: 33 3% 25%;
+  --sidebar: 40 3% 8%;
+  --sidebar-foreground: 37 18% 93%;
+  --sidebar-border: 33 3% 21%;
+  --sidebar-primary: 268 50% 66%;
+  --sidebar-primary-foreground: 40 3% 7%;
+  --sidebar-accent: 35 3% 18%;
+  --sidebar-accent-foreground: 37 18% 93%;
+  --sidebar-ring: 268 50% 66%;
+  --popover: 35 3% 12%;
+  --popover-foreground: 37 18% 93%;
+  --popover-border: 33 3% 23%;
+  --primary: 268 50% 66%;
+  --primary-foreground: 40 3% 7%;
+  --secondary: 268 32% 18%;
+  --secondary-foreground: 37 18% 93%;
+  --muted: 35 3% 17%;
+  --muted-foreground: 35 4% 63%;
+  --accent: 268 50% 66%;
+  --accent-foreground: 40 3% 7%;
+  --input: 33 3% 24%;
+  --ring: 268 50% 66%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(35 5% 4% / 0.30);
+  --shadow-xs: 0px 1px 3px 0px hsl(35 5% 4% / 0.36);
+  --shadow-sm: 0px 1px 2px 0px hsl(35 5% 4% / 0.40), 0px 1px 3px -1px hsl(35 5% 4% / 0.32);
+  --shadow: 0px 1px 3px 0px hsl(35 5% 4% / 0.44), 0px 1px 2px -1px hsl(35 5% 4% / 0.36);
+  --shadow-md: 0px 4px 6px -1px hsl(35 5% 4% / 0.48), 0px 2px 4px -1px hsl(35 5% 4% / 0.32);
+  --shadow-lg: 0px 10px 15px -3px hsl(35 5% 4% / 0.48), 0px 4px 6px -2px hsl(35 5% 4% / 0.24);
+  --shadow-xl: 0px 20px 25px -5px hsl(35 5% 4% / 0.52), 0px 10px 10px -5px hsl(35 5% 4% / 0.20);
+  --shadow-2xl: 0px 25px 50px -12px hsl(35 5% 4% / 0.62);
+  --shadow-card: 0px 2px 4px -1px hsl(35 5% 4% / 0.38), 0px 1px 2px -1px hsl(35 5% 4% / 0.28);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(35 5% 4% / 0.48), 0px 2px 4px -1px hsl(35 5% 4% / 0.32);
+}
+
+/* Variant F – Dusty Dark (per design spec)
+   Backgrounds: cool grey-purple (#100f11 base)
+   Primary: muted purple #8878a8
+   Foreground: cool lavender-white #ede9f4 */
+.dark.dark-warm-f {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+
+  --background: 265 8% 11%;
+  --page-background: 270 4% 6%;
+  --foreground: 270 18% 94%;
+  --border: 265 9% 25%;
+  --card: 265 11% 15%;
+  --card-foreground: 270 18% 94%;
+  --card-border: 265 9% 27%;
+  --sidebar: 270 5% 9%;
+  --sidebar-foreground: 270 18% 94%;
+  --sidebar-border: 265 9% 22%;
+  --sidebar-primary: 268 22% 57%;
+  --sidebar-primary-foreground: 270 4% 6%;
+  --sidebar-accent: 265 9% 21%;
+  --sidebar-accent-foreground: 270 18% 94%;
+  --sidebar-ring: 268 22% 57%;
+  --popover: 265 8% 13%;
+  --popover-foreground: 270 18% 94%;
+  --popover-border: 265 9% 26%;
+  --primary: 268 22% 57%;
+  --primary-foreground: 270 4% 6%;
+  --secondary: 268 24% 15%;
+  --secondary-foreground: 270 18% 94%;
+  --muted: 265 8% 20%;
+  --muted-foreground: 265 8% 62%;
+  --accent: 268 22% 57%;
+  --accent-foreground: 270 4% 6%;
+  --input: 265 9% 26%;
+  --ring: 268 22% 57%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(270 6% 3% / 0.30);
+  --shadow-xs: 0px 1px 3px 0px hsl(270 6% 3% / 0.36);
+  --shadow-sm: 0px 1px 2px 0px hsl(270 6% 3% / 0.40), 0px 1px 3px -1px hsl(270 6% 3% / 0.32);
+  --shadow: 0px 1px 3px 0px hsl(270 6% 3% / 0.44), 0px 1px 2px -1px hsl(270 6% 3% / 0.36);
+  --shadow-md: 0px 4px 6px -1px hsl(270 6% 3% / 0.48), 0px 2px 4px -1px hsl(270 6% 3% / 0.32);
+  --shadow-lg: 0px 10px 15px -3px hsl(270 6% 3% / 0.48), 0px 4px 6px -2px hsl(270 6% 3% / 0.24);
+  --shadow-xl: 0px 20px 25px -5px hsl(270 6% 3% / 0.52), 0px 10px 10px -5px hsl(270 6% 3% / 0.20);
+  --shadow-2xl: 0px 25px 50px -12px hsl(270 6% 3% / 0.62);
+  --shadow-card: 0px 2px 4px -1px hsl(270 6% 3% / 0.38), 0px 1px 2px -1px hsl(270 6% 3% / 0.28);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(270 6% 3% / 0.48), 0px 2px 4px -1px hsl(270 6% 3% / 0.32);
+}
+
+/* Variant G – Warm Light (per design spec)
+   Light mode! Backgrounds: warm cream (#faf9f7 surface, #f5f3ef base)
+   Primary: warm purple #7d62b5
+   Foreground: dark warm charcoal #1c1a22
+   NOTE: selector has no .dark — this is a light mode override */
+.dark-warm-g {
+  --button-outline: rgba(0,0,0, .08);
+  --badge-outline: rgba(0,0,0, .04);
+  --opaque-button-border-intensity: -4;
+  --elevate-1: rgba(0,0,0, .02);
+  --elevate-2: rgba(0,0,0, .05);
+
+  --background: 38 14% 98%;
+  --page-background: 38 14% 95%;
+  --foreground: 265 14% 12%;
+  --border: 35 8% 82%;
+  --card: 0 0% 100%;
+  --card-foreground: 265 14% 12%;
+  --card-border: 35 8% 85%;
+  --sidebar: 38 12% 96%;
+  --sidebar-foreground: 265 14% 12%;
+  --sidebar-border: 35 8% 82%;
+  --sidebar-primary: 265 35% 55%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 265 45% 95%;
+  --sidebar-accent-foreground: 265 14% 12%;
+  --sidebar-ring: 265 35% 55%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 265 14% 12%;
+  --popover-border: 35 8% 83%;
+  --primary: 265 35% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 265 45% 95%;
+  --secondary-foreground: 265 14% 12%;
+  --muted: 35 10% 91%;
+  --muted-foreground: 265 8% 44%;
+  --accent: 265 35% 55%;
+  --accent-foreground: 0 0% 100%;
+  --input: 35 8% 88%;
+  --ring: 265 35% 55%;
+
+  --shadow-2xs: 0px 1px 2px 0px hsl(35 10% 20% / 0.06);
+  --shadow-xs: 0px 1px 3px 0px hsl(35 10% 20% / 0.08);
+  --shadow-sm: 0px 2px 4px 0px hsl(35 10% 20% / 0.09), 0px 1px 3px -1px hsl(35 10% 20% / 0.06);
+  --shadow: 0px 3px 6px 0px hsl(35 10% 20% / 0.11), 0px 1px 4px -1px hsl(35 10% 20% / 0.08);
+  --shadow-md: 0px 4px 8px -1px hsl(35 10% 20% / 0.14), 0px 2px 6px -1px hsl(35 10% 20% / 0.09);
+  --shadow-lg: 0px 8px 16px -3px hsl(35 10% 20% / 0.16), 0px 4px 8px -2px hsl(35 10% 20% / 0.08);
+  --shadow-xl: 0px 16px 24px -5px hsl(35 10% 20% / 0.19), 0px 8px 10px -5px hsl(35 10% 20% / 0.09);
+  --shadow-2xl: 0px 24px 40px -12px hsl(35 10% 20% / 0.24);
+  --shadow-card: 0px 1px 3px 0px hsl(35 10% 20% / 0.08), 0px 1px 2px -1px hsl(35 10% 20% / 0.05);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(35 10% 20% / 0.12), 0px 2px 4px -1px hsl(35 10% 20% / 0.08);
+}
+
 /* Variant D – Dark Slate (Figma-inspired)
    Backgrounds: near-neutral charcoal (220°, sat 5%) — almost no colour cast
    Primary: muted slate-blue (228°, 38% sat, 54% light) — like Figma's active item

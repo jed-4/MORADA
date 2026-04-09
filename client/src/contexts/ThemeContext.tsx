@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
-export type WarmVariant = "none" | "a" | "b" | "c" | "d";
+export type WarmVariant = "none" | "a" | "b" | "c" | "d" | "e" | "f" | "g";
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -48,7 +48,7 @@ function getStoredWarmVariant(): WarmVariant {
   if (typeof window === "undefined") return "none";
   try {
     const stored = localStorage.getItem("dark-warm-variant");
-    if (stored === "a" || stored === "b" || stored === "c" || stored === "d") return stored;
+    if (stored === "a" || stored === "b" || stored === "c" || stored === "d" || stored === "e" || stored === "f" || stored === "g") return stored;
   } catch {
   }
   return "none";
@@ -60,14 +60,25 @@ const WARM_VARIANT_CLASSES: Record<WarmVariant, string | null> = {
   b: "dark-warm-b",
   c: "dark-warm-c",
   d: "dark-warm-d",
+  e: "dark-warm-e",
+  f: "dark-warm-f",
+  g: "dark-warm-g",
 };
+
+const ALL_VARIANT_CLASSES = ["dark-warm-a", "dark-warm-b", "dark-warm-c", "dark-warm-d", "dark-warm-e", "dark-warm-f", "dark-warm-g"];
 
 function applyWarmVariantClass(resolved: ResolvedTheme, variant: WarmVariant) {
   const root = window.document.documentElement;
-  root.classList.remove("dark-warm-a", "dark-warm-b", "dark-warm-c", "dark-warm-d");
-  if (resolved === "dark" && variant !== "none") {
-    const cls = WARM_VARIANT_CLASSES[variant];
-    if (cls) root.classList.add(cls);
+  root.classList.remove(...ALL_VARIANT_CLASSES);
+  if (variant === "none") return;
+  const cls = WARM_VARIANT_CLASSES[variant];
+  if (!cls) return;
+  // Variant G is a light mode palette — only apply when in light mode.
+  // All other variants are dark mode only.
+  if (variant === "g" && resolved === "light") {
+    root.classList.add(cls);
+  } else if (variant !== "g" && resolved === "dark") {
+    root.classList.add(cls);
   }
 }
 

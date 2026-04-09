@@ -24,13 +24,14 @@
           var root = document.documentElement;
           root.classList.remove('light', 'dark');
           root.classList.add(resolvedTheme);
-          if (resolvedTheme === 'dark') {
-            var variant = localStorage.getItem('dark-warm-variant');
-            root.classList.remove('dark-warm-a', 'dark-warm-b', 'dark-warm-c', 'dark-warm-d');
-            if (variant === 'a') root.classList.add('dark-warm-a');
-            else if (variant === 'b') root.classList.add('dark-warm-b');
-            else if (variant === 'c') root.classList.add('dark-warm-c');
-            else if (variant === 'd') root.classList.add('dark-warm-d');
+          var variant = localStorage.getItem('dark-warm-variant');
+          var allVariantClasses = ['dark-warm-a','dark-warm-b','dark-warm-c','dark-warm-d','dark-warm-e','dark-warm-f','dark-warm-g'];
+          for (var i = 0; i < allVariantClasses.length; i++) root.classList.remove(allVariantClasses[i]);
+          var darkOnlyVariants = ['a','b','c','d','e','f'];
+          if (resolvedTheme === 'dark' && darkOnlyVariants.indexOf(variant) !== -1) {
+            root.classList.add('dark-warm-' + variant);
+          } else if (variant === 'g') {
+            root.classList.add('dark-warm-g');
           }
         } catch(e) {}
       })();
