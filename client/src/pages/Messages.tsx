@@ -565,7 +565,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const typingUserIds = useTypingIndicator(selectedChannelId);
 
   const { data: allUsers = EMPTY_USERS } = useQuery<any[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/assignable"],
   });
 
   const { data: allProjects = [] } = useQuery<any[]>({
