@@ -20409,6 +20409,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
       if (!access) return;
 
+      // Authorization: only the message author can attach files to their own message
+      if (access.message.userId !== userId) {
+        return res.status(403).json({ error: "You can only add attachments to your own messages" });
+      }
+
       const { objectPath, fileName, fileSize, mimeType } = req.body;
       if (!objectPath || !fileName) {
         return res.status(400).json({ error: "objectPath and fileName are required" });
@@ -20549,7 +20554,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const access = await requireMessageChannelAccess(req.params.id, userId, companyId, res);
       if (!access) return;
       const replies = await storage.getMessageReplies(req.params.id);
-      res.json(replies);
+      // Augment replies with their attachments
+      const replyIds = replies.map(r => r.id);
+      const replyAttachmentsMap = replyIds.length > 0 ? await storage.getAttachmentsForMessages(replyIds) : {};
+      const repliesWithAttachments = replies.map(r => ({
+        ...r,
+        attachments: replyAttachmentsMap[r.id] || [],
+      }));
+      res.json(repliesWithAttachments);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch replies" });
     }

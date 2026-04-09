@@ -817,8 +817,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     try {
       const res = await fetch(`/api/messages/${messageId}/replies`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
-      const replies: Message[] = await res.json();
-      setThreadMessages(prev => ({ ...prev, [messageId]: replies }));
+      const repliesWithAttachments: MessageWithAttachments[] = await res.json();
+      // Hydrate attachmentsMap with any attachments returned for replies
+      const newAttachments: Record<string, MessageAttachment[]> = {};
+      for (const r of repliesWithAttachments) {
+        if (r.attachments && r.attachments.length > 0) {
+          newAttachments[r.id] = r.attachments;
+        }
+      }
+      if (Object.keys(newAttachments).length > 0) {
+        setAttachmentsMap(prev => ({ ...prev, ...newAttachments }));
+      }
+      setThreadMessages(prev => ({ ...prev, [messageId]: repliesWithAttachments }));
     } catch {
       // silent — thread stays closed
     } finally {
