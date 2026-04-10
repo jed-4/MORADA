@@ -115,6 +115,7 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "pdfjs-dist": "^5.4.296",
+    "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-big-calendar": "^1.19.4",
     "react-day-picker": "^8.10.1",
