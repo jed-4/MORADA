@@ -55,6 +55,7 @@ type DatePreset = 'all' | 'today' | 'this-week' | 'overdue';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
+  route?: { params?: { openTaskId?: string } };
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -139,7 +140,7 @@ function getDueDateColor(group: string): string {
   }
 }
 
-export default function TasksScreen({ navigation }: Props) {
+export default function TasksScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -226,6 +227,22 @@ export default function TasksScreen({ navigation }: Props) {
     if (!prefsLoaded) return;
     AsyncStorage.setItem(TASKS_PREFS_KEY, JSON.stringify({ viewMode, groupBy, datePreset, filters })).catch(() => {});
   }, [viewMode, groupBy, datePreset, filters, prefsLoaded]);
+
+  const openTaskId = route?.params?.openTaskId;
+  useEffect(() => {
+    if (!openTaskId || loading) return;
+    const task = tasks.find(t => t.id === openTaskId);
+    if (task) {
+      setSelectedTask(task);
+      setEditTitle(task.title || '');
+      setEditStatus(task.status || 'todo');
+      setEditPriority(task.priority || 'low');
+      setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
+      setEditDescription(task.contentText || task.content || '');
+      setIsEditing(true);
+      setShowViewModal(true);
+    }
+  }, [openTaskId, loading, tasks]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -726,7 +743,7 @@ export default function TasksScreen({ navigation }: Props) {
 
                     {(selectedTask.contentText || selectedTask.content) ? (
                       <View style={styles.viewSection}>
-                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Description</Text>
+                        <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Notes</Text>
                         <Text style={[styles.viewDescription, { color: colors.text }]}>
                           {selectedTask.contentText || selectedTask.content}
                         </Text>
@@ -839,7 +856,7 @@ export default function TasksScreen({ navigation }: Props) {
                     </View>
 
                     <View style={styles.editField}>
-                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Description</Text>
+                      <Text style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
                       <TextInput
                         style={[styles.editTextArea, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', color: colors.text, borderColor: colors.border }]}
                         value={editDescription}

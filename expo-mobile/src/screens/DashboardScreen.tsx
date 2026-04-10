@@ -1238,34 +1238,48 @@ export default function DashboardScreen({ navigation }: Props) {
               </ScrollView>
             )}
 
-            {/* Footer: mark complete toggle */}
+            {/* Footer: mark complete toggle + open in tasks */}
             {!taskDetailLoading && (
-              <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <View style={[styles.modalFooter, { borderTopColor: colors.border, flexDirection: 'column', gap: 8 }]}>
                 <TouchableOpacity
-                  style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                  onPress={() => setShowTaskModal(false)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Close</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalConfirmBtn, {
-                    backgroundColor: isComplete(taskDetail?.status) ? colors.card : colors.accent + '30',
-                    borderColor: isComplete(taskDetail?.status) ? colors.border : colors.accent + '60',
-                  }]}
-                  onPress={handleTaskModalToggleComplete}
+                  style={[styles.modalConfirmBtn, { backgroundColor: colors.accent, borderColor: colors.accent, flex: undefined, width: '100%' }]}
+                  onPress={() => {
+                    setShowTaskModal(false);
+                    const tabNav = navigation.getParent();
+                    (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail?.id } });
+                  }}
                   activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name={isComplete(taskDetail?.status) ? 'refresh-outline' : 'checkmark-circle-outline'}
-                    size={15}
-                    color={isComplete(taskDetail?.status) ? colors.secondary : colors.accent}
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={[styles.modalConfirmText, { color: isComplete(taskDetail?.status) ? colors.secondary : colors.accent }]}>
-                    {isComplete(taskDetail?.status) ? 'Mark Incomplete' : 'Mark Complete'}
-                  </Text>
+                  <Ionicons name="open-outline" size={15} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={[styles.modalConfirmText, { color: '#ffffff' }]}>Open in Tasks & Edit</Text>
                 </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                    onPress={() => setShowTaskModal(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Close</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalConfirmBtn, {
+                      backgroundColor: isComplete(taskDetail?.status) ? colors.card : colors.accent + '30',
+                      borderColor: isComplete(taskDetail?.status) ? colors.border : colors.accent + '60',
+                    }]}
+                    onPress={handleTaskModalToggleComplete}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={isComplete(taskDetail?.status) ? 'refresh-outline' : 'checkmark-circle-outline'}
+                      size={15}
+                      color={isComplete(taskDetail?.status) ? colors.secondary : colors.accent}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={[styles.modalConfirmText, { color: isComplete(taskDetail?.status) ? colors.secondary : colors.accent }]}>
+                      {isComplete(taskDetail?.status) ? 'Mark Incomplete' : 'Mark Complete'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
