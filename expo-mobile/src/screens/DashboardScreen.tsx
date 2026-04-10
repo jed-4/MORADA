@@ -131,6 +131,24 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+function stripHtml(html?: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function formatTimeSince(dateStr: string): string {
   const start = new Date(dateStr);
   const now = new Date();
@@ -1174,12 +1192,12 @@ export default function DashboardScreen({ navigation }: Props) {
                   )}
                 </View>
 
-                {/* Description */}
-                {(taskDetail?.contentText || taskDetail?.content) ? (
+                {/* Notes */}
+                {stripHtml(taskDetail?.contentText || taskDetail?.content) ? (
                   <View style={{ marginBottom: 16 }}>
                     <Text style={[styles.modalLabel, { color: colors.secondary, marginBottom: 6 }]}>Notes</Text>
                     <Text style={[styles.taskDescText, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}>
-                      {taskDetail.contentText || taskDetail.content}
+                      {stripHtml(taskDetail?.contentText || taskDetail?.content)}
                     </Text>
                   </View>
                 ) : null}

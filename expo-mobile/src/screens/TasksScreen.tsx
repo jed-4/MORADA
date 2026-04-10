@@ -25,6 +25,24 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 const TASKS_PREFS_KEY = '@buildpro_tasks_prefs';
 
+function stripHtml(html?: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 interface Task {
   id: string;
   title: string;
@@ -238,7 +256,7 @@ export default function TasksScreen({ navigation, route }: Props) {
       setEditStatus(task.status || 'todo');
       setEditPriority(task.priority || 'low');
       setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
-      setEditDescription(task.contentText || task.content || '');
+      setEditDescription(stripHtml(task.contentText || task.content));
       setIsEditing(true);
       setShowViewModal(true);
     }
@@ -362,7 +380,7 @@ export default function TasksScreen({ navigation, route }: Props) {
     setEditStatus(selectedTask.status || 'todo');
     setEditPriority(selectedTask.priority || 'low');
     setEditDueDate(selectedTask.dueDate ? new Date(selectedTask.dueDate).toISOString().split('T')[0] : '');
-    setEditDescription(selectedTask.contentText || selectedTask.content || '');
+    setEditDescription(stripHtml(selectedTask.contentText || selectedTask.content));
     setIsEditing(true);
   };
 
@@ -741,11 +759,11 @@ export default function TasksScreen({ navigation, route }: Props) {
                       </View>
                     ) : null}
 
-                    {(selectedTask.contentText || selectedTask.content) ? (
+                    {stripHtml(selectedTask.contentText || selectedTask.content) ? (
                       <View style={styles.viewSection}>
                         <Text style={[styles.viewSectionLabel, { color: colors.secondary }]}>Notes</Text>
                         <Text style={[styles.viewDescription, { color: colors.text }]}>
-                          {selectedTask.contentText || selectedTask.content}
+                          {stripHtml(selectedTask.contentText || selectedTask.content)}
                         </Text>
                       </View>
                     ) : null}
