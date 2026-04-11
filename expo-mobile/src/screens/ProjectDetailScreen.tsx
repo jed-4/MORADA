@@ -17,17 +17,23 @@ import type { RouteProp } from '@react-navigation/native';
 interface Project {
   id: string;
   name: string;
-  projectNumber?: string;
-  clientName?: string;
-  clientEmail?: string;
-  clientPhone?: string;
+  jobNumber?: string;
+  clientId?: string;
   currentSystemPhase?: string;
   projectSubStatus?: string;
-  address?: string;
+  location?: string;
   startDate?: string;
   endDate?: string;
-  estimatedValue?: number;
+  contractCost?: number;
   description?: string;
+}
+
+interface Contact {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  mobile?: string;
 }
 
 interface Task {
@@ -40,10 +46,11 @@ interface Task {
 
 interface ScheduleItem {
   id: string;
-  title: string;
+  name: string;
   startDate?: string;
   endDate?: string;
   status?: string;
+  parentItemId?: string;
 }
 
 interface ChecklistInstance {
@@ -84,6 +91,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [project, setProject] = useState<Project | null>(null);
+  const [clientContact, setClientContact] = useState<Contact | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,12 +125,20 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
       ]);
       setProject(projectData);
-      setTasks((tasksData || []).filter((t: Task) => t.type === 'task'));
+      setTasks((tasksData || []).filter((t: Task) => (t as any).type === 'task'));
       setScheduleItems(scheduleData || []);
       setChecklistInstances(checklistData || []);
       setSiteDiaryEntries((diaryData || []).slice(0, 8));
       if (collapsedPrefs?.preferences) {
         setCollapsed(prev => ({ ...prev, ...collapsedPrefs.preferences }));
+      }
+      // Fetch client contact if project has a clientId
+      if (projectData?.clientId) {
+        apiFetch<Contact>(`/api/contacts/${projectData.clientId}`)
+          .then(c => setClientContact(c))
+          .catch(() => setClientContact(null));
+      } else {
+        setClientContact(null);
       }
     } catch (e) {
       console.error('Failed to fetch project:', e);
@@ -373,8 +389,8 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
       >
         <View style={styles.compactHeader}>
           <View style={styles.compactHeaderLeft}>
-            {project.projectNumber && (
-              <Text style={[styles.projectNumber, { color: colors.accent }]}>#{project.projectNumber}</Text>
+            {project.jobNumber && (
+              <Text style={[styles.projectNumber, { color: colors.accent }]}>#{project.jobNumber}</Text>
             )}
             <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={2}>{project.name}</Text>
           </View>
@@ -413,48 +429,48 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
           {renderSectionHeader('Project Info', 'projectInfo')}
           {!collapsed.projectInfo && (
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {project.clientName && (
+              {clientContact?.name && (
                 <View style={styles.infoRow}>
                   <Ionicons name="person-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Client</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.clientName}</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{clientContact.name}</Text>
                   </View>
                 </View>
               )}
-              {project.address && (
+              {project.location && (
                 <View style={styles.infoRow}>
                   <Ionicons name="location-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Address</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.address}</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.location}</Text>
                   </View>
                 </View>
               )}
-              {project.clientEmail && (
+              {(clientContact?.email) && (
                 <View style={styles.infoRow}>
                   <Ionicons name="mail-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Email</Text>
-                    <Text style={[styles.infoValue, { color: colors.accent }]}>{project.clientEmail}</Text>
+                    <Text style={[styles.infoValue, { color: colors.accent }]}>{clientContact.email}</Text>
                   </View>
                 </View>
               )}
-              {project.clientPhone && (
+              {(clientContact?.phone || clientContact?.mobile) && (
                 <View style={styles.infoRow}>
                   <Ionicons name="call-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Phone</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.clientPhone}</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{clientContact.phone || clientContact.mobile}</Text>
                   </View>
                 </View>
               )}
-              {project.estimatedValue && (
+              {!!project.contractCost && (
                 <View style={styles.infoRow}>
                   <Ionicons name="cash-outline" size={16} color={colors.secondary} />
                   <View style={styles.infoText}>
-                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Value</Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>{formatCurrency(project.estimatedValue)}</Text>
+                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Contract Value</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{formatCurrency(project.contractCost / 100)}</Text>
                   </View>
                 </View>
               )}
@@ -464,12 +480,24 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
                   <View style={styles.infoText}>
                     <Text style={[styles.infoLabel, { color: colors.secondary }]}>Timeline</Text>
                     <Text style={[styles.infoValue, { color: colors.text }]}>
-                      {project.startDate ? new Date(project.startDate).toLocaleDateString() : '—'}
+                      {project.startDate ? new Date(project.startDate).toLocaleDateString('en-AU') : '—'}
                       {' to '}
-                      {project.endDate ? new Date(project.endDate).toLocaleDateString() : '—'}
+                      {project.endDate ? new Date(project.endDate).toLocaleDateString('en-AU') : '—'}
                     </Text>
                   </View>
                 </View>
+              )}
+              {project.jobNumber && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="barcode-outline" size={16} color={colors.secondary} />
+                  <View style={styles.infoText}>
+                    <Text style={[styles.infoLabel, { color: colors.secondary }]}>Job Number</Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{project.jobNumber}</Text>
+                  </View>
+                </View>
+              )}
+              {!clientContact?.name && !project.location && !project.contractCost && !project.startDate && !project.endDate && !project.jobNumber && (
+                <Text style={[styles.infoLabel, { color: colors.muted, padding: 4 }]}>No project details on file</Text>
               )}
             </View>
           )}
@@ -509,41 +537,68 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
 
         <View style={styles.section}>
           {renderSectionHeader(scheduleSectionTitle, 'schedule')}
-          {!collapsed.schedule && (
-            <View>
-              {scheduleToShow.length === 0 ? (
-                <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
+          {!collapsed.schedule && (() => {
+            const todayItems = nearScheduleItems.filter(item => {
+              const start = dateOnlyStr(item.startDate);
+              const end = dateOnlyStr(item.endDate) || start;
+              return start <= todayStr && end >= todayStr;
+            });
+            const tomorrowOnlyItems = nearScheduleItems.filter(item => {
+              const start = dateOnlyStr(item.startDate);
+              const end = dateOnlyStr(item.endDate) || start;
+              return (start <= tomorrowStr && end >= tomorrowStr) && !(start <= todayStr && end >= todayStr);
+            });
+            const renderScheduleCard = (item: ScheduleItem) => (
+              <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.scheduleContent}>
+                  <Text style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                  {item.startDate && (
+                    <Text style={[styles.scheduleDate, { color: colors.secondary }]}>
+                      {new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                      {item.endDate ? ` – ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
+                    </Text>
+                  )}
                 </View>
-              ) : (
-                scheduleToShow.map(item => (
-                  <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.scheduleContent}>
-                      <Text style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-                      {item.startDate && (
-                        <Text style={[styles.scheduleDate, { color: colors.secondary }]}>
-                          {new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                          {item.endDate ? ` – ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
-                        </Text>
-                      )}
-                    </View>
-                    {item.status && (
-                      <Text style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
-                    )}
+                {item.status && (
+                  <Text style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
+                )}
+              </View>
+            );
+            return (
+              <View>
+                {todayItems.length === 0 && tomorrowOnlyItems.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="calendar-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
                   </View>
-                ))
-              )}
-              <TouchableOpacity
-                style={[styles.viewAllBtn, { borderColor: colors.border }]}
-                onPress={() => navigation.navigate('Schedule', { projectId })}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-              </TouchableOpacity>
-            </View>
-          )}
+                ) : (
+                  <>
+                    {todayItems.length > 0 && (
+                      <>
+                        <Text style={[styles.scheduleDayLabel, { color: colors.accent }]}>Today</Text>
+                        {todayItems.map(renderScheduleCard)}
+                      </>
+                    )}
+                    {tomorrowOnlyItems.length > 0 && (
+                      <>
+                        <View style={[styles.scheduleDivider, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.scheduleDayLabel, { color: colors.accent }]}>Tomorrow</Text>
+                        {tomorrowOnlyItems.map(renderScheduleCard)}
+                      </>
+                    )}
+                  </>
+                )}
+                <TouchableOpacity
+                  style={[styles.viewAllBtn, { borderColor: colors.border }]}
+                  onPress={() => navigation.navigate('Schedule', { projectId })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </View>
 
         <View style={styles.section}>
@@ -833,6 +888,8 @@ const styles = StyleSheet.create({
   scheduleTitle: { fontSize: 14, fontWeight: '500' },
   scheduleDate: { fontSize: 12, marginTop: 2 },
   scheduleStatus: { fontSize: 12 },
+  scheduleDayLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 2 },
+  scheduleDivider: { height: 1, marginVertical: 10 },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
