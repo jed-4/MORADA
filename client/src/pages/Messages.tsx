@@ -1112,8 +1112,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     
     if (isNotificationSupported()) {
       setNotificationPermission(Notification.permission);
-      const dismissed = localStorage.getItem("notification-banner-dismissed") === "1";
-      if (Notification.permission === "default" && !dismissed) {
+      const alreadyShown = localStorage.getItem("notification-banner-shown") === "1";
+      if (Notification.permission === "default" && !alreadyShown) {
+        localStorage.setItem("notification-banner-shown", "1");
         setShowNotificationBanner(true);
       }
     }
