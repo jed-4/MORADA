@@ -220,6 +220,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [savingChecklist, setSavingChecklist] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDetail, setScheduleDetail] = useState<ScheduleItem | null>(null);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -313,6 +315,11 @@ export default function DashboardScreen({ navigation }: Props) {
     } finally {
       setTaskDetailLoading(false);
     }
+  }, []);
+
+  const openScheduleModal = useCallback((item: ScheduleItem) => {
+    setScheduleDetail(item);
+    setShowScheduleModal(true);
   }, []);
 
   const handleTaskModalToggleComplete = useCallback(async () => {
@@ -745,7 +752,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 <TouchableOpacity
                   key={item.id}
                   style={[styles.scheduleCard, { backgroundColor: scheduleColor + '18', borderColor: scheduleColor + '45' }]}
-                  onPress={() => navigation.navigate('Calendar')}
+                  onPress={() => openScheduleModal(item)}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
@@ -1302,6 +1309,148 @@ export default function DashboardScreen({ navigation }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Schedule Item Detail Modal */}
+      <Modal
+        visible={showScheduleModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowScheduleModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowScheduleModal(false)} />
+          <View style={[styles.taskModalSheet, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>
+                  {scheduleDetail?.name || ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowScheduleModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Meta badges row */}
+              <View style={styles.taskMetaRow}>
+                {scheduleDetail?.projectName && (
+                  <View style={[styles.taskMetaBadge, {
+                    backgroundColor: getProjectColor(scheduleDetail.projectId) + '25',
+                    borderColor: getProjectColor(scheduleDetail.projectId) + '50',
+                  }]}>
+                    <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(scheduleDetail.projectId) }]} />
+                    <Text style={[styles.taskMetaBadgeText, { color: colors.text }]} numberOfLines={1}>
+                      {scheduleDetail.projectName}
+                    </Text>
+                  </View>
+                )}
+                {scheduleDetail?.type && (
+                  <View style={[styles.taskMetaBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.taskMetaBadgeText, { color: colors.secondary, textTransform: 'capitalize' }]}>
+                      {scheduleDetail.type}
+                    </Text>
+                  </View>
+                )}
+                {scheduleDetail?.status && (
+                  <View style={[styles.taskMetaBadge, {
+                    backgroundColor:
+                      scheduleDetail.status === 'completed' ? '#22c55e20' :
+                      scheduleDetail.status === 'in_progress' ? '#3b82f620' :
+                      scheduleDetail.status === 'on_hold' ? '#f59e0b20' :
+                      scheduleDetail.status === 'cancelled' ? '#ef444420' : colors.card,
+                    borderColor:
+                      scheduleDetail.status === 'completed' ? '#22c55e50' :
+                      scheduleDetail.status === 'in_progress' ? '#3b82f650' :
+                      scheduleDetail.status === 'on_hold' ? '#f59e0b50' :
+                      scheduleDetail.status === 'cancelled' ? '#ef444450' : colors.border,
+                  }]}>
+                    <Text style={[styles.taskMetaBadgeText, {
+                      color:
+                        scheduleDetail.status === 'completed' ? '#16a34a' :
+                        scheduleDetail.status === 'in_progress' ? '#2563eb' :
+                        scheduleDetail.status === 'on_hold' ? '#d97706' :
+                        scheduleDetail.status === 'cancelled' ? '#dc2626' : colors.secondary,
+                    }]}>
+                      {scheduleDetail.status === 'not_started' ? 'Not Started'
+                        : scheduleDetail.status === 'in_progress' ? 'In Progress'
+                        : scheduleDetail.status === 'on_hold' ? 'On Hold'
+                        : scheduleDetail.status.charAt(0).toUpperCase() + scheduleDetail.status.slice(1)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Date / Time */}
+              <View style={[styles.scheduleDetailRow, { borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={16} color={colors.accent} style={{ marginRight: 10 }} />
+                <View>
+                  {scheduleDetail?.startDate === scheduleDetail?.endDate ? (
+                    <Text style={[styles.scheduleDetailText, { color: colors.text }]}>
+                      {formatDateLabel(scheduleDetail?.startDate || '')}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.scheduleDetailText, { color: colors.text }]}>
+                      {formatDateLabel(scheduleDetail?.startDate || '')}
+                      {' → '}
+                      {formatDateLabel(scheduleDetail?.endDate || '')}
+                    </Text>
+                  )}
+                  {(scheduleDetail?.startTime || scheduleDetail?.endTime) && (
+                    <Text style={[styles.scheduleDetailSubtext, { color: colors.secondary }]}>
+                      {scheduleDetail?.startTime ? scheduleDetail.startTime.slice(0, 5) : ''}
+                      {scheduleDetail?.startTime && scheduleDetail?.endTime ? ' – ' : ''}
+                      {scheduleDetail?.endTime ? scheduleDetail.endTime.slice(0, 5) : ''}
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              {/* Assigned To */}
+              {scheduleDetail?.assignedToName && (
+                <View style={[styles.scheduleDetailRow, { borderColor: colors.border }]}>
+                  <Ionicons name="person-outline" size={16} color={colors.accent} style={{ marginRight: 10 }} />
+                  <Text style={[styles.scheduleDetailText, { color: colors.text }]}>
+                    {scheduleDetail.assignedToName}
+                  </Text>
+                </View>
+              )}
+
+              <View style={{ height: 8 }} />
+            </ScrollView>
+
+            {/* Footer */}
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                onPress={() => setShowScheduleModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
+                onPress={() => {
+                  setShowScheduleModal(false);
+                  const tabNav = navigation.getParent();
+                  (tabNav ?? navigation).navigate('More', {
+                    screen: 'Schedule',
+                    params: { projectId: scheduleDetail?.projectId },
+                  });
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="calendar-outline" size={15} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={[styles.modalConfirmText, { color: '#ffffff' }]}>View in Schedule</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </View>
   );
 }
@@ -1575,6 +1724,22 @@ const styles = StyleSheet.create({
     height: 63,
     alignSelf: 'center',
     marginHorizontal: 4,
+  },
+  scheduleDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+  },
+  scheduleDetailText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  scheduleDetailSubtext: {
+    fontSize: 12,
+    marginTop: 2,
   },
   activityRow: {
     flexDirection: 'row',
