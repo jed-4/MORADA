@@ -1355,33 +1355,34 @@ export default function DashboardScreen({ navigation }: Props) {
                     </Text>
                   </View>
                 )}
-                {scheduleDetail?.status && (
-                  <View style={[styles.taskMetaBadge, {
-                    backgroundColor:
-                      scheduleDetail.status === 'completed' ? '#22c55e20' :
-                      scheduleDetail.status === 'in_progress' ? '#3b82f620' :
-                      scheduleDetail.status === 'on_hold' ? '#f59e0b20' :
-                      scheduleDetail.status === 'cancelled' ? '#ef444420' : colors.card,
-                    borderColor:
-                      scheduleDetail.status === 'completed' ? '#22c55e50' :
-                      scheduleDetail.status === 'in_progress' ? '#3b82f650' :
-                      scheduleDetail.status === 'on_hold' ? '#f59e0b50' :
-                      scheduleDetail.status === 'cancelled' ? '#ef444450' : colors.border,
-                  }]}>
-                    <Text style={[styles.taskMetaBadgeText, {
-                      color:
-                        scheduleDetail.status === 'completed' ? '#16a34a' :
-                        scheduleDetail.status === 'in_progress' ? '#2563eb' :
-                        scheduleDetail.status === 'on_hold' ? '#d97706' :
-                        scheduleDetail.status === 'cancelled' ? '#dc2626' : colors.secondary,
+                {scheduleDetail?.status && (() => {
+                  const STATUS_COLORS: Record<string, string> = {
+                    not_started: '#94a3b8',
+                    in_progress: '#3b82f6',
+                    completed: '#10b981',
+                    on_hold: '#f59e0b',
+                    cancelled: '#ef4444',
+                  };
+                  const STATUS_LABELS: Record<string, string> = {
+                    not_started: 'Not Started',
+                    in_progress: 'In Progress',
+                    completed: 'Completed',
+                    on_hold: 'On Hold',
+                    cancelled: 'Cancelled',
+                  };
+                  const sc = STATUS_COLORS[scheduleDetail.status] || '#94a3b8';
+                  return (
+                    <View style={[styles.taskMetaBadge, {
+                      backgroundColor: sc + '25',
+                      borderColor: sc + '60',
                     }]}>
-                      {scheduleDetail.status === 'not_started' ? 'Not Started'
-                        : scheduleDetail.status === 'in_progress' ? 'In Progress'
-                        : scheduleDetail.status === 'on_hold' ? 'On Hold'
-                        : scheduleDetail.status.charAt(0).toUpperCase() + scheduleDetail.status.slice(1)}
-                    </Text>
-                  </View>
-                )}
+                      <View style={[styles.taskMetaDot, { backgroundColor: sc }]} />
+                      <Text style={[styles.taskMetaBadgeText, { color: sc }]}>
+                        {STATUS_LABELS[scheduleDetail.status] || scheduleDetail.status}
+                      </Text>
+                    </View>
+                  );
+                })()}
               </View>
 
               {/* Date / Time */}
