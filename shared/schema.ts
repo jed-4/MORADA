@@ -1030,6 +1030,7 @@ export const companySettings = pgTable("company_settings", {
   
   // Schedule defaults
   defaultClientVisibilityWeeks: integer("default_client_visibility_weeks").default(null), // Company-wide default for how many weeks ahead clients can see schedule items (null = all)
+  workspaceScheduleView: text("workspace_schedule_view").default("all"), // "all" | "parents" | "sub_items" — controls which level of items show in the mobile workspace schedule widget
   
   // Activity feed visibility settings - which activity types appear in the feed
   // JSON object with activity type keys and boolean visibility values

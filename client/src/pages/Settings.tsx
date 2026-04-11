@@ -1890,6 +1890,32 @@ function ScheduleSettingsSection() {
 
       <Card className="border-2">
         <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Mobile Workspace — Schedule Items</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Controls which level of schedule items appear in the Workspace tab on the mobile app.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-xs">
+            <Select
+              value={scheduleCompanySettings?.workspaceScheduleView ?? "all"}
+              onValueChange={(val) => updateScheduleSettingsMutation.mutate({ workspaceScheduleView: val })}
+            >
+              <SelectTrigger data-testid="select-workspace-schedule-view">
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All items (parents and sub-items)</SelectItem>
+                <SelectItem value="parents">Parent items only</SelectItem>
+                <SelectItem value="sub_items">Sub-items only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
           <CardTitle className="text-base font-semibold">Non-Working Days</CardTitle>
           <p className="text-sm text-muted-foreground">Company-wide non-working days that apply to all project schedules. Individual schedules can also add their own schedule-specific non-working days.</p>
         </CardHeader>

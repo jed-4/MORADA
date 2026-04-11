@@ -21762,7 +21762,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
 
       // Filter schedule items to accessible projects only
       const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
-      const scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
+      let scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
+
+      // Apply workspace schedule view preference
+      const scheduleViewPref = (companySettings as any)?.workspaceScheduleView ?? "all";
+      if (scheduleViewPref === "parents") {
+        scheduleItems = scheduleItems.filter(item => !item.parentItemId);
+      } else if (scheduleViewPref === "sub_items") {
+        scheduleItems = scheduleItems.filter(item => !!item.parentItemId);
+      }
 
       // Filter activities to role-visible projects (non-admins only see their projects)
       const filteredActivities = isAdmin
