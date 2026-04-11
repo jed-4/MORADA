@@ -21746,7 +21746,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
         storage.getCompanySettings().catch(() => null),
         storage.getCostCodes(companyId).catch(() => []),
-        storage.getActivities({ userId, companyId, limit: 5 }).catch(() => []),
+        storage.getActivities({ userId, companyId, limit: 20 }).catch(() => []),
       ]);
 
       // Filter projects by company and role access
@@ -21764,10 +21764,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
       const scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
 
-      // Recent timesheets: 5 most recent for this user
+      // Filter activities to role-visible projects (non-admins only see their projects)
+      const filteredActivities = isAdmin
+        ? (activities as any[]).slice(0, 10)
+        : (activities as any[]).filter(a => !a.projectId || visibleProjectIds.has(a.projectId)).slice(0, 10);
+
+      // Recent timesheets: 7 most recent for this user
       const recentTimesheets = (allTimesheets as any[])
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 5);
+        .slice(0, 7);
 
       res.json({
         projects: visibleProjects,
@@ -21779,7 +21784,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         scheduleItems,
         companySettings,
         costCodes,
-        activities,
+        activities: filteredActivities,
       });
     } catch (error: any) {
       console.error("Error fetching mobile dashboard:", error);
