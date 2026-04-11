@@ -23219,8 +23219,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       // Xero-synced items: name and xeroAccountCode are owned by Xero and cannot be changed manually
       const xeroSynced = existing.overhead_items.xeroSynced;
       const allowed = xeroSynced
-        ? (['frequency', 'budgetCents', 'notes', 'sortOrder', 'categoryId'] as const)
-        : (['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId'] as const);
+        ? (['frequency', 'budgetCents', 'notes', 'sortOrder', 'categoryId', 'buildproGroup'] as const)
+        : (['name', 'frequency', 'budgetCents', 'xeroAccountCode', 'notes', 'sortOrder', 'categoryId', 'buildproGroup'] as const);
       const updates: Record<string, unknown> = {};
       for (const key of allowed) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -23850,9 +23850,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         // Upsert item by xeroAccountCode
         const existingItemId = accCode ? itemByCode.get(accCode) : null;
         if (existingItemId) {
-          // Update name only — preserve budget and frequency
+          // Update name and xeroAccountType only — preserve budget, frequency and buildproGroup
           await db.update(overheadItems)
-            .set({ name: accName, xeroSynced: true, xeroAccountCode: accCode || null })
+            .set({ name: accName, xeroSynced: true, xeroAccountCode: accCode || null, xeroAccountType: accType || null })
             .where(eq(overheadItems.id, existingItemId));
           updated++;
         } else {
@@ -23863,6 +23863,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             frequency: "monthly",
             budgetCents: 0,
             xeroAccountCode: accCode || null,
+            xeroAccountType: accType || null,
             xeroSynced: true,
             notes: null,
             sortOrder: 0,

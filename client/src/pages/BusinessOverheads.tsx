@@ -60,7 +60,13 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   DollarSign,
+  SlidersHorizontal,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +74,8 @@ interface OverheadCategory { id: string; name: string; sortOrder: number; }
 interface OverheadItem {
   id: string; categoryId: string; name: string;
   frequency: "weekly" | "monthly" | "quarterly" | "annual";
-  budgetCents: number; xeroAccountCode: string | null; xeroSynced: boolean; notes: string | null; sortOrder: number;
+  budgetCents: number; xeroAccountCode: string | null; xeroAccountType: string | null; xeroSynced: boolean;
+  buildproGroup: string | null; notes: string | null; sortOrder: number;
 }
 interface OverheadMonthActual { id: string; itemId: string; year: number; month: number; actualCents: number; xeroImported: boolean; driftedSinceConfirmed: boolean; }
 interface OverheadMonthStatus { id: string; companyId: string; year: number; month: number; confirmedAt: string | null; }
@@ -294,6 +301,18 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   const [editingCatName, setEditingCatName] = useState("");
   const [activeCell, setActiveCell] = useState<CellId | null>(null);
 
+  const STORED_COLS_KEY = "overheads-register-col-visibility";
+  const DEFAULT_COLS = { freq: true, budget: true, xeroCode: true, xeroGroup: true, buildproGroup: true, monthly: true, annual: true };
+  const [colVis, setColVis] = useState<typeof DEFAULT_COLS>(() => {
+    try { return { ...DEFAULT_COLS, ...JSON.parse(localStorage.getItem(STORED_COLS_KEY) || "{}") }; }
+    catch { return DEFAULT_COLS; }
+  });
+  const toggleCol = (col: keyof typeof DEFAULT_COLS) => setColVis(prev => {
+    const next = { ...prev, [col]: !prev[col] };
+    localStorage.setItem(STORED_COLS_KEY, JSON.stringify(next));
+    return next;
+  });
+
   const createCatMut = useMutation({
     mutationFn: (name: string) => apiRequest("/api/overheads/categories", "POST", { name }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }),
@@ -350,8 +369,18 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     annual:    "bg-green-500/10 text-green-700 dark:text-green-400",
   };
 
-  // col layout: drag|name|freq|budget|xero|monthly|annual|action
-  const GRID = "28px 1fr 78px 88px 80px 95px 95px 30px";
+  // col layout: drag|name|freq?|budget?|xeroCode?|xeroGroup?|buildproGroup?|monthly?|annual?|action
+  const GRID = [
+    "28px", "1fr",
+    colVis.freq ? "78px" : null,
+    colVis.budget ? "88px" : null,
+    colVis.xeroCode ? "80px" : null,
+    colVis.xeroGroup ? "80px" : null,
+    colVis.buildproGroup ? "110px" : null,
+    colVis.monthly ? "95px" : null,
+    colVis.annual ? "95px" : null,
+    "30px",
+  ].filter(Boolean).join(" ");
 
   const commitField = (itemId: string, field: string, rawVal: string) => {
     setActiveCell(null);
@@ -376,6 +405,31 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline"><SlidersHorizontal className="w-3.5 h-3.5 mr-1" />Columns</Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-2 pb-1">Toggle columns</p>
+              {([
+                ["freq", "Frequency"],
+                ["budget", "Budget"],
+                ["xeroCode", "Xero Code"],
+                ["xeroGroup", "Xero Group"],
+                ["buildproGroup", "BuildPro Group"],
+                ["monthly", "Monthly Equiv."],
+                ["annual", "Annual Budget"],
+              ] as [keyof typeof DEFAULT_COLS, string][]).map(([key, label]) => (
+                <button key={key} onClick={() => toggleCol(key)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded hover-elevate text-left">
+                  <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 ${colVis[key] ? "bg-primary border-primary" : "border-border"}`}>
+                    {colVis[key] && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
+                  </span>
+                  {label}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
           {xeroConnected && (
             <Button size="sm" variant="outline" onClick={() => syncXeroMut.mutate()} disabled={syncXeroMut.isPending}>
               {syncXeroMut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
@@ -449,7 +503,15 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                 <div className="border-t border-border/50">
                   {/* Column header */}
                   <div className="grid px-4 py-1 text-[10px] text-muted-foreground uppercase tracking-wide" style={{ gridTemplateColumns: GRID }}>
-                    <span /><span>Item</span><span className="text-right">Freq.</span><span className="text-right">Budget</span><span className="text-right">Xero Code</span><span className="text-right">Monthly Equiv.</span><span className="text-right">Annual Budget</span><span />
+                    <span /><span>Item</span>
+                    {colVis.freq && <span className="text-right">Freq.</span>}
+                    {colVis.budget && <span className="text-right">Budget</span>}
+                    {colVis.xeroCode && <span className="text-right">Xero Code</span>}
+                    {colVis.xeroGroup && <span className="text-right">Xero Group</span>}
+                    {colVis.buildproGroup && <span>BuildPro Group</span>}
+                    {colVis.monthly && <span className="text-right">Monthly Equiv.</span>}
+                    {colVis.annual && <span className="text-right">Annual Budget</span>}
+                    <span />
                   </div>
 
                   {catItems.length === 0 ? (
@@ -475,7 +537,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                       </div>
 
                       {/* Frequency badge */}
-                      {isActive(item.id, "frequency") ? (
+                      {colVis.freq && (isActive(item.id, "frequency") ? (
                         <div className="ring-1 ring-inset ring-primary/60 rounded-[2px] h-full flex items-center">
                           <Select defaultValue={item.frequency} onValueChange={v => commitField(item.id, "frequency", v)}>
                             <SelectTrigger className="h-full border-0 shadow-none text-xs focus:ring-0 bg-transparent"><SelectValue /></SelectTrigger>
@@ -493,29 +555,31 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                             <Badge className={`text-[10px] no-default-active-elevate ${FREQ_COLORS[item.frequency]}`}>{item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)}</Badge>
                           </button>
                         </div>
-                      )}
+                      ))}
 
                       {/* Budget inline */}
-                      <div className={`h-full flex items-center ${isActive(item.id, "budgetCents") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                        {isActive(item.id, "budgetCents") ? (
-                          <input autoFocus type="number" defaultValue={item.budgetCents > 0 ? (item.budgetCents / 100).toFixed(0) : ""}
-                            className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1 tabular-nums"
-                            onBlur={e => commitField(item.id, "budgetCents", e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                        ) : (
-                          <button onClick={() => activate(item.id, "budgetCents")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors tabular-nums">
-                            {item.budgetCents > 0
-                              ? fmtDollars(item.budgetCents)
-                              : item.xeroSynced
-                                ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
-                                : <span className="text-muted-foreground/40">—</span>
-                            }
-                          </button>
-                        )}
-                      </div>
+                      {colVis.budget && (
+                        <div className={`h-full flex items-center ${isActive(item.id, "budgetCents") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+                          {isActive(item.id, "budgetCents") ? (
+                            <input autoFocus type="number" defaultValue={item.budgetCents > 0 ? (item.budgetCents / 100).toFixed(0) : ""}
+                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1 tabular-nums"
+                              onBlur={e => commitField(item.id, "budgetCents", e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+                          ) : (
+                            <button onClick={() => activate(item.id, "budgetCents")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors tabular-nums">
+                              {item.budgetCents > 0
+                                ? fmtDollars(item.budgetCents)
+                                : item.xeroSynced
+                                  ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
+                                  : <span className="text-muted-foreground/40">—</span>
+                              }
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Xero code inline — read-only for synced items */}
-                      {item.xeroSynced ? (
+                      {colVis.xeroCode && (item.xeroSynced ? (
                         <div className="h-full flex items-center justify-end gap-1 px-1">
                           <Lock className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" />
                           <span className="text-xs text-muted-foreground tabular-nums">{item.xeroAccountCode || <span className="opacity-40">—</span>}</span>
@@ -533,13 +597,45 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                             </button>
                           )}
                         </div>
+                      ))}
+
+                      {/* Xero Group — read-only badge from xeroAccountType */}
+                      {colVis.xeroGroup && (
+                        <div className="h-full flex items-center justify-end px-1">
+                          {item.xeroAccountType ? (
+                            <Badge className={`text-[10px] no-default-active-elevate ${
+                              item.xeroAccountType === "DIRECTCOSTS" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400" :
+                              item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
+                              "bg-muted text-muted-foreground"
+                            }`}>{item.xeroAccountType}</Badge>
+                          ) : <span className="text-muted-foreground/30 text-xs">—</span>}
+                        </div>
+                      )}
+
+                      {/* BuildPro Group — editable */}
+                      {colVis.buildproGroup && (
+                        <div className={`h-full flex items-center ${isActive(item.id, "buildproGroup") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+                          {isActive(item.id, "buildproGroup") ? (
+                            <input autoFocus defaultValue={item.buildproGroup || ""}
+                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1 placeholder:text-muted-foreground/30"
+                              placeholder="e.g. Admin"
+                              onBlur={e => commitField(item.id, "buildproGroup", e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+                          ) : (
+                            <button onClick={() => activate(item.id, "buildproGroup")} className="w-full h-full text-left text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors">
+                              {item.buildproGroup
+                                ? <span className="text-foreground">{item.buildproGroup}</span>
+                                : <span className="text-muted-foreground/30">—</span>}
+                            </button>
+                          )}
+                        </div>
                       )}
 
                       {/* Monthly equiv — read-only */}
-                      <span className="text-xs text-right tabular-nums px-1">{fmtDollars(toMonthlyCents(item))}</span>
+                      {colVis.monthly && <span className="text-xs text-right tabular-nums px-1">{fmtDollars(toMonthlyCents(item))}</span>}
 
                       {/* Annual budget — read-only */}
-                      <span className="text-xs text-right tabular-nums px-1 text-muted-foreground">{fmtDollars(toAnnualCents(item))}</span>
+                      {colVis.annual && <span className="text-xs text-right tabular-nums px-1 text-muted-foreground">{fmtDollars(toAnnualCents(item))}</span>}
 
                       {/* Action */}
                       <DropdownMenu>
@@ -566,9 +662,14 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
       {/* Footer totals */}
       {data.categories.length > 0 && (
         <div className="grid px-4 py-3 rounded-md bg-muted/30 border border-border/50 font-semibold text-sm" style={{ gridTemplateColumns: GRID }}>
-          <span /><span>Total</span><span /><span /><span />
-          <span className="text-right tabular-nums">{fmtDollars(grandMonthly)}/mo</span>
-          <span className="text-right tabular-nums text-muted-foreground">{fmtDollars(grandAnnual)}/yr</span>
+          <span /><span>Total</span>
+          {colVis.freq && <span />}
+          {colVis.budget && <span />}
+          {colVis.xeroCode && <span />}
+          {colVis.xeroGroup && <span />}
+          {colVis.buildproGroup && <span />}
+          {colVis.monthly && <span className="text-right tabular-nums">{fmtDollars(grandMonthly)}/mo</span>}
+          {colVis.annual && <span className="text-right tabular-nums text-muted-foreground">{fmtDollars(grandAnnual)}/yr</span>}
           <span />
         </div>
       )}
@@ -590,9 +691,12 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 
 // ─── Tab 2: Monthly Actuals (rolling 12-month) ────────────────────────────────
 
+type GroupBy = "category" | "xero" | "buildpro";
+
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
   const [view, setView] = useState<"monthly" | "prev12">("monthly");
+  const [groupBy, setGroupBy] = useState<GroupBy>("category");
   const [editingIncome, setEditingIncome] = useState<string | null>(null); // "year__month"
   const [incomeInput, setIncomeInput] = useState("");
   const [editingDirectCost, setEditingDirectCost] = useState<string | null>(null); // "year__month"
@@ -679,6 +783,41 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   const monthBudget = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
 
+  // Grouped rows for both views
+  const groupedData = useMemo((): { label: string; items: OverheadItem[] }[] => {
+    if (groupBy === "category") {
+      return data.categories.map(cat => ({ label: cat.name, items: data.items.filter(i => i.categoryId === cat.id) })).filter(g => g.items.length > 0);
+    }
+    if (groupBy === "xero") {
+      const ORDER = ["OVERHEADS", "DIRECTCOSTS", "EXPENSE", "CURRLIAB"];
+      const map = new Map<string, OverheadItem[]>();
+      for (const item of data.items) {
+        const key = item.xeroAccountType || "Unassigned";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(item);
+      }
+      return [...map.entries()].sort((a, b) => {
+        const ai = ORDER.indexOf(a[0]); const bi = ORDER.indexOf(b[0]);
+        if (ai === -1 && bi === -1) return a[0].localeCompare(b[0]);
+        if (ai === -1) return 1; if (bi === -1) return -1;
+        return ai - bi;
+      }).map(([label, items]) => ({ label, items }));
+    }
+    // buildpro
+    const map = new Map<string, OverheadItem[]>();
+    for (const item of data.items) {
+      const key = item.buildproGroup || "Ungrouped";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    const sorted = [...map.entries()].sort((a, b) => {
+      if (a[0] === "Ungrouped") return 1;
+      if (b[0] === "Ungrouped") return -1;
+      return a[0].localeCompare(b[0]);
+    });
+    return sorted.map(([label, items]) => ({ label, items }));
+  }, [groupBy, data.categories, data.items]);
+
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
 
   // ─── Prev 12 Summary View ────────────────────────────────────────────────────
@@ -727,7 +866,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           <div>
             <p className="text-xs text-muted-foreground">Previous 12 months — totals, averages, and OH% of income</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+              {(["category", "xero", "buildpro"] as GroupBy[]).map((g, i) => (
+                <button key={g} onClick={() => setGroupBy(g)}
+                  className={`px-2.5 py-1 transition-colors ${groupBy === g ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover-elevate"} ${i > 0 ? "border-l border-border" : ""}`}>
+                  {g === "category" ? "By Category" : g === "xero" ? "Xero Group" : "BuildPro Group"}
+                </button>
+              ))}
+            </div>
             <Button size="sm" variant="outline" onClick={() => setView("monthly")}>Monthly Grid</Button>
             <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
               <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
@@ -777,9 +924,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome - lastDC} prev={prevIncome - prevDC} /></div>
             </div>
 
-            {/* Category rows */}
-            {data.categories.map(cat => {
-              const catItems = data.items.filter(i => i.categoryId === cat.id);
+            {/* Group rows */}
+            {groupedData.map(group => {
+              const catItems = group.items;
               if (!catItems.length) return null;
               const catTotal = rolling12.reduce((s, { year, month }) => s + catItems.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
               const catAvg = catTotal / 12;
@@ -788,9 +935,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               const prevCat = prevM ? catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
 
               return (
-                <div key={cat.id}>
+                <div key={group.label}>
                   <div className="flex items-center bg-muted/20 border-b border-border/40" style={{ height: 28 }}>
-                    <div className="flex-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
+                    <div className="flex-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
                     <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums font-medium">{catTotal > 0 ? fmtK(catTotal) : "—"}</div>
                     <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{catAvg > 0 ? fmtK(catAvg) : "—"}</div>
                     <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{catPct > 0 ? `${catPct.toFixed(1)}%` : "—"}</div>
@@ -852,7 +999,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           <p className="text-xs text-muted-foreground">Rolling 12-month P&L — last 12 complete months</p>
           <p className="text-xs text-muted-foreground/60">Budget: {fmtDollars(monthBudget)}/mo overheads</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+            {(["category", "xero", "buildpro"] as GroupBy[]).map((g, i) => (
+              <button key={g} onClick={() => setGroupBy(g)}
+                className={`px-2.5 py-1 transition-colors ${groupBy === g ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover-elevate"} ${i > 0 ? "border-l border-border" : ""}`}>
+                {g === "category" ? "By Category" : g === "xero" ? "Xero Group" : "BuildPro Group"}
+              </button>
+            ))}
+          </div>
           <Button size="sm" variant="outline" onClick={() => setView("prev12")}>
             <Activity className="w-3.5 h-3.5 mr-1" />
             Prev 12 Summary
@@ -1038,14 +1193,14 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             );
           })()}
 
-          {/* Overhead categories */}
-          {data.categories.map(cat => {
-            const catItems = data.items.filter(i => i.categoryId === cat.id);
+          {/* Overhead groups */}
+          {groupedData.map(group => {
+            const catItems = group.items;
             if (!catItems.length) return null;
             return (
-              <div key={cat.id}>
+              <div key={group.label}>
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
-                  <div className="w-44 flex-shrink-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
+                  <div className="w-44 flex-shrink-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
                   {rolling12.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
                   <div className="w-32 flex-shrink-0 h-5" />
                 </div>

@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -329,10 +329,6 @@ export default function Header() {
               <DropdownMenuItem onClick={() => navigate('/business/files')} className="text-xs">
                 <HardDrive className="h-3.5 w-3.5 mr-2" />
                 Files
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/expenses')} className="text-xs">
-                <CreditCard className="h-3.5 w-3.5 mr-2" />
-                Expenses
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/business/timesheets')} className="text-xs">
                 <Timer className="h-3.5 w-3.5 mr-2" />

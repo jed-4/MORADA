@@ -179,12 +179,6 @@ const sectionConfig = {
     icon: <Users className="h-12 w-12" />,
     estimatedDate: "Q3 2024"
   },
-  "business-expenses": {
-    title: "Business Expenses",
-    description: "Submit and track all business expenses including receipts, mileage, and reimbursements.",
-    icon: <CreditCard className="h-12 w-12" />,
-    estimatedDate: "Q2 2024"
-  },
   "business-timesheets": {
     title: "Business Timesheets",
     description: "Log work hours, overtime, and track productivity across all business operations.",

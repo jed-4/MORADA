@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart, BarChart3 } from "lucide-react";
+import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart, BarChart3 } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
 import BusinessTasks from "./BusinessTasks";
@@ -25,7 +25,6 @@ const BUSINESS_TABS = [
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "/business/calendar" },
   { id: "schedule", label: "Schedule", icon: GanttChart, path: "/business/schedule" },
   { id: "files", label: "Files", icon: HardDrive, path: "/business/files" },
-  { id: "expenses", label: "Expenses", icon: CreditCard, path: "/business/expenses" },
   { id: "overheads", label: "Overheads", icon: BarChart3, path: "/business/overheads" },
   { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
@@ -69,8 +68,6 @@ export default function Business() {
         return <BusinessSchedule />;
       case "files":
         return <BusinessFiles />;
-      case "expenses":
-        return <ComingSoonPage section="business-expenses" />;
       case "overheads":
         return <BusinessOverheads />;
       case "timesheets":

@@ -1,17 +1,11 @@
 import { useLocation } from "wouter";
 import type { WidgetProps } from "@/types/widgets";
-import { DollarSign, Clock, Calendar, FileText, Users, Building2 } from "lucide-react";
+import { Clock, Calendar, FileText, Users, Building2 } from "lucide-react";
 
 export default function BusinessQuickActionsWidget({ widget }: WidgetProps) {
   const [, navigate] = useLocation();
 
   const actions = [
-    {
-      icon: DollarSign,
-      label: "Submit Expense",
-      path: "/business/expenses",
-      color: "text-green-500",
-    },
     {
       icon: Clock,
       label: "Log Time",
