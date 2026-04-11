@@ -1673,10 +1673,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  localStorage.setItem("notification-banner-dismissed", "1");
-                  setShowNotificationBanner(false);
-                }}
+                onClick={() => setShowNotificationBanner(false)}
                 data-testid="button-dismiss-banner"
               >
                 Dismiss
