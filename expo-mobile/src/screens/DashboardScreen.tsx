@@ -222,6 +222,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleDetail, setScheduleDetail] = useState<ScheduleItem | null>(null);
+  const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -229,18 +230,23 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
-      const data = await apiFetch<{
-        projects: Project[];
-        tasks: Task[];
-        notifications: Notification[];
-        unreadCount: number;
-        activeTimesheet: ActiveTimesheet | null;
-        recentTimesheets: TimesheetEntry[];
-        scheduleItems: ScheduleItem[];
-        companySettings: CompanySettings | null;
-        costCodes: CostCode[];
-        activities: ActivityItem[];
-      }>('/api/mobile/dashboard');
+      const [data, statusData] = await Promise.all([
+        apiFetch<{
+          projects: Project[];
+          tasks: Task[];
+          notifications: Notification[];
+          unreadCount: number;
+          activeTimesheet: ActiveTimesheet | null;
+          recentTimesheets: TimesheetEntry[];
+          scheduleItems: ScheduleItem[];
+          companySettings: CompanySettings | null;
+          costCodes: CostCode[];
+          activities: ActivityItem[];
+        }>('/api/mobile/dashboard'),
+        apiFetch<{ options: { key: string; name: string; color: string | null; sortOrder: number }[] }>(
+          '/api/field-categories/by-key/schedule_item.status'
+        ).catch(() => ({ options: [] })),
+      ]);
 
       setProjects(data.projects || []);
       setCostCodes(data.costCodes || []);
@@ -252,6 +258,13 @@ export default function DashboardScreen({ navigation }: Props) {
       setRecentActivities(data.activities || []);
       setRecentTimesheets(data.recentTimesheets || []);
       setScheduleItems(data.scheduleItems || []);
+      if (statusData?.options?.length) {
+        setScheduleStatusOptions(
+          statusData.options
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(o => ({ key: o.key, name: o.name, color: o.color || '#94a3b8' }))
+        );
+      }
 
       // Seed cache so other screens don't need to re-fetch this data
       setCached('projects', data.projects || []);
@@ -1356,21 +1369,9 @@ export default function DashboardScreen({ navigation }: Props) {
                   </View>
                 )}
                 {scheduleDetail?.status && (() => {
-                  const STATUS_COLORS: Record<string, string> = {
-                    not_started: '#94a3b8',
-                    in_progress: '#3b82f6',
-                    completed: '#10b981',
-                    on_hold: '#f59e0b',
-                    cancelled: '#ef4444',
-                  };
-                  const STATUS_LABELS: Record<string, string> = {
-                    not_started: 'Not Started',
-                    in_progress: 'In Progress',
-                    completed: 'Completed',
-                    on_hold: 'On Hold',
-                    cancelled: 'Cancelled',
-                  };
-                  const sc = STATUS_COLORS[scheduleDetail.status] || '#94a3b8';
+                  const opt = scheduleStatusOptions.find(o => o.key === scheduleDetail.status);
+                  const sc = opt?.color || '#94a3b8';
+                  const label = opt?.name || scheduleDetail.status;
                   return (
                     <View style={[styles.taskMetaBadge, {
                       backgroundColor: sc + '25',
@@ -1378,7 +1379,7 @@ export default function DashboardScreen({ navigation }: Props) {
                     }]}>
                       <View style={[styles.taskMetaDot, { backgroundColor: sc }]} />
                       <Text style={[styles.taskMetaBadgeText, { color: sc }]}>
-                        {STATUS_LABELS[scheduleDetail.status] || scheduleDetail.status}
+                        {label}
                       </Text>
                     </View>
                   );
