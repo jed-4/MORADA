@@ -82,6 +82,7 @@ interface ContractedProject {
   remainingCents: number;
 }
 interface CompanyIncomeActual { id: string; companyId: string; year: number; month: number; incomeCents: number; xeroImported: boolean; }
+interface CompanyDirectCostActual { id: string; companyId: string; year: number; month: number; directCostCents: number; xeroImported: boolean; }
 
 interface OverheadsData {
   categories: OverheadCategory[];
@@ -90,6 +91,7 @@ interface OverheadsData {
   monthStatuses: OverheadMonthStatus[];
   settings: OhSettings | null;
   incomeActuals: CompanyIncomeActual[];
+  directCostActuals: CompanyDirectCostActual[];
 }
 
 type Frequency = "weekly" | "monthly" | "quarterly" | "annual";
@@ -593,6 +595,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const [view, setView] = useState<"monthly" | "prev12">("monthly");
   const [editingIncome, setEditingIncome] = useState<string | null>(null); // "year__month"
   const [incomeInput, setIncomeInput] = useState("");
+  const [editingDirectCost, setEditingDirectCost] = useState<string | null>(null); // "year__month"
+  const [directCostInput, setDirectCostInput] = useState("");
 
   const rolling12 = useMemo(() => rollingLast12(), []);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
@@ -612,6 +616,20 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     for (const a of (data.incomeActuals || [])) if (a.xeroImported) s.add(`${a.year}__${a.month}`);
     return s;
   }, [data.incomeActuals]);
+
+  // Direct cost actuals map: "year__month" → cents
+  const directCostMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of (data.directCostActuals || [])) m.set(`${a.year}__${a.month}`, a.directCostCents);
+    return m;
+  }, [data.directCostActuals]);
+
+  // Months with xero-imported direct costs (locked)
+  const directCostXeroSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of (data.directCostActuals || [])) if (a.xeroImported) s.add(`${a.year}__${a.month}`);
+    return s;
+  }, [data.directCostActuals]);
 
   const monthsWithActuals = useMemo(() => {
     const s = new Set<string>();
@@ -650,6 +668,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onError: () => toast({ title: "Failed to save income", variant: "destructive" }),
   });
 
+  const directCostActualMut = useMutation({
+    mutationFn: (p: { year: number; month: number; directCostCents: number }) => apiRequest("/api/overheads/direct-cost-actual", "PUT", p),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
+      setEditingDirectCost(null);
+    },
+    onError: () => toast({ title: "Failed to save direct costs", variant: "destructive" }),
+  });
+
   const monthBudget = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
 
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
@@ -657,18 +684,26 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   // ─── Prev 12 Summary View ────────────────────────────────────────────────────
   if (view === "prev12") {
     const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
+    const totalDC12 = rolling12.reduce((s, { year, month }) => s + (directCostMap.get(`${year}__${month}`) || 0), 0);
     const totalOH12 = rolling12.reduce((s, { year, month }) => s + data.items.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
     const avgIncome = totalIncome12 / 12;
+    const avgDC = totalDC12 / 12;
     const avgOH = totalOH12 / 12;
-    const netProfit12 = totalIncome12 - totalOH12;
+    const grossProfit12 = totalIncome12 - totalDC12;
+    const avgGrossProfit = grossProfit12 / 12;
+    const netProfit12 = grossProfit12 - totalOH12;
     const avgNetProfit = netProfit12 / 12;
+    const dcPct = totalIncome12 > 0 ? (totalDC12 / totalIncome12) * 100 : 0;
     const ohPct = totalIncome12 > 0 ? (totalOH12 / totalIncome12) * 100 : 0;
+    const gpPct = totalIncome12 > 0 ? (grossProfit12 / totalIncome12) * 100 : 0;
 
     // MoM: compare last month vs month before
     const lastM = rolling12[rolling12.length - 1];
     const prevM = rolling12[rolling12.length - 2];
     const lastIncome = lastM ? (incomeMap.get(`${lastM.year}__${lastM.month}`) || 0) : 0;
     const prevIncome = prevM ? (incomeMap.get(`${prevM.year}__${prevM.month}`) || 0) : 0;
+    const lastDC = lastM ? (directCostMap.get(`${lastM.year}__${lastM.month}`) || 0) : 0;
+    const prevDC = prevM ? (directCostMap.get(`${prevM.year}__${prevM.month}`) || 0) : 0;
     const lastOH = lastM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, lastM.year, lastM.month)) || 0), 0) : 0;
     const prevOH = prevM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
 
@@ -719,6 +754,27 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
               <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
               <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
+            </div>
+
+            {/* Direct Costs row */}
+            <div className="flex items-center border-b border-border/40" style={{ height: 36 }}>
+              <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5"><TrendingDown className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />Direct Costs</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-orange-500 dark:text-orange-400 tabular-nums">{totalDC12 > 0 ? fmtK(totalDC12) : "—"}</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-orange-500/80 dark:text-orange-400/80 tabular-nums">{avgDC > 0 ? fmtK(avgDC) : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{dcPct > 0 ? `${dcPct.toFixed(1)}%` : "—"}</div>
+              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastDC} prev={prevDC} invert /></div>
+            </div>
+
+            {/* Gross Profit row */}
+            <div className={`flex items-center border-b border-border/50 font-semibold ${grossProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
+              <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
+                {grossProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
+                Gross Profit
+              </div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${grossProfit12 >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(grossProfit12) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${grossProfit12 >= 0 ? "text-green-600/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(avgGrossProfit) : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{totalIncome12 > 0 ? `${gpPct.toFixed(1)}%` : "—"}</div>
+              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome - lastDC} prev={prevIncome - prevDC} /></div>
             </div>
 
             {/* Category rows */}
@@ -777,9 +833,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               </div>
               <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${netProfit12 >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(netProfit12) : "—"}</div>
               <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${netProfit12 >= 0 ? "text-green-600/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(avgNetProfit) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{totalIncome12 > 0 ? `${(100 - ohPct).toFixed(1)}%` : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{totalIncome12 > 0 ? `${((netProfit12 / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
               <div className="w-20 flex-shrink-0 text-right px-3">
-                <MoMArrow cur={lastIncome - lastOH} prev={prevIncome - prevOH} />
+                <MoMArrow cur={lastIncome - lastDC - lastOH} prev={prevIncome - prevDC - prevOH} />
               </div>
             </div>
           </div>
@@ -906,6 +962,82 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             <div className="w-32 flex-shrink-0" />
           </div>
 
+          {/* Direct Costs row */}
+          <div className="flex items-center border-b border-border/40" style={{ height: 34 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
+              <TrendingDown className="w-3 h-3 text-orange-500 dark:text-orange-400" />Direct Costs
+            </div>
+            {rolling12.map(({ year, month }) => {
+              const key = `${year}__${month}`;
+              const cents = directCostMap.get(key) || 0;
+              const isXero = directCostXeroSet.has(key);
+              const isEditing = editingDirectCost === key;
+              return (
+                <div key={key} className="flex-1 min-w-0 h-full flex items-center justify-center px-0.5">
+                  {isXero ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-[10px] tabular-nums text-orange-500 dark:text-orange-400 flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5 opacity-50" />
+                            {cents > 0 ? fmtK(cents) : "—"}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent><p className="text-xs">Synced from Xero</p></TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : isEditing ? (
+                    <input
+                      autoFocus
+                      className="w-full text-[10px] text-right bg-transparent outline-none border-b border-primary tabular-nums"
+                      value={directCostInput}
+                      onChange={e => setDirectCostInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(directCostInput.replace(/[^0-9.]/g, "")) || 0;
+                        directCostActualMut.mutate({ year, month, directCostCents: Math.round(val * 100) });
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          const val = parseFloat(directCostInput.replace(/[^0-9.]/g, "")) || 0;
+                          directCostActualMut.mutate({ year, month, directCostCents: Math.round(val * 100) });
+                        }
+                        if (e.key === "Escape") setEditingDirectCost(null);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => { setEditingDirectCost(key); setDirectCostInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
+                      className="w-full text-[10px] tabular-nums text-right text-orange-500 dark:text-orange-400 hover:opacity-80 transition-opacity">
+                      {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div className="w-32 flex-shrink-0" />
+          </div>
+
+          {/* Gross Profit row */}
+          {(() => {
+            const gpVals = rolling12.map(({ year, month }) => (incomeMap.get(`${year}__${month}`) || 0) - (directCostMap.get(`${year}__${month}`) || 0));
+            const hasData = gpVals.some(v => v !== 0);
+            return (
+              <div className="flex items-center border-b border-border/50 bg-muted/10 font-medium" style={{ height: 28 }}>
+                <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5 text-muted-foreground">Gross Profit</div>
+                {gpVals.map((gp, idx) => {
+                  const income = incomeMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
+                  const dc = directCostMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
+                  return (
+                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                      {income || dc ? fmtK(gp) : "—"}
+                    </div>
+                  );
+                })}
+                <div className="w-32 flex-shrink-0" />
+              </div>
+            );
+          })()}
+
           {/* Overhead categories */}
           {data.categories.map(cat => {
             const catItems = data.items.filter(i => i.categoryId === cat.id);
@@ -966,7 +1098,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             const variancePct = totalBudget > 0 ? (varianceDollars / totalBudget) * 100 : 0;
 
             const incomeActuals = rolling12.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
-            const netProfits = rolling12.map(({ year, month }, i) => (incomeMap.get(`${year}__${month}`) || 0) - grandActuals[i]);
+            const netProfits = rolling12.map(({ year, month }, i) => (incomeMap.get(`${year}__${month}`) || 0) - (directCostMap.get(`${year}__${month}`) || 0) - grandActuals[i]);
             const ohPcts = rolling12.map(({ year, month }, i) => {
               const income = incomeMap.get(`${year}__${month}`) || 0;
               return income > 0 ? (grandActuals[i] / income) * 100 : null;

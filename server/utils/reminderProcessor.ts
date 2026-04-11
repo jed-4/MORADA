@@ -619,6 +619,20 @@ export async function syncOverheadActualsNightly() {
               set: { incomeCents, xeroImported: true, updatedAt: new Date() },
             });
         }
+
+        // Upsert direct cost totals
+        const { companyDirectCostActuals } = await import("@shared/schema");
+        for (const [monthKey, amount] of Object.entries(result.directCostTotals)) {
+          const [yyyy, mm] = monthKey.split("-").map(Number);
+          if (!yyyy || !mm || amount <= 0) continue;
+          const directCostCents = Math.round((amount as number) * 100);
+          await db.insert(companyDirectCostActuals)
+            .values({ companyId, year: yyyy, month: mm, directCostCents, xeroImported: true, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
+              set: { directCostCents, xeroImported: true, updatedAt: new Date() },
+            });
+        }
       } catch (err) {
         console.error(`[ReminderProcessor] Overhead actuals sync failed for company ${companyId}:`, err);
       }

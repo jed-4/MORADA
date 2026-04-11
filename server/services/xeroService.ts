@@ -520,7 +520,7 @@ export class XeroService {
     connectionId: string,
     fromDate: string,
     toDate: string
-  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number> }> {
+  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number>; directCostTotals: Record<string, number> }> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -576,7 +576,7 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     const report = data.Reports?.[0];
-    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {} };
+    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {}, directCostTotals: {} };
 
     // Parse column headers to extract month labels (format: "Jan 2025")
     const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
@@ -585,6 +585,9 @@ export class XeroService {
     const accounts: any[] = [];
     // income totals keyed by "YYYY-MM"
     const incomeTotals: Record<string, number> = {};
+    // direct cost totals keyed by "YYYY-MM" (Xero DIRECTCOSTS type accounts)
+    const directCostTotals: Record<string, number> = {};
+    const DIRECT_COST_TYPES = new Set(["DIRECTCOSTS"]);
 
     const MONTH_MAP: Record<string, string> = {
       Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
@@ -652,6 +655,25 @@ export class XeroService {
         for (const [monthKey, val] of Object.entries(monthAmts)) {
           incomeTotals[monthKey] = (incomeTotals[monthKey] || 0) + val;
         }
+      } else if (accountType && DIRECT_COST_TYPES.has(accountType)) {
+        // Track direct costs separately for the P&L gross profit calculation
+        const monthAmts = extractMonthAmounts(cells);
+        for (const [monthKey, val] of Object.entries(monthAmts)) {
+          directCostTotals[monthKey] = (directCostTotals[monthKey] || 0) + val;
+        }
+        // Still include in byAccount for overhead item matching by Xero code
+        const accountCode = (accountUuid && uuidToCode.get(accountUuid)) || accountUuid;
+        if (accountCode || rowTitle) {
+          const key = accountCode || rowTitle;
+          if (!byAccount[key]) {
+            byAccount[key] = { name: rowTitle, amounts: {} };
+            accounts.push({ code: accountCode, name: rowTitle });
+          }
+          const monthAmts2 = extractMonthAmounts(cells);
+          for (const [monthKey, val] of Object.entries(monthAmts2)) {
+            byAccount[key].amounts[monthKey] = (byAccount[key].amounts[monthKey] || 0) + val;
+          }
+        }
       } else if (effectiveExpense) {
         const accountCode = (accountUuid && uuidToCode.get(accountUuid)) || accountUuid;
         if (!accountCode && !rowTitle) return;
@@ -684,7 +706,7 @@ export class XeroService {
 
     parseSection(report.Rows || [], false, false);
 
-    return { byAccount, accounts, incomeTotals };
+    return { byAccount, accounts, incomeTotals, directCostTotals };
   }
 }
 

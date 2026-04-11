@@ -23094,15 +23094,16 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings, companyIncomeActuals } = await import("@shared/schema");
+      const { overheadCategories, overheadItems, overheadMonthActuals, overheadMonthStatus, companyOhSettings, companyIncomeActuals, companyDirectCostActuals } = await import("@shared/schema");
 
-      const [categories, items, actuals, statuses, settings, incomeActuals] = await Promise.all([
+      const [categories, items, actuals, statuses, settings, incomeActuals, directCostActuals] = await Promise.all([
         db.select().from(overheadCategories).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadCategories.sortOrder), asc(overheadCategories.createdAt)),
         db.select().from(overheadItems).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)).orderBy(asc(overheadItems.name)),
         db.select().from(overheadMonthActuals).innerJoin(overheadItems, eq(overheadMonthActuals.itemId, overheadItems.id)).innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id)).where(eq(overheadCategories.companyId, companyId)),
         db.select().from(overheadMonthStatus).where(eq(overheadMonthStatus.companyId, companyId)),
         db.select().from(companyOhSettings).where(eq(companyOhSettings.companyId, companyId)).limit(1),
         db.select().from(companyIncomeActuals).where(eq(companyIncomeActuals.companyId, companyId)),
+        db.select().from(companyDirectCostActuals).where(eq(companyDirectCostActuals.companyId, companyId)),
       ]);
 
       res.json({
@@ -23112,6 +23113,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         monthStatuses: statuses,
         settings: settings[0] || null,
         incomeActuals,
+        directCostActuals,
       });
     } catch (error: any) {
       console.error("Error fetching overheads:", error);
@@ -23326,7 +23328,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero not connected" });
 
-      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals } = await import("@shared/schema");
+      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals, companyDirectCostActuals } = await import("@shared/schema");
 
       // Use Australian financial year (Jul 1 – Jun 30) to stay within Xero's 365-day P&L limit
       const now = new Date();
@@ -23392,6 +23394,19 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           });
       }
 
+      // Upsert direct cost totals from P&L report
+      for (const [monthKey, amount] of Object.entries(result.directCostTotals)) {
+        const [yyyy, mm] = monthKey.split("-").map(Number);
+        if (!yyyy || !mm || amount <= 0) continue;
+        const directCostCents = Math.round(amount * 100);
+        await db.insert(companyDirectCostActuals)
+          .values({ companyId, year: yyyy, month: mm, directCostCents, xeroImported: true, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
+            set: { directCostCents, xeroImported: true, updatedAt: new Date() },
+          });
+      }
+
       res.json({ synced, drifted });
     } catch (error: any) {
       console.error("Error syncing Xero overhead actuals:", error);
@@ -23420,6 +23435,30 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       res.json(upserted);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to save income actual" });
+    }
+  });
+
+  // Manual direct cost actual entry (PUT upserts for a given year/month)
+  app.put("/api/overheads/direct-cost-actual", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { year, month, directCostCents } = req.body;
+      if (!year || !month || directCostCents === undefined) return res.status(400).json({ error: "year, month, directCostCents required" });
+
+      const { companyDirectCostActuals } = await import("@shared/schema");
+      const [upserted] = await db.insert(companyDirectCostActuals)
+        .values({ companyId, year, month, directCostCents, xeroImported: false, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
+          set: { directCostCents, xeroImported: false, updatedAt: new Date() },
+        })
+        .returning();
+      res.json(upserted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save direct cost actual" });
     }
   });
 
