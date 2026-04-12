@@ -498,8 +498,7 @@ export default function VariationDetail() {
         balanceAmount: Math.round(calculateTotal() * 100),
       };
 
-      const variationRes = await apiRequest("/api/variations", "POST", variationData);
-      const newVariation = await variationRes.json() as Variation;
+      const newVariation = await apiRequest("/api/variations", "POST", variationData) as Variation;
 
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
@@ -576,8 +575,7 @@ export default function VariationDetail() {
         balanceAmount: Math.round(calculateTotal() * 100),
       };
 
-      const variationRes = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData);
-      const updatedVariation = await variationRes.json() as Variation;
+      const updatedVariation = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData) as Variation;
 
       const existingCostLineItems = existingCostLines.filter((item) => (item as any).itemType !== "allowance");
       const existingAllowanceItems = existingCostLines.filter((item) => (item as any).itemType === "allowance");
@@ -675,8 +673,7 @@ export default function VariationDetail() {
 
   const moveToActionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "action" });
-      return response.json();
+      return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "action" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
@@ -690,8 +687,7 @@ export default function VariationDetail() {
 
   const sendForApprovalMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "pending" });
-      return response.json();
+      return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "pending" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
@@ -705,12 +701,11 @@ export default function VariationDetail() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
+      return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "approved",
         approvedBy: user?.id || "unknown-user",
         approvedDate: new Date().toISOString(),
       });
-      return response.json();
     },
     onSuccess: (approvedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
@@ -743,11 +738,10 @@ export default function VariationDetail() {
 
   const rejectMutation = useMutation({
     mutationFn: async (reason: string) => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
+      return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "rejected",
         rejectionReason: reason,
       });
-      return response.json();
     },
     onSuccess: (rejectedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
@@ -856,7 +850,7 @@ export default function VariationDetail() {
     if (!effectiveVariationId) return;
     try {
       const res = await apiRequest(`/api/variations/${effectiveVariationId}/portal-token`, "POST", {});
-      const { portalUrl } = await res.json();
+      const { portalUrl } = res;
       const fullUrl = `${window.location.origin}${portalUrl}`;
       setSendTo("");
       setSendSubject(`Variation ${variation?.variationNumber || ""} — ${variation?.name || ""}`);
