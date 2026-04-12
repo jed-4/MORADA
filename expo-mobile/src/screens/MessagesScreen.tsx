@@ -78,6 +78,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [usersById, setUsersById] = useState<Record<string, TeamUser>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -94,12 +95,16 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [chs, counts] = await Promise.all([
+      const [chs, counts, allUsers] = await Promise.all([
         apiFetch<Channel[]>('/api/channels'),
         apiFetch<Record<string, number>>('/api/channels/unread/counts'),
+        apiFetch<TeamUser[]>('/api/users/assignable').catch(() => [] as TeamUser[]),
       ]);
       setChannels(chs || []);
       setUnreadCounts(counts || {});
+      const byId: Record<string, TeamUser> = {};
+      for (const u of allUsers || []) byId[u.id] = u;
+      setUsersById(byId);
     } catch {
       // silently fail on poll
     } finally {
@@ -192,7 +197,20 @@ export default function MessagesScreen({ navigation, route }: Props) {
   }, [user?.id]);
 
   function getDmDisplayName(ch: Channel, currentUserId?: string): string {
-    return ch.name.replace(/^dm-/, '').replace(/-/g, ' ');
+    // Prefer participant ID lookup — resolves actual names regardless of how the channel was named
+    if (ch.dmParticipants && ch.dmParticipants.length > 0) {
+      const otherId = ch.dmParticipants.find(id => id !== currentUserId) || ch.dmParticipants[0];
+      const other = usersById[otherId];
+      if (other) {
+        const name = [other.firstName, other.lastName].filter(Boolean).join(' ');
+        return name || other.email;
+      }
+    }
+    // Fallback: strip the dm- prefix and attempt to humanise (handles firstName-based names)
+    const stripped = ch.name.replace(/^dm-/, '');
+    // If it looks like a UUID segment (8+ hex chars with no spaces), show generic label
+    if (/^[0-9a-f]{8}/i.test(stripped)) return 'Direct Message';
+    return stripped.replace(/-/g, ' ');
   }
 
   const channelList = channels.filter(c => c.type === 'channel');
