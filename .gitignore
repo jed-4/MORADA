@@ -11,3 +11,6 @@ attached_assets
 # Expo env files
 expo-mobile/.env
 expo-mobile/.env.local
+
+# Replit agent state (large binary files, never include in builds)
+.local/state/

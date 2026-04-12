@@ -10,3 +10,5 @@ build
 ios
 android
 .expo
+.local
+.cache
