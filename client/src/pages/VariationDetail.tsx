@@ -1277,43 +1277,15 @@ export default function VariationDetail() {
                       dotColor="bg-amber-400/70"
                       label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
                       rightEl={
-                        <div className="flex items-center gap-2">
-                          {costLines.length > 0 && (
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-muted-foreground">Global markup</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="1"
-                                placeholder="0"
-                                value={globalMarkup}
-                                onChange={(e) => setGlobalMarkup(e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
-                                data-testid="input-global-markup"
-                              />
-                              <span className="text-xs text-muted-foreground">%</span>
-                              <button
-                                type="button"
-                                onClick={applyGlobalMarkup}
-                                disabled={globalMarkup === "" || isNaN(parseFloat(globalMarkup))}
-                                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                                data-testid="button-apply-global-markup"
-                              >
-                                Apply all
-                              </button>
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={addCostLine}
-                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                            data-testid="button-add-cost-line"
-                          >
-                            <Plus className="h-3 w-3" />
-                            <span>Add Item</span>
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={addCostLine}
+                          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                          data-testid="button-add-cost-line"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Add Item</span>
+                        </button>
                       }
                     />
                     <div className="px-4 py-3 overflow-x-auto">
@@ -1684,6 +1656,32 @@ export default function VariationDetail() {
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
                         <span className="text-xs font-medium">Variation Summary</span>
                       </div>
+                      {costLines.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">Global markup</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={globalMarkup}
+                            onChange={(e) => setGlobalMarkup(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
+                            data-testid="input-global-markup"
+                          />
+                          <span className="text-xs text-muted-foreground">%</span>
+                          <button
+                            type="button"
+                            onClick={applyGlobalMarkup}
+                            disabled={globalMarkup === "" || isNaN(parseFloat(globalMarkup))}
+                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                            data-testid="button-apply-global-markup"
+                          >
+                            Apply to all lines
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="px-4 py-3">
                       <div className="grid grid-cols-5 gap-6">
