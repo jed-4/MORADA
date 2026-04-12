@@ -135,6 +135,7 @@ export default function VariationDetail() {
   // Cost lines state
   const [costLines, setCostLines] = useState<CostLine[]>([]);
   const [allowanceLines, setAllowanceLines] = useState<AllowanceLine[]>([]);
+  const [globalMarkup, setGlobalMarkup] = useState<string>("");
 
   // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -431,6 +432,12 @@ export default function VariationDetail() {
 
   const deleteCostLine = (index: number) => {
     setCostLines(costLines.filter((_, i) => i !== index));
+  };
+
+  const applyGlobalMarkup = () => {
+    const pct = parseFloat(globalMarkup);
+    if (isNaN(pct)) return;
+    setCostLines(costLines.map((line) => ({ ...line, markupPercent: pct })));
   };
 
   // ── Financial calculations ─────────────────────────────────────────────────
@@ -1270,15 +1277,43 @@ export default function VariationDetail() {
                       dotColor="bg-amber-400/70"
                       label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
                       rightEl={
-                        <button
-                          type="button"
-                          onClick={addCostLine}
-                          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                          data-testid="button-add-cost-line"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>Add Item</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {costLines.length > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">Global markup</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="0"
+                                value={globalMarkup}
+                                onChange={(e) => setGlobalMarkup(e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                className="h-6 w-16 text-xs border px-1.5 rounded-md shadow-none text-right"
+                                data-testid="input-global-markup"
+                              />
+                              <span className="text-xs text-muted-foreground">%</span>
+                              <button
+                                type="button"
+                                onClick={applyGlobalMarkup}
+                                disabled={globalMarkup === "" || isNaN(parseFloat(globalMarkup))}
+                                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                                data-testid="button-apply-global-markup"
+                              >
+                                Apply all
+                              </button>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={addCostLine}
+                            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                            data-testid="button-add-cost-line"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Add Item</span>
+                          </button>
+                        </div>
                       }
                     />
                     <div className="px-4 py-3 overflow-x-auto">
@@ -1377,16 +1412,16 @@ export default function VariationDetail() {
                                       />
                                     </td>
                                     <td className="px-2 py-1">
-                                      <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
+                                      <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
                                     </td>
                                     <td className="px-2 py-1">
                                       <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-unit-type-${index}`} />
                                     </td>
                                     <td className="px-2 py-1">
-                                      <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
+                                      <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
                                     </td>
                                     <td className="px-2 py-1">
-                                      <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
+                                      <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
                                     </td>
                                     <td className="px-2 py-1 text-right">
                                       <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>
