@@ -31,6 +31,7 @@ import {
   Upload,
   ExternalLink,
 } from "lucide-react";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
@@ -170,7 +171,7 @@ export default function VariationDetail() {
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const [colWidths, setColWidths] = useState<Record<string, number>>({
-    type: 80, name: 112, description: 200, costCode: 72,
+    type: 80, name: 112, description: 200, costCode: 140,
     qty: 56, unit: 56, unitCost: 96, markup: 64,
     amtExTax: 96, amtIncTax: 96, visible: 52,
   });
@@ -1366,8 +1367,14 @@ export default function VariationDetail() {
                                     <td className="px-2 py-1">
                                       <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-description-${index}`} />
                                     </td>
-                                    <td className="px-2 py-1">
-                                      <Input value={line.costCode} onChange={(e) => updateCostLine(index, "costCode", e.target.value)} placeholder="—" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-cost-code-${index}`} />
+                                    <td className="px-1 py-1">
+                                      <CostCodeSelect
+                                        value={line.costCode || ""}
+                                        onValueChange={(val) => updateCostLine(index, "costCode", val)}
+                                        allowNone
+                                        triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full"
+                                        data-testid={`select-cost-code-${index}`}
+                                      />
                                     </td>
                                     <td className="px-2 py-1">
                                       <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
