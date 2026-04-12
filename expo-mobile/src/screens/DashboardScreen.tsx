@@ -397,7 +397,7 @@ export default function DashboardScreen({ navigation }: Props) {
     setClockInProjectId(projects[0]?.id || '');
     setClockInCostCodeId('');
     setClockInDescription('');
-    const codes = await apiFetch<CostCode[]>('/api/cost-codes').catch(() => []);
+    const codes = await apiFetch<CostCode[]>('/api/cost-codes?timesheets=true').catch(() => []);
     setCostCodes(codes);
     setShowClockInModal(true);
   }, [projects]);

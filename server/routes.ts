@@ -21745,7 +21745,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         storage.getTimesheets(undefined, { userId }).catch(() => []),
         storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
         storage.getCompanySettings().catch(() => null),
-        storage.getCostCodes(companyId).catch(() => []),
+        storage.getCostCodes(companyId).then(codes => codes.filter(c => c.availableInTimesheets === true)).catch(() => []),
         storage.getActivities({ userId, companyId, limit: 20 }).catch(() => []),
       ]);
 

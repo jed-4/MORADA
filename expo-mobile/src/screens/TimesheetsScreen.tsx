@@ -676,7 +676,7 @@ export default function TimesheetsScreen() {
   const fetchData = useCallback(async () => {
     try {
       const cachedProjects = getCached<Project[]>('projects');
-      const cachedCostCodes = getCached<CostCode[]>('costCodes');
+      const cachedCostCodes = getCached<CostCode[]>('costCodes-timesheets');
 
       const fetchProjects = cachedProjects
         ? Promise.resolve(cachedProjects)
@@ -696,7 +696,7 @@ export default function TimesheetsScreen() {
       setCostCodes(cc || []);
       setActiveTimesheet(active || null);
       if (!cachedProjects) setCached('projects', prj || []);
-      if (!cachedCostCodes) setCached('costCodes', cc || []);
+      if (!cachedCostCodes) setCached('costCodes-timesheets', cc || []);
     } catch (e) {
       console.error('Failed to fetch timesheet data:', e);
     } finally {
@@ -1698,7 +1698,7 @@ export default function TimesheetsScreen() {
               showCostCodePicker,
               () => setShowCostCodePicker(false),
               'Select Cost Code',
-              costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
+              [...costCodes].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
               formCostCodeId,
               setFormCostCodeId,
             )}
@@ -1754,7 +1754,7 @@ export default function TimesheetsScreen() {
         showClockInCostCodePicker,
         () => setShowClockInCostCodePicker(false),
         'Select Cost Code',
-        costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
+        [...costCodes].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
         clockInCostCodeId,
         setClockInCostCodeId,
       )}
