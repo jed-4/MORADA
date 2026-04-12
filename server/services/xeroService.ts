@@ -520,7 +520,7 @@ export class XeroService {
     connectionId: string,
     fromDate: string,
     toDate: string
-  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number>; directCostTotals: Record<string, number> }> {
+  ): Promise<{ byAccount: Record<string, { name: string; amounts: Record<string, number> }>; accounts: any[]; incomeTotals: Record<string, number>; directCostTotals: Record<string, number>; incomeByAccount: Record<string, Record<string, number>> }> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -576,7 +576,7 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     const report = data.Reports?.[0];
-    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {}, directCostTotals: {} };
+    if (!report) return { byAccount: {}, accounts: [], incomeTotals: {}, directCostTotals: {}, incomeByAccount: {} };
 
     // Parse column headers to extract month labels (format: "Jan 2025")
     const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
@@ -585,6 +585,8 @@ export class XeroService {
     const accounts: any[] = [];
     // income totals keyed by "YYYY-MM"
     const incomeTotals: Record<string, number> = {};
+    // income by individual account name: { accountName: { "YYYY-MM": cents } }
+    const incomeByAccount: Record<string, Record<string, number>> = {};
     // direct cost totals keyed by "YYYY-MM" (Xero DIRECTCOSTS type accounts)
     const directCostTotals: Record<string, number> = {};
     const DIRECT_COST_TYPES = new Set(["DIRECTCOSTS"]);
@@ -652,8 +654,11 @@ export class XeroService {
 
       if (effectiveIncome) {
         const monthAmts = extractMonthAmounts(cells);
+        const accountName = rowTitle || "Income";
         for (const [monthKey, val] of Object.entries(monthAmts)) {
           incomeTotals[monthKey] = (incomeTotals[monthKey] || 0) + val;
+          if (!incomeByAccount[accountName]) incomeByAccount[accountName] = {};
+          incomeByAccount[accountName][monthKey] = (incomeByAccount[accountName][monthKey] || 0) + val;
         }
       } else if (accountType && DIRECT_COST_TYPES.has(accountType)) {
         // Track direct costs separately for the P&L gross profit calculation
@@ -706,7 +711,7 @@ export class XeroService {
 
     parseSection(report.Rows || [], false, false);
 
-    return { byAccount, accounts, incomeTotals, directCostTotals };
+    return { byAccount, accounts, incomeTotals, directCostTotals, incomeByAccount };
   }
 
   async createContact(connectionId: string, name: string): Promise<{ contactId: string; name: string }> {

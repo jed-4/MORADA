@@ -10298,6 +10298,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/variations/bulk-status", async (req, res) => {
+    try {
+      const { ids, status } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids must be a non-empty array" });
+      }
+      const validStatuses = ["draft", "action", "pending", "approved", "rejected"];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+      await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
+      res.json({ updated: ids.length });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to bulk update variations" });
+    }
+  });
+
   app.get("/api/variations/:id", async (req, res) => {
     try {
       const variation = await storage.getVariation(req.params.id);
@@ -23425,16 +23442,24 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
-      // Upsert income totals from P&L report
+      // Upsert income totals from P&L report (with per-account breakdown)
       for (const [monthKey, amount] of Object.entries(result.incomeTotals)) {
         const [yyyy, mm] = monthKey.split("-").map(Number);
         if (!yyyy || !mm || amount <= 0) continue;
         const incomeCents = Math.round(amount * 100);
+        // Build per-account breakdown for this month (values in cents)
+        const breakdown: Record<string, number> = {};
+        for (const [accountName, monthAmounts] of Object.entries(result.incomeByAccount)) {
+          const accountTotal = monthAmounts[monthKey];
+          if (accountTotal && accountTotal > 0) {
+            breakdown[accountName] = Math.round(accountTotal * 100);
+          }
+        }
         await db.insert(companyIncomeActuals)
-          .values({ companyId, year: yyyy, month: mm, incomeCents, xeroImported: true, updatedAt: new Date() })
+          .values({ companyId, year: yyyy, month: mm, incomeCents, breakdown, xeroImported: true, updatedAt: new Date() })
           .onConflictDoUpdate({
             target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
-            set: { incomeCents, xeroImported: true, updatedAt: new Date() },
+            set: { incomeCents, breakdown, xeroImported: true, updatedAt: new Date() },
           });
       }
 

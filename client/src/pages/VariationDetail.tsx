@@ -778,7 +778,7 @@ export default function VariationDetail() {
         size: file.size,
         contentType: file.type,
       });
-      const { uploadURL, objectPath } = await urlRes.json();
+      const { uploadURL, objectPath } = urlRes;
 
       // Upload to object storage
       await fetch(uploadURL, {

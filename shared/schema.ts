@@ -6011,6 +6011,7 @@ export const companyIncomeActuals = pgTable("company_income_actuals", {
   year: integer("year").notNull(),
   month: integer("month").notNull(), // 1-12
   incomeCents: integer("income_cents").notNull().default(0),
+  breakdown: jsonb("breakdown").$type<Record<string, number>>(),
   xeroImported: boolean("xero_imported").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

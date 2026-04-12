@@ -4,6 +4,7 @@ import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -26,12 +27,34 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  GripVertical,
+  X,
+  CheckCheck,
+  Ban,
 } from "lucide-react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { type Variation, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All" },
@@ -103,11 +126,106 @@ function saveColumnConfig(config: { id: string; visible: boolean; order: number 
   } catch {}
 }
 
+// ─── Kanban DnD helper components ─────────────────────────────────────────────
+
+interface KanbanCardProps {
+  variation: Variation & { isSeen?: boolean };
+  columnId: string;
+  onCardClick: (id: string) => void;
+  projectIdFromUrl: string;
+  getProject: (id: string) => Project | undefined;
+  getProjectName: (id: string) => string;
+  formatCurrency: (v: number) => string;
+  formatDate: (d: Date | string | null | undefined) => string;
+}
+
+function DraggableKanbanCard({ variation, columnId, onCardClick, projectIdFromUrl, getProject, getProjectName, formatCurrency, formatDate }: KanbanCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: variation.id,
+    data: { columnId },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <Card
+        className={cn("p-3 cursor-pointer hover-elevate", isDragging && "opacity-40")}
+        onClick={() => !isDragging && onCardClick(variation.id)}
+        data-testid={`kanban-card-${variation.id}`}
+      >
+        <div className="space-y-2">
+          <div className="flex items-start gap-2">
+            <div
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing mt-0.5 text-muted-foreground/40 shrink-0"
+              onClick={e => e.stopPropagation()}
+            >
+              <GripVertical className="w-3 h-3" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm truncate" data-testid={`kanban-card-name-${variation.id}`}>
+                {variation.name}
+              </p>
+              <p className="text-xs text-muted-foreground" data-testid={`kanban-card-number-${variation.id}`}>
+                {variation.variationNumber}
+              </p>
+            </div>
+          </div>
+          {!projectIdFromUrl && (
+            <div className="flex items-center gap-2 ml-5" data-testid={`kanban-card-project-${variation.id}`}>
+              <ProjectIcon
+                icon={getProject(variation.projectId)?.icon || "Briefcase"}
+                color={getProject(variation.projectId)?.color || "#3b82f6"}
+                className="w-4 h-4"
+              />
+              <span className="text-xs text-muted-foreground truncate">
+                {getProjectName(variation.projectId)}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2 border-t ml-5">
+            <span className="text-sm font-semibold" data-testid={`kanban-card-total-${variation.id}`}>
+              {formatCurrency(variation.totalAmount)}
+            </span>
+            {variation.approvalDeadline && (
+              <span className="text-xs text-muted-foreground" data-testid={`kanban-card-deadline-${variation.id}`}>
+                {formatDate(variation.approvalDeadline)}
+              </span>
+            )}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function DroppableColumn({ id, children }: { id: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex flex-col gap-2 min-h-[60px] rounded-md p-1 -m-1 transition-colors",
+        isOver && "bg-primary/5 ring-1 ring-inset ring-primary/20"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function Variations() {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
   const pageTitle = usePageTitle({ pageName: "Variations" });
+  const { toast } = useToast();
 
   const [currentView, setCurrentView] = useState<"table" | "kanban">("table");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -122,6 +240,12 @@ export default function Variations() {
 
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  // Kanban DnD state
+  const [activeKanbanId, setActiveKanbanId] = useState<string | null>(null);
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const syncHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (headerScrollRef.current) {
@@ -203,6 +327,24 @@ export default function Variations() {
     },
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest(`/api/variations/${id}`, "PATCH", { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/variations"] }),
+    onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
+      apiRequest("/api/variations/bulk-status", "POST", { ids, status }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+      setSelectedIds(new Set());
+      toast({ title: `${vars.ids.length} variation${vars.ids.length !== 1 ? "s" : ""} updated to ${STATUS_LABEL[vars.status] ?? vars.status}` });
+    },
+    onError: () => toast({ title: "Failed to update variations", variant: "destructive" }),
+  });
+
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
   const getProjectName = (projectId: string) => getProject(projectId)?.name || "Unknown Project";
 
@@ -222,7 +364,6 @@ export default function Variations() {
     return format(new Date(date), "dd MMM yyyy");
   };
 
-
   const handleRowClick = (variationId: string) => {
     if (projectIdFromUrl) {
       setLocation(`/projects/${projectIdFromUrl}/variations/${variationId}`);
@@ -238,6 +379,26 @@ export default function Variations() {
       setLocation(`/variations/new`);
     }
   };
+
+  // Bulk selection helpers
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredVariations.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredVariations.map(v => v.id)));
+    }
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   const statusCounts = useMemo(() => ({
     all: variations.length,
@@ -295,7 +456,8 @@ export default function Variations() {
   };
 
   const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
-  const totalWidth = orderedColumns.reduce((sum, col) => {
+  const CHECKBOX_COL_WIDTH = 32;
+  const totalWidth = CHECKBOX_COL_WIDTH + orderedColumns.reduce((sum, col) => {
     const def = ALL_COLUMNS.find(d => d.id === col.id);
     return sum + (colWidths[col.id] ?? def?.defaultWidth ?? 100);
   }, 0);
@@ -388,69 +550,92 @@ export default function Variations() {
     }
   };
 
+  // ─── Kanban DnD sensors & handlers ──────────────────────────────────────────
+  const kanbanSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleKanbanDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveKanbanId(null);
+    if (!over) return;
+
+    const activeVariation = filteredVariations.find(v => v.id === active.id);
+    if (!activeVariation) return;
+
+    let targetStatus: string | undefined;
+    const overData = over.data?.current as any;
+    if (overData?.sortable?.containerId) {
+      targetStatus = overData.sortable.containerId;
+    } else if (overData?.columnId) {
+      targetStatus = overData.columnId;
+    } else {
+      const col = STATUS_OPTIONS.find(s => s.key === over.id);
+      if (col) targetStatus = col.key;
+    }
+
+    if (targetStatus && activeVariation.status !== targetStatus) {
+      updateStatusMutation.mutate({ id: activeVariation.id, status: targetStatus });
+    }
+  };
+
+  const activeKanbanVariation = activeKanbanId ? filteredVariations.find(v => v.id === activeKanbanId) : null;
+
   const KanbanView = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 p-3" data-testid="kanban-view">
-      {STATUS_OPTIONS.slice(1).map((statusOption) => {
-        const columnVariations = filteredVariations.filter((v) => v.status === statusOption.key);
-        return (
-          <div key={statusOption.key} className="flex flex-col gap-3">
-            <div className="flex items-center justify-between px-3 py-2 bg-muted rounded-md">
-              <h3 className="font-medium text-sm" data-testid={`kanban-column-${statusOption.key}`}>
-                {statusOption.label}
-              </h3>
-              <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
-                {columnVariations.length}
-              </Badge>
+    <DndContext
+      sensors={kanbanSensors}
+      onDragStart={e => setActiveKanbanId(e.active.id as string)}
+      onDragEnd={handleKanbanDragEnd}
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 p-3" data-testid="kanban-view">
+        {STATUS_OPTIONS.slice(1).map((statusOption) => {
+          const columnVariations = filteredVariations.filter((v) => v.status === statusOption.key);
+          return (
+            <div key={statusOption.key} className="flex flex-col gap-3">
+              <div className="flex items-center justify-between px-3 py-2 bg-muted rounded-md">
+                <h3 className="font-medium text-sm" data-testid={`kanban-column-${statusOption.key}`}>
+                  {statusOption.label}
+                </h3>
+                <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
+                  {columnVariations.length}
+                </Badge>
+              </div>
+              <SortableContext
+                id={statusOption.key}
+                items={columnVariations.map(v => v.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <DroppableColumn id={statusOption.key}>
+                  {columnVariations.map((variation) => (
+                    <DraggableKanbanCard
+                      key={variation.id}
+                      variation={variation as any}
+                      columnId={statusOption.key}
+                      onCardClick={handleRowClick}
+                      projectIdFromUrl={projectIdFromUrl}
+                      getProject={getProject}
+                      getProjectName={getProjectName}
+                      formatCurrency={formatCurrency}
+                      formatDate={formatDate}
+                    />
+                  ))}
+                </DroppableColumn>
+              </SortableContext>
             </div>
-            <div className="flex flex-col gap-2">
-              {columnVariations.map((variation) => (
-                <Card
-                  key={variation.id}
-                  className="p-3 cursor-pointer hover-elevate"
-                  onClick={() => handleRowClick(variation.id)}
-                  data-testid={`kanban-card-${variation.id}`}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate" data-testid={`kanban-card-name-${variation.id}`}>
-                          {variation.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground" data-testid={`kanban-card-number-${variation.id}`}>
-                          {variation.variationNumber}
-                        </p>
-                      </div>
-                    </div>
-                    {!projectIdFromUrl && (
-                      <div className="flex items-center gap-2" data-testid={`kanban-card-project-${variation.id}`}>
-                        <ProjectIcon
-                          icon={getProject(variation.projectId)?.icon || "Briefcase"}
-                          color={getProject(variation.projectId)?.color || "#3b82f6"}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-xs text-muted-foreground truncate">
-                          {getProjectName(variation.projectId)}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <span className="text-sm font-semibold" data-testid={`kanban-card-total-${variation.id}`}>
-                        {formatCurrency(variation.totalAmount)}
-                      </span>
-                      {variation.approvalDeadline && (
-                        <span className="text-xs text-muted-foreground" data-testid={`kanban-card-deadline-${variation.id}`}>
-                          {formatDate(variation.approvalDeadline)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+      <DragOverlay>
+        {activeKanbanVariation && (
+          <Card className="p-3 shadow-lg opacity-90 w-56">
+            <p className="font-medium text-sm truncate">{activeKanbanVariation.name}</p>
+            <p className="text-xs text-muted-foreground">{activeKanbanVariation.variationNumber}</p>
+            <p className="text-sm font-semibold mt-1.5">{formatCurrency(activeKanbanVariation.totalAmount)}</p>
+          </Card>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 
   return (
@@ -528,7 +713,7 @@ export default function Variations() {
       </div>{/* end header card */}
 
       {/* ── Content ── */}
-      <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
+      <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5 relative">
 
         <div className="border border-border rounded-md bg-background overflow-hidden">
 
@@ -637,6 +822,17 @@ export default function Variations() {
               <Table style={{ tableLayout: "fixed", width: totalWidth, minWidth: totalWidth }}>
                 <TableHeader>
                   <TableRow className="h-5 bg-muted/30 hover:bg-muted/30">
+                    {/* Select-all checkbox */}
+                    <TableHead style={{ width: CHECKBOX_COL_WIDTH, minWidth: CHECKBOX_COL_WIDTH }} className="px-2 py-0">
+                      <input
+                        type="checkbox"
+                        checked={filteredVariations.length > 0 && selectedIds.size === filteredVariations.length}
+                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredVariations.length; }}
+                        onChange={toggleSelectAll}
+                        className="w-3 h-3 accent-[#bba7db] cursor-pointer"
+                        data-testid="checkbox-select-all"
+                      />
+                    </TableHead>
                     {orderedColumns.map((col) => {
                       const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
                       const isRight = ["total", "paid", "balance"].includes(col.id);
@@ -678,13 +874,13 @@ export default function Variations() {
                 <TableBody>
                   {variationsLoading ? (
                     <TableRow>
-                      <TableCell colSpan={orderedColumns.length} className="text-center py-8">
+                      <TableCell colSpan={orderedColumns.length + 1} className="text-center py-8">
                         <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
                       </TableCell>
                     </TableRow>
                   ) : filteredVariations.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={orderedColumns.length} className="text-center py-8">
+                      <TableCell colSpan={orderedColumns.length + 1} className="text-center py-8">
                         <div className="flex flex-col items-center gap-3">
                           <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
                             {variations.length === 0 ? "No variations found" : "No matching variations"}
@@ -703,16 +899,28 @@ export default function Variations() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredVariations.map((variation) => (
-                      <TableRow
-                        key={variation.id}
-                        className="cursor-pointer hover-elevate h-9"
-                        onClick={() => handleRowClick(variation.id)}
-                        data-testid={`row-variation-${variation.id}`}
-                      >
-                        {orderedColumns.map((col) => renderCell(col, variation as any))}
-                      </TableRow>
-                    ))
+                    filteredVariations.map((variation) => {
+                      const isSelected = selectedIds.has(variation.id);
+                      return (
+                        <TableRow
+                          key={variation.id}
+                          className={cn("cursor-pointer hover-elevate h-9", isSelected && "bg-[#bba7db]/8 dark:bg-[#bba7db]/10")}
+                          onClick={() => handleRowClick(variation.id)}
+                          data-testid={`row-variation-${variation.id}`}
+                        >
+                          <TableCell style={{ width: CHECKBOX_COL_WIDTH, minWidth: CHECKBOX_COL_WIDTH }} className="px-2 py-1" onClick={e => toggleSelect(variation.id, e)}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="w-3 h-3 accent-[#bba7db] cursor-pointer"
+                              data-testid={`checkbox-${variation.id}`}
+                            />
+                          </TableCell>
+                          {orderedColumns.map((col) => renderCell(col, variation as any))}
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -720,6 +928,69 @@ export default function Variations() {
             </>
           )}
         </div>
+
+        {/* ── Floating bulk action bar ── */}
+        {selectedIds.size > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-3 py-2" data-testid="bulk-action-bar">
+            <span className="text-xs font-medium text-muted-foreground mr-1" data-testid="bulk-count">
+              {selectedIds.size} selected
+            </span>
+            <div className="w-px h-4 bg-border" />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-emerald-600 dark:text-emerald-400"
+              onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "approved" })}
+              disabled={bulkStatusMutation.isPending}
+              data-testid="button-bulk-approve"
+            >
+              <CheckCheck className="w-3 h-3 mr-1" />
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-destructive"
+              onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "rejected" })}
+              disabled={bulkStatusMutation.isPending}
+              data-testid="button-bulk-reject"
+            >
+              <Ban className="w-3 h-3 mr-1" />
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-amber-600 dark:text-amber-400"
+              onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "pending" })}
+              disabled={bulkStatusMutation.isPending}
+              data-testid="button-bulk-pending"
+            >
+              Pending
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={() => bulkStatusMutation.mutate({ ids: [...selectedIds], status: "draft" })}
+              disabled={bulkStatusMutation.isPending}
+              data-testid="button-bulk-draft"
+            >
+              Draft
+            </Button>
+            <div className="w-px h-4 bg-border" />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={clearSelection}
+              data-testid="button-bulk-clear"
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        )}
+
       </div>
     </div>
   );

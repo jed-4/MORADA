@@ -88,7 +88,7 @@ interface ContractedProject {
   percentComplete: number | null;
   remainingCents: number;
 }
-interface CompanyIncomeActual { id: string; companyId: string; year: number; month: number; incomeCents: number; xeroImported: boolean; }
+interface CompanyIncomeActual { id: string; companyId: string; year: number; month: number; incomeCents: number; breakdown?: Record<string, number>; xeroImported: boolean; }
 interface CompanyDirectCostActual { id: string; companyId: string; year: number; month: number; directCostCents: number; xeroImported: boolean; }
 
 interface OverheadsData {
@@ -107,6 +107,22 @@ type TabId = "register" | "actuals" | "forecast" | "predictor";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const XERO_TYPE_LABELS: Record<string, string> = {
+  OVERHEADS: "Overheads",
+  DIRECTCOSTS: "Direct Costs",
+  EXPENSE: "Expenses",
+  CURRLIAB: "Current Liabilities",
+  REVENUE: "Revenue",
+  OTHERINCOME: "Other Income",
+  DEPRECIATN: "Depreciation",
+  TERMLIAB: "Term Liabilities",
+  EQUITY: "Equity",
+  ASSET: "Assets",
+  PREPAYMENT: "Prepayments",
+  LIABILITY: "Liabilities",
+  FIXED: "Fixed Assets",
+};
 
 function fmtDollars(cents: number): string {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(cents / 100);
@@ -607,7 +623,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                               item.xeroAccountType === "DIRECTCOSTS" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400" :
                               item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
                               "bg-muted text-muted-foreground"
-                            }`}>{item.xeroAccountType}</Badge>
+                            }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
                           ) : <span className="text-muted-foreground/30 text-xs">—</span>}
                         </div>
                       )}
@@ -701,6 +717,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const [incomeInput, setIncomeInput] = useState("");
   const [editingDirectCost, setEditingDirectCost] = useState<string | null>(null); // "year__month"
   const [directCostInput, setDirectCostInput] = useState("");
+  const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
 
   const rolling12 = useMemo(() => rollingLast12(), []);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
@@ -801,7 +818,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         if (ai === -1 && bi === -1) return a[0].localeCompare(b[0]);
         if (ai === -1) return 1; if (bi === -1) return -1;
         return ai - bi;
-      }).map(([label, items]) => ({ label, items }));
+      }).map(([key, items]) => ({ label: XERO_TYPE_LABELS[key] ?? key.charAt(0) + key.slice(1).toLowerCase(), items }));
     }
     // buildpro
     const map = new Map<string, OverheadItem[]>();
@@ -821,6 +838,19 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
 
   // ─── Prev 12 Summary View ────────────────────────────────────────────────────
+  // Compute income breakdown across rolling 12 months (from breakdown JSONB field)
+  const incomeBreakdown12 = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const { year, month } of rolling12) {
+      const actual = data.incomeActuals.find(a => a.year === year && a.month === month);
+      if (!actual?.breakdown) continue;
+      for (const [name, cents] of Object.entries(actual.breakdown)) {
+        map[name] = (map[name] || 0) + cents;
+      }
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [data.incomeActuals, rolling12]);
+
   if (view === "prev12") {
     const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
     const totalDC12 = rolling12.reduce((s, { year, month }) => s + (directCostMap.get(`${year}__${month}`) || 0), 0);
@@ -895,12 +925,40 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             </div>
 
             {/* Income row */}
-            <div className="flex items-center border-b border-border/40 bg-green-500/5" style={{ height: 36 }}>
-              <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />Income</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-green-600 dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
-              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
+            <div className="border-b border-border/40 bg-green-500/5">
+              <div className="flex items-center" style={{ height: 36 }}>
+                <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                  Income
+                  {incomeBreakdown12.length > 0 && (
+                    <button
+                      onClick={() => setShowIncomeBreakdown(v => !v)}
+                      className="ml-1 p-0.5 rounded hover-elevate text-muted-foreground/60"
+                      title="Show income breakdown"
+                    >
+                      <ChevronDown className={`w-3 h-3 transition-transform ${showIncomeBreakdown ? "rotate-180" : ""}`} />
+                    </button>
+                  )}
+                </div>
+                <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-green-600 dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
+                <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
+                <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
+                <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
+              </div>
+              {/* Income breakdown sub-rows */}
+              {showIncomeBreakdown && incomeBreakdown12.length > 0 && (
+                <div className="border-t border-green-200/40 dark:border-green-800/30">
+                  {incomeBreakdown12.map(([name, cents]) => (
+                    <div key={name} className="flex items-center" style={{ height: 28 }}>
+                      <div className="flex-1 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
+                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/70 dark:text-green-400/70 tabular-nums">{fmtK(cents)}</div>
+                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-muted-foreground/50 tabular-nums">{fmtK(Math.round(cents / 12))}</div>
+                      <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground/50 tabular-nums">{totalIncome12 > 0 ? `${((cents / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
+                      <div className="w-20 flex-shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Direct Costs row */}
