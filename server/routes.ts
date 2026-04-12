@@ -11876,12 +11876,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      const existingInvoices = await storage.getClientInvoices(projectId as string);
-      const seq = String(existingInvoices.length + 1).padStart(2, '0');
       const jobNum = (project as any).constructionNumber || (project as any).preConstructionNumber || (project as any).leadNumber || (project as any).jobNumber;
-      const invoiceNumber = jobNum
-        ? `${jobNum}-CI-${seq}`
-        : `${(project as any).clientInvoicePrefix || "INV-"}${((project as any).clientInvoiceStartNumber || 1000) + existingInvoices.length}`;
+      let invoiceNumber: string;
+      if (jobNum) {
+        const existingInvoices = await storage.getClientInvoices(projectId as string);
+        const seq = String(existingInvoices.length + 1).padStart(2, '0');
+        invoiceNumber = `${jobNum}-CI-${seq}`;
+      } else {
+        const prefix = (project as any).clientInvoicePrefix || "INV-";
+        const startNumber = (project as any).clientInvoiceStartNumber || 1000;
+        invoiceNumber = await storage.getNextClientInvoiceNumber(prefix, startNumber);
+      }
       res.json({ invoiceNumber });
     } catch (error) {
       res.status(500).json({ error: "Failed to generate invoice number" });

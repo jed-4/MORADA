@@ -688,6 +688,7 @@ export interface IStorage {
 
   // Client Invoices CRUD
   getClientInvoices(projectId?: string, status?: string): Promise<ClientInvoice[]>;
+  getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string>;
   getClientInvoice(id: string): Promise<ClientInvoice | undefined>;
   getClientInvoiceByXeroId(xeroInvoiceId: string): Promise<ClientInvoice | undefined>;
   createClientInvoice(invoice: InsertClientInvoice): Promise<ClientInvoice>;
@@ -5685,6 +5686,10 @@ export class MemStorage implements IStorage {
   async createTeam(data: import("@shared/schema").InsertTeam): Promise<import("@shared/schema").Team> { throw new Error("Not implemented"); }
   async updateTeam(id: string, data: Partial<import("@shared/schema").InsertTeam>): Promise<import("@shared/schema").Team | undefined> { return undefined; }
   async deleteTeam(id: string): Promise<boolean> { return false; }
+
+  async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
+    return `${prefix}${startNumber}`;
+  }
 }
 
 // Database-backed storage implementation
@@ -13622,6 +13627,27 @@ export class DbStorage implements IStorage {
       return await query;
     } catch (error) {
       console.error("Database error in getClientInvoices:", error);
+      throw error;
+    }
+  }
+
+  async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
+    try {
+      const allInvoices = await db.select({ invoiceNumber: schema.clientInvoices.invoiceNumber })
+        .from(schema.clientInvoices)
+        .where(sql`${schema.clientInvoices.invoiceNumber} like ${prefix + '%'}`);
+
+      let maxNum = startNumber - 1;
+      for (const inv of allInvoices) {
+        const raw = inv.invoiceNumber;
+        if (!raw) continue;
+        const numStr = raw.slice(prefix.length);
+        const num = parseInt(numStr, 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+      return `${prefix}${maxNum + 1}`;
+    } catch (error) {
+      console.error("Database error in getNextClientInvoiceNumber:", error);
       throw error;
     }
   }
