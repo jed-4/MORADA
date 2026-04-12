@@ -7,6 +7,7 @@ import { z } from "zod";
 import { format, addDays } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
 import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
+import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import {
   ArrowLeft,
   Plus,
@@ -243,6 +244,8 @@ export default function ClientInvoiceDetail() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [xeroPushing, setXeroPushing] = useState(false);
   const [sendToXero, setSendToXero] = useState(false);
+  const [xeroLinkModalOpen, setXeroLinkModalOpen] = useState(false);
+  const [xeroUnmappedClientName, setXeroUnmappedClientName] = useState("");
 
   // ── new UI state ─────────────────────────────────────────────────────────────
   const [introCollapsed, setIntroCollapsed] = useState(true);
@@ -865,6 +868,21 @@ export default function ClientInvoiceDetail() {
     sendToXero: sendToXero,
   });
 
+  const openXeroLinkModal = (errorMsg: string) => {
+    try {
+      const jsonStart = errorMsg.indexOf("{");
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(errorMsg.slice(jsonStart));
+        if (parsed.error === "UNMAPPED_CONTACT") {
+          setXeroUnmappedClientName(parsed.clientName || "Unknown Client");
+          setXeroLinkModalOpen(true);
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const invoiceData = {
@@ -954,7 +972,9 @@ export default function ClientInvoiceDetail() {
           const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: inv.id });
           toast({ title: "Created & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
         } catch (xeroErr: any) {
-          toast({ title: "Created, but Xero push failed", description: xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
+          if (!openXeroLinkModal(xeroErr.message || "")) {
+            toast({ title: "Created, but Xero push failed", description: xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
+          }
         }
       } else {
         toast({ title: "Success", description: "Invoice created successfully" });
@@ -1092,7 +1112,9 @@ export default function ClientInvoiceDetail() {
             toast({ title: "Saved & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
           }
         } catch (xeroErr: any) {
-          toast({ title: "Saved, but Xero sync failed", description: xeroErr.message || "Unknown Xero error", variant: "destructive" });
+          if (!openXeroLinkModal(xeroErr.message || "")) {
+            toast({ title: "Saved, but Xero sync failed", description: xeroErr.message || "Unknown Xero error", variant: "destructive" });
+          }
         }
       } else {
         toast({ title: "Success", description: "Invoice updated successfully" });
@@ -1276,11 +1298,13 @@ export default function ClientInvoiceDetail() {
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
     } catch (error: any) {
-      toast({
-        title: "Failed to send to Xero",
-        description: error.message || "Could not push invoice to Xero",
-        variant: "destructive",
-      });
+      if (!openXeroLinkModal(error.message || "")) {
+        toast({
+          title: "Failed to send to Xero",
+          description: error.message || "Could not push invoice to Xero",
+          variant: "destructive",
+        });
+      }
     } finally {
       setXeroPushing(false);
     }
@@ -4424,6 +4448,17 @@ export default function ClientInvoiceDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <XeroContactLinkModal
+        open={xeroLinkModalOpen}
+        onClose={() => setXeroLinkModalOpen(false)}
+        clientId={(currentProject as any)?.clientId || null}
+        clientName={xeroUnmappedClientName}
+        onLinked={() => {
+          setXeroLinkModalOpen(false);
+          handlePushToXero();
+        }}
+      />
     </div>
   );
 }

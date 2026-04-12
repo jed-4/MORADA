@@ -708,6 +708,14 @@ export class XeroService {
 
     return { byAccount, accounts, incomeTotals, directCostTotals };
   }
+
+  async createContact(connectionId: string, name: string): Promise<{ contactId: string; name: string }> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+    const contact = await this.findOrCreateContact(accessToken, connection.tenantId, name);
+    return { contactId: contact.ContactID, name: contact.Name };
+  }
 }
 
 export const xeroService = new XeroService();

@@ -23001,6 +23001,32 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Xero: Create a new contact in Xero (and optionally link to a Buildpro contact)
+  app.post("/api/xero/contacts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const { name, buildproContactId } = req.body;
+      if (!name) return res.status(400).json({ error: "name is required" });
+
+      const created = await xeroService.createContact(connection.id, name);
+
+      if (buildproContactId) {
+        await storage.updateContact(buildproContactId, { xeroContactId: created.contactId } as any, companyId);
+      }
+
+      res.json(created);
+    } catch (error: any) {
+      console.error("Error creating Xero contact:", error);
+      res.status(500).json({ error: error.message || "Failed to create Xero contact" });
+    }
+  });
+
   // Xero: Fetch tracking categories from Xero org
   app.get("/api/xero/tracking-categories", requireAuth, async (req, res) => {
     try {
