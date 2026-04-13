@@ -1368,6 +1368,43 @@ export default function Timesheets() {
               return h + m / 60;
             };
 
+            // Within a set of same-lane entries, compute sub-lane (column) assignments
+            // so overlapping entries render side-by-side instead of stacked.
+            const computeBlockLanes = (entries: Timesheet[]): Map<string, { subLane: number; totalSubLanes: number }> => {
+              const intervals = entries.map(ts => {
+                const start = parseHHmm(ts.startTime) ?? CAL_START_HOUR;
+                let end = parseHHmm(ts.endTime);
+                if (end === null) end = start + getNetHours(ts);
+                return { id: ts.id as string, start, end: Math.max(end, start + 0.25) };
+              });
+              intervals.sort((a, b) => a.start - b.start);
+              const result = new Map<string, { subLane: number; totalSubLanes: number }>();
+              let i = 0;
+              while (i < intervals.length) {
+                const cluster: typeof intervals = [intervals[i]];
+                let clusterEnd = intervals[i].end;
+                let j = i + 1;
+                while (j < intervals.length && intervals[j].start < clusterEnd) {
+                  clusterEnd = Math.max(clusterEnd, intervals[j].end);
+                  cluster.push(intervals[j]);
+                  j++;
+                }
+                const laneTails: number[] = [];
+                cluster.forEach(iv => {
+                  let lane = -1;
+                  for (let l = 0; l < laneTails.length; l++) {
+                    if (iv.start >= laneTails[l]) { lane = l; laneTails[l] = iv.end; break; }
+                  }
+                  if (lane === -1) { lane = laneTails.length; laneTails.push(iv.end); }
+                  result.set(iv.id, { subLane: lane, totalSubLanes: 0 });
+                });
+                const total = laneTails.length;
+                cluster.forEach(iv => { const e = result.get(iv.id)!; result.set(iv.id, { subLane: e.subLane, totalSubLanes: total }); });
+                i = j;
+              }
+              return result;
+            };
+
             const calendarDays = eachDayOfInterval({
               start: calendarWeek,
               end: addDays(calendarWeek, 6),
@@ -1649,79 +1686,100 @@ export default function Timesheets() {
                           />
                         ))}
 
-                        {/* Timesheet blocks */}
-                        {dayTimed.map(ts => {
-                          const startDecimal = parseHHmm(ts.startTime);
-                          if (startDecimal === null) return null;
-
-                          let endDecimal = parseHHmm(ts.endTime);
-                          if (endDecimal === null) {
-                            endDecimal = startDecimal + getNetHours(ts);
-                          }
-
-                          const clampedStart = Math.max(startDecimal, CAL_START_HOUR);
-                          const clampedEnd = Math.min(endDecimal, CAL_END_HOUR);
-                          if (clampedEnd <= clampedStart) return null;
-
-                          const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
-                          const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
-
-                          const projColor = getProjectColor(ts.projectId);
-                          const dotColor = statusDotColor(ts.status);
-                          // Compute horizontal position based on lane
-                          let leftPct = 0;
-                          let widthPct = 100;
+                        {/* Timesheet blocks — with collision-aware sub-lane placement */}
+                        {(() => {
+                          // Compute sub-lanes per user lane (or for the whole column if not using lanes)
+                          const blockLanesMap = new Map<string, Map<string, { subLane: number; totalSubLanes: number }>>();
                           if (useLanes) {
-                            const laneIdx = laneUsers.indexOf(ts.userId);
-                            if (laneIdx !== -1) {
-                              widthPct = 100 / laneUsers.length;
-                              leftPct = laneIdx * widthPct;
-                            }
+                            laneUsers.forEach(uid => {
+                              const userEntries = dayTimed.filter(ts => ts.userId === uid);
+                              blockLanesMap.set(String(uid), computeBlockLanes(userEntries));
+                            });
+                          } else {
+                            const allLanes = computeBlockLanes(dayTimed);
+                            blockLanesMap.set("all", allLanes);
                           }
                           const INSET = 1;
+                          return dayTimed.map(ts => {
+                            const startDecimal = parseHHmm(ts.startTime);
+                            if (startDecimal === null) return null;
 
-                          return (
-                            <div
-                              key={ts.id}
-                              onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                              className={`absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
-                              style={projColor ? {
-                                top,
-                                height,
-                                left: `calc(${leftPct}% + ${INSET}px)`,
-                                width: `calc(${widthPct}% - ${INSET * 2}px)`,
-                                backgroundColor: hexToRgba(projColor, 0.15),
-                                borderLeft: `3px solid ${projColor}`,
-                              } : {
-                                top,
-                                height,
-                                left: `calc(${leftPct}% + ${INSET}px)`,
-                                width: `calc(${widthPct}% - ${INSET * 2}px)`,
-                              }}
-                              title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
-                            >
-                              {dotColor !== "transparent" && (
-                                <span
-                                  className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: dotColor }}
-                                />
-                              )}
-                              <div className="font-bold truncate leading-tight pr-2">
-                                {getProjectName(ts.projectId)}
+                            let endDecimal = parseHHmm(ts.endTime);
+                            if (endDecimal === null) {
+                              endDecimal = startDecimal + getNetHours(ts);
+                            }
+
+                            const clampedStart = Math.max(startDecimal, CAL_START_HOUR);
+                            const clampedEnd = Math.min(endDecimal, CAL_END_HOUR);
+                            if (clampedEnd <= clampedStart) return null;
+
+                            const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
+                            const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+
+                            const projColor = getProjectColor(ts.projectId);
+                            const dotColor = statusDotColor(ts.status);
+
+                            // User lane: which horizontal slice this user occupies
+                            let userLaneLeftPct = 0;
+                            let userLaneWidthPct = 100;
+                            if (useLanes) {
+                              const laneIdx = laneUsers.indexOf(ts.userId);
+                              if (laneIdx !== -1) {
+                                userLaneWidthPct = 100 / laneUsers.length;
+                                userLaneLeftPct = laneIdx * userLaneWidthPct;
+                              }
+                            }
+
+                            // Sub-lane: collision detection within the user's lane
+                            const laneKey = useLanes ? String(ts.userId) : "all";
+                            const subLaneInfo = blockLanesMap.get(laneKey)?.get(ts.id) ?? { subLane: 0, totalSubLanes: 1 };
+                            const subWidthPct = userLaneWidthPct / subLaneInfo.totalSubLanes;
+                            const leftPct = userLaneLeftPct + subLaneInfo.subLane * subWidthPct;
+                            const widthPct = subWidthPct;
+
+                            return (
+                              <div
+                                key={ts.id}
+                                onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
+                                className={`absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                style={projColor ? {
+                                  top,
+                                  height,
+                                  left: `calc(${leftPct}% + ${INSET}px)`,
+                                  width: `calc(${widthPct}% - ${INSET * 2}px)`,
+                                  backgroundColor: hexToRgba(projColor, 0.15),
+                                  borderLeft: `3px solid ${projColor}`,
+                                } : {
+                                  top,
+                                  height,
+                                  left: `calc(${leftPct}% + ${INSET}px)`,
+                                  width: `calc(${widthPct}% - ${INSET * 2}px)`,
+                                }}
+                                title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${formatDuration(getNetHours(ts))})`}
+                              >
+                                {dotColor !== "transparent" && (
+                                  <span
+                                    className="absolute top-0.5 right-0.5 inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: dotColor }}
+                                  />
+                                )}
+                                <div className="font-bold truncate leading-tight pr-2">
+                                  {getProjectName(ts.projectId)}
+                                </div>
+                                {height > 28 && (
+                                  <div className="truncate leading-tight opacity-70">
+                                    {getCostCodeName(ts.costCodeId)}
+                                  </div>
+                                )}
+                                {height > 42 && (
+                                  <div className="truncate leading-tight opacity-50">
+                                    {ts.description}
+                                  </div>
+                                )}
                               </div>
-                              {height > 28 && (
-                                <div className="truncate leading-tight opacity-70">
-                                  {getCostCodeName(ts.costCodeId)}
-                                </div>
-                              )}
-                              {height > 42 && (
-                                <div className="truncate leading-tight opacity-50">
-                                  {ts.description}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          });
+                        })()}
                       </div>
                     );
                   })}
