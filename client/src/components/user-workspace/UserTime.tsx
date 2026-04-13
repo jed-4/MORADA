@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Clock, Calendar, Timer, ChevronLeft, ChevronRight, X, Briefcase, Tag, FileText, AlarmClock, ExternalLink } from "lucide-react";
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay } from "date-fns";
+import { Clock, Calendar, Timer, ChevronLeft, ChevronRight, AlarmClock, Briefcase, Tag, FileText, ExternalLink } from "lucide-react";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay, parseISO, getDay } from "date-fns";
 import type { User, Timesheet, Project, CostCode } from "@shared/schema";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
@@ -23,8 +23,51 @@ interface UserTimeProps {
   isOwnPage: boolean;
 }
 
+const CAL_START_HOUR = 5;
+const CAL_END_HOUR = 22;
+const HOUR_PX = 60;
+const GUTTER_W = 44;
+const TOTAL_HOURS = CAL_END_HOUR - CAL_START_HOUR;
+
+function parseHHmm(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const [hh, mm] = t.split(":").map(Number);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  return hh + mm / 60;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function statusDotColor(status: string): string {
+  if (status === "approved") return "#22c55e";
+  if (status === "submitted") return "#f59e0b";
+  if (status === "rejected") return "#ef4444";
+  return "transparent";
+}
+
+function statusBadgeClass(status: string): string {
+  switch (status) {
+    case "approved": return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
+    case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
+    case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    default: return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400";
+  }
+}
+
+function getNetHours(ts: any): number {
+  const dur = parseFloat(String(ts.duration || 0));
+  const brk = parseFloat(String(ts.breakDuration || 0));
+  return Math.max(dur - brk, 0);
+}
+
 export default function UserTime({ user, isOwnPage }: UserTimeProps) {
-  const [viewType, setViewType] = useState<"table" | "weekly">("table");
+  const [viewType, setViewType] = useState<"table" | "weekly">("weekly");
   const weekStartDay = useWeekStartDay();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const { effectiveTimezone } = useTimezone();
@@ -35,9 +78,9 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
     queryKey: ["/api/timesheets", { userId: user.id }],
     queryFn: async () => {
       const response = await fetch(`/api/timesheets?userId=${user.id}`, {
-        credentials: 'include'
+        credentials: "include",
       });
-      if (!response.ok) throw new Error('Failed to fetch timesheets');
+      if (!response.ok) throw new Error("Failed to fetch timesheets");
       return response.json();
     },
   });
@@ -53,47 +96,49 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: weekStartDay });
   const daysOfWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
-  const weeklyTimesheets = useMemo(() => {
+  const weekTimesheets = useMemo(() => {
     return timesheets.filter(ts => {
-      const tsDate = new Date(ts.date);
-      return tsDate >= weekStart && tsDate <= weekEnd;
+      const dk = format(parseISO(ts.date), "yyyy-MM-dd");
+      const startKey = format(weekStart, "yyyy-MM-dd");
+      const endKey = format(weekEnd, "yyyy-MM-dd");
+      return dk >= startKey && dk <= endKey;
     });
   }, [timesheets, weekStart, weekEnd]);
 
-  const dailyHours = useMemo(() => {
-    const hours: Record<string, number> = {};
-    daysOfWeek.forEach(day => {
-      const dayKey = format(day, 'yyyy-MM-dd');
-      hours[dayKey] = weeklyTimesheets
-        .filter(ts => isSameDay(new Date(ts.date), day))
-        .reduce((sum, ts) => sum + parseFloat(String(ts.duration || 0)), 0);
-    });
-    return hours;
-  }, [weeklyTimesheets, daysOfWeek]);
+  const timedSheets = useMemo(() => weekTimesheets.filter(ts => ts.startTime), [weekTimesheets]);
+  const untimedSheets = useMemo(() => weekTimesheets.filter(ts => !ts.startTime), [weekTimesheets]);
 
-  const totalWeekHours = Object.values(dailyHours).reduce((sum, h) => sum + h, 0);
+  const untimedByDay = useMemo(() => {
+    const map = new Map<string, any[]>();
+    untimedSheets.forEach(ts => {
+      const dk = format(parseISO(ts.date), "yyyy-MM-dd");
+      if (!map.has(dk)) map.set(dk, []);
+      map.get(dk)!.push(ts);
+    });
+    return map;
+  }, [untimedSheets]);
+
+  const totalWeekHours = useMemo(() => {
+    return weekTimesheets.reduce((sum, ts) => sum + parseFloat(String(ts.duration || 0)), 0);
+  }, [weekTimesheets]);
 
   const getProjectName = (projectId: string | null) => {
-    if (!projectId) return 'Business';
-    const project = projects.find(p => p.id === projectId);
-    return project?.name || 'Unknown Project';
+    if (!projectId) return "Business";
+    return projects.find(p => p.id === projectId)?.name || "Unknown Project";
   };
 
-  const getCostCodeName = (ts: any) => {
+  const getProjectColor = (projectId: string | null): string | null => {
+    if (!projectId) return null;
+    const proj = projects.find(p => p.id === projectId) as any;
+    return proj?.brandColor || proj?.color || null;
+  };
+
+  const getCostCodeLabel = (ts: any): string | null => {
     const codeId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
     if (!codeId) return null;
     const cc = costCodes.find(c => c.id === codeId);
     if (!cc) return null;
-    return cc.code ? `${cc.code} — ${cc.title}` : cc.title;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
-      case 'submitted': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
-      case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
-    }
+    return (cc as any).code ? `${(cc as any).code} — ${cc.title}` : cc.title;
   };
 
   if (isLoading) {
@@ -113,34 +158,38 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="user-time">
-      {/* Header Panel - 2 rows connected to content */}
+      {/* Header Panel */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
-        {/* Row 1 - Title */}
+        {/* Row 1 - Title + week total */}
         <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {isOwnPage ? 'My Timesheets' : `${user.firstName}'s Timesheets`}
+            {isOwnPage ? "My Timesheets" : `${user.firstName}'s Timesheets`}
           </h2>
+          {viewType === "weekly" && (
+            <span className="text-xs text-muted-foreground">
+              Week total: <span className="font-semibold text-foreground">{totalWeekHours.toFixed(1)}h</span>
+            </span>
+          )}
         </div>
 
-        {/* Row 2 - View Tabs */}
+        {/* Row 2 - View tabs + navigation */}
         <div className="h-8 flex items-center justify-between px-3">
           <div className="flex items-center gap-1" data-testid="tabs-time-views">
             {(["table", "weekly"] as const).map((view) => {
               const Icon = view === "table" ? Clock : Calendar;
               const isActive = viewType === view;
+              const label = view === "weekly" ? "Calendar" : "List";
               return (
                 <button
                   key={view}
                   onClick={() => setViewType(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
-                    isActive
-                      ? 'text-[#bba7db] font-medium'
-                      : 'text-muted-foreground hover:text-foreground'
+                    isActive ? "text-[#bba7db] font-medium" : "text-muted-foreground hover:text-foreground"
                   }`}
                   data-testid={`tab-${view}`}
                 >
                   <Icon className="w-3 h-3" />
-                  <span className="capitalize">{view}</span>
+                  <span>{label}</span>
                   {isActive && (
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
                   )}
@@ -149,7 +198,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
             })}
           </div>
 
-          {/* Weekly view navigation */}
+          {/* Calendar week navigation */}
           {viewType === "weekly" && (
             <div className="flex items-center gap-1">
               <button
@@ -159,9 +208,13 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               >
                 <ChevronLeft className="w-3 h-3" />
               </button>
-              <span className="text-xs text-muted-foreground px-2">
-                {formatInTimezone(weekStart, effectiveTimezone, { month: 'short', day: 'numeric' })} - {formatInTimezone(weekEnd, effectiveTimezone, { month: 'short', day: 'numeric' })}
-              </span>
+              <button
+                onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: weekStartDay }))}
+                className="h-6 px-2 text-[10px] border rounded-md hover-elevate active-elevate-2"
+                data-testid="button-today"
+              >
+                Today
+              </button>
               <button
                 onClick={() => setWeekStart(addWeeks(weekStart, 1))}
                 className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
@@ -169,41 +222,206 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               >
                 <ChevronRight className="w-3 h-3" />
               </button>
+              <span className="text-xs text-muted-foreground ml-1">
+                {formatInTimezone(weekStart, effectiveTimezone, { month: "short", day: "numeric" })} – {formatInTimezone(weekEnd, effectiveTimezone, { month: "short", day: "numeric" })}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Content - connected to header */}
+      {/* Content */}
       <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
         {viewType === "weekly" ? (
-          <div>
-            <div className="grid grid-cols-7 border-b">
-              {daysOfWeek.map((day) => {
-                const dayKey = format(day, 'yyyy-MM-dd');
-                const hours = dailyHours[dayKey] || 0;
+          <div className="flex flex-col">
+            {/* Sticky day headers */}
+            <div className="sticky top-0 z-20 flex border-b-2 border-border bg-card">
+              <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="border-r border-border flex-shrink-0" />
+              {daysOfWeek.map(day => {
+                const today = isToday(day);
+                const flex = getDay(day) === 0 ? 0.5 : 1;
                 return (
-                  <div 
-                    key={dayKey} 
-                    className={`p-3 text-center border-r last:border-r-0 ${
-                      isToday(day) ? 'bg-primary/5' : ''
+                  <div
+                    key={day.toISOString()}
+                    style={{ flex }}
+                    className={`text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium min-w-0 ${
+                      today ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                     }`}
                   >
-                    <div className="text-xs text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
-                    <div className="text-sm font-medium">{formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}</div>
-                    <div className={`text-lg font-semibold mt-2 ${hours > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
-                      {hours.toFixed(1)}h
+                    <div className={today ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
+                      {format(day, "EEE")}
+                    </div>
+                    <div className={`text-[13px] font-semibold ${today ? "text-blue-600 dark:text-blue-400" : ""}`}>
+                      {format(day, "d")}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="p-3 bg-muted/30 text-center">
-              <span className="text-sm text-muted-foreground">Week Total: </span>
-              <span className="text-sm font-semibold">{totalWeekHours.toFixed(1)} hours</span>
+
+            {/* Untimed "all-day" strip */}
+            {untimedSheets.length > 0 && (
+              <div className="flex border-b border-border" style={{ minHeight: 28 }}>
+                <div
+                  style={{ width: GUTTER_W, minWidth: GUTTER_W }}
+                  className="border-r border-border flex-shrink-0 flex items-center justify-end pr-1"
+                >
+                  <span className="text-[9px] text-muted-foreground/60">all day</span>
+                </div>
+                {daysOfWeek.map(day => {
+                  const dk = format(day, "yyyy-MM-dd");
+                  const dayEntries = untimedByDay.get(dk) || [];
+                  const flex = getDay(day) === 0 ? 0.5 : 1;
+                  return (
+                    <div
+                      key={dk}
+                      style={{ flex }}
+                      className="border-r border-border last:border-r-0 p-0.5 min-w-0"
+                    >
+                      {dayEntries.map(ts => {
+                        const projColor = getProjectColor(ts.projectId);
+                        const dotColor = statusDotColor(ts.status);
+                        return (
+                          <div
+                            key={ts.id}
+                            onClick={() => setSelectedTimesheet(ts)}
+                            className="text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground"
+                            style={projColor
+                              ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` }
+                              : { backgroundColor: "hsl(var(--muted))", borderLeft: "2px solid hsl(var(--border))" }
+                            }
+                            title={`${getProjectName(ts.projectId)} · ${parseFloat(String(ts.duration || 0)).toFixed(1)}h`}
+                          >
+                            {dotColor !== "transparent" && (
+                              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: dotColor }} />
+                            )}
+                            <span className="font-semibold">{getProjectName(ts.projectId)}</span>
+                            <span className="opacity-60 ml-1">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Time grid */}
+            <div className="flex" style={{ height: TOTAL_HOURS * HOUR_PX }}>
+              {/* Hour labels */}
+              <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} className="relative select-none border-r border-border flex-shrink-0">
+                {Array.from({ length: TOTAL_HOURS }, (_, i) => {
+                  const h = CAL_START_HOUR + i;
+                  return (
+                    <div
+                      key={h}
+                      className="absolute right-0 pr-1 text-[10px] text-muted-foreground leading-none"
+                      style={{ top: i * HOUR_PX - 6 }}
+                    >
+                      {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Day columns */}
+              {daysOfWeek.map(day => {
+                const dk = format(day, "yyyy-MM-dd");
+                const today = isToday(day);
+                const dayTimed = timedSheets.filter(ts => format(parseISO(ts.date), "yyyy-MM-dd") === dk);
+                const flex = getDay(day) === 0 ? 0.5 : 1;
+
+                return (
+                  <div
+                    key={dk}
+                    style={{ flex }}
+                    className={`border-r border-border last:border-r-0 relative min-w-0 ${today ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+                  >
+                    {/* Hour lines */}
+                    {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                      <div
+                        key={i}
+                        className="absolute left-0 right-0 border-t border-border/40"
+                        style={{ top: i * HOUR_PX }}
+                      />
+                    ))}
+                    {/* Half-hour lines */}
+                    {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                      <div
+                        key={`h${i}`}
+                        className="absolute left-0 right-0 border-t border-border/20"
+                        style={{ top: i * HOUR_PX + HOUR_PX / 2 }}
+                      />
+                    ))}
+
+                    {/* Timesheet blocks */}
+                    {dayTimed.map(ts => {
+                      const startDec = parseHHmm(ts.startTime);
+                      if (startDec === null) return null;
+                      let endDec = parseHHmm(ts.endTime);
+                      if (endDec === null) endDec = startDec + getNetHours(ts);
+
+                      const clampedStart = Math.max(startDec, CAL_START_HOUR);
+                      const clampedEnd = Math.min(endDec, CAL_END_HOUR);
+                      if (clampedEnd <= clampedStart) return null;
+
+                      const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
+                      const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+                      const projColor = getProjectColor(ts.projectId);
+                      const dotColor = statusDotColor(ts.status);
+                      const INSET = 2;
+
+                      return (
+                        <div
+                          key={ts.id}
+                          onClick={() => setSelectedTimesheet(ts)}
+                          className="absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground"
+                          style={projColor ? {
+                            top,
+                            height,
+                            left: INSET,
+                            right: INSET,
+                            backgroundColor: hexToRgba(projColor, 0.15),
+                            borderLeft: `3px solid ${projColor}`,
+                          } : {
+                            top,
+                            height,
+                            left: INSET,
+                            right: INSET,
+                            backgroundColor: "hsl(var(--muted) / 0.6)",
+                            borderLeft: "3px solid hsl(var(--border))",
+                          }}
+                          title={`${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${getNetHours(ts).toFixed(1)}h)`}
+                        >
+                          {dotColor !== "transparent" && (
+                            <span
+                              className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: dotColor }}
+                            />
+                          )}
+                          <div className="font-semibold truncate leading-tight pr-2">
+                            {getProjectName(ts.projectId)}
+                          </div>
+                          {height > 28 && (
+                            <div className="truncate leading-tight opacity-60">
+                              {ts.startTime} – {ts.endTime || ""}
+                            </div>
+                          )}
+                          {height > 44 && getCostCodeLabel(ts) && (
+                            <div className="truncate leading-tight opacity-50">
+                              {getCostCodeLabel(ts)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : (
+          /* List / Table view */
           <ScrollArea className="h-full">
             {timesheets.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
@@ -224,7 +442,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 </thead>
                 <tbody>
                   {timesheets.slice(0, 50).map((ts: any) => {
-                    const costCodeName = getCostCodeName(ts);
+                    const costCodeName = getCostCodeLabel(ts);
                     return (
                       <tr
                         key={ts.id}
@@ -232,15 +450,13 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                         onClick={() => setSelectedTimesheet(ts)}
                         data-testid={`row-timesheet-${ts.id}`}
                       >
-                        <td className="p-2">{formatInTimezone(new Date(ts.date), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td className="p-2">{formatInTimezone(new Date(ts.date), effectiveTimezone, { year: "numeric", month: "short", day: "numeric" })}</td>
                         <td className="p-2">{getProjectName(ts.projectId)}</td>
                         <td className="p-2 text-muted-foreground">{costCodeName || <span className="text-muted-foreground/50">—</span>}</td>
                         <td className="p-2 font-medium">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</td>
-                        <td className="p-2 max-w-[160px] truncate text-muted-foreground">
-                          {ts.description || '—'}
-                        </td>
+                        <td className="p-2 max-w-[160px] truncate text-muted-foreground">{ts.description || "—"}</td>
                         <td className="p-2">
-                          <Badge variant="outline" className={`text-[10px] ${getStatusColor(ts.status)}`}>
+                          <Badge variant="outline" className={`text-[10px] ${statusBadgeClass(ts.status)}`}>
                             {ts.status}
                           </Badge>
                         </td>
@@ -254,7 +470,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
         )}
       </div>
 
-      {/* Timesheet Detail Modal */}
+      {/* Detail Modal */}
       <Dialog open={!!selectedTimesheet} onOpenChange={(open) => { if (!open) setSelectedTimesheet(null); }}>
         <DialogContent className="max-w-md" data-testid="modal-timesheet-detail">
           <DialogHeader>
@@ -265,28 +481,24 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
           </DialogHeader>
           {selectedTimesheet && (
             <div className="space-y-3 text-sm">
-              {/* Date */}
               <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
                 <Calendar className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
                   <div className="text-xs text-muted-foreground mb-0.5">Date</div>
                   <div className="font-medium">
-                    {formatInTimezone(new Date(selectedTimesheet.date), effectiveTimezone, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    {formatInTimezone(new Date(selectedTimesheet.date), effectiveTimezone, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
                   </div>
                 </div>
               </div>
 
-              {/* Time & Duration */}
               <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
                 <AlarmClock className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground mb-0.5">Time & Duration</div>
-                  <div className="font-medium">
-                    {parseFloat(String(selectedTimesheet.duration || 0)).toFixed(2)} hours
-                  </div>
+                  <div className="font-medium">{parseFloat(String(selectedTimesheet.duration || 0)).toFixed(2)} hours</div>
                   {(selectedTimesheet.startTime || selectedTimesheet.endTime) && (
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {selectedTimesheet.startTime || '—'} → {selectedTimesheet.endTime || '—'}
+                      {selectedTimesheet.startTime || "—"} → {selectedTimesheet.endTime || "—"}
                       {selectedTimesheet.breakDuration && parseFloat(String(selectedTimesheet.breakDuration)) > 0 && (
                         <span> (break: {parseFloat(String(selectedTimesheet.breakDuration)).toFixed(2)}h)</span>
                       )}
@@ -295,7 +507,6 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 </div>
               </div>
 
-              {/* Project */}
               <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
                 <Briefcase className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
@@ -304,18 +515,16 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 </div>
               </div>
 
-              {/* Cost Code */}
-              {getCostCodeName(selectedTimesheet) && (
+              {getCostCodeLabel(selectedTimesheet) && (
                 <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
                   <Tag className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div>
                     <div className="text-xs text-muted-foreground mb-0.5">Cost Code</div>
-                    <div className="font-medium">{getCostCodeName(selectedTimesheet)}</div>
+                    <div className="font-medium">{getCostCodeLabel(selectedTimesheet)}</div>
                   </div>
                 </div>
               )}
 
-              {/* Description */}
               {selectedTimesheet.description && (
                 <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
@@ -326,16 +535,14 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 </div>
               )}
 
-              {/* Status */}
               <div className="flex items-center justify-between pt-1">
                 <span className="text-xs text-muted-foreground">Status</span>
-                <Badge variant="outline" className={`text-[10px] ${getStatusColor(selectedTimesheet.status)}`}>
+                <Badge variant="outline" className={`text-[10px] ${statusBadgeClass(selectedTimesheet.status)}`}>
                   {selectedTimesheet.status}
                 </Badge>
               </div>
 
-              {/* Rejection reason */}
-              {selectedTimesheet.status === 'rejected' && selectedTimesheet.rejectionReason && (
+              {selectedTimesheet.status === "rejected" && selectedTimesheet.rejectionReason && (
                 <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-red-700 dark:text-red-400">
                   <span className="font-medium">Rejection reason: </span>
                   {selectedTimesheet.rejectionReason}
