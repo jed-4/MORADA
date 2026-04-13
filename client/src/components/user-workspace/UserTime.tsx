@@ -66,6 +66,67 @@ function getNetHours(ts: any): number {
   return Math.max(dur - brk, 0);
 }
 
+/**
+ * Given timed entries for a single day, compute { lane, totalLanes } for each.
+ * Overlapping entries are placed side-by-side rather than stacked.
+ */
+function computeLanes(entries: any[]): Map<string, { lane: number; totalLanes: number }> {
+  // Build intervals
+  const intervals = entries.map(ts => {
+    const start = parseHHmm(ts.startTime) ?? CAL_START_HOUR;
+    let end = parseHHmm(ts.endTime);
+    if (end === null) end = start + getNetHours(ts);
+    return { id: ts.id as string, start, end: Math.max(end, start + 0.25) };
+  });
+
+  // Sort by start time
+  intervals.sort((a, b) => a.start - b.start);
+
+  const result = new Map<string, { lane: number; totalLanes: number }>();
+
+  // Sweep through and find overlapping clusters
+  let i = 0;
+  while (i < intervals.length) {
+    // Build a cluster of all intervals that overlap with the current window
+    const cluster: typeof intervals = [intervals[i]];
+    let clusterEnd = intervals[i].end;
+    let j = i + 1;
+    while (j < intervals.length && intervals[j].start < clusterEnd) {
+      clusterEnd = Math.max(clusterEnd, intervals[j].end);
+      cluster.push(intervals[j]);
+      j++;
+    }
+
+    // Assign lanes greedily within cluster
+    const laneTails: number[] = []; // end time of the last entry placed in each lane
+    cluster.forEach(iv => {
+      let assignedLane = -1;
+      for (let l = 0; l < laneTails.length; l++) {
+        if (iv.start >= laneTails[l]) {
+          assignedLane = l;
+          laneTails[l] = iv.end;
+          break;
+        }
+      }
+      if (assignedLane === -1) {
+        assignedLane = laneTails.length;
+        laneTails.push(iv.end);
+      }
+      result.set(iv.id, { lane: assignedLane, totalLanes: 0 }); // totalLanes filled below
+    });
+
+    const totalLanes = laneTails.length;
+    cluster.forEach(iv => {
+      const entry = result.get(iv.id)!;
+      result.set(iv.id, { lane: entry.lane, totalLanes });
+    });
+
+    i = j;
+  }
+
+  return result;
+}
+
 export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const [viewType, setViewType] = useState<"table" | "weekly">("weekly");
   const weekStartDay = useWeekStartDay();
@@ -354,67 +415,74 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                       />
                     ))}
 
-                    {/* Timesheet blocks */}
-                    {dayTimed.map(ts => {
-                      const startDec = parseHHmm(ts.startTime);
-                      if (startDec === null) return null;
-                      let endDec = parseHHmm(ts.endTime);
-                      if (endDec === null) endDec = startDec + getNetHours(ts);
+                    {/* Timesheet blocks — with collision-aware lane placement */}
+                    {(() => {
+                      const lanes = computeLanes(dayTimed);
+                      const INSET = 1;
+                      return dayTimed.map(ts => {
+                        const startDec = parseHHmm(ts.startTime);
+                        if (startDec === null) return null;
+                        let endDec = parseHHmm(ts.endTime);
+                        if (endDec === null) endDec = startDec + getNetHours(ts);
 
-                      const clampedStart = Math.max(startDec, CAL_START_HOUR);
-                      const clampedEnd = Math.min(endDec, CAL_END_HOUR);
-                      if (clampedEnd <= clampedStart) return null;
+                        const clampedStart = Math.max(startDec, CAL_START_HOUR);
+                        const clampedEnd = Math.min(endDec, CAL_END_HOUR);
+                        if (clampedEnd <= clampedStart) return null;
 
-                      const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
-                      const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
-                      const projColor = getProjectColor(ts.projectId);
-                      const dotColor = statusDotColor(ts.status);
-                      const INSET = 2;
+                        const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
+                        const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+                        const projColor = getProjectColor(ts.projectId);
+                        const dotColor = statusDotColor(ts.status);
 
-                      return (
-                        <div
-                          key={ts.id}
-                          onClick={() => setSelectedTimesheet(ts)}
-                          className="absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground"
-                          style={projColor ? {
-                            top,
-                            height,
-                            left: INSET,
-                            right: INSET,
-                            backgroundColor: hexToRgba(projColor, 0.15),
-                            borderLeft: `3px solid ${projColor}`,
-                          } : {
-                            top,
-                            height,
-                            left: INSET,
-                            right: INSET,
-                            backgroundColor: "hsl(var(--muted) / 0.6)",
-                            borderLeft: "3px solid hsl(var(--border))",
-                          }}
-                          title={`${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${getNetHours(ts).toFixed(1)}h)`}
-                        >
-                          {dotColor !== "transparent" && (
-                            <span
-                              className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
-                              style={{ backgroundColor: dotColor }}
-                            />
-                          )}
-                          <div className="font-semibold truncate leading-tight pr-2">
-                            {getProjectName(ts.projectId)}
+                        const laneInfo = lanes.get(ts.id) ?? { lane: 0, totalLanes: 1 };
+                        const widthPct = 100 / laneInfo.totalLanes;
+                        const leftPct = laneInfo.lane * widthPct;
+
+                        return (
+                          <div
+                            key={ts.id}
+                            onClick={() => setSelectedTimesheet(ts)}
+                            className="absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground"
+                            style={projColor ? {
+                              top,
+                              height,
+                              left: `calc(${leftPct}% + ${INSET}px)`,
+                              width: `calc(${widthPct}% - ${INSET * 2}px)`,
+                              backgroundColor: hexToRgba(projColor, 0.15),
+                              borderLeft: `3px solid ${projColor}`,
+                            } : {
+                              top,
+                              height,
+                              left: `calc(${leftPct}% + ${INSET}px)`,
+                              width: `calc(${widthPct}% - ${INSET * 2}px)`,
+                              backgroundColor: "hsl(var(--muted) / 0.6)",
+                              borderLeft: "3px solid hsl(var(--border))",
+                            }}
+                            title={`${getProjectName(ts.projectId)}\n${ts.startTime}–${ts.endTime || ""} (${getNetHours(ts).toFixed(1)}h)`}
+                          >
+                            {dotColor !== "transparent" && (
+                              <span
+                                className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+                                style={{ backgroundColor: dotColor }}
+                              />
+                            )}
+                            <div className="font-semibold truncate leading-tight pr-2">
+                              {getProjectName(ts.projectId)}
+                            </div>
+                            {height > 28 && (
+                              <div className="truncate leading-tight opacity-60">
+                                {ts.startTime} – {ts.endTime || ""}
+                              </div>
+                            )}
+                            {height > 44 && getCostCodeLabel(ts) && (
+                              <div className="truncate leading-tight opacity-50">
+                                {getCostCodeLabel(ts)}
+                              </div>
+                            )}
                           </div>
-                          {height > 28 && (
-                            <div className="truncate leading-tight opacity-60">
-                              {ts.startTime} – {ts.endTime || ""}
-                            </div>
-                          )}
-                          {height > 44 && getCostCodeLabel(ts) && (
-                            <div className="truncate leading-tight opacity-50">
-                              {getCostCodeLabel(ts)}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 );
               })}
