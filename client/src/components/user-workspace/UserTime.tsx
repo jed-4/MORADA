@@ -60,7 +60,7 @@ function statusBadgeClass(status: string): string {
   }
 }
 
-function getNetHours(ts: any): number {
+function getNetHours(ts: Timesheet): number {
   const dur = parseFloat(String(ts.duration || 0));
   const brk = parseFloat(String(ts.breakDuration || 0));
   return Math.max(dur - brk, 0);
@@ -70,7 +70,7 @@ function getNetHours(ts: any): number {
  * Given timed entries for a single day, compute { lane, totalLanes } for each.
  * Overlapping entries are placed side-by-side rather than stacked.
  */
-function computeLanes(entries: any[]): Map<string, { lane: number; totalLanes: number }> {
+function computeLanes(entries: Timesheet[]): Map<string, { lane: number; totalLanes: number }> {
   // Build intervals
   const intervals = entries.map(ts => {
     const start = parseHHmm(ts.startTime) ?? CAL_START_HOUR;
@@ -190,16 +190,16 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
   const getProjectColor = (projectId: string | null): string | null => {
     if (!projectId) return null;
-    const proj = projects.find(p => p.id === projectId) as any;
-    return proj?.brandColor || proj?.color || null;
+    const proj = projects.find(p => p.id === projectId);
+    return proj?.color || null;
   };
 
-  const getCostCodeLabel = (ts: any): string | null => {
-    const codeId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+  const getCostCodeLabel = (ts: Timesheet): string | null => {
+    const codeId = ts.costCodeId;
     if (!codeId) return null;
     const cc = costCodes.find(c => c.id === codeId);
     if (!cc) return null;
-    return (cc as any).code ? `${(cc as any).code} — ${cc.title}` : cc.title;
+    return cc.code ? `${cc.code} — ${cc.title}` : cc.title;
   };
 
   if (isLoading) {
@@ -509,7 +509,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {timesheets.slice(0, 50).map((ts: any) => {
+                  {timesheets.slice(0, 50).map((ts) => {
                     const costCodeName = getCostCodeLabel(ts);
                     return (
                       <tr
