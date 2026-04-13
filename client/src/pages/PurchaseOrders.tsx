@@ -496,9 +496,9 @@ export default function PurchaseOrders() {
 
   const totals = useMemo(() => {
     return {
-      total: filteredPOs.reduce((sum, po) => sum + (po.totalAmountCents || 0), 0),
-      sent: filteredPOs.filter(po => po.status === "sent").reduce((sum, po) => sum + (po.totalAmountCents || 0), 0),
-      approved: filteredPOs.filter(po => po.status === "approved").reduce((sum, po) => sum + (po.totalAmountCents || 0), 0),
+      total: filteredPOs.reduce((sum, po) => sum + (po.total || 0), 0),
+      sent: filteredPOs.filter(po => po.status === "sent").reduce((sum, po) => sum + (po.total || 0), 0),
+      approved: filteredPOs.filter(po => po.status === "approved").reduce((sum, po) => sum + (po.total || 0), 0),
     };
   }, [filteredPOs]);
 
@@ -911,7 +911,7 @@ export default function PurchaseOrders() {
                             case "amount":
                               return (
                                 <TableCell key={key} className="text-xs text-right font-semibold tabular-nums" style={{ width: `${width}px` }}>
-                                  {formatCurrency(po.totalAmountCents || 0)}
+                                  {formatCurrency(po.total || 0)}
                                 </TableCell>
                               );
                             default:

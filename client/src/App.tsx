@@ -95,6 +95,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
 import { WarmPaletteSwitcher } from "@/components/WarmPaletteSwitcher";
 import Messages from "@/pages/Messages";
@@ -473,7 +474,9 @@ function AuthWrapper() {
               <div className="flex flex-1 overflow-hidden gap-2">
                 <SidebarNav />
                 <main className="flex-1 overflow-auto">
-                  <Router />
+                  <ErrorBoundary>
+                    <Router />
+                  </ErrorBoundary>
                 </main>
               </div>
             </div>
