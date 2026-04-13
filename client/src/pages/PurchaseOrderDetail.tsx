@@ -308,11 +308,12 @@ export default function PurchaseOrderDetail() {
     retry: false,
   });
 
-  const { data: poItems = [], isLoading: itemsLoading } = useQuery<PurchaseOrderItem[]>({
+  const { data: rawPoItems, isLoading: itemsLoading } = useQuery<PurchaseOrderItem[]>({
     queryKey: ["/api/purchase-orders", poId, "items"],
     enabled: !!poId,
     retry: false,
   });
+  const poItems = rawPoItems ?? [];
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -360,8 +361,8 @@ export default function PurchaseOrderDetail() {
   }, [purchaseOrder, supplier]);
 
   useEffect(() => {
-    setItems(poItems);
-  }, [poItems]);
+    setItems(rawPoItems ?? []);
+  }, [rawPoItems]);
 
   const updatePoMutation = useMutation({
     mutationFn: async (data: Partial<PurchaseOrder>) => {
