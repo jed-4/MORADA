@@ -16240,7 +16240,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
       if (body.duration === "" || body.duration === null) body.duration = "0";
-      if (body.hourlyRate === "") body.hourlyRate = null;
+      // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
+      if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       // If userId not supplied (mobile app omits it), resolve from the authenticated session
       if (!body.userId) {
         body.userId = (req.session as any)?.userId
@@ -16267,7 +16268,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
       if (body.duration === "" || body.duration === null) body.duration = "0";
-      if (body.hourlyRate === "") body.hourlyRate = null;
+      // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
+      if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       const timesheet = await storage.updateTimesheet(req.params.id, body);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
