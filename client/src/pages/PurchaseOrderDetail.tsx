@@ -373,6 +373,7 @@ export default function PurchaseOrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       setHasUnsavedChanges(false);
       toast({ title: "Purchase order saved" });
+      handleGoBack();
     },
     onError: (error: any) => {
       toast({

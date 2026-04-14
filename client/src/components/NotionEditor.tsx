@@ -53,6 +53,7 @@ export default function NotionEditor({
   editable = true,
 }: NotionEditorProps) {
   const isInternalChange = useRef(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; query: string; x: number; y: number }>({
     open: false, query: '', x: 0, y: 0,
   });
@@ -135,7 +136,11 @@ export default function NotionEditor({
         }
       }
     },
+    onFocus: () => {
+      setIsFocused(true);
+    },
     onBlur: () => {
+      setIsFocused(false);
       setTimeout(() => {
         setBubbleMenu(prev => ({ ...prev, visible: false }));
         setFloatingMenu(prev => ({ ...prev, visible: false }));
@@ -297,7 +302,7 @@ export default function NotionEditor({
             '[&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:line-through [&_.ProseMirror_li[data-type="taskItem"][data-checked="true"]>div]:text-muted-foreground',
           )}
         />
-        {(!content || content === '<p></p>') && (
+        {editor?.isEmpty && !isFocused && (
           <p className="absolute top-0 left-0 text-muted-foreground pointer-events-none select-none leading-relaxed">
             {placeholder}
           </p>
