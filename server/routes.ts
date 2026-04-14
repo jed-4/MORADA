@@ -16241,6 +16241,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
       if (body.duration === "" || body.duration === null) body.duration = "0";
       if (body.hourlyRate === "") body.hourlyRate = null;
+      // If userId not supplied (mobile app omits it), resolve from the authenticated session
+      if (!body.userId) {
+        body.userId = (req.session as any)?.userId
+          || (req as any).user?.dbUser?.id
+          || (req as any).user?.id
+          || null;
+      }
       const timesheet = await storage.createTimesheet(body);
       res.json(timesheet);
     } catch (error: any) {
