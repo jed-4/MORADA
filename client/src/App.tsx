@@ -428,10 +428,11 @@ function AuthWrapper() {
     // Try palette first (new per-page colors)
     const palette = (userTheme as any)?.pageBackgroundPalette as Record<string, string> | null;
     if (palette && typeof palette === 'object') {
-      const color = palette[pageType];
-      if (color) return color;
+      // Palette exists — use it directly. An empty string means "reset to default"
+      // and must NOT fall through to the legacy field (that's the whole point of clearing).
+      return palette[pageType] || undefined;
     }
-    // Fallback to legacy single color
+    // No palette yet — fallback to legacy single color
     return userTheme?.pageBackgroundColor || undefined;
   };
   

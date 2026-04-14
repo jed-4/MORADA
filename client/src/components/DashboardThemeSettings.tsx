@@ -150,7 +150,7 @@ export default function DashboardThemeSettings({
       blurStrength,
       widgetBackgroundType,
       widgetOpacity,
-      pageBackgroundPalette: Object.values(pageBackgroundPalette).some(c => c) ? pageBackgroundPalette : null,
+      pageBackgroundPalette: pageBackgroundPalette,
     };
     console.log("[DashboardThemeSettings] Saving data:", dataToSave);
     saveMutation.mutate(dataToSave);
