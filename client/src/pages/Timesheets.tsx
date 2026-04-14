@@ -200,6 +200,9 @@ export default function Timesheets() {
   
   // View state: table, weekly, calendar
   const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">("table");
+
+  // Ref to the main content scroll container — used to jump to 7 am when calendar opens
+  const contentScrollRef = useRef<HTMLDivElement>(null);
   
   // Weekly view state
   const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
@@ -410,6 +413,14 @@ export default function Timesheets() {
       setElapsedTime("00:00:00");
     }
   }, [activeTimesheet?.clockInTime]);
+
+  // Scroll the content area to 7 am whenever the calendar view is activated
+  useEffect(() => {
+    if (activeView === "calendar" && contentScrollRef.current) {
+      // CAL_START_HOUR = 5, HOUR_PX = 64  →  7 am offset = (7-5)*64 = 128 px
+      contentScrollRef.current.scrollTop = (7 - 5) * 64;
+    }
+  }, [activeView]);
 
   // Clock-in mutation
   const clockInMutation = useMutation({
@@ -1239,7 +1250,7 @@ export default function Timesheets() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
+      <div ref={contentScrollRef} className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
         {loadingTimesheets ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading timesheets...</div>
