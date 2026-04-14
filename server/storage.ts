@@ -8581,6 +8581,12 @@ export class DbStorage implements IStorage {
   
   async deleteProject(id: string): Promise<boolean> {
     try {
+      // Manually delete records in tables that don't have ON DELETE CASCADE
+      // on their project_id foreign key, to avoid FK constraint violations.
+      await db.delete(schema.estimates).where(eq(schema.estimates.projectId, id));
+      await db.delete(schema.rfqs).where(eq(schema.rfqs.projectId, id));
+      await db.delete(schema.rfis).where(eq(schema.rfis.projectId, id));
+
       const result = await db
         .delete(schema.projects)
         .where(eq(schema.projects.id, id))
