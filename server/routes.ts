@@ -16237,6 +16237,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.date && typeof body.date === "string") {
         body.date = new Date(body.date);
       }
+      // Sanitise numeric fields — mobile app may send empty strings instead of null/0
+      if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
+      if (body.duration === "" || body.duration === null) body.duration = "0";
+      if (body.hourlyRate === "") body.hourlyRate = null;
       const timesheet = await storage.createTimesheet(body);
       res.json(timesheet);
     } catch (error: any) {
@@ -16253,6 +16257,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.date && typeof body.date === "string") {
         body.date = new Date(body.date);
       }
+      // Sanitise numeric fields — mobile app may send empty strings instead of null/0
+      if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
+      if (body.duration === "" || body.duration === null) body.duration = "0";
+      if (body.hourlyRate === "") body.hourlyRate = null;
       const timesheet = await storage.updateTimesheet(req.params.id, body);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
