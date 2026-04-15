@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import type { Project, User, CostCode } from "@shared/schema";
 
 interface ParsedRow {
@@ -185,6 +185,7 @@ export function TimesheetImportDialog({
   const [step, setStep] = useState<1 | 2>(1);
   const [projectId, setProjectId] = useState(defaultProjectId || "");
   const [fileName, setFileName] = useState("");
+  const [fileObj, setFileObj] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [importing, setImporting] = useState(false);
   const [formatDetected, setFormatDetected] = useState<"buildern" | "buildpro" | "unknown">("unknown");
@@ -192,6 +193,7 @@ export function TimesheetImportDialog({
   const reset = useCallback(() => {
     setStep(1);
     setFileName("");
+    setFileObj(null);
     setParsedRows([]);
     setProjectId(defaultProjectId || "");
     setFormatDetected("unknown");
@@ -203,6 +205,7 @@ export function TimesheetImportDialog({
       const file = e.target.files?.[0];
       if (!file) return;
       setFileName(file.name);
+      setFileObj(file);
 
       try {
         const buffer = await file.arrayBuffer();
@@ -264,23 +267,24 @@ export function TimesheetImportDialog({
   const errorRows = parsedRows.filter((r) => r.severity === "error");
 
   const handleImport = async () => {
+    if (!fileObj) return;
     setImporting(true);
     try {
-      const payload = {
-        projectId,
-        rows: importableRows.map((r) => ({
-          date: r.date,
-          userId: r.userId,
-          startTime: r.startTime || null,
-          endTime: r.endTime || null,
-          duration: r.duration,
-          costCodeId: r.costCodeId || null,
-          status: r.status,
-          description: r.description || null,
-        })),
-      };
+      const formData = new FormData();
+      formData.append("file", fileObj);
+      formData.append("projectId", projectId);
 
-      const result = await apiRequest("/api/timesheets/import", "POST", payload);
+      const res = await fetch("/api/timesheets/import", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
+      }
+      const result = await res.json();
+
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
       onImported();
@@ -290,10 +294,10 @@ export function TimesheetImportDialog({
         title: "Import complete",
         description: `${result.imported} timesheet${result.imported !== 1 ? "s" : ""} imported${result.skipped > 0 ? `, ${result.skipped} skipped` : ""}.`,
       });
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: "Import failed",
-        description: err.message || "An unexpected error occurred.",
+        description: err instanceof Error ? err.message : "An unexpected error occurred.",
         variant: "destructive",
       });
     } finally {
@@ -495,7 +499,7 @@ export function TimesheetImportDialog({
               </Button>
               <Button
                 onClick={handleImport}
-                disabled={importing || importableRows.length === 0}
+                disabled={importing || !fileObj || importableRows.length === 0}
                 data-testid="button-import-confirm"
               >
                 {importing

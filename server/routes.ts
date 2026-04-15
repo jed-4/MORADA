@@ -153,6 +153,7 @@ import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inA
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
+import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
 
 async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
@@ -16270,14 +16271,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/timesheets/import", requireAuth, requireTeamMember, async (req, res) => {
+  const timesheetImportUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ok = file.mimetype.includes("spreadsheet") || file.mimetype.includes("excel") || file.originalname.match(/\.(xlsx|xls)$/i);
+      cb(null, !!ok);
+    },
+  });
+
+  app.post("/api/timesheets/import", requireAuth, requireTeamMember, timesheetImportUpload.single("file"), async (req, res) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
       const dbUser = (req.user as any).dbUser;
-      const userRoleName = (dbUser?.roleName ?? "").toLowerCase();
+      const userRoleName = ((dbUser?.roleName as string | undefined) ?? "").toLowerCase();
       const isAdmin =
         userRoleName.includes("admin") ||
         userRoleName.includes("owner") ||
@@ -16285,15 +16295,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const canApprove = await storage.canUserApproveTimesheets(req.user.id);
 
       if (!isAdmin && !canApprove) {
-        return res
-          .status(403)
-          .json({ error: "You do not have permission to import timesheets" });
+        return res.status(403).json({ error: "You do not have permission to import timesheets" });
       }
 
-      const { projectId, rows } = req.body;
-
-      if (!projectId || !Array.isArray(rows) || rows.length === 0) {
-        return res.status(400).json({ error: "projectId and rows are required" });
+      const projectId = req.body?.projectId as string | undefined;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "XLSX file is required" });
       }
 
       const project = await storage.getProject(projectId);
@@ -16301,74 +16311,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Project not found or access denied" });
       }
 
+      // Parse XLSX workbook from uploaded buffer
+      const wb = XLSX.read(new Uint8Array(req.file.buffer), { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" }) as Record<string, unknown>[];
+
+      if (rows.length === 0) {
+        return res.json({ imported: 0, skipped: 0, errors: ["No data rows found in the spreadsheet"] });
+      }
+
+      // Auto-detect Buildern vs BuildPro format
+      const headers = Object.keys(rows[0]);
+      const isBuildern = headers.includes("Start & End Time");
+
+      // Load company users and cost codes for matching
+      const companyUsers = await storage.getUsersByCompanyWithRoles(req.user.companyId);
+      const companyCodes = await storage.getCostCodes(req.user.companyId);
+
+      const matchUserByName = (name: string): string | null => {
+        if (!name) return null;
+        const normalized = name.trim().toLowerCase();
+        const found = companyUsers.find((u) => {
+          const full = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim().toLowerCase();
+          return full === normalized;
+        });
+        return found?.id ?? null;
+      };
+
+      const matchCostCodeByStr = (str: string): string | null => {
+        if (!str) return null;
+        const normalized = str.trim().toLowerCase();
+        const found = companyCodes.find((c) => {
+          const codeTitle = `${c.code}-${c.title}`.toLowerCase();
+          return (
+            codeTitle === normalized ||
+            c.title.toLowerCase() === normalized ||
+            c.code.toLowerCase() === normalized ||
+            normalized.startsWith(c.code.toLowerCase() + "-")
+          );
+        });
+        return found?.id ?? null;
+      };
+
       let imported = 0;
       let skipped = 0;
       const errors: string[] = [];
 
-      for (const row of rows) {
-        const { date, userId, startTime, endTime, duration, costCodeId, status, description } = row;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowLabel = `Row ${i + 2}`;
 
-        if (!date || !duration || Number(duration) <= 0) {
+        // Parse date (dd/MM/yyyy)
+        const dateStr = String(row["Date"] ?? "").trim();
+        const dateParts = dateStr.split("/");
+        if (dateParts.length !== 3) {
           skipped++;
-          errors.push(`Row skipped: missing required field (date or duration > 0)`);
+          errors.push(`${rowLabel} skipped: invalid date "${dateStr}"`);
           continue;
         }
-
-        const parts = (date as string).split("/");
-        if (parts.length !== 3) {
-          skipped++;
-          errors.push(`Row skipped: invalid date format "${date}"`);
-          continue;
-        }
-        const [d, m, y] = parts.map(Number);
+        const [d, m, y] = dateParts.map(Number);
         const parsedDate = new Date(y, m - 1, d);
         if (isNaN(parsedDate.getTime())) {
           skipped++;
-          errors.push(`Row skipped: unparseable date "${date}"`);
+          errors.push(`${rowLabel} skipped: unparseable date "${dateStr}"`);
           continue;
         }
 
-        // Resolve userId: use provided ID (validated) or fall back to the importing admin
-        let resolvedUserId: string = req.user.id;
-        if (userId) {
-          const userRecord = await storage.getUser(userId);
-          if (userRecord && userRecord.companyId === req.user.companyId) {
-            resolvedUserId = userId;
-          } else {
-            errors.push(
-              `Row warning: user "${userId}" not found in company — imported under importer's account`
-            );
-          }
+        // Parse duration
+        const durationRaw = isBuildern ? row["Duration"] : row["Duration (hrs)"];
+        const duration = typeof durationRaw === "number" ? durationRaw : parseFloat(String(durationRaw ?? "0"));
+        if (isNaN(duration) || duration <= 0) {
+          skipped++;
+          errors.push(`${rowLabel} skipped: invalid duration`);
+          continue;
         }
 
-        // Validate costCodeId belongs to this company (if provided)
-        let resolvedCostCodeId: string | null = null;
-        if (costCodeId) {
-          const allCodes = await storage.getCostCodes(req.user.companyId);
-          const codeExists = allCodes.some((c) => c.id === costCodeId);
-          if (codeExists) {
-            resolvedCostCodeId = costCodeId;
-          } else {
-            errors.push(`Row warning: cost code "${costCodeId}" not found — imported without cost code`);
-          }
+        // Resolve user — fall back to importing admin when unmatched
+        const userName = String(row["User"] ?? "").trim();
+        const matchedUserId = matchUserByName(userName);
+        const resolvedUserId = matchedUserId ?? req.user.id;
+        if (userName && !matchedUserId) {
+          errors.push(`${rowLabel} warning: user "${userName}" not matched — imported under importer's account`);
         }
 
-        const validStatus = (
-          ["draft", "submitted", "approved", "rejected"].includes(status)
-            ? status
-            : "draft"
-        ) as "draft" | "submitted" | "approved" | "rejected";
+        // Parse start/end times
+        let startTime: string | null = null;
+        let endTime: string | null = null;
+        if (isBuildern) {
+          const combined = String(row["Start & End Time"] ?? "").trim();
+          const parts = combined.split(" - ");
+          startTime = parts[0]?.trim() || null;
+          endTime = parts[1]?.trim() || null;
+        } else {
+          const s = String(row["Start Time"] ?? "").trim();
+          const e = String(row["End Time"] ?? "").trim();
+          startTime = s && s !== "-" ? s : null;
+          endTime = e && e !== "-" ? e : null;
+        }
+
+        // Resolve cost code
+        const costCodeStr = isBuildern
+          ? String(row["Cost code"] ?? "").trim()
+          : String(row["Cost Code"] ?? row["cost code"] ?? "").trim();
+        const resolvedCostCodeId = matchCostCodeByStr(costCodeStr);
+        if (costCodeStr && !resolvedCostCodeId) {
+          errors.push(`${rowLabel} warning: cost code "${costCodeStr}" not matched — imported without cost code`);
+        }
+
+        // Parse status
+        const rawStatus = String(row["Status"] ?? "draft").trim().toLowerCase();
+        const validStatus = (["submitted", "approved", "rejected"].includes(rawStatus) ? rawStatus : "draft") as
+          "draft" | "submitted" | "approved" | "rejected";
+
+        const description = String(row["Description"] ?? "").trim() || null;
 
         try {
           await storage.createTimesheet({
             projectId,
             userId: resolvedUserId,
             date: parsedDate,
-            startTime: startTime || null,
-            endTime: endTime || null,
-            duration: Number(duration),
+            startTime,
+            endTime,
+            duration,
             breakDuration: 0,
-            description: description || null,
+            description,
             status: validStatus,
             hourlyRate: 0,
             total: 0,
@@ -16378,15 +16444,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           imported++;
         } catch (err) {
-          console.error("Timesheet import row failed:", err);
+          console.error("Timesheet import row insert failed:", err);
           skipped++;
-          errors.push(`Row insert failed: ${err instanceof Error ? err.message : String(err)}`);
+          errors.push(`${rowLabel} skipped: insert failed — ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
       res.json({ imported, skipped, errors });
-    } catch (error: any) {
-      res.status(500).json({ error: "Import failed", details: error.message });
+    } catch (err) {
+      console.error("Timesheet import failed:", err);
+      res.status(500).json({ error: "Import failed", details: err instanceof Error ? err.message : String(err) });
     }
   });
 
