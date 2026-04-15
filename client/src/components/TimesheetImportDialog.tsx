@@ -402,6 +402,7 @@ export function TimesheetImportDialog({
                     <TableHead>Hrs</TableHead>
                     <TableHead>Cost Code</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Description</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -453,6 +454,9 @@ export function TimesheetImportDialog({
                         )}
                       </TableCell>
                       <TableCell className="text-xs capitalize">{row.status}</TableCell>
+                      <TableCell className="text-xs max-w-[150px] truncate text-muted-foreground">
+                        {row.description || "—"}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

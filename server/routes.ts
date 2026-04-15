@@ -16270,10 +16270,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/timesheets/import", requireAuth, async (req, res) => {
+  app.post("/api/timesheets/import", requireAuth, requireTeamMember, async (req, res) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const dbUser = (req.user as any).dbUser;
+      const userRoleName = (dbUser?.roleName ?? "").toLowerCase();
+      const isAdmin =
+        userRoleName.includes("admin") ||
+        userRoleName.includes("owner") ||
+        userRoleName.includes("general manage");
+      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+
+      if (!isAdmin && !canApprove) {
+        return res
+          .status(403)
+          .json({ error: "You do not have permission to import timesheets" });
       }
 
       const { projectId, rows } = req.body;
@@ -16289,26 +16303,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let imported = 0;
       let skipped = 0;
+      const errors: string[] = [];
 
       for (const row of rows) {
         const { date, userId, startTime, endTime, duration, costCodeId, status, description } = row;
 
-        if (!date || !userId || !duration || duration <= 0) {
+        if (!date || !userId || !duration || Number(duration) <= 0) {
           skipped++;
+          errors.push(`Row skipped: missing required field (date, userId, or duration > 0)`);
           continue;
         }
 
         const parts = (date as string).split("/");
-        if (parts.length !== 3) { skipped++; continue; }
-        const [d, m, y] = parts.map(Number);
-        const parsedDate = new Date(y, m - 1, d);
-        if (isNaN(parsedDate.getTime())) { skipped++; continue; }
-
-        const userRecord = await storage.getUser(userId);
-        if (!userRecord || (userRecord as any).companyId !== req.user.companyId) {
+        if (parts.length !== 3) {
           skipped++;
+          errors.push(`Row skipped: invalid date format "${date}"`);
           continue;
         }
+        const [d, m, y] = parts.map(Number);
+        const parsedDate = new Date(y, m - 1, d);
+        if (isNaN(parsedDate.getTime())) {
+          skipped++;
+          errors.push(`Row skipped: unparseable date "${date}"`);
+          continue;
+        }
+
+        const userRecord = await storage.getUser(userId);
+        if (!userRecord || userRecord.companyId !== req.user.companyId) {
+          skipped++;
+          errors.push(`Row skipped: user "${userId}" not found in this company`);
+          continue;
+        }
+
+        const validStatus = (
+          ["draft", "submitted", "approved", "rejected"].includes(status)
+            ? status
+            : "draft"
+        ) as "draft" | "submitted" | "approved" | "rejected";
 
         try {
           await storage.createTimesheet({
@@ -16317,24 +16348,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             date: parsedDate,
             startTime: startTime || null,
             endTime: endTime || null,
-            duration: String(duration),
-            breakDuration: "0",
+            duration: Number(duration),
+            breakDuration: 0,
             description: description || null,
-            status: (["draft", "submitted", "approved", "rejected"].includes(status) ? status : "draft") as "draft" | "submitted" | "approved" | "rejected",
-            hourlyRate: "0",
-            total: "0",
+            status: validStatus,
+            hourlyRate: 0,
+            total: 0,
             invoiced: false,
             isActive: false,
             costCodeId: costCodeId || null,
-          } as any);
+          });
           imported++;
         } catch (err) {
           console.error("Timesheet import row failed:", err);
           skipped++;
+          errors.push(`Row insert failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
-      res.json({ imported, skipped });
+      res.json({ imported, skipped, errors });
     } catch (error: any) {
       res.status(500).json({ error: "Import failed", details: error.message });
     }
