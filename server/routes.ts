@@ -16328,14 +16328,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyUsers = await storage.getUsersByCompanyWithRoles(req.user.companyId);
       const companyCodes = await storage.getCostCodes(req.user.companyId);
 
-      const matchUserByName = (name: string): string | null => {
-        if (!name) return null;
+      const matchUserByName = (name: string): string | undefined => {
+        if (!name) return undefined;
         const normalized = name.trim().toLowerCase();
         const found = companyUsers.find((u) => {
           const full = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim().toLowerCase();
           return full === normalized;
         });
-        return found?.id ?? null;
+        return found?.id;
       };
 
       const matchCostCodeByStr = (str: string): string | null => {
@@ -16386,12 +16386,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        // Resolve user — fall back to importing admin when unmatched
+        // Resolve user — skip row if a named user cannot be matched
         const userName = String(row["User"] ?? "").trim();
         const matchedUserId = matchUserByName(userName);
-        const resolvedUserId = matchedUserId ?? req.user.id;
-        if (userName && !matchedUserId) {
-          errors.push(`${rowLabel} warning: user "${userName}" not matched — imported under importer's account`);
+        // When no name is given, fall back to the importing user
+        const resolvedUserId = userName ? matchedUserId : req.user.id;
+        if (!resolvedUserId) {
+          skipped++;
+          errors.push(`${rowLabel} skipped: user "${userName}" not found in company`);
+          continue;
         }
 
         // Parse start/end times
@@ -16418,9 +16421,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors.push(`${rowLabel} warning: cost code "${costCodeStr}" not matched — imported without cost code`);
         }
 
-        // Parse status
-        const rawStatus = String(row["Status"] ?? "draft").trim().toLowerCase();
-        const validStatus = (["submitted", "approved", "rejected"].includes(rawStatus) ? rawStatus : "draft") as
+        // Parse status — only submitted/approved are valid for import; everything else becomes draft
+        const rawStatus = String(row["Status"] ?? "").trim().toLowerCase();
+        const validStatus = (["submitted", "approved"].includes(rawStatus) ? rawStatus : "draft") as
           "draft" | "submitted" | "approved" | "rejected";
 
         const description = String(row["Description"] ?? "").trim() || null;
