@@ -16308,9 +16308,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const row of rows) {
         const { date, userId, startTime, endTime, duration, costCodeId, status, description } = row;
 
-        if (!date || !userId || !duration || Number(duration) <= 0) {
+        if (!date || !duration || Number(duration) <= 0) {
           skipped++;
-          errors.push(`Row skipped: missing required field (date, userId, or duration > 0)`);
+          errors.push(`Row skipped: missing required field (date or duration > 0)`);
           continue;
         }
 
@@ -16328,11 +16328,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        const userRecord = await storage.getUser(userId);
-        if (!userRecord || userRecord.companyId !== req.user.companyId) {
-          skipped++;
-          errors.push(`Row skipped: user "${userId}" not found in this company`);
-          continue;
+        // Resolve userId: use provided ID (validated) or fall back to the importing admin
+        let resolvedUserId: string = req.user.id;
+        if (userId) {
+          const userRecord = await storage.getUser(userId);
+          if (userRecord && userRecord.companyId === req.user.companyId) {
+            resolvedUserId = userId;
+          } else {
+            errors.push(
+              `Row warning: user "${userId}" not found in company — imported under importer's account`
+            );
+          }
+        }
+
+        // Validate costCodeId belongs to this company (if provided)
+        let resolvedCostCodeId: string | null = null;
+        if (costCodeId) {
+          const allCodes = await storage.getCostCodes(req.user.companyId);
+          const codeExists = allCodes.some((c) => c.id === costCodeId);
+          if (codeExists) {
+            resolvedCostCodeId = costCodeId;
+          } else {
+            errors.push(`Row warning: cost code "${costCodeId}" not found — imported without cost code`);
+          }
         }
 
         const validStatus = (
@@ -16344,7 +16362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await storage.createTimesheet({
             projectId,
-            userId,
+            userId: resolvedUserId,
             date: parsedDate,
             startTime: startTime || null,
             endTime: endTime || null,
@@ -16356,7 +16374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             total: 0,
             invoiced: false,
             isActive: false,
-            costCodeId: costCodeId || null,
+            costCodeId: resolvedCostCodeId,
           });
           imported++;
         } catch (err) {

@@ -107,7 +107,8 @@ function parseRows(
     const userName = String(row["User"] || "").trim();
     if (!userName) issues.push("Missing user name");
     const matchedUser = matchUser(userName, users);
-    if (userName && !matchedUser) issues.push(`User "${userName}" not found in company`);
+    if (userName && !matchedUser)
+      issues.push(`User "${userName}" not found — will import under your account`);
 
     let startTime = "";
     let endTime = "";
@@ -149,8 +150,7 @@ function parseRows(
 
     const description = String(row["Description"] || "").trim();
 
-    const isError =
-      !parsedDate || !matchedUser || isNaN(duration) || duration <= 0;
+    const isError = !parsedDate || isNaN(duration) || duration <= 0;
     const isWarning = !isError && issues.length > 0;
 
     return {
@@ -282,6 +282,7 @@ export function TimesheetImportDialog({
 
       const result = await apiRequest("/api/timesheets/import", "POST", payload);
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
       onImported();
       onOpenChange(false);
       reset();
@@ -465,8 +466,8 @@ export function TimesheetImportDialog({
 
             {(errorRows.length > 0 || parsedRows.some((r) => r.severity === "warning")) && (
               <p className="text-xs text-muted-foreground">
-                <span className="text-red-600 dark:text-red-400">Red</span> = skipped (missing date, duration, or user not found).{" "}
-                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported without cost code.
+                <span className="text-red-600 dark:text-red-400">Red</span> = skipped (missing date or invalid duration).{" "}
+                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (unrecognised user imports under your account; unmatched cost code imports without one).
               </p>
             )}
           </div>
