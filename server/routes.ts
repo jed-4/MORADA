@@ -16361,7 +16361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const row = rows[i];
         const rowLabel = `Row ${i + 2}`;
 
-        // Parse date (dd/MM/yyyy)
+        // Parse date (dd/MM/yyyy) with strict round-trip validation
         const dateStr = String(row["Date"] ?? "").trim();
         const dateParts = dateStr.split("/");
         if (dateParts.length !== 3) {
@@ -16370,10 +16370,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
         const [d, m, y] = dateParts.map(Number);
-        const parsedDate = new Date(y, m - 1, d);
-        if (isNaN(parsedDate.getTime())) {
+        if (!d || !m || !y || m < 1 || m > 12 || d < 1 || d > 31) {
           skipped++;
-          errors.push(`${rowLabel} skipped: unparseable date "${dateStr}"`);
+          errors.push(`${rowLabel} skipped: date out of range "${dateStr}"`);
+          continue;
+        }
+        const parsedDate = new Date(y, m - 1, d);
+        // Round-trip check: JS Date normalises invalid calendar dates (e.g. 32/01)
+        if (
+          isNaN(parsedDate.getTime()) ||
+          parsedDate.getFullYear() !== y ||
+          parsedDate.getMonth() !== m - 1 ||
+          parsedDate.getDate() !== d
+        ) {
+          skipped++;
+          errors.push(`${rowLabel} skipped: invalid calendar date "${dateStr}"`);
           continue;
         }
 

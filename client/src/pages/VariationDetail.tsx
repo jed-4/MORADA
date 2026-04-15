@@ -455,9 +455,6 @@ export default function VariationDetail() {
 
   // ── Financial calculations ─────────────────────────────────────────────────
 
-  const calculateCostLinesBaseTotal = () =>
-    costLines.reduce((sum, item) => sum + item.quantity * item.unitCostExTax, 0);
-
   const calculateCostLinesSubtotal = () =>
     costLines.reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
 
@@ -1699,14 +1696,8 @@ export default function VariationDetail() {
                         <div className="col-span-3 space-y-1.5">
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Cost Lines</span>
-                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesBaseTotal())}</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
                           </div>
-                          {calculateCostLinesSubtotal() - calculateCostLinesBaseTotal() > 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Markup</span>
-                              <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal() - calculateCostLinesBaseTotal())}</span>
-                            </div>
-                          )}
                           {calculateBillsTotal() > 0 && (
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
