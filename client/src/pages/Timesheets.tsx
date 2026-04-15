@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2, HardHat } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, Upload, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2, HardHat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { RapidApprovalModal } from "@/components/RapidApprovalModal";
 import { SubcontractorPODialog } from "@/components/SubcontractorPODialog";
+import { TimesheetImportDialog } from "@/components/TimesheetImportDialog";
 import { ProjectSelect } from "@/components/ProjectSelect";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -193,6 +194,7 @@ export default function Timesheets() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
   const [isSubPODialogOpen, setIsSubPODialogOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
   const [dateRangeType, setDateRangeType] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
@@ -760,6 +762,14 @@ export default function Timesheets() {
           {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
         </h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            data-testid="button-import-timesheets"
+            title="Import from XLSX"
+          >
+            <Upload className="w-3 h-3" />
+          </button>
           <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
@@ -2112,6 +2122,16 @@ export default function Timesheets() {
       <SubcontractorPODialog
         open={isSubPODialogOpen}
         onOpenChange={setIsSubPODialogOpen}
+      />
+
+      <TimesheetImportDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        projects={projects}
+        users={users}
+        costCodes={costCodes}
+        defaultProjectId={projectId}
+        onImported={() => queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] })}
       />
     </div>
   );

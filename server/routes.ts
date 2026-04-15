@@ -16270,6 +16270,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/timesheets/import", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { projectId, rows } = req.body;
+
+      if (!projectId || !Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "projectId and rows are required" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project || project.companyId !== req.user.companyId) {
+        return res.status(403).json({ error: "Project not found or access denied" });
+      }
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const row of rows) {
+        const { date, userId, startTime, endTime, duration, costCodeId, status, description } = row;
+
+        if (!date || !userId || !duration || duration <= 0) {
+          skipped++;
+          continue;
+        }
+
+        const parts = (date as string).split("/");
+        if (parts.length !== 3) { skipped++; continue; }
+        const [d, m, y] = parts.map(Number);
+        const parsedDate = new Date(y, m - 1, d);
+        if (isNaN(parsedDate.getTime())) { skipped++; continue; }
+
+        const userRecord = await storage.getUser(userId);
+        if (!userRecord || (userRecord as any).companyId !== req.user.companyId) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          await storage.createTimesheet({
+            projectId,
+            userId,
+            date: parsedDate,
+            startTime: startTime || null,
+            endTime: endTime || null,
+            duration: String(duration),
+            breakDuration: "0",
+            description: description || null,
+            status: (["draft", "submitted", "approved", "rejected"].includes(status) ? status : "draft") as "draft" | "submitted" | "approved" | "rejected",
+            hourlyRate: "0",
+            total: "0",
+            invoiced: false,
+            isActive: false,
+            costCodeId: costCodeId || null,
+          } as any);
+          imported++;
+        } catch (err) {
+          console.error("Timesheet import row failed:", err);
+          skipped++;
+        }
+      }
+
+      res.json({ imported, skipped });
+    } catch (error: any) {
+      res.status(500).json({ error: "Import failed", details: error.message });
+    }
+  });
+
   app.patch("/api/timesheets/:id", async (req, res) => {
     try {
       const body = { ...req.body };
