@@ -138,14 +138,12 @@ function parseRows(
     if (costCodeStr && !matchedCode)
       issues.push(`Cost code "${costCodeStr}" not matched — will import without`);
 
-    const rawStatus = String(row["Status"] || "draft").trim().toLowerCase();
+    const rawStatus = String(row["Status"] || "").trim().toLowerCase();
     const status =
       rawStatus === "submitted"
         ? "submitted"
         : rawStatus === "approved"
         ? "approved"
-        : rawStatus === "rejected"
-        ? "rejected"
         : "draft";
 
     const description = String(row["Description"] || "").trim();

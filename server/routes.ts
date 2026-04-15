@@ -16386,15 +16386,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        // Resolve user — skip row if a named user cannot be matched
+        // Resolve user — warn and fall back to importing admin if name doesn't match
+        // (userId is NOT NULL in schema, so null is not permitted)
         const userName = String(row["User"] ?? "").trim();
         const matchedUserId = matchUserByName(userName);
-        // When no name is given, fall back to the importing user
-        const resolvedUserId = userName ? matchedUserId : req.user.id;
-        if (!resolvedUserId) {
-          skipped++;
-          errors.push(`${rowLabel} skipped: user "${userName}" not found in company`);
-          continue;
+        const resolvedUserId = matchedUserId ?? req.user.id;
+        if (userName && !matchedUserId) {
+          errors.push(`${rowLabel} warning: user "${userName}" not found in company — imported under current account`);
         }
 
         // Parse start/end times
