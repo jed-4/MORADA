@@ -1470,7 +1470,8 @@ export default function TimesheetsScreen() {
                 )}
 
                 <View style={styles.detailActions}>
-                  {(selectedTimesheet.status === 'draft' || selectedTimesheet.status === 'submitted') && (
+                  {(selectedTimesheet.status === 'draft' || selectedTimesheet.status === 'submitted') &&
+                   selectedTimesheet.userId === user?.id && (
                     <>
                       <TouchableOpacity
                         style={[styles.detailButton, { backgroundColor: colors.accent }]}

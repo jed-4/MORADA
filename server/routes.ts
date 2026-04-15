@@ -16034,7 +16034,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           invoiced: invoiced ? invoiced === 'true' : undefined,
         }
       );
-      const filtered = await filterTimesheetsByViewScope(timesheets, req.user);
+      // Mobile app always shows only the authenticated user's own timesheets
+      const isMobile = req.headers['x-client'] === 'mobile';
+      let filtered: any[];
+      if (isMobile && req.user) {
+        const ownerId = req.user.id;
+        const sessionOwnerId = (req.session as any)?.userId;
+        filtered = timesheets.filter((ts: any) =>
+          ts.userId === ownerId || ts.userId === sessionOwnerId
+        );
+      } else {
+        filtered = await filterTimesheetsByViewScope(timesheets, req.user);
+      }
       const enriched = await enrichTimesheetsWithCostCodes(filtered);
       res.json(enriched);
     } catch (error: any) {
@@ -16285,6 +16296,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/timesheets/:id", async (req, res) => {
     try {
+      const timesheet = await storage.getTimesheet(req.params.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      // When called from mobile, only allow deleting own timesheets
+      const isMobile = req.headers['x-client'] === 'mobile';
+      if (isMobile && req.user) {
+        const ownerId = req.user.id;
+        const sessionOwnerId = (req.session as any)?.userId;
+        if (timesheet.userId !== ownerId && timesheet.userId !== sessionOwnerId) {
+          return res.status(403).json({ error: "You can only delete your own timesheets" });
+        }
+      }
       const deleted = await storage.deleteTimesheet(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Timesheet not found" });
