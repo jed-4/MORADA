@@ -1768,62 +1768,46 @@ export default function VariationDetail() {
                       onToggle={() => setTermsCollapsed((v) => !v)}
                     />
                     {!termsCollapsed && (
-                      <div className="px-4 py-3 space-y-2">
-                        {companySettings?.termsTemplates && companySettings.termsTemplates.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground flex-shrink-0">Load template:</span>
+                      <div className="px-4 py-3 space-y-3">
+                        {/* Hidden field keeps value in form state for save/PDF */}
+                        <input type="hidden" {...form.register("termsAndConditions")} />
+                        {(companySettings?.termsTemplates?.length ?? 0) > 0 || companySettings?.termsAndConditions ? (
+                          <>
                             <Select
                               value={selectedTemplateId}
                               onValueChange={(id) => {
                                 setSelectedTemplateId(id);
-                                const tpl = companySettings.termsTemplates!.find(t => t.id === id);
-                                if (tpl) form.setValue("termsAndConditions", tpl.content);
+                                if (id === "company-default") {
+                                  form.setValue("termsAndConditions", companySettings!.termsAndConditions!);
+                                } else {
+                                  const tpl = companySettings?.termsTemplates?.find(t => t.id === id);
+                                  if (tpl) form.setValue("termsAndConditions", tpl.content);
+                                }
                               }}
                             >
-                              <SelectTrigger className="h-7 text-xs flex-1">
-                                <SelectValue placeholder="Choose a template..." />
+                              <SelectTrigger data-testid="select-terms-template">
+                                <SelectValue placeholder="Select terms &amp; conditions..." />
                               </SelectTrigger>
                               <SelectContent>
-                                {companySettings.termsTemplates.map(tpl => (
+                                {companySettings?.termsAndConditions && (
+                                  <SelectItem value="company-default">Company Default</SelectItem>
+                                )}
+                                {companySettings?.termsTemplates?.map(tpl => (
                                   <SelectItem key={tpl.id} value={tpl.id}>{tpl.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          </div>
-                        )}
-                        <FormField
-                          control={form.control}
-                          name="termsAndConditions"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Textarea
-                                  {...field}
-                                  rows={8}
-                                  placeholder={
-                                    companySettings?.termsTemplates && companySettings.termsTemplates.length > 0
-                                      ? "Select a template above, or type your terms and conditions..."
-                                      : companySettings?.termsAndConditions
-                                      ? "Load from company defaults or type custom terms..."
-                                      : "Type the terms and conditions for this variation..."
-                                  }
-                                  className="text-sm resize-y"
-                                  data-testid="textarea-terms-and-conditions"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        {companySettings?.termsAndConditions && !form.watch("termsAndConditions") && (
-                          <button
-                            type="button"
-                            onClick={() => form.setValue("termsAndConditions", companySettings.termsAndConditions!)}
-                            className="text-xs text-[#bba7db] hover:underline"
-                            data-testid="button-load-company-terms"
-                          >
-                            Load company default terms
-                          </button>
+                            {form.watch("termsAndConditions") && (
+                              <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground whitespace-pre-wrap max-h-52 overflow-y-auto" data-testid="preview-terms-content">
+                                {form.watch("termsAndConditions")}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No terms templates configured.{" "}
+                            <a href="/settings" className="text-[#bba7db] hover:underline">Add templates in Company Settings</a>.
+                          </p>
                         )}
                       </div>
                     )}
