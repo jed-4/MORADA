@@ -308,6 +308,19 @@ export default function VariationDetail() {
     }
   }, [variation, isEditMode, form]);
 
+  // Initialise selectedTemplateId when editing a variation that already has T&C content
+  useEffect(() => {
+    if (!isEditMode || !companySettings) return;
+    const existing = (variation as any)?.termsAndConditions;
+    if (!existing || selectedTemplateId) return;
+    const matched = companySettings.termsTemplates?.find(t => t.content === existing);
+    if (matched) {
+      setSelectedTemplateId(matched.id);
+    } else if (companySettings.termsAndConditions === existing) {
+      setSelectedTemplateId("company-default");
+    }
+  }, [variation, companySettings, isEditMode, selectedTemplateId]);
+
   useEffect(() => {
     if (existingCostLines.length > 0 && isEditMode) {
       const costItems = existingCostLines.filter((item) => (item as any).itemType !== "allowance");
@@ -1778,7 +1791,8 @@ export default function VariationDetail() {
                               onValueChange={(id) => {
                                 setSelectedTemplateId(id);
                                 if (id === "company-default") {
-                                  form.setValue("termsAndConditions", companySettings!.termsAndConditions!);
+                                  const defaultContent = companySettings?.termsAndConditions;
+                                  if (defaultContent) form.setValue("termsAndConditions", defaultContent);
                                 } else {
                                   const tpl = companySettings?.termsTemplates?.find(t => t.id === id);
                                   if (tpl) form.setValue("termsAndConditions", tpl.content);
