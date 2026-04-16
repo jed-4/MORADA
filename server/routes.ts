@@ -8310,6 +8310,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create (or retrieve existing) selection from an estimate item
+  app.post("/api/selections/from-estimate-item", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { estimateItemId } = req.body;
+      if (!estimateItemId || typeof estimateItemId !== "string") {
+        return res.status(400).json({ error: "estimateItemId is required" });
+      }
+
+      // Check if a selection already exists for this estimate item
+      const existing = await storage.getSelectionByEstimateItemId(estimateItemId);
+      if (existing) {
+        return res.json({ selection: existing, created: false });
+      }
+
+      // Look up the estimate item
+      const estimateItem = await storage.getEstimateItem(estimateItemId);
+      if (!estimateItem) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+
+      // Look up the estimate to get the projectId
+      const estimate = await storage.getEstimate(estimateItem.estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      // Convert priceIncTax (dollars) to cents, rounded to 2dp first
+      const allowanceCents = Math.round(Number(Number(estimateItem.priceIncTax || 0).toFixed(2)) * 100);
+
+      const selectionData = {
+        projectId: estimate.projectId,
+        name: estimateItem.name,
+        category: estimateItem.costCodeTitle || undefined,
+        allowance: allowanceCents || undefined,
+        clientCanSeePrice: true,
+        estimateItemId,
+        status: "draft" as const,
+        selectionType: "selection" as const,
+        clientCanChange: true,
+      };
+
+      const validationResult = insertSelectionSchema.safeParse(selectionData);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: validationResult.error });
+      }
+
+      const selection = await storage.createSelection(validationResult.data);
+      return res.status(201).json({ selection, created: true });
+    } catch (error) {
+      console.error("Error creating selection from estimate item:", error);
+      res.status(500).json({ error: "Failed to create selection" });
+    }
+  });
+
   app.patch("/api/selections/:id", async (req, res) => {
     try {
       const validationResult = insertSelectionSchema.partial().safeParse(req.body);

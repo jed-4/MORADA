@@ -514,6 +514,7 @@ export interface IStorage {
   // Selections CRUD
   getSelections(projectId: string): Promise<Selection[]>;
   getSelection(id: string): Promise<Selection | undefined>;
+  getSelectionByEstimateItemId(estimateItemId: string): Promise<Selection | undefined>;
   getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined>;
   createSelection(selection: InsertSelection): Promise<Selection>;
   updateSelection(id: string, selection: Partial<InsertSelection>): Promise<Selection | undefined>;
@@ -4980,6 +4981,10 @@ export class MemStorage implements IStorage {
     return this.selections.get(id);
   }
 
+  async getSelectionByEstimateItemId(estimateItemId: string): Promise<Selection | undefined> {
+    return Array.from(this.selections.values()).find(s => s.estimateItemId === estimateItemId);
+  }
+
   async getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined> {
     const selection = this.selections.get(id);
     if (!selection) return undefined;
@@ -7155,6 +7160,13 @@ export class DbStorage implements IStorage {
 
   async getSelection(id: string): Promise<Selection | undefined> {
     const [selection] = await db.select().from(schema.selections).where(eq(schema.selections.id, id)).limit(1);
+    return selection;
+  }
+
+  async getSelectionByEstimateItemId(estimateItemId: string): Promise<Selection | undefined> {
+    const [selection] = await db.select().from(schema.selections)
+      .where(eq(schema.selections.estimateItemId, estimateItemId))
+      .limit(1);
     return selection;
   }
 

@@ -54,9 +54,11 @@ import {
   Columns,
   Layers,
   Flag,
-  Check
+  Check,
+  Palette,
+  ExternalLink
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -560,6 +562,43 @@ export default function EstimateDetail() {
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId,
+  });
+
+  // Fetch project selections to detect which estimate items already have a linked selection
+  const { data: projectSelections = [] } = useQuery<Selection[]>({
+    queryKey: ["/api/selections", projectId],
+    queryFn: () => fetch(`/api/selections?projectId=${projectId}`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!projectId && !isNewEstimate,
+  });
+  // Map: estimateItemId -> selection (for items that have already been pushed to Selections)
+  const selectionByEstimateItemId = useMemo(() => {
+    const map = new Map<string, Selection>();
+    for (const sel of projectSelections) {
+      if (sel.estimateItemId) map.set(sel.estimateItemId, sel);
+    }
+    return map;
+  }, [projectSelections]);
+
+  // Mutation: create a selection from an estimate item
+  const createSelectionFromItemMutation = useMutation({
+    mutationFn: async (estimateItemId: string) => {
+      const res = await fetch("/api/selections/from-estimate-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ estimateItemId }),
+      });
+      if (!res.ok) throw new Error("Failed to create selection");
+      return res.json() as Promise<{ selection: Selection; created: boolean }>;
+    },
+    onSuccess: ({ selection, created }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", projectId] });
+      toast({ title: created ? "Selection created" : "Selection already exists", description: `Opening "${selection.name}"` });
+      setLocation(`/selections/${selection.id}`);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create selection", variant: "destructive" });
+    },
   });
 
   // Fetch estimate groups
@@ -3712,15 +3751,30 @@ export default function EstimateDetail() {
                 <FileText className="w-4 h-4 mr-2" />
                 Copy To...
               </DropdownMenuItem>
-              <Separator />
-              <DropdownMenuItem 
-                onClick={() => toast({ title: "Create from Item", description: "Coming soon" })}
-                data-testid={`button-create-from-item-${item.id}`}
-                disabled={estimate?.isLocked}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create from...
-              </DropdownMenuItem>
+              {item.isSelection && (() => {
+                const linkedSelection = selectionByEstimateItemId.get(item.id);
+                return (<>
+                  <Separator />
+                  {linkedSelection ? (
+                    <DropdownMenuItem
+                      onClick={() => setLocation(`/selections/${linkedSelection.id}`)}
+                      data-testid={`button-view-selection-${item.id}`}
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      View Selection
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => createSelectionFromItemMutation.mutate(item.id)}
+                      data-testid={`button-create-selection-${item.id}`}
+                      disabled={createSelectionFromItemMutation.isPending}
+                    >
+                      <Palette className="w-4 h-4 mr-2" />
+                      Create Selection
+                    </DropdownMenuItem>
+                  )}
+                </>);
+              })()}
               <Separator />
               <DropdownMenuItem 
                 onClick={() => {
@@ -3800,15 +3854,30 @@ export default function EstimateDetail() {
                     <FileText className="w-4 h-4 mr-2" />
                     Copy To...
                   </DropdownMenuItem>
-                  <Separator />
-                  <DropdownMenuItem 
-                    onClick={() => toast({ title: "Create from Item", description: "Coming soon" })}
-                    data-testid={`button-create-from-item-${subItem.id}`}
-                    disabled={estimate?.isLocked}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create from...
-                  </DropdownMenuItem>
+                  {subItem.isSelection && (() => {
+                    const linkedSel = selectionByEstimateItemId.get(subItem.id);
+                    return (<>
+                      <Separator />
+                      {linkedSel ? (
+                        <DropdownMenuItem
+                          onClick={() => setLocation(`/selections/${linkedSel.id}`)}
+                          data-testid={`button-view-selection-${subItem.id}`}
+                        >
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          View Selection
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => createSelectionFromItemMutation.mutate(subItem.id)}
+                          data-testid={`button-create-selection-${subItem.id}`}
+                          disabled={createSelectionFromItemMutation.isPending}
+                        >
+                          <Palette className="w-4 h-4 mr-2" />
+                          Create Selection
+                        </DropdownMenuItem>
+                      )}
+                    </>);
+                  })()}
                   <Separator />
                   <DropdownMenuItem 
                     onClick={() => {

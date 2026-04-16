@@ -1336,6 +1336,7 @@ export const selections = pgTable("selections", {
   allowance: integer("allowance"), // Budget allowance in cents
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
