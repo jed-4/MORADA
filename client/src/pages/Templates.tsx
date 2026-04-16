@@ -128,7 +128,7 @@ const templateTypes = [
   },
   {
     id: "checklists",
-    title: "Templates",
+    title: "Checklists",
     description: "Create reusable templates containing checklists and items",
     icon: CheckSquare,
     url: "/checklist-templates",
