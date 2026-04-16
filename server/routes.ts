@@ -22551,6 +22551,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
+      console.log("[Xero push-bill] companyId:", companyId, "body:", req.body);
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
@@ -22561,11 +22562,13 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       }
 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      console.log("[Xero push-bill] connection found:", !!connection, "isActive:", connection?.isActive);
       if (!connection) {
         return res.status(400).json({ error: "Xero is not connected" });
       }
 
       const bill = await storage.getBillById(billId);
+      console.log("[Xero push-bill] bill found:", !!bill, "supplierId:", bill?.supplierId);
       if (!bill) {
         return res.status(404).json({ error: "Bill not found" });
       }
@@ -22600,7 +22603,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
+      console.log("[Xero push-bill] supplierXeroContactId:", supplierXeroContactId, "supplierName:", supplierName);
       if (!supplierXeroContactId && !overrideXeroContactId) {
+        console.log("[Xero push-bill] UNMAPPED_CONTACT — no xeroContactId for supplier");
         return res.status(422).json({
           error: "UNMAPPED_CONTACT",
           message: "Supplier is not linked to a Xero contact",
@@ -22689,6 +22694,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         };
       });
 
+      console.log("[Xero push-bill] calling xeroService.createBill with", xeroLineItems.length, "line items");
       const xeroBill = await xeroService.createBill(connection.id, {
         supplierName,
         supplierXeroContactId,
@@ -22697,6 +22703,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         reference: bill.billReference || bill.billNumber,
         lineItems: xeroLineItems,
       });
+      console.log("[Xero push-bill] xeroBill result:", xeroBill?.InvoiceID, xeroBill?.InvoiceNumber);
 
       if (xeroBill?.InvoiceID) {
         await storage.updateBill(billId, {

@@ -827,6 +827,39 @@ export default function BillDetail() {
     },
   });
 
+  const pushToXeroMutation = useMutation({
+    mutationFn: async (overrideXeroContactId?: string) => {
+      const pushRes = await fetch("/api/xero/push-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ billId: id, ...(overrideXeroContactId ? { xeroContactId: overrideXeroContactId } : {}) }),
+      });
+      if (!pushRes.ok) {
+        const errData = await pushRes.json().catch(() => ({}));
+        if (errData.error === "UNMAPPED_CONTACT") {
+          return { unmapped: true, supplierName: errData.supplierName || "Unknown Supplier" };
+        }
+        throw new Error(errData.message || errData.error || "Failed to push to Xero");
+      }
+      return { unmapped: false, ...(await pushRes.json()) };
+    },
+    onSuccess: (data: any) => {
+      if (data.unmapped) {
+        setUnmappedSupplierName(data.supplierName);
+        setPendingXeroBillId(id as any);
+        setUnmappedContactDialogOpen(true);
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Success", description: "Bill sent to Xero" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Xero push failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const approveMutation = useMutation({
     mutationFn: async (comments?: string) => {
       const response = await apiRequest(`/api/bills/${id}/approve`, "POST", {
