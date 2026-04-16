@@ -14,7 +14,6 @@ import {
   MessageSquare,
   Check,
   X,
-  Send,
   Upload,
   FileText,
   Loader2,
@@ -594,6 +593,9 @@ export default function BillDetail() {
       return newBill;
     },
     onSuccess: async (newBill) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
+
       if (form.getValues("sendToXero") && newBill?.id) {
         try {
           const pushRes = await fetch("/api/xero/push-bill", {
@@ -608,21 +610,23 @@ export default function BillDetail() {
               setUnmappedSupplierName(errData.supplierName || "Unknown Supplier");
               setPendingXeroBillId(newBill.id);
               setUnmappedContactDialogOpen(true);
-              queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-              toast({ title: "Bill created", description: "Please link the supplier to a Xero contact to complete the sync." });
-              return;
+              toast({ title: "Bill created", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
+              return; // stay on page for mapping
             }
-            throw new Error(errData.message || "Failed to push to Xero");
+            throw new Error(errData.message || errData.error || "Xero sync failed");
           }
-          toast({ title: "Success", description: "Bill created and sent to Xero" });
+          toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
         } catch (e: any) {
-          toast({ title: "Bill created", description: e.message || "Bill saved but failed to send to Xero. You can retry from the bill.", variant: "destructive" });
+          toast({
+            title: "Bill created — Xero sync failed",
+            description: e.message || "Could not push to Xero. Check your Xero connection in Settings.",
+            variant: "destructive",
+          });
+          return; // stay on page so user can see the error
         }
       } else {
         toast({ title: "Success", description: "Bill created successfully" });
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
@@ -726,6 +730,11 @@ export default function BillDetail() {
       return updatedBill;
     },
     onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
+
       if (form.getValues("sendToXero") && id) {
         try {
           const pushRes = await fetch("/api/xero/push-bill", {
@@ -740,24 +749,28 @@ export default function BillDetail() {
               setUnmappedSupplierName(errData.supplierName || "Unknown Supplier");
               setPendingXeroBillId(id || null);
               setUnmappedContactDialogOpen(true);
-              queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-              toast({ title: "Bill saved", description: "Please link the supplier to a Xero contact to complete the sync." });
-              return;
+              toast({ title: "Bill saved", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
+              return; // stay on page so user can complete the mapping
             }
-            throw new Error(errData.message || "Failed to push to Xero");
+            throw new Error(errData.message || errData.error || "Xero sync failed");
           }
-          toast({ title: "Success", description: "Bill updated and sent to Xero" });
+          const result = await pushRes.json();
+          toast({
+            title: "Bill saved & synced to Xero",
+            description: result.updated ? "Existing Xero bill updated." : "New bill created in Xero.",
+          });
         } catch (e: any) {
-          toast({ title: "Bill updated", description: e.message || "Bill saved but failed to send to Xero. You can retry later.", variant: "destructive" });
+          // Stay on page so user can see the error and retry
+          toast({
+            title: "Bill saved — Xero sync failed",
+            description: e.message || "Could not push to Xero. Check your Xero connection in Settings.",
+            variant: "destructive",
+          });
+          return; // don't navigate away so they can see the error
         }
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
@@ -826,39 +839,6 @@ export default function BillDetail() {
     },
     onError: (error: Error) => {
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const pushToXeroMutation = useMutation({
-    mutationFn: async (overrideXeroContactId?: string) => {
-      const pushRes = await fetch("/api/xero/push-bill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ billId: id, ...(overrideXeroContactId ? { xeroContactId: overrideXeroContactId } : {}) }),
-      });
-      if (!pushRes.ok) {
-        const errData = await pushRes.json().catch(() => ({}));
-        if (errData.error === "UNMAPPED_CONTACT") {
-          return { unmapped: true, supplierName: errData.supplierName || "Unknown Supplier" };
-        }
-        throw new Error(errData.message || errData.error || "Failed to push to Xero");
-      }
-      return { unmapped: false, ...(await pushRes.json()) };
-    },
-    onSuccess: (data: any) => {
-      if (data.unmapped) {
-        setUnmappedSupplierName(data.supplierName);
-        setPendingXeroBillId(id || null);
-        setUnmappedContactDialogOpen(true);
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      toast({ title: "Success", description: "Bill sent to Xero" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Xero push failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1451,7 +1431,7 @@ export default function BillDetail() {
                             data-testid="checkbox-send-to-xero"
                           />
                         </FormControl>
-                        <FormLabel className="!mt-0 text-xs">Send to Xero</FormLabel>
+                        <FormLabel className="!mt-0 text-xs">Sync with Xero</FormLabel>
                       </FormItem>
                     )}
                   />
@@ -2256,59 +2236,23 @@ export default function BillDetail() {
                     })()}
                   </div>
                   <div className="flex items-center gap-2">
-                    {isEditMode && xeroStatus?.connected && !(bill as any)?.xeroInvoiceId && (
+                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={() => pushToXeroMutation.mutate(undefined)}
-                        disabled={pushToXeroMutation.isPending}
+                        onClick={() => syncBillPaymentMutation.mutate()}
+                        disabled={syncBillPaymentMutation.isPending}
                         className="gap-1.5"
-                        data-testid="button-push-bill-to-xero"
+                        data-testid="button-sync-bill-from-xero"
                       >
-                        {pushToXeroMutation.isPending ? (
+                        {syncBillPaymentMutation.isPending ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <Send className="w-3.5 h-3.5" />
+                          <RefreshCw className="w-3.5 h-3.5" />
                         )}
-                        Push to Xero
+                        Sync from Xero
                       </Button>
-                    )}
-                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => pushToXeroMutation.mutate(undefined)}
-                          disabled={pushToXeroMutation.isPending}
-                          className="gap-1.5"
-                          data-testid="button-push-bill-to-xero-update"
-                        >
-                          {pushToXeroMutation.isPending ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Send className="w-3.5 h-3.5" />
-                          )}
-                          Push to Xero
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => syncBillPaymentMutation.mutate()}
-                          disabled={syncBillPaymentMutation.isPending}
-                          className="gap-1.5"
-                          data-testid="button-sync-bill-from-xero"
-                        >
-                          {syncBillPaymentMutation.isPending ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          )}
-                          Sync from Xero
-                        </Button>
-                      </>
                     )}
                     <Button
                       type="button"
