@@ -3690,13 +3690,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const markupPercent = item.markupPercent ?? null;
         
         const round3i = (n: number) => Math.round(n * 1000) / 1000;
+        const round2i = (n: number) => Math.round(n * 100) / 100;
         const builderCostExTax = round3i(unitCostExTax * quantity);
         const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
         const markupAmount = round3i(builderCostExTax * effectiveMarkupPercent / 100);
         const clientPriceExTax = round3i(builderCostExTax + markupAmount);
         const taxRate = estimate.taxRate ?? 10;
-        const taxAmount = round3i(clientPriceExTax * taxRate / 100);
-        const clientPriceIncTax = round3i(clientPriceExTax + taxAmount);
+        const taxAmount = round2i(clientPriceExTax * taxRate / 100);
+        const clientPriceIncTax = round2i(clientPriceExTax + taxAmount);
         
         const itemData = {
           estimateId,
@@ -4071,13 +4072,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : existingItem.markupPercent;
       
       const round3 = (n: number) => Math.round(n * 1000) / 1000;
+      const round2 = (n: number) => Math.round(n * 100) / 100;
       const builderCostExTax = round3((unitCostExTax || 0) * (quantity || 1));
       const effectiveMarkupPercent = markupPercent ?? 0;
       const markupAmount = round3(builderCostExTax * effectiveMarkupPercent / 100);
       const clientPriceExTax = round3(builderCostExTax + markupAmount);
       const taxRate = estimate.taxRate ?? 10;
-      const taxAmount = round3(clientPriceExTax * taxRate / 100);
-      const clientPriceIncTax = round3(clientPriceExTax + taxAmount);
+      const taxAmount = round2(clientPriceExTax * taxRate / 100);
+      const clientPriceIncTax = round2(clientPriceExTax + taxAmount);
       
       if (updateData.unitCostExTax !== undefined) {
         updateData.unitCostExTax = unitCostExTax;

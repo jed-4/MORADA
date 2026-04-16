@@ -9048,8 +9048,9 @@ export class DbStorage implements IStorage {
           const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
           
           const actualCost = billCost + timesheetCost;
-          // price_inc_tax is stored in dollars; convert to cents for consistent display
-          const priceInCents = Math.round((item.priceIncTax || 0) * 100);
+          // price_inc_tax is stored in dollars; round to 2dp first to eliminate any
+          // floating-point drift from the 3dp rounding used in older calculation paths
+          const priceInCents = Math.round(Number((item.priceIncTax || 0).toFixed(2)) * 100);
           const variance = actualCost - priceInCents;
           
           return {
