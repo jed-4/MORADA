@@ -22694,28 +22694,39 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         };
       });
 
-      console.log("[Xero push-bill] calling xeroService.createBill with", xeroLineItems.length, "line items");
-      const xeroBill = await xeroService.createBill(connection.id, {
+      const billPayload = {
         supplierName,
         supplierXeroContactId,
         billDate: formatDate(bill.billDate),
         dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
         reference: bill.billReference || bill.billNumber,
         lineItems: xeroLineItems,
-      });
-      console.log("[Xero push-bill] xeroBill result:", xeroBill?.InvoiceID, xeroBill?.InvoiceNumber);
+      };
 
-      if (xeroBill?.InvoiceID) {
-        await storage.updateBill(billId, {
-          xeroInvoiceId: xeroBill.InvoiceID,
-          sendToXero: true,
-        } as any);
+      let xeroBill: any;
+      if (bill.xeroInvoiceId) {
+        // Bill already exists in Xero — update it
+        console.log("[Xero push-bill] updating existing Xero invoice:", bill.xeroInvoiceId, "with", xeroLineItems.length, "line items");
+        xeroBill = await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
+        console.log("[Xero push-bill] update result:", xeroBill?.InvoiceID, xeroBill?.Status);
+      } else {
+        // First push — create new bill in Xero
+        console.log("[Xero push-bill] creating new Xero invoice with", xeroLineItems.length, "line items");
+        xeroBill = await xeroService.createBill(connection.id, billPayload);
+        console.log("[Xero push-bill] create result:", xeroBill?.InvoiceID, xeroBill?.InvoiceNumber);
+        if (xeroBill?.InvoiceID) {
+          await storage.updateBill(billId, {
+            xeroInvoiceId: xeroBill.InvoiceID,
+            sendToXero: true,
+          } as any);
+        }
       }
 
       res.json({
         success: true,
         xeroInvoiceId: xeroBill?.InvoiceID,
         xeroInvoiceNumber: xeroBill?.InvoiceNumber,
+        updated: !!bill.xeroInvoiceId,
       });
     } catch (error: any) {
       console.error("Error pushing bill to Xero:", error);
@@ -23257,7 +23268,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  // Xero: Sync bill paid status from Xero when reconciled
+  // Xero: Sync bill from Xero (amounts, dates, line items, payment status)
   app.post("/api/xero/sync-bill-payment/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -23274,26 +23285,93 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const xeroInvoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
       if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
 
+      // Helper to parse Xero's /Date(timestamp)/ format or ISO string
+      const parseXeroDate = (d: string | undefined): Date | undefined => {
+        if (!d) return undefined;
+        const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
+        if (match) return new Date(parseInt(match[1]));
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? undefined : parsed;
+      };
+
       const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+      const subtotalCents = Math.round((xeroInvoice.SubTotal || 0) * 100);
+      const taxCents = Math.round((xeroInvoice.TotalTax || 0) * 100);
+      const totalCents = Math.round((xeroInvoice.Total || 0) * 100);
       const xeroStatus = xeroInvoice.Status as string;
 
       let newStatus: string = bill.status;
       if (xeroStatus === "PAID") {
         newStatus = "paid";
-      } else if (amountPaidCents > 0 && amountPaidCents < (bill.total || 0)) {
+      } else if (amountPaidCents > 0 && amountPaidCents < totalCents) {
+        newStatus = "awaiting_payment";
+      } else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") {
         newStatus = "awaiting_payment";
       }
 
+      const billDate = parseXeroDate(xeroInvoice.Date);
+      const dueDate = parseXeroDate(xeroInvoice.DueDate);
+
+      // Update bill header fields
       await storage.updateBill(bill.id, {
         status: newStatus as any,
         paidAmount: amountPaidCents,
+        subtotal: subtotalCents,
+        tax: taxCents,
+        total: totalCents,
         xeroPaidStatus: xeroStatus,
+        ...(billDate ? { billDate } : {}),
+        ...(dueDate ? { dueDate } : {}),
+        ...(xeroInvoice.Reference ? { billReference: xeroInvoice.Reference } : {}),
       } as any);
 
-      res.json({ synced: true, xeroStatus, amountPaidCents, newStatus });
+      // Sync line items from Xero → BuildPro
+      const xeroLineItems: any[] = xeroInvoice.LineItems || [];
+      if (xeroLineItems.length > 0) {
+        // Delete existing line items (cascade removes any allowance links)
+        const existingLineItems = await storage.getBillLineItems(bill.id);
+        for (const li of existingLineItems) {
+          await storage.deleteBillLineItem(li.id);
+        }
+
+        // Map Xero tax types back to BuildPro enum
+        const mapXeroTaxType = (taxType: string): "GST on expenses" | "No GST" => {
+          if (!taxType || taxType === "NONE" || taxType === "EXEMPTEXPENSES" || taxType === "EXEMPTINPUT") {
+            return "No GST";
+          }
+          return "GST on expenses";
+        };
+
+        // Create new line items from Xero data
+        for (let i = 0; i < xeroLineItems.length; i++) {
+          const xl = xeroLineItems[i];
+          const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
+          const totalLineCents = Math.round((xl.LineAmount || xl.UnitAmount * (xl.Quantity || 1) || 0) * 100);
+          await storage.createBillLineItem({
+            billId: bill.id,
+            lineType: "custom",
+            description: xl.Description || "",
+            costCodeId: undefined,
+            quantity: Math.round(xl.Quantity || 1),
+            unitPrice: unitPriceCents,
+            tax: mapXeroTaxType(xl.TaxType),
+            account: xl.AccountCode || "",
+            total: totalLineCents,
+            order: i,
+          } as any);
+        }
+      }
+
+      res.json({
+        synced: true,
+        xeroStatus,
+        amountPaidCents,
+        newStatus,
+        lineItemsSynced: xeroLineItems.length,
+      });
     } catch (error: any) {
-      console.error("Error syncing bill payment from Xero:", error);
-      res.status(500).json({ error: error.message || "Failed to sync bill payment from Xero" });
+      console.error("Error syncing bill from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to sync bill from Xero" });
     }
   });
 

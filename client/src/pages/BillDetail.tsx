@@ -139,7 +139,7 @@ export default function BillDetail() {
   const [unmappedContactDialogOpen, setUnmappedContactDialogOpen] = useState(false);
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
   const [selectedXeroContactId, setSelectedXeroContactId] = useState("");
-  const [pendingXeroBillId, setPendingXeroBillId] = useState<number | null>(null);
+  const [pendingXeroBillId, setPendingXeroBillId] = useState<string | null>(null);
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
   const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
   const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
@@ -738,7 +738,7 @@ export default function BillDetail() {
             const errData = await pushRes.json().catch(() => ({}));
             if (errData.error === "UNMAPPED_CONTACT") {
               setUnmappedSupplierName(errData.supplierName || "Unknown Supplier");
-              setPendingXeroBillId(Number(id));
+              setPendingXeroBillId(id || null);
               setUnmappedContactDialogOpen(true);
               queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
               queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
@@ -817,10 +817,12 @@ export default function BillDetail() {
       }
       return res.json() as Promise<{ synced: boolean; xeroStatus: string; amountPaidCents: number }>;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
-      toast({ title: "Synced from Xero", description: `Bill status in Xero: ${data.xeroStatus}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-items"] });
+      const lineMsg = data.lineItemsSynced > 0 ? ` ${data.lineItemsSynced} line item${data.lineItemsSynced !== 1 ? "s" : ""} updated.` : "";
+      toast({ title: "Synced from Xero", description: `Status: ${data.xeroStatus}.${lineMsg}` });
     },
     onError: (error: Error) => {
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
@@ -847,7 +849,7 @@ export default function BillDetail() {
     onSuccess: (data: any) => {
       if (data.unmapped) {
         setUnmappedSupplierName(data.supplierName);
-        setPendingXeroBillId(id as any);
+        setPendingXeroBillId(id || null);
         setUnmappedContactDialogOpen(true);
         return;
       }
@@ -2254,23 +2256,59 @@ export default function BillDetail() {
                     })()}
                   </div>
                   <div className="flex items-center gap-2">
-                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
+                    {isEditMode && xeroStatus?.connected && !(bill as any)?.xeroInvoiceId && (
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={() => syncBillPaymentMutation.mutate()}
-                        disabled={syncBillPaymentMutation.isPending}
+                        onClick={() => pushToXeroMutation.mutate(undefined)}
+                        disabled={pushToXeroMutation.isPending}
                         className="gap-1.5"
-                        data-testid="button-sync-bill-from-xero"
+                        data-testid="button-push-bill-to-xero"
                       >
-                        {syncBillPaymentMutation.isPending ? (
+                        {pushToXeroMutation.isPending ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          <Send className="w-3.5 h-3.5" />
                         )}
-                        Sync from Xero
+                        Push to Xero
                       </Button>
+                    )}
+                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => pushToXeroMutation.mutate(undefined)}
+                          disabled={pushToXeroMutation.isPending}
+                          className="gap-1.5"
+                          data-testid="button-push-bill-to-xero-update"
+                        >
+                          {pushToXeroMutation.isPending ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          Push to Xero
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => syncBillPaymentMutation.mutate()}
+                          disabled={syncBillPaymentMutation.isPending}
+                          className="gap-1.5"
+                          data-testid="button-sync-bill-from-xero"
+                        >
+                          {syncBillPaymentMutation.isPending ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                          Sync from Xero
+                        </Button>
+                      </>
                     )}
                     <Button
                       type="button"

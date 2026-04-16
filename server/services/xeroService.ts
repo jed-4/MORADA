@@ -405,6 +405,67 @@ export class XeroService {
     return data.Invoices?.[0] || data;
   }
 
+  async updateBill(connectionId: string, xeroInvoiceId: string, billData: XeroBillData): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    let contactId = billData.supplierXeroContactId;
+    if (!contactId) {
+      const contact = await this.findOrCreateContact(accessToken, connection.tenantId, billData.supplierName);
+      contactId = contact.ContactID;
+    }
+
+    const xeroLineItems = billData.lineItems.map((item) => {
+      const lineItem: any = {
+        Description: item.description,
+        Quantity: item.quantity,
+        UnitAmount: item.unitAmount,
+        TaxType: item.taxType,
+      };
+      if (item.accountCode) lineItem.AccountCode = item.accountCode;
+      if (item.tracking && item.tracking.length > 0) {
+        lineItem.Tracking = item.tracking.map(t => ({
+          TrackingCategoryID: t.TrackingCategoryID,
+          TrackingOptionID: t.TrackingOptionID,
+        }));
+      }
+      return lineItem;
+    });
+
+    const invoicePayload: any = {
+      InvoiceID: xeroInvoiceId,
+      Type: "ACCPAY",
+      Contact: { ContactID: contactId },
+      Date: billData.billDate,
+      LineItems: xeroLineItems,
+      LineAmountTypes: "Exclusive",
+      Status: "AUTHORISED",
+    };
+
+    if (billData.dueDate) invoicePayload.DueDate = billData.dueDate;
+    if (billData.reference) invoicePayload.Reference = billData.reference;
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [invoicePayload] }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update Xero bill: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Invoices?.[0] || data;
+  }
+
   async createInvoice(connectionId: string, invoiceData: {
     clientName: string;
     clientXeroContactId?: string;
