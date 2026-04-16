@@ -460,9 +460,9 @@ export default function ChecklistTemplateDetail() {
                                 <div className="flex items-center gap-2">
                                   <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   <span className="flex-1 text-sm">{item.description}</span>
-                                  {(item as any).assignedRoleId && roleMap[(item as any).assignedRoleId] && (
+                                  {item.assignedRoleId && roleMap[item.assignedRoleId] && (
                                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                      {roleMap[(item as any).assignedRoleId]}
+                                      {roleMap[item.assignedRoleId]}
                                     </Badge>
                                   )}
                                   {responseType !== "checkbox" && (
@@ -865,7 +865,7 @@ function ItemFormDialog({
       tooltip: item?.tooltip || "",
       responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
       responseOptions: (item?.responseOptions as string[]) || [],
-      assignedRoleId: (item as any)?.assignedRoleId || null,
+      assignedRoleId: item?.assignedRoleId || null,
     },
   });
 
@@ -880,7 +880,7 @@ function ItemFormDialog({
         tooltip: item?.tooltip || "",
         responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
         responseOptions: (item?.responseOptions as string[]) || [],
-        assignedRoleId: (item as any)?.assignedRoleId || null,
+        assignedRoleId: item?.assignedRoleId || null,
       });
       setNewOption("");
     }
