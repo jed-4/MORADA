@@ -166,7 +166,7 @@ export default function ChecklistTemplates() {
         {/* Left: Title + Count */}
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Checklist Groups
+            Checklists
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
             {templates.length} {templates.length === 1 ? 'group' : 'groups'}

@@ -7,6 +7,7 @@ import {
   type ChecklistTemplate,
   type ChecklistTemplateGroup,
   type ChecklistTemplateItem,
+  type UserRole,
 } from "@shared/schema";
 import {
   DndContext,
@@ -147,6 +148,13 @@ export default function ChecklistTemplateDetail() {
     },
     enabled: groups.length > 0,
   });
+
+  // Fetch roles for display
+  const { data: roles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/roles"],
+  });
+
+  const roleMap = Object.fromEntries(roles.map((r) => [r.id, r.name]));
 
   // Auto-select first group when groups load or when selected group is deleted
   useEffect(() => {
@@ -452,6 +460,11 @@ export default function ChecklistTemplateDetail() {
                                 <div className="flex items-center gap-2">
                                   <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   <span className="flex-1 text-sm">{item.description}</span>
+                                  {(item as any).assignedRoleId && roleMap[(item as any).assignedRoleId] && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                      {roleMap[(item as any).assignedRoleId]}
+                                    </Badge>
+                                  )}
                                   {responseType !== "checkbox" && (
                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
                                       {responseType === "text" ? "Text" : responseType === "single_choice" ? "Single" : "Multiple"}
@@ -819,6 +832,7 @@ const itemSchema = z.object({
   tooltip: z.string().optional(),
   responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
   responseOptions: z.array(z.string()).optional().default([]),
+  assignedRoleId: z.string().nullable().optional(),
 });
 
 type ItemFormData = z.infer<typeof itemSchema>;
@@ -839,6 +853,11 @@ function ItemFormDialog({
   const { toast } = useToast();
   const [newOption, setNewOption] = useState("");
 
+  const { data: roles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/roles"],
+    enabled: open,
+  });
+
   const form = useForm<ItemFormData>({
     resolver: zodResolver(itemSchema),
     defaultValues: {
@@ -846,6 +865,7 @@ function ItemFormDialog({
       tooltip: item?.tooltip || "",
       responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
       responseOptions: (item?.responseOptions as string[]) || [],
+      assignedRoleId: (item as any)?.assignedRoleId || null,
     },
   });
 
@@ -860,6 +880,7 @@ function ItemFormDialog({
         tooltip: item?.tooltip || "",
         responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
         responseOptions: (item?.responseOptions as string[]) || [],
+        assignedRoleId: (item as any)?.assignedRoleId || null,
       });
       setNewOption("");
     }
@@ -887,12 +908,14 @@ function ItemFormDialog({
         tooltip: data.tooltip || null,
         responseType: data.responseType,
         responseOptions: data.responseOptions || [],
+        assignedRoleId: data.assignedRoleId || null,
       } : {
         groupId,
         description: data.description,
         tooltip: data.tooltip || null,
         responseType: data.responseType,
         responseOptions: data.responseOptions || [],
+        assignedRoleId: data.assignedRoleId || null,
         order: 0,
       };
       return await apiRequest(url, method, body);
@@ -957,6 +980,35 @@ function ItemFormDialog({
                       data-testid="input-item-tooltip"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="assignedRoleId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Assigned Role (Optional)</FormLabel>
+                  <Select
+                    value={field.value || "none"}
+                    onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-assigned-role">
+                        <SelectValue placeholder="No role assigned" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">No role assigned</SelectItem>
+                      {roles.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

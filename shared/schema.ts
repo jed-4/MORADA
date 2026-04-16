@@ -2700,6 +2700,7 @@ export const checklistTemplateItems = pgTable("checklist_template_items", {
   order: integer("order").notNull().default(0),
   responseType: text("response_type").notNull().default("checkbox"), // "checkbox" | "text" | "single_choice" | "multiple_choice"
   responseOptions: json("response_options").default([]), // Array of option strings for single/multiple choice
+  assignedRoleId: varchar("assigned_role_id").references(() => userRoles.id, { onDelete: "set null" }), // Default role responsible for this item
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2711,6 +2712,7 @@ export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTem
 }).extend({
   responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
   responseOptions: z.array(z.string()).optional().default([]),
+  assignedRoleId: z.string().nullable().optional(),
 });
 
 export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
