@@ -548,7 +548,7 @@ export default function ClientInvoices() {
               : pageTitle}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
             onClick={handleCreateInvoice}
             data-testid="button-create-invoice"
           >
@@ -559,7 +559,7 @@ export default function ClientInvoices() {
 
         {/* Row 2 — Finance summary (lilac, bottom section of card) */}
         {!invoicesLoading && (
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
+        <div className="bg-[#A890D4]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
 
           {/* Left — total project value: big number first, label below */}
           {hasProjectContext && (
@@ -606,7 +606,7 @@ export default function ClientInvoices() {
                 </div>
               </div>
 
-              <div className="w-px self-stretch bg-[#bba7db]/30 mx-1" />
+              <div className="w-px self-stretch bg-[#A890D4]/30 mx-1" />
             </>
           )}
 
@@ -687,7 +687,7 @@ export default function ClientInvoices() {
                   <button
                     className={cn(
                       "h-6 px-2 text-xs border border-border/40 rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
-                      selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
+                      selectedStatus !== "all" && "border-[#A890D4] text-[#A890D4] bg-[#A890D4]/5"
                     )}
                     data-testid="filter-status-popover"
                   >
@@ -696,7 +696,7 @@ export default function ClientInvoices() {
                     </span>
                     {selectedStatus !== "all" && (
                       <span
-                        className="ml-0.5 text-[10px] text-[#bba7db] cursor-pointer"
+                        className="ml-0.5 text-[10px] text-[#A890D4] cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); setSelectedStatus("all"); }}
                       >×</span>
                     )}
@@ -709,7 +709,7 @@ export default function ClientInvoices() {
                       onClick={() => { setSelectedStatus(opt.value); setStatusPopoverOpen(false); }}
                       className={cn(
                         "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
-                        selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
+                        selectedStatus === opt.value && "bg-[#A890D4]/10 text-[#A890D4] font-medium"
                       )}
                       data-testid={`filter-status-${opt.value}`}
                     >
@@ -741,7 +741,7 @@ export default function ClientInvoices() {
                             checked={col.visible}
                             disabled={col.required}
                             onChange={() => !col.required && toggleColumn(col.key)}
-                            className="w-3.5 h-3.5 accent-[#bba7db] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="w-3.5 h-3.5 accent-[#A890D4] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           />
                           <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
                             {col.label}

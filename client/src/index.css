@@ -16,7 +16,7 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
 
-  --background: 0 0% 100%; /* Pure white #ffffff */
+  --background: 261 53% 98%; /* Lilac-tinted white */
   
   --page-background: 220 14% 96%; /* Soft gray outer background #f1f5f9 */
 
@@ -53,7 +53,7 @@
   --popover-border: 214 32% 91%;
 
   /* Casva Lilac Purple Palette */
-  --primary: 265 44% 76%; /* Lilac Purple #bba7db */
+  --primary: 261 44% 70%; /* Lilac Purple #A890D4 */
 
   --primary-foreground: 0 0% 100%;
 
@@ -190,7 +190,7 @@
   --popover-border: 220 10% 28%;
 
   /* Brighter Lilac Accent for Dark Mode */
-  --primary: 265 55% 72%; /* Brighter lilac that pops */
+  --primary: 261 44% 70%; /* Lilac Purple #A890D4 */
 
   --primary-foreground: 220 12% 16%;
 
@@ -279,7 +279,7 @@
   --popover: 30 20% 21%;
   --popover-foreground: 36 18% 91%;
   --popover-border: 30 16% 29%;
-  --primary: 272 48% 70%;
+  --primary: 261 44% 70%;
   --primary-foreground: 30 20% 15%;
   --secondary: 272 28% 28%;
   --secondary-foreground: 36 18% 91%;
@@ -330,7 +330,7 @@
   --popover: 20 24% 20%;
   --popover-foreground: 36 18% 91%;
   --popover-border: 20 20% 27%;
-  --primary: 292 44% 65%;
+  --primary: 261 44% 70%;
   --primary-foreground: 20 24% 14%;
   --secondary: 292 26% 26%;
   --secondary-foreground: 36 18% 91%;
@@ -381,7 +381,7 @@
   --popover: 28 18% 22%;
   --popover-foreground: 36 16% 91%;
   --popover-border: 28 14% 30%;
-  --primary: 258 46% 73%;
+  --primary: 261 44% 70%;
   --primary-foreground: 28 18% 16%;
   --secondary: 258 26% 28%;
   --secondary-foreground: 36 16% 91%;
@@ -433,7 +433,7 @@
   --popover: 35 3% 12%;
   --popover-foreground: 37 18% 93%;
   --popover-border: 33 3% 23%;
-  --primary: 268 50% 66%;
+  --primary: 261 44% 70%;
   --primary-foreground: 40 3% 7%;
   --secondary: 268 32% 18%;
   --secondary-foreground: 37 18% 93%;
@@ -538,7 +538,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 265 14% 12%;
   --popover-border: 35 8% 83%;
-  --primary: 265 35% 55%;
+  --primary: 261 44% 60%;
   --primary-foreground: 0 0% 100%;
   --secondary: 265 45% 95%;
   --secondary-foreground: 265 14% 12%;

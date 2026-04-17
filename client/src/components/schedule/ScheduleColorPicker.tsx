@@ -6,8 +6,21 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-// Standard color palette for schedule items
+// Brand primary colour palette (top row)
+const PRIMARY_COLORS = [
+  { name: "Lilac", value: "#A890D4" },
+  { name: "Periwinkle", value: "#8AA5DE" },
+  { name: "Aqua", value: "#70CAD0" },
+  { name: "Mint", value: "#82C8A2" },
+  { name: "Sand", value: "#D4B670" },
+  { name: "Coral", value: "#DA988A" },
+  { name: "Rose", value: "#D08AAF" },
+  { name: "Lavender", value: "#B294D0" },
+];
+
+// Standard color palette for schedule items (extended set, shown below)
 const STANDARD_COLORS = [
+  ...PRIMARY_COLORS,
   { name: "Red", value: "#ef4444" },
   { name: "Orange", value: "#f97316" },
   { name: "Amber", value: "#f59e0b" },
@@ -24,7 +37,7 @@ const STANDARD_COLORS = [
   { name: "Purple", value: "#a855f7" },
   { name: "Fuchsia", value: "#d946ef" },
   { name: "Pink", value: "#ec4899" },
-  { name: "Rose", value: "#f43f5e" },
+  { name: "Rose Pink", value: "#f43f5e" },
   { name: "Gray", value: "#9ca3af" },
 ];
 
@@ -111,11 +124,37 @@ export function ScheduleColorPicker({
             </div>
           )}
 
+          {/* Brand Colors */}
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-2">Brand Colors</div>
+            <div className="grid grid-cols-8 gap-1.5">
+              {PRIMARY_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  onClick={() => handleColorSelect(color.value)}
+                  className="w-7 h-7 rounded border-2 hover-elevate active-elevate-2 relative"
+                  style={{
+                    backgroundColor: color.value,
+                    borderColor: currentColor === color.value ? "#000" : "transparent",
+                  }}
+                  title={color.name}
+                  data-testid={`button-color-${color.name.toLowerCase()}`}
+                >
+                  {currentColor === color.value && (
+                    <span className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Standard Colors */}
           <div>
             <div className="text-xs font-medium text-muted-foreground mb-2">Standard Colors</div>
             <div className="grid grid-cols-6 gap-1.5">
-              {STANDARD_COLORS.map((color) => (
+              {STANDARD_COLORS.slice(PRIMARY_COLORS.length).map((color) => (
                 <button
                   key={color.value}
                   onClick={() => handleColorSelect(color.value)}

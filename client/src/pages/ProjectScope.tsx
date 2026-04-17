@@ -86,7 +86,7 @@ import Underline from '@tiptap/extension-underline';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink } from '@react-pdf/renderer';
 
 // Primary color variable for inline styles (uses CSS variable fallback)
-const PRIMARY_COLOR = 'hsl(265, 44%, 76%)';
+const PRIMARY_COLOR = 'hsl(261, 44%, 70%)';
 
 // Helper function to convert Tiptap JSON to plain text for PDF
 const tiptapJsonToText = (jsonOrHtml: string | null | undefined): string => {

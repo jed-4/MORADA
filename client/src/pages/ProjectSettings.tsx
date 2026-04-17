@@ -373,14 +373,14 @@ export default function ProjectSettings() {
   }
 
   const colorOptions = [
-    "#3b82f6", // Blue
-    "#10b981", // Green
-    "#f59e0b", // Yellow
-    "#ef4444", // Red
-    "#8b5cf6", // Purple
-    "#06b6d4", // Cyan
-    "#f97316", // Orange
-    "#84cc16", // Lime
+    "#A890D4",
+    "#8AA5DE",
+    "#70CAD0",
+    "#82C8A2",
+    "#D4B670",
+    "#DA988A",
+    "#D08AAF",
+    "#B294D0",
   ];
 
   return (
