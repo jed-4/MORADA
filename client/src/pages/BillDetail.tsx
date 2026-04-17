@@ -1037,6 +1037,14 @@ export default function BillDetail() {
           ? "Invoice data extracted and saved as attachment"
           : "Invoice data extracted",
       });
+      if (attachWarning) {
+        toast({
+          variant: "destructive",
+          title: "Attachment not saved",
+          description:
+            "We extracted the invoice data but couldn't attach the file. Please try uploading it again from the attachments section.",
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -2811,11 +2819,21 @@ export default function BillDetail() {
           <DialogHeader>
             <DialogTitle>Supplier not found</DialogTitle>
             <DialogDescription>
-              We couldn't confidently match the supplier{" "}
-              <span className="font-medium">"{ocrSupplierData?.name}"</span>{" "}
-              to one of your existing contacts. Pick an existing supplier or create a new one.
+              We couldn't confidently match the supplier on this invoice to one of your existing contacts. Pick an existing supplier or create a new one.
             </DialogDescription>
           </DialogHeader>
+          {ocrSupplierData && (
+            <div className="rounded-md border bg-muted/30 p-3 text-xs space-y-1" data-testid="card-ocr-supplier-details">
+              <div className="text-muted-foreground uppercase tracking-wide text-[10px] mb-1">From invoice</div>
+              <div><span className="text-muted-foreground">Name:</span> <span className="font-medium">{ocrSupplierData.name}</span></div>
+              {ocrSupplierData.email && (
+                <div><span className="text-muted-foreground">Email:</span> <span>{ocrSupplierData.email}</span></div>
+              )}
+              {ocrSupplierData.phone && (
+                <div><span className="text-muted-foreground">Phone:</span> <span>{ocrSupplierData.phone}</span></div>
+              )}
+            </div>
+          )}
           <div className="space-y-3 py-2">
             <div>
               <label className="text-xs font-medium mb-1 block">Existing supplier</label>
