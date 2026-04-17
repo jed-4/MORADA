@@ -22,6 +22,7 @@ import {
   Eye,
   Maximize2,
   RefreshCw,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -69,6 +70,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Collapsible,
   CollapsibleContent,
@@ -143,6 +156,10 @@ export default function BillDetail() {
   const [unmatchedSupplierDialogOpen, setUnmatchedSupplierDialogOpen] = useState(false);
   const [ocrSupplierData, setOcrSupplierData] = useState<{ name: string; email?: string; phone?: string } | null>(null);
   const [unmatchedSupplierSelection, setUnmatchedSupplierSelection] = useState<string>("");
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
+  const [supplierSearchText, setSupplierSearchText] = useState("");
+  const [unmatchedPickerOpen, setUnmatchedPickerOpen] = useState(false);
+  const [unmatchedSearchText, setUnmatchedSearchText] = useState("");
   const [ocrFilePreviewUrl, setOcrFilePreviewUrl] = useState<string | null>(null);
   const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
@@ -1408,57 +1425,93 @@ export default function BillDetail() {
                   <FormField
                     control={form.control}
                     name="supplierId"
-                    render={({ field }) => (
+                    render={({ field }) => {
+                      const selected = suppliers.find((s: any) => s.id === field.value);
+                      return (
                       <FormItem className="space-y-1">
                         <FormLabel className="text-xs">Pay to *</FormLabel>
-                        <Select
-                          key={`supplier-${field.value}-${suppliers.length}`}
-                          onValueChange={field.onChange}
-                          value={field.value}
+                        <Popover
+                          open={supplierPickerOpen}
+                          onOpenChange={(open) => {
+                            setSupplierPickerOpen(open);
+                            if (!open) setSupplierSearchText("");
+                          }}
                         >
-                          <FormControl>
-                            <SelectTrigger className="text-xs" data-testid="select-supplier">
-                              <SelectValue placeholder="Select supplier..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent
-                            className="p-0"
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                size="sm"
+                                className="w-full justify-between text-xs font-normal"
+                                data-testid="select-supplier"
+                              >
+                                <span className={selected ? "" : "text-muted-foreground"}>
+                                  {selected?.name || "Select supplier..."}
+                                </span>
+                                <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="p-0 w-[--radix-popover-trigger-width] min-w-[240px]"
+                            align="start"
                             data-testid="select-supplier-content"
                           >
-                            <div className="max-h-[280px] overflow-y-auto p-1">
-                              {suppliers.map((supplier) => (
-                                <SelectItem key={supplier.id} value={supplier.id}>
-                                  {supplier.name}
-                                </SelectItem>
-                              ))}
-                              {suppliers.length === 0 && (
-                                <div className="px-2 py-3 text-xs text-muted-foreground text-center">
-                                  No suppliers yet
-                                </div>
-                              )}
-                            </div>
-                            <div className="border-t p-1 bg-popover sticky bottom-0">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  // Keep ocrSupplierData if present so the dialog
-                                  // remains prefilled with extracted invoice data.
-                                  setAddSupplierDialogOpen(true);
-                                }}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover-elevate rounded-sm"
-                                data-testid="button-add-supplier"
-                              >
-                                <Plus className="h-3 w-3" />
-                                Create new contact
-                              </button>
-                            </div>
-                          </SelectContent>
-                        </Select>
+                            <Command shouldFilter={true}>
+                              <CommandInput
+                                placeholder="Search suppliers..."
+                                value={supplierSearchText}
+                                onValueChange={setSupplierSearchText}
+                                data-testid="input-supplier-search"
+                              />
+                              <CommandList className="max-h-[280px]">
+                                <CommandEmpty>No suppliers found.</CommandEmpty>
+                                {suppliers.map((supplier: any) => (
+                                  <CommandItem
+                                    key={supplier.id}
+                                    value={supplier.name}
+                                    onSelect={() => {
+                                      field.onChange(supplier.id);
+                                      setSupplierPickerOpen(false);
+                                      setSupplierSearchText("");
+                                    }}
+                                    data-testid={`option-supplier-${supplier.id}`}
+                                  >
+                                    {supplier.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandList>
+                              <div className="border-t p-1 bg-popover sticky bottom-0">
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    // Seed prefill from typed search text when no
+                                    // OCR data is currently set.
+                                    if (!ocrSupplierData && supplierSearchText.trim()) {
+                                      setOcrSupplierData({ name: supplierSearchText.trim() });
+                                    }
+                                    setSupplierPickerOpen(false);
+                                    setAddSupplierDialogOpen(true);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover-elevate rounded-sm"
+                                  data-testid="button-add-supplier"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  {supplierSearchText.trim()
+                                    ? `Create "${supplierSearchText.trim()}"`
+                                    : "Create new contact"}
+                                </button>
+                              </div>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                         <FormMessage />
                       </FormItem>
-                    )}
+                      );
+                    }}
                   />
 
                   <FormField
@@ -2408,7 +2461,7 @@ export default function BillDetail() {
                         createMutation.isPending ||
                         updateMutation.isPending ||
                         ocrMutation.isPending ||
-                        isUploading
+                        isUploadingAttachment
                       }
                       data-testid="button-save"
                     >
@@ -2416,7 +2469,7 @@ export default function BillDetail() {
                         ? "Saving..."
                         : ocrMutation.isPending
                         ? "Processing invoice..."
-                        : isUploading
+                        : isUploadingAttachment
                         ? "Uploading..."
                         : "Save"}
                     </Button>
@@ -2749,6 +2802,8 @@ export default function BillDetail() {
           setUnmatchedSupplierDialogOpen(open);
           if (!open) {
             setUnmatchedSupplierSelection("");
+            setUnmatchedSearchText("");
+            setUnmatchedPickerOpen(false);
           }
         }}
       >
@@ -2764,23 +2819,82 @@ export default function BillDetail() {
           <div className="space-y-3 py-2">
             <div>
               <label className="text-xs font-medium mb-1 block">Existing supplier</label>
-              <Select
-                value={unmatchedSupplierSelection}
-                onValueChange={setUnmatchedSupplierSelection}
+              <Popover
+                open={unmatchedPickerOpen}
+                onOpenChange={(open) => {
+                  setUnmatchedPickerOpen(open);
+                  if (!open) setUnmatchedSearchText("");
+                }}
               >
-                <SelectTrigger data-testid="select-unmatched-supplier">
-                  <SelectValue placeholder="Select supplier..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="max-h-[280px] overflow-y-auto">
-                    {suppliers.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </div>
-                </SelectContent>
-              </Select>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between font-normal"
+                    data-testid="select-unmatched-supplier"
+                  >
+                    <span className={unmatchedSupplierSelection ? "" : "text-muted-foreground"}>
+                      {suppliers.find((s: any) => s.id === unmatchedSupplierSelection)?.name || "Select supplier..."}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[240px]" align="start">
+                  <Command shouldFilter={true}>
+                    <CommandInput
+                      placeholder="Search suppliers..."
+                      value={unmatchedSearchText}
+                      onValueChange={setUnmatchedSearchText}
+                      data-testid="input-unmatched-supplier-search"
+                    />
+                    <CommandList className="max-h-[260px]">
+                      <CommandEmpty>No suppliers found.</CommandEmpty>
+                      {suppliers.map((s: any) => (
+                        <CommandItem
+                          key={s.id}
+                          value={s.name}
+                          onSelect={() => {
+                            setUnmatchedSupplierSelection(s.id);
+                            setUnmatchedPickerOpen(false);
+                            setUnmatchedSearchText("");
+                          }}
+                          data-testid={`option-unmatched-supplier-${s.id}`}
+                        >
+                          {s.name}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                    <div className="border-t p-1 bg-popover sticky bottom-0">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          // Prefer typed search text over OCR seed if user has typed
+                          if (unmatchedSearchText.trim()) {
+                            setOcrSupplierData({
+                              ...(ocrSupplierData || {}),
+                              name: unmatchedSearchText.trim(),
+                            });
+                          }
+                          setUnmatchedPickerOpen(false);
+                          setUnmatchedSupplierDialogOpen(false);
+                          setAddSupplierDialogOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover-elevate rounded-sm"
+                        data-testid="button-unmatched-create-inline"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {unmatchedSearchText.trim()
+                          ? `Create "${unmatchedSearchText.trim()}"`
+                          : ocrSupplierData?.name
+                          ? `Create "${ocrSupplierData.name}"`
+                          : "Create new contact"}
+                      </button>
+                    </div>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-2 flex-wrap">
