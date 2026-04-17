@@ -227,7 +227,7 @@ export default function Minutes() {
               <Button 
                 onClick={() => { setEditingMinute(null); form.reset(); }}
                 size="sm"
-                className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-0.5"
+                className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-0.5"
                 data-testid="button-create-minute"
               >
                 <Plus className="w-3 h-3" />
@@ -420,9 +420,9 @@ function MinuteCard({
               <Badge 
                 className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
-                  backgroundColor: '#bba7db15',
-                  color: '#bba7db',
-                  borderColor: '#bba7db30'
+                  backgroundColor: '#A890D415',
+                  color: '#A890D4',
+                  borderColor: '#A890D430'
                 }}
               >
                 <CalendarIcon className="h-2 w-2 mr-0.5" />
@@ -449,7 +449,7 @@ function MinuteCard({
 
           {/* Pencil icon on hover */}
           {isHovered && (
-            <Pencil className="h-3 w-3 text-[#bba7db] shrink-0" />
+            <Pencil className="h-3 w-3 text-[#A890D4] shrink-0" />
           )}
         </div>
 

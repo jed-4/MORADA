@@ -160,7 +160,7 @@ export function ProjectTasks() {
               onClick={() => setStatusFilter(filter.value)}
               className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
                 statusFilter === filter.value
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "border hover-elevate"
               }`}
               data-testid={`filter-${filter.value}`}

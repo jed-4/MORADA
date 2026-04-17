@@ -52,7 +52,7 @@ export function ProjectTabs() {
               }}
               className={`flex items-center gap-1.5 px-4 py-3 whitespace-nowrap transition-colors border-b-2 ${
                 isActive 
-                  ? "text-foreground border-[#bba7db]" 
+                  ? "text-foreground border-[#A890D4]" 
                   : "text-muted-foreground border-transparent"
               }`}
               data-testid={`tab-${tab.label.toLowerCase()}`}

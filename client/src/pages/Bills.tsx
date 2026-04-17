@@ -440,7 +440,7 @@ export default function Bills() {
               </PopoverContent>
             </Popover>
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
               onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
               data-testid="button-create-bill"
             >
@@ -462,7 +462,7 @@ export default function Bills() {
                 onClick={() => handleStatusChange(status.key)}
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
-                  isActive ? "text-foreground border-[#bba7db]" : "text-muted-foreground hover:text-foreground border-transparent"
+                  isActive ? "text-foreground border-[#A890D4]" : "text-muted-foreground hover:text-foreground border-transparent"
                 )}
                 data-testid={`tab-status-${status.key}`}
               >
@@ -470,7 +470,7 @@ export default function Bills() {
                 {showCount && count > 0 && (
                   <span className={cn(
                     "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
-                    isActive ? "bg-[#bba7db]/20 text-[#bba7db]" : "bg-muted text-muted-foreground"
+                    isActive ? "bg-[#A890D4]/20 text-[#A890D4]" : "bg-muted text-muted-foreground"
                   )}>
                     {count}
                   </span>
@@ -481,16 +481,16 @@ export default function Bills() {
         </div>
 
         {/* Row 3 — Lilac summary strip (no Paid) */}
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-2">
+        <div className="bg-[#A890D4]/10 flex items-center px-5 py-2">
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground ml-auto">
             <span data-testid="text-total-draft">
               Draft <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.draft * 100)}</span>
             </span>
-            <span className="w-px h-3 bg-[#bba7db]/40 self-center" />
+            <span className="w-px h-3 bg-[#A890D4]/40 self-center" />
             <span data-testid="text-total-awaiting-approval">
               Awaiting Approval <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
             </span>
-            <span className="w-px h-3 bg-[#bba7db]/40 self-center" />
+            <span className="w-px h-3 bg-[#A890D4]/40 self-center" />
             <span data-testid="text-total-awaiting-payment">
               Awaiting Payment <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
             </span>
@@ -507,8 +507,8 @@ export default function Bills() {
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
+            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
+            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
               <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : "Approve"}
             </Button>
@@ -542,7 +542,7 @@ export default function Bills() {
           </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeProjectDialogOpen(false); setSelectedProjectId(""); }}>Cancel</Button>
-            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}>
+            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}>
               {bulkChangeProjectMutation.isPending ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>
@@ -558,7 +558,7 @@ export default function Bills() {
           </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeSupplierDialogOpen(false); setSelectedSupplierId(""); }}>Cancel</Button>
-            <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
+            <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
               {bulkChangeSupplierMutation.isPending ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>
@@ -668,7 +668,7 @@ export default function Bills() {
                           </p>
                           {bills.length === 0 && (
                             <button
-                              className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                              className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                               onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
                               data-testid="button-add-first-bill"
                             >

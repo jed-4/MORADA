@@ -17,7 +17,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     borderBottomWidth: 2,
-    borderBottomColor: '#bba7db',
+    borderBottomColor: '#A890D4',
     paddingBottom: 10,
     marginBottom: 15,
   },
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   badge: {
-    backgroundColor: '#bba7db',
+    backgroundColor: '#A890D4',
     color: '#ffffff',
     paddingHorizontal: 6,
     paddingVertical: 2,

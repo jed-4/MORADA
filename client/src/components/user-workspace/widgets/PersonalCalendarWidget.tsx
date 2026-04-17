@@ -602,10 +602,10 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
             {weekDays.map((day) => (
               <div 
                 key={day.toISOString()} 
-                className={`text-center py-1 ${isToday(day) ? 'bg-[#bba7db]/10' : ''}`}
+                className={`text-center py-1 ${isToday(day) ? 'bg-[#A890D4]/10' : ''}`}
               >
                 <div className="text-[9px] text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
-                <div className={`text-xs font-medium ${isToday(day) ? 'text-[#bba7db]' : ''}`}>
+                <div className={`text-xs font-medium ${isToday(day) ? 'text-[#A890D4]' : ''}`}>
                   {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
                 </div>
               </div>
@@ -662,7 +662,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
               return (
                 <div 
                   key={day.toISOString()} 
-                  className={`relative border-r border-border/30 ${isToday(day) ? 'bg-[#bba7db]/5' : ''}`}
+                  className={`relative border-r border-border/30 ${isToday(day) ? 'bg-[#A890D4]/5' : ''}`}
                 >
                   {/* Events with overlap handling */}
                   {processedEvents.map((eventPos, idx) => {

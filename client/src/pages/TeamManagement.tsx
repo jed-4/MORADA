@@ -102,7 +102,7 @@ export default function TeamManagement() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setIsInviteDialogOpen(true)}
-            className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-invite-user"
           >
             <UserPlus className="w-3 h-3" />
@@ -229,7 +229,7 @@ function TeamMemberCard({
     >
       <CardContent className="p-3 h-full flex items-center gap-3">
         <Avatar className="h-12 w-12 shrink-0">
-          <AvatarFallback className="bg-[#bba7db]/10 text-[#bba7db] font-semibold">
+          <AvatarFallback className="bg-[#A890D4]/10 text-[#A890D4] font-semibold">
             {getInitials(user.firstName, user.lastName, user.email)}
           </AvatarFallback>
         </Avatar>
@@ -243,9 +243,9 @@ function TeamMemberCard({
             <Badge 
               className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
               style={{
-                backgroundColor: '#bba7db15',
-                color: '#bba7db',
-                borderColor: '#bba7db30'
+                backgroundColor: '#A890D415',
+                color: '#A890D4',
+                borderColor: '#A890D430'
               }}
             >
               {user.role?.name || "No Role"}

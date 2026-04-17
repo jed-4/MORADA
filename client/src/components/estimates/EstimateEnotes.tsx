@@ -907,7 +907,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${
-                    isSelected ? "bg-[#bba7db]/15 text-foreground" : "text-muted-foreground hover:text-foreground"
+                    isSelected ? "bg-[#A890D4]/15 text-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <span className="text-xs font-medium truncate w-full">{cat}</span>

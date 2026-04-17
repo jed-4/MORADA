@@ -170,10 +170,10 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     >
       {/* Drop indicator line — shown when another group is dragged over this one */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-[#A890D4] z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-[#A890D4] z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
       {/* Drag handle — floats in left dead zone, outside the Card */}
       {!isLocked && (
@@ -187,7 +187,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         </div>
       )}
     <Card 
-      className={`rounded-md overflow-hidden ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
+      className={`rounded-md overflow-hidden ${isGroupSelected ? 'ring-2 ring-[#A890D4]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}

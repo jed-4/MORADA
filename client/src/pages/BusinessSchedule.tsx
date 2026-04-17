@@ -170,7 +170,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
             className={cn(
               "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col pt-1 px-0.5 gap-0.5",
               isWknd ? "bg-muted/20" : "",
-              isToday ? "bg-[#bba7db]/5" : ""
+              isToday ? "bg-[#A890D4]/5" : ""
             )}
             style={{ minHeight: rowH }}
           >
@@ -569,7 +569,7 @@ export default function BusinessSchedule() {
                 return (
                   <div key={colIdx} className={cn(
                     "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-[10px] font-medium",
-                    isToday ? "bg-[#bba7db]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
+                    isToday ? "bg-[#A890D4]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
                   )}>
                     <span>{format(day, 'EEE')}</span>
                     <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
@@ -853,7 +853,7 @@ export default function BusinessSchedule() {
 
               {/* Today line */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
                 style={{ left: todayPosition }}
               />
 

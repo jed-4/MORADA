@@ -108,7 +108,7 @@ function SortableViewTab({
         onClick={onSelect}
         className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing ${
           isSelected
-            ? 'text-[#bba7db] font-medium'
+            ? 'text-[#A890D4] font-medium'
             : 'text-muted-foreground hover:text-foreground'
         }`}
         data-testid={`tab-${view.id}`}
@@ -116,14 +116,14 @@ function SortableViewTab({
       >
         <span>{view.name}</span>
         {isSelected && (
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
         )}
       </button>
       {isSelected && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+              className="h-5 px-0.5 text-[#A890D4] hover:text-[#A890D4]/80 flex items-center"
               data-testid={`button-view-options-${view.id}`}
             >
               <ChevronDown className="h-3 w-3" />
@@ -711,7 +711,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
           </h2>
           {isOwnPage && (
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
               onClick={() => setShowCreateDialog(true)}
               data-testid="button-add-task"
             >
@@ -735,7 +735,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   onClick={() => setActiveView(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
                     isActive
-                      ? 'text-[#bba7db] font-medium'
+                      ? 'text-[#A890D4] font-medium'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                   data-testid={`tab-${view}`}
@@ -743,7 +743,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   <Icon className="w-3 h-3" />
                   <span className="capitalize">{view}</span>
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
                   )}
                 </button>
               );
@@ -833,7 +833,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                       onClick={() => setCalendarMode(mode)}
                       className={`h-6 w-auto px-2 text-xs border rounded-md ${
                         calendarMode === mode
-                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                          ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
                           : 'hover-elevate'
                       } active-elevate-2`}
                       data-testid={`button-view-${mode}`}
@@ -976,19 +976,19 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                         <div className="p-2 border-b flex flex-wrap gap-1">
                           <button
                             className={`text-xs px-2 py-1 rounded border ${
-                              filters.dueDateToRelative === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                              filters.dueDateToRelative === 'today' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                             }`}
                             onClick={() => setFilters({...filters, dueDateTo: undefined, dueDatePreset: undefined, dueDateToRelative: 'today'})}
                           >Relative: Today</button>
                           <button
                             className={`text-xs px-2 py-1 rounded border ${
-                              filters.dueDatePreset === 'today' && !filters.dueDateToRelative ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                              filters.dueDatePreset === 'today' && !filters.dueDateToRelative ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                             }`}
                             onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today', dueDateToRelative: undefined})}
                           >Today</button>
                           <button
                             className={`text-xs px-2 py-1 rounded border ${
-                              filters.dueDatePreset === 'tomorrow' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                              filters.dueDatePreset === 'tomorrow' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                             }`}
                             onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow', dueDateToRelative: undefined})}
                           >Tomorrow</button>
@@ -1021,37 +1021,37 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 <div className="px-2 pb-2 flex flex-wrap gap-1">
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'overdue' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'overdue' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'overdue', dueDateToRelative: undefined})}
                   >Overdue</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'today' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today', dueDateToRelative: undefined})}
                   >Today</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'tomorrow' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'tomorrow' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow', dueDateToRelative: undefined})}
                   >Tomorrow</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'this-week' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'this-week' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-week', dueDateToRelative: undefined})}
                   >This Week</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'last-week-to-today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'last-week-to-today' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'last-week-to-today', dueDateToRelative: undefined})}
                   >Last Week+</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'this-month' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDatePreset === 'this-month' ? 'bg-[#A890D4] text-white border-[#A890D4]' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-month', dueDateToRelative: undefined})}
                   >This Month</button>
@@ -1310,7 +1310,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
             <button
               onClick={handleSaveView}
               disabled={!newViewName.trim() || createViewMutation.isPending}
-              className="h-8 px-3 text-sm bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 disabled:opacity-50"
+              className="h-8 px-3 text-sm bg-[#A890D4] text-white rounded-md hover:bg-[#A890D4]/90 disabled:opacity-50"
               data-testid="button-save-view"
             >
               {createViewMutation.isPending ? "Saving..." : "Save View"}
@@ -1380,7 +1380,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
             <button
               onClick={handleUpdateView}
               disabled={!editViewName.trim() || updateViewMutation.isPending}
-              className="h-8 px-3 text-sm bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 disabled:opacity-50"
+              className="h-8 px-3 text-sm bg-[#A890D4] text-white rounded-md hover:bg-[#A890D4]/90 disabled:opacity-50"
               data-testid="button-update-view"
             >
               {updateViewMutation.isPending ? "Updating..." : "Update View"}

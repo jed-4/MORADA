@@ -400,7 +400,7 @@ export default function BusinessFiles() {
   };
 
   const getFileIcon = (file: DriveFile) => {
-    if (file.isFolder) return <Folder className="w-5 h-5 text-[#bba7db]" />;
+    if (file.isFolder) return <Folder className="w-5 h-5 text-[#A890D4]" />;
     
     const mimeType = file.mimeType || "";
     if (mimeType.includes("image")) return <FileImage className="w-5 h-5 text-green-500" />;
@@ -444,7 +444,7 @@ export default function BusinessFiles() {
             <Button
               onClick={() => connectMutation.mutate()}
               disabled={connectMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
               data-testid="button-connect-drive"
             >
               {connectMutation.isPending ? (
@@ -487,7 +487,7 @@ export default function BusinessFiles() {
             {driveStatus?.rootFolderId ? "Change Root" : "Set Root Folder"}
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2"
             onClick={() => setShowUploadDialog(true)}
             data-testid="button-upload-file"
           >
@@ -547,7 +547,7 @@ export default function BusinessFiles() {
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setViewMode("list")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${viewMode === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${viewMode === 'list' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-view-list"
           >
             <List className="w-3 h-3 inline mr-0.5" />
@@ -555,7 +555,7 @@ export default function BusinessFiles() {
           </button>
           <button
             onClick={() => setViewMode("grid")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${viewMode === 'grid' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${viewMode === 'grid' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-view-grid"
           >
             <Grid3X3 className="w-3 h-3 inline mr-0.5" />
@@ -577,7 +577,7 @@ export default function BusinessFiles() {
                   key={drive.id}
                   onClick={() => navigateToFolder(drive.id, drive.name)}
                 >
-                  <Folder className="w-4 h-4 mr-2 text-[#bba7db]" />
+                  <Folder className="w-4 h-4 mr-2 text-[#A890D4]" />
                   {drive.name}
                 </DropdownMenuItem>
               ))}
@@ -629,7 +629,7 @@ export default function BusinessFiles() {
       <div className="flex-1 overflow-auto p-2">
         {filesLoading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-8 h-8 animate-spin text-[#bba7db]" />
+            <Loader2 className="w-8 h-8 animate-spin text-[#A890D4]" />
           </div>
         ) : sortedFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -639,7 +639,7 @@ export default function BusinessFiles() {
             </p>
             <button
               onClick={() => setShowUploadDialog(true)}
-              className="mt-4 text-sm text-[#bba7db] hover:underline"
+              className="mt-4 text-sm text-[#A890D4] hover:underline"
             >
               Upload a file to Google Drive
             </button>
@@ -735,7 +735,7 @@ export default function BusinessFiles() {
                 ) : (
                   <div className="w-12 h-12 flex items-center justify-center">
                     {file.isFolder ? (
-                      <Folder className="w-10 h-10 text-[#bba7db]" />
+                      <Folder className="w-10 h-10 text-[#A890D4]" />
                     ) : (
                       getFileIcon(file)
                     )}
@@ -853,7 +853,7 @@ export default function BusinessFiles() {
             <Button
               onClick={() => createFolderMutation.mutate(newFolderName)}
               disabled={!newFolderName.trim() || createFolderMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
             >
               {createFolderMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -876,7 +876,7 @@ export default function BusinessFiles() {
           <div className="border-2 border-dashed rounded-lg p-8 text-center">
             {uploadFile ? (
               <div className="flex items-center gap-2 justify-center">
-                <File className="w-5 h-5 text-[#bba7db]" />
+                <File className="w-5 h-5 text-[#A890D4]" />
                 <span className="text-sm">{uploadFile.name}</span>
                 <button
                   onClick={() => setUploadFile(null)}
@@ -910,7 +910,7 @@ export default function BusinessFiles() {
             <Button
               onClick={handleUpload}
               disabled={!uploadFile || isUploading}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
             >
               {isUploading ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -981,7 +981,7 @@ export default function BusinessFiles() {
           <ScrollArea className="h-[280px] border rounded-md">
             {linkBrowseLoading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-6 h-6 animate-spin text-[#bba7db]" />
+                <Loader2 className="w-6 h-6 animate-spin text-[#A890D4]" />
               </div>
             ) : driveConnectionError ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -1008,7 +1008,7 @@ export default function BusinessFiles() {
               </div>
             ) : linkFolderPath.length > 0 && linkBrowseFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                <FolderCheck className="w-10 h-10 mb-2 text-[#bba7db]" />
+                <FolderCheck className="w-10 h-10 mb-2 text-[#A890D4]" />
                 <p className="text-sm font-medium">"{linkFolderPath[linkFolderPath.length - 1].name}"</p>
                 <p className="text-xs mt-1">You can select this folder</p>
               </div>
@@ -1019,16 +1019,16 @@ export default function BusinessFiles() {
                     key={folder.id}
                     className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
                       selectedLinkFolder?.id === folder.id 
-                        ? 'bg-[#bba7db]/20 border border-[#bba7db]' 
+                        ? 'bg-[#A890D4]/20 border border-[#A890D4]' 
                         : 'hover-elevate'
                     }`}
                     onClick={() => setSelectedLinkFolder(folder)}
                     onDoubleClick={() => navigateLinkFolder(folder)}
                   >
-                    <Folder className="w-5 h-5 text-[#bba7db]" />
+                    <Folder className="w-5 h-5 text-[#A890D4]" />
                     <span className="text-sm flex-1">{folder.name}</span>
                     {selectedLinkFolder?.id === folder.id && (
-                      <Check className="w-4 h-4 text-[#bba7db]" />
+                      <Check className="w-4 h-4 text-[#A890D4]" />
                     )}
                     <button
                       onClick={(e) => {
@@ -1060,7 +1060,7 @@ export default function BusinessFiles() {
             <Button
               onClick={confirmLinkFolder}
               disabled={driveConnectionError !== null || (!selectedLinkFolder && linkFolderPath.length === 0) || rootFolderMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
             >
               {rootFolderMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

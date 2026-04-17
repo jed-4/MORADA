@@ -106,7 +106,7 @@ export function ProjectTasksTab() {
               onClick={() => setStatusFilter(status)}
               className={`h-6 px-2.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                 statusFilter === status
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "bg-muted text-muted-foreground hover-elevate"
               }`}
               data-testid={`filter-${status}`}
@@ -168,7 +168,7 @@ export function ProjectTasksTab() {
       </div>
 
       <button
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-task"
       >
         <Plus className="w-6 h-6" />

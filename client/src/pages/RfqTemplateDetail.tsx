@@ -44,7 +44,7 @@ import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, Pointer
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const CASVA_LILAC = '#bba7db';
+const CASVA_LILAC = '#A890D4';
 
 interface RfqItem {
   id: string;
@@ -382,7 +382,7 @@ export default function RfqTemplateDetail() {
             <Settings className="h-3 w-3" />
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setAddItemDialogOpen(true)}
             data-testid="button-add-item"
           >
@@ -401,7 +401,7 @@ export default function RfqTemplateDetail() {
               Add RFQ line items to this template
             </p>
             <button
-              className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+              className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
               onClick={() => setAddItemDialogOpen(true)}
               data-testid="button-add-first-item"
             >
@@ -500,7 +500,7 @@ export default function RfqTemplateDetail() {
             <Button
               onClick={handleAddItem}
               disabled={updateMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
               data-testid="button-confirm-add"
             >
               {updateMutation.isPending ? "Adding..." : "Add Item"}
@@ -574,7 +574,7 @@ export default function RfqTemplateDetail() {
             <Button
               onClick={handleSaveEdit}
               disabled={updateMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
               data-testid="button-save-edit"
             >
               {updateMutation.isPending ? "Saving..." : "Save Changes"}

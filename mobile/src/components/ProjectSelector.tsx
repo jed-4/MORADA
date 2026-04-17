@@ -57,7 +57,7 @@ export function ProjectSelector() {
               onClick={() => handleSelectProject(project)}
               className={`w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/10 ${
                 currentProject?.id === project.id
-                  ? "bg-[#bba7db]/10 text-foreground"
+                  ? "bg-[#A890D4]/10 text-foreground"
                   : "text-foreground"
               }`}
               data-testid={`project-option-${project.id}`}

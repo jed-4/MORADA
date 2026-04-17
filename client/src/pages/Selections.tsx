@@ -251,7 +251,7 @@ function SelectionCardCompact({
 
           {/* Pencil icon on hover */}
           {isHovered && (
-            <Pencil className="h-3 w-3 text-[#bba7db] shrink-0" />
+            <Pencil className="h-3 w-3 text-[#A890D4] shrink-0" />
           )}
         </div>
 
@@ -704,7 +704,7 @@ export default function Selections() {
         {/* Right: Add Selection Button */}
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleAddSelection}
             disabled={createSelectionMutation.isPending}
             data-testid="button-add-selection"
@@ -799,7 +799,7 @@ export default function Selections() {
             onClick={() => setShowSelections(!showSelections)}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               showSelections 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-toggle-selections"
@@ -813,7 +813,7 @@ export default function Selections() {
             onClick={() => setShowDesign(!showDesign)}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               showDesign 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-toggle-design"
@@ -831,7 +831,7 @@ export default function Selections() {
               onClick={() => setViewMode('list')}
               className={`h-5 w-5 rounded flex items-center justify-center ${
                 viewMode === 'list' 
-                  ? 'bg-[#bba7db] text-white' 
+                  ? 'bg-[#A890D4] text-white' 
                   : 'hover-elevate text-muted-foreground'
               }`}
               data-testid="button-view-list"
@@ -843,7 +843,7 @@ export default function Selections() {
               onClick={() => setViewMode('board')}
               className={`h-5 w-5 rounded flex items-center justify-center ${
                 viewMode === 'board' 
-                  ? 'bg-[#bba7db] text-white' 
+                  ? 'bg-[#A890D4] text-white' 
                   : 'hover-elevate text-muted-foreground'
               }`}
               data-testid="button-view-board"
@@ -860,7 +860,7 @@ export default function Selections() {
             <button 
               className={`h-6 w-6 text-xs border rounded-md ${
                 groupBy !== 'none' 
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                  ? 'bg-[#A890D4] text-white border-[#A890D4]/20' 
                   : 'hover-elevate'
               } active-elevate-2 flex items-center justify-center`}
               data-testid="button-grouping"

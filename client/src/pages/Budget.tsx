@@ -235,7 +235,7 @@ export default function BudgetPage() {
           {project?.currentSystemPhase && (
             <Badge 
               variant="outline" 
-              className="text-xs bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30"
+              className="text-xs bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30"
               data-testid="badge-project-phase"
             >
               {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
@@ -255,7 +255,7 @@ export default function BudgetPage() {
 
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
             onClick={handleRecalculate}
             disabled={isRecalculating}
             data-testid="button-recalculate"
@@ -273,7 +273,7 @@ export default function BudgetPage() {
             onClick={() => setActiveTab('costs')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === 'costs' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-costs"
@@ -285,7 +285,7 @@ export default function BudgetPage() {
             onClick={() => setActiveTab('hours')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === 'hours' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-labour-hours"

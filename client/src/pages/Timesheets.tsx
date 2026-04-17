@@ -861,7 +861,7 @@ export default function Timesheets() {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-add-timesheet"
           >
             <Plus className="w-3 h-3" />
@@ -895,14 +895,14 @@ export default function Timesheets() {
                 <button 
                   className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                     selectedProjects.length > 0 
-                      ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                      ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                       : ""
                   }`}
                   data-testid="button-filter-project"
                 >
                   <span>Project</span>
                   {selectedProjects.length > 0 && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                    <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
                       {selectedProjects.length}
                     </Badge>
                   )}
@@ -939,14 +939,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedUsers.length > 0 
-                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-user"
               >
                 <span>User</span>
                 {selectedUsers.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
                     {selectedUsers.length}
                   </Badge>
                 )}
@@ -978,14 +978,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedStatuses.length > 0 
-                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-status"
               >
                 <span>Status</span>
                 {selectedStatuses.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
                     {selectedStatuses.length}
                   </Badge>
                 )}
@@ -1021,14 +1021,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedCostCodes.length > 0 
-                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-cost-code"
               >
                 <span>Cost Code</span>
                 {selectedCostCodes.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
                     {selectedCostCodes.length}
                   </Badge>
                 )}
@@ -1064,14 +1064,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedPhases.length > 0 
-                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-phase"
               >
                 <span>Phase</span>
                 {selectedPhases.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
                     {selectedPhases.length}
                   </Badge>
                 )}
@@ -1109,7 +1109,7 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   dateRangeType !== "all" 
-                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-date"
@@ -1191,7 +1191,7 @@ export default function Timesheets() {
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setActiveView("table")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-table"
             >
               <Table2 className="w-3 h-3" />
@@ -1199,7 +1199,7 @@ export default function Timesheets() {
             </button>
             <button
               onClick={() => setActiveView("weekly")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-weekly"
             >
               <Users2 className="w-3 h-3" />
@@ -1207,7 +1207,7 @@ export default function Timesheets() {
             </button>
             <button
               onClick={() => setActiveView("calendar")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-calendar"
             >
               <CalendarDays className="w-3 h-3" />

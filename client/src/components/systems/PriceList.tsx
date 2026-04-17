@@ -233,7 +233,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             <SelectTrigger 
               className={`h-6 px-2 text-xs rounded-md ${
                 filterCategory !== "all" 
-                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30" 
                   : ""
               }`}
               data-testid="select-filter-category"
@@ -255,7 +255,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             <SelectTrigger 
               className={`h-6 px-2 text-xs rounded-md ${
                 filterSupplier !== "all" 
-                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30" 
                   : ""
               }`}
               data-testid="select-filter-supplier"
@@ -277,7 +277,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             <SelectTrigger 
               className={`h-6 px-2 text-xs rounded-md ${
                 filterStatus !== "all" 
-                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30" 
                   : ""
               }`}
               data-testid="select-filter-status"
@@ -739,18 +739,18 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           </div>
 
           {/* Pricing Row - Highlight Section */}
-          <div className="px-2 py-2 bg-[#bba7db]/10 border border-[#bba7db]/20 rounded">
+          <div className="px-2 py-2 bg-[#A890D4]/10 border border-[#A890D4]/20 rounded">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <DollarSign className="h-3 w-3 text-[#bba7db]" />
-                <span className="text-[10px] font-medium text-[#bba7db]">Pricing</span>
+                <DollarSign className="h-3 w-3 text-[#A890D4]" />
+                <span className="text-[10px] font-medium text-[#A890D4]">Pricing</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className={`text-[9px] ${!enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Ex GST</span>
                 <Switch
                   checked={enterIncGst}
                   onCheckedChange={setEnterIncGst}
-                  className="h-4 w-7 data-[state=checked]:bg-[#bba7db]"
+                  className="h-4 w-7 data-[state=checked]:bg-[#A890D4]"
                   data-testid="switch-gst-mode"
                 />
                 <span className={`text-[9px] ${enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Inc GST</span>

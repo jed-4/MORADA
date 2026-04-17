@@ -55,7 +55,7 @@ export function CasvaTaskCreateRow({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Task name"
-          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-[#bba7db] rounded px-1 -mx-1 p-0"
+          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-[#A890D4] rounded px-1 -mx-1 p-0"
           data-testid="input-task-title"
         />
       </div>

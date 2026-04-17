@@ -150,7 +150,7 @@ export default function Defects() {
 
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsCreateDialogOpen(true)}
             data-testid="button-create-defect"
           >
@@ -168,7 +168,7 @@ export default function Defects() {
             onClick={() => setCurrentView('list')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               currentView === 'list' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-list-view"
@@ -180,7 +180,7 @@ export default function Defects() {
             onClick={() => setCurrentView('kanban')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               currentView === 'kanban' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-kanban-view"
@@ -223,7 +223,7 @@ export default function Defects() {
                 <button
                   onClick={() => setSelectedStatus("All")}
                   className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                    selectedStatus === "All" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    selectedStatus === "All" ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                   }`}
                   data-testid="filter-status-all"
                 >
@@ -234,7 +234,7 @@ export default function Defects() {
                     key={status.key}
                     onClick={() => setSelectedStatus(status.key)}
                     className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                      selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      selectedStatus === status.key ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                     }`}
                     data-testid={`filter-status-${status.key}`}
                   >
@@ -265,7 +265,7 @@ export default function Defects() {
                 <button
                   onClick={() => setSelectedPriority("All")}
                   className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                    selectedPriority === "All" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    selectedPriority === "All" ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                   }`}
                   data-testid="filter-priority-all"
                 >
@@ -276,7 +276,7 @@ export default function Defects() {
                     key={priority.key}
                     onClick={() => setSelectedPriority(priority.key)}
                     className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                      selectedPriority === priority.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      selectedPriority === priority.key ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                     }`}
                     data-testid={`filter-priority-${priority.key}`}
                   >
@@ -302,7 +302,7 @@ export default function Defects() {
             </p>
             {defects.length === 0 && (
               <button
-                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                 onClick={() => setIsCreateDialogOpen(true)}
                 data-testid="button-add-first-defect"
               >

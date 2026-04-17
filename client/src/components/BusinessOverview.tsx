@@ -501,7 +501,7 @@ export default function BusinessOverview() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1.5"
                 data-testid="view-selector"
               >
                 <span>{activeView?.name || "Overview"}</span>
@@ -526,7 +526,7 @@ export default function BusinessOverview() {
                     {view.visibility === "roles" && <Shield className="w-3 h-3 text-muted-foreground" />}
                     {view.visibility === "users" && <Users className="w-3 h-3 text-muted-foreground" />}
                     {activeViewId === view.id && (
-                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                      <Check className="w-3 h-3 text-[#A890D4] flex-shrink-0" />
                     )}
                   </button>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -564,7 +564,7 @@ export default function BusinessOverview() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                 data-testid="add-widget-button"
               >
                 <Plus className="w-3 h-3" />

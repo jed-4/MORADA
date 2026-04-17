@@ -192,7 +192,7 @@ export default function ChecklistTemplates() {
             <span>Import</span>
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
             data-testid="button-add-template"
           >
@@ -239,7 +239,7 @@ export default function ChecklistTemplates() {
             {!searchTerm && (
               <button 
                 onClick={() => setIsAddingTemplate(true)} 
-                className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
                 <Plus className="h-3 w-3" />

@@ -295,7 +295,7 @@ export default function Contacts() {
           </Button>
           <Button
             size="sm"
-            className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
+            className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white border-[#A890D4]/20"
             onClick={() => handleAddContact(selectedTab === "all" ? undefined : selectedTab as any)}
             data-testid="button-add-contact"
           >
@@ -338,7 +338,7 @@ export default function Contacts() {
               size="sm"
               className={`h-6 px-2 text-xs ${
                 selectedTab === tab.value 
-                  ? "bg-[#bba7db]/20 text-[#bba7db] border border-[#bba7db]/30" 
+                  ? "bg-[#A890D4]/20 text-[#A890D4] border border-[#A890D4]/30" 
                   : ""
               }`}
               onClick={() => setSelectedTab(tab.value)}
@@ -475,7 +475,7 @@ export default function Contacts() {
                     {(() => {
                       const displayPhone = contact.mobile || contact.phone;
                       return displayPhone ? (
-                        <a href={`tel:${displayPhone}`} className="text-[#bba7db] hover:underline">
+                        <a href={`tel:${displayPhone}`} className="text-[#A890D4] hover:underline">
                           {displayPhone}
                         </a>
                       ) : (
@@ -485,7 +485,7 @@ export default function Contacts() {
                   </TableCell>
                   <TableCell className="text-sm py-2">
                     {contact.email ? (
-                      <a href={`mailto:${contact.email}`} className="text-[#bba7db] hover:underline">
+                      <a href={`mailto:${contact.email}`} className="text-[#A890D4] hover:underline">
                         {contact.email}
                       </a>
                     ) : (
@@ -501,7 +501,7 @@ export default function Contacts() {
                           : contact.contactType === "trade"
                           ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
                           : contact.contactType === "supplier"
-                          ? "bg-[#bba7db]/20 text-[#bba7db]"
+                          ? "bg-[#A890D4]/20 text-[#A890D4]"
                           : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                       }`}
                     >

@@ -92,7 +92,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
       className={`group ${isDragging ? 'z-50' : ''}`}
     >
       <Card 
-        className={`p-3 bg-card border hover-elevate transition-all ${isSortableDragging ? 'shadow-lg ring-2 ring-[#bba7db]/50' : ''}`}
+        className={`p-3 bg-card border hover-elevate transition-all ${isSortableDragging ? 'shadow-lg ring-2 ring-[#A890D4]/50' : ''}`}
         data-testid={`card-defect-${defect.id}`}
       >
         {/* Header - Title and Menu */}
@@ -108,7 +108,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
           
           <div className="flex-1 min-w-0">
             <h4 
-              className="font-medium text-sm line-clamp-2 cursor-pointer hover:text-[#bba7db] transition-colors" 
+              className="font-medium text-sm line-clamp-2 cursor-pointer hover:text-[#A890D4] transition-colors" 
               onClick={() => onEdit(defect)}
               data-testid={`text-title-${defect.id}`}
             >
@@ -214,7 +214,7 @@ function DroppableColumn({ id, children }: DroppableColumnProps) {
   return (
     <div 
       ref={setNodeRef} 
-      className={`flex-1 min-h-[200px] rounded-md transition-colors ${isOver ? 'bg-[#bba7db]/10' : ''}`}
+      className={`flex-1 min-h-[200px] rounded-md transition-colors ${isOver ? 'bg-[#A890D4]/10' : ''}`}
     >
       {children}
     </div>
@@ -406,7 +406,7 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
         {/* Drag Overlay */}
         <DragOverlay>
           {activeDefect && (
-            <Card className="p-3 w-72 shadow-xl ring-2 ring-[#bba7db] bg-card">
+            <Card className="p-3 w-72 shadow-xl ring-2 ring-[#A890D4] bg-card">
               <div className="flex items-start gap-2 mb-2">
                 <div className="flex-1 min-w-0">
                   <h4 className="font-medium text-sm line-clamp-2">

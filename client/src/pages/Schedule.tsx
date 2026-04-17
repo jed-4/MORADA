@@ -1532,7 +1532,7 @@ export default function Schedule() {
   const eventStyleGetter = (event: any) => {
     return {
       style: {
-        backgroundColor: "#bba7db",
+        backgroundColor: "#A890D4",
         borderRadius: "4px",
         opacity: 0.9,
         color: "white",

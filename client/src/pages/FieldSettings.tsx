@@ -227,7 +227,7 @@ export default function FieldSettings() {
   const [editingLabel, setEditingLabel] = useState<SupplierLabel | null>(null);
   const [labelFormData, setLabelFormData] = useState({
     name: "",
-    color: "#bba7db",
+    color: "#A890D4",
     description: "",
   });
 
@@ -653,7 +653,7 @@ export default function FieldSettings() {
   const resetLabelForm = () => {
     setLabelFormData({
       name: "",
-      color: "#bba7db",
+      color: "#A890D4",
       description: "",
     });
   };
@@ -662,7 +662,7 @@ export default function FieldSettings() {
     setEditingLabel(label);
     setLabelFormData({
       name: label.name,
-      color: label.color || "#bba7db",
+      color: label.color || "#A890D4",
       description: label.description || "",
     });
     setIsLabelDialogOpen(true);
@@ -1050,7 +1050,7 @@ export default function FieldSettings() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                 showSupplierLabels 
-                  ? "bg-[#bba7db] text-white" 
+                  ? "bg-[#A890D4] text-white" 
                   : "text-muted-foreground hover-elevate"
               }`}
               data-testid="category-supplier-labels"
@@ -1074,7 +1074,7 @@ export default function FieldSettings() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                 showPriceListCategories 
-                  ? "bg-[#bba7db] text-white" 
+                  ? "bg-[#A890D4] text-white" 
                   : "text-muted-foreground hover-elevate"
               }`}
               data-testid="category-price-list-categories"
@@ -1098,7 +1098,7 @@ export default function FieldSettings() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                 showScopeItemTypes
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "text-muted-foreground hover-elevate"
               }`}
               data-testid="category-scope-item-types"
@@ -1136,7 +1136,7 @@ export default function FieldSettings() {
                         setIsLabelDialogOpen(open);
                       }}>
                         <DialogTrigger asChild>
-                          <Button className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white" data-testid="button-add-label">
+                          <Button className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white" data-testid="button-add-label">
                             <Plus className="h-4 w-4 mr-2" />
                             Add Label
                           </Button>
@@ -1209,7 +1209,7 @@ export default function FieldSettings() {
                             <Button
                               onClick={handleSubmitLabel}
                               disabled={createLabelMutation.isPending || updateLabelMutation.isPending}
-                              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                               data-testid="button-save-label"
                             >
                               {editingLabel ? "Update" : "Create"}
@@ -1241,7 +1241,7 @@ export default function FieldSettings() {
                             <TableRow key={label.id} data-testid={`row-label-${label.id}`}>
                               <TableCell className="font-medium">{label.name}</TableCell>
                               <TableCell>
-                                <Badge style={{ backgroundColor: label.color || "#bba7db", color: "white" }}>
+                                <Badge style={{ backgroundColor: label.color || "#A890D4", color: "white" }}>
                                   {label.name}
                                 </Badge>
                               </TableCell>
@@ -1298,7 +1298,7 @@ export default function FieldSettings() {
                         setIsPLCategoryDialogOpen(open);
                       }}>
                         <DialogTrigger asChild>
-                          <Button className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white" data-testid="button-add-pl-category">
+                          <Button className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white" data-testid="button-add-pl-category">
                             <Plus className="h-4 w-4 mr-2" />
                             Add Category
                           </Button>
@@ -1371,7 +1371,7 @@ export default function FieldSettings() {
                             <Button
                               onClick={handleSubmitPLCategory}
                               disabled={createPLCategoryMutation.isPending || updatePLCategoryMutation.isPending}
-                              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                               data-testid="button-save-pl-category"
                             >
                               {editingPLCategory ? "Update" : "Create"}

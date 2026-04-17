@@ -245,14 +245,14 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   key={view}
                   onClick={() => setViewType(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
-                    isActive ? "text-[#bba7db] font-medium" : "text-muted-foreground hover:text-foreground"
+                    isActive ? "text-[#A890D4] font-medium" : "text-muted-foreground hover:text-foreground"
                   }`}
                   data-testid={`tab-${view}`}
                 >
                   <Icon className="w-3 h-3" />
                   <span>{label}</span>
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
                   )}
                 </button>
               );

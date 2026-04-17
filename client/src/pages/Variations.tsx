@@ -652,7 +652,7 @@ export default function Variations() {
               : pageTitle}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleAddVariation}
             data-testid="button-add-variation"
           >
@@ -673,7 +673,7 @@ export default function Variations() {
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
                   isActive
-                    ? "text-foreground border-[#bba7db]"
+                    ? "text-foreground border-[#A890D4]"
                     : "text-muted-foreground hover:text-foreground border-transparent"
                 )}
                 data-testid={`tab-status-${status.key}`}
@@ -682,7 +682,7 @@ export default function Variations() {
                 {status.key !== "all" && count > 0 && (
                   <span className={cn(
                     "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
-                    isActive ? "bg-[#bba7db]/20 text-[#bba7db]" : "bg-muted text-muted-foreground"
+                    isActive ? "bg-[#A890D4]/20 text-[#A890D4]" : "bg-muted text-muted-foreground"
                   )}>
                     {count}
                   </span>
@@ -693,17 +693,17 @@ export default function Variations() {
         </div>
 
         {/* Row 3 — Lilac summary strip */}
-        <div className="bg-[#bba7db]/10 flex items-center px-4 py-2 gap-5 text-xs">
+        <div className="bg-[#A890D4]/10 flex items-center px-4 py-2 gap-5 text-xs">
           <div className="flex items-center gap-1.5" data-testid="text-total-action">
             <span className="text-muted-foreground">Action</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.action)}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="w-px h-3.5 bg-[#A890D4]/40" />
           <div className="flex items-center gap-1.5" data-testid="text-total-pending">
             <span className="text-muted-foreground">Pending</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.pending)}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="w-px h-3.5 bg-[#A890D4]/40" />
           <div className="flex items-center gap-1.5" data-testid="text-total-approved">
             <span className="text-muted-foreground">Approved</span>
             <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(statusTotals.approved)}</span>
@@ -725,7 +725,7 @@ export default function Variations() {
               className={cn(
                 "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
                 currentView === "kanban"
-                  ? "bg-[#bba7db] text-white border-[#bba7db]/20"
+                  ? "bg-[#A890D4] text-white border-[#A890D4]/20"
                   : "hover-elevate active-elevate-2"
               )}
               data-testid="button-kanban-view"
@@ -778,7 +778,7 @@ export default function Variations() {
                             checked={def.required ? true : col.visible}
                             disabled={def.required}
                             onChange={() => !def.required && toggleColumn(col.id)}
-                            className="w-3.5 h-3.5 accent-[#bba7db] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="w-3.5 h-3.5 accent-[#A890D4] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           />
                           <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
                             {def.label}
@@ -829,7 +829,7 @@ export default function Variations() {
                         checked={filteredVariations.length > 0 && selectedIds.size === filteredVariations.length}
                         ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredVariations.length; }}
                         onChange={toggleSelectAll}
-                        className="w-3 h-3 accent-[#bba7db] cursor-pointer"
+                        className="w-3 h-3 accent-[#A890D4] cursor-pointer"
                         data-testid="checkbox-select-all"
                       />
                     </TableHead>
@@ -887,7 +887,7 @@ export default function Variations() {
                           </span>
                           {variations.length === 0 && (
                             <button
-                              className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                              className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                               onClick={handleAddVariation}
                               data-testid="button-add-first-variation"
                             >
@@ -904,7 +904,7 @@ export default function Variations() {
                       return (
                         <TableRow
                           key={variation.id}
-                          className={cn("cursor-pointer hover-elevate h-9", isSelected && "bg-[#bba7db]/8 dark:bg-[#bba7db]/10")}
+                          className={cn("cursor-pointer hover-elevate h-9", isSelected && "bg-[#A890D4]/8 dark:bg-[#A890D4]/10")}
                           onClick={() => handleRowClick(variation.id)}
                           data-testid={`row-variation-${variation.id}`}
                         >
@@ -913,7 +913,7 @@ export default function Variations() {
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => {}}
-                              className="w-3 h-3 accent-[#bba7db] cursor-pointer"
+                              className="w-3 h-3 accent-[#A890D4] cursor-pointer"
                               data-testid={`checkbox-${variation.id}`}
                             />
                           </TableCell>

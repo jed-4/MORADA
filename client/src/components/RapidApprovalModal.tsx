@@ -546,11 +546,11 @@ export function RapidApprovalModal({
                 </div>
               </PopoverContent>
             </Popover>
-            <div className="flex-1 flex items-center justify-between px-2 py-1 bg-[#bba7db]/10 rounded border border-[#bba7db]/30">
+            <div className="flex-1 flex items-center justify-between px-2 py-1 bg-[#A890D4]/10 rounded border border-[#A890D4]/30">
               <span className="text-[11px] font-medium">Net Hours / Total</span>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-medium">{netHours.toFixed(2)} hrs</span>
-                <span className="text-[11px] font-bold text-[#bba7db]">${calculatedTotal}</span>
+                <span className="text-[11px] font-bold text-[#A890D4]">${calculatedTotal}</span>
               </div>
             </div>
           </div>

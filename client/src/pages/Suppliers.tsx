@@ -555,7 +555,7 @@ export default function Suppliers() {
           )}
           <Button
             size="sm"
-            className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
+            className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white border-[#A890D4]/20"
             onClick={handleAddSupplier}
             data-testid="button-add-supplier"
           >
@@ -968,7 +968,7 @@ export default function Suppliers() {
                 <Button 
                   type="submit" 
                   disabled={createMutation.isPending || updateMutation.isPending}
-                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                   data-testid="button-submit"
                 >
                   {createMutation.isPending || updateMutation.isPending
@@ -991,7 +991,7 @@ export default function Suppliers() {
               <SheetHeader>
                 <div className="flex items-center justify-between">
                   <SheetTitle className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-[#bba7db]" />
+                    <Building2 className="h-5 w-5 text-[#A890D4]" />
                     {selectedSupplier.name}
                   </SheetTitle>
                   <div className="flex items-center gap-2">
@@ -1094,7 +1094,7 @@ export default function Suppliers() {
                     <h3 className="text-sm font-medium">Contact People</h3>
                     <Button
                       size="sm"
-                      className="h-7 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                      className="h-7 bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                       onClick={handleAddContact}
                       data-testid="button-add-contact"
                     >
@@ -1121,7 +1121,7 @@ export default function Suppliers() {
                                   {contact.firstName} {contact.lastName}
                                 </p>
                                 {contact.isPrimary && (
-                                  <Badge variant="secondary" className="text-xs bg-[#bba7db]/20 text-[#bba7db]">
+                                  <Badge variant="secondary" className="text-xs bg-[#A890D4]/20 text-[#A890D4]">
                                     Primary
                                   </Badge>
                                 )}
@@ -1171,7 +1171,7 @@ export default function Suppliers() {
                     <h3 className="text-sm font-medium">Insurance Documents</h3>
                     <Button
                       size="sm"
-                      className="h-7 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                      className="h-7 bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                       onClick={handleAddInsurance}
                       data-testid="button-add-insurance"
                     >
@@ -1370,7 +1370,7 @@ export default function Suppliers() {
                 <Button 
                   type="submit" 
                   disabled={createContactMutation.isPending || updateContactMutation.isPending}
-                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                 >
                   {createContactMutation.isPending || updateContactMutation.isPending ? "Saving..." : editingContact ? "Update" : "Add"}
                 </Button>
@@ -1483,7 +1483,7 @@ export default function Suppliers() {
                 <Button 
                   type="submit" 
                   disabled={createInsuranceMutation.isPending || updateInsuranceMutation.isPending}
-                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                 >
                   {createInsuranceMutation.isPending || updateInsuranceMutation.isPending ? "Saving..." : editingInsurance ? "Update" : "Add"}
                 </Button>

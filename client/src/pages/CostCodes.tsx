@@ -352,7 +352,7 @@ export default function CostCodes() {
             </button>
           )}
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
             onClick={() => setIsAddCostCodeOpen(true)}
             data-testid="button-add-code"
           >
@@ -402,7 +402,7 @@ export default function CostCodes() {
           <button
             className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all ${
               showArchived 
-                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30 font-medium" 
+                ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30 font-medium" 
                 : "bg-background border hover-elevate"
             }`}
             onClick={() => setShowArchived(!showArchived)}
@@ -416,7 +416,7 @@ export default function CostCodes() {
 
       {/* Bulk Actions Toolbar */}
       {selectedCodeIds.size > 0 && (
-        <div className="h-9 bg-[#bba7db]/5 dark:bg-[#bba7db]/10 flex items-center justify-between px-3 gap-1.5 border-b border-[#bba7db]/20 flex-shrink-0">
+        <div className="h-9 bg-[#A890D4]/5 dark:bg-[#A890D4]/10 flex items-center justify-between px-3 gap-1.5 border-b border-[#A890D4]/20 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Checkbox
               checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}

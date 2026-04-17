@@ -234,7 +234,7 @@ export function CasvaTaskRow({
             <Checkbox
               checked={isCompleted}
               onCheckedChange={onToggleComplete}
-              className="w-4 h-4 border-2 rounded data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+              className="w-4 h-4 border-2 rounded data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
               data-testid={`checkbox-task-${task.id}`}
             />
           </div>
@@ -251,7 +251,7 @@ export function CasvaTaskRow({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={saveEdit}
             onKeyDown={handleKeyDown}
-            className="w-full text-sm font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-[#bba7db] rounded px-1 -mx-1"
+            className="w-full text-sm font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-[#A890D4] rounded px-1 -mx-1"
             data-testid="input-edit-title"
           />
         ) : (
@@ -302,7 +302,7 @@ export function CasvaTaskRow({
                         onClick={() => handleAssigneeChange(user.id)}
                         className={cn(
                           "w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 transition-colors",
-                          task.assigneeId === user.id && "bg-[#bba7db]/10 text-[#bba7db]"
+                          task.assigneeId === user.id && "bg-[#A890D4]/10 text-[#A890D4]"
                         )}
                       >
                         <div className="font-medium">
@@ -369,7 +369,7 @@ export function CasvaTaskRow({
                             const minutes = currentDate.getMinutes().toString().padStart(2, '0');
                             handleDueDateChange(currentDate, e.target.value, minutes);
                           }}
-                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none text-center"
+                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#A890D4] outline-none text-center"
                         />
                         <span className="text-gray-500">:</span>
                         <input
@@ -383,7 +383,7 @@ export function CasvaTaskRow({
                             const hours = currentDate.getHours().toString().padStart(2, '0');
                             handleDueDateChange(currentDate, hours, e.target.value);
                           }}
-                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none text-center"
+                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#A890D4] outline-none text-center"
                         />
                       </div>
                       {task.dueDate && (

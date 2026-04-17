@@ -314,7 +314,7 @@ export function CasvaScheduleList({
     ghost.style.borderRadius = '4px';
     ghost.style.overflow = 'hidden';
     ghost.style.background = 'var(--card)';
-    ghost.style.border = '1px solid #bba7db';
+    ghost.style.border = '1px solid #A890D4';
     ghost.style.transition = 'none';
 
     const table = document.createElement('table');
@@ -603,9 +603,9 @@ export function CasvaScheduleList({
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
                     } ${draggingItemId === item.id ? 'opacity-30' : ''}`}
                     style={nestHighlightId === item.id ? {
-                      outline: '2px solid #bba7db',
+                      outline: '2px solid #A890D4',
                       outlineOffset: '-2px',
-                      backgroundColor: 'rgba(187, 167, 219, 0.12)',
+                      backgroundColor: 'rgba(168, 144, 212, 0.12)',
                       borderRadius: '4px',
                     } : undefined}
                     data-testid={`schedule-row-${item.id}`}
@@ -811,7 +811,7 @@ export function CasvaScheduleList({
                 top: rect.bottom + 2,
                 left: rect.left + 12,
                 fontSize: '9px',
-                color: '#bba7db',
+                color: '#A890D4',
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
                 zIndex: 99998,
@@ -833,12 +833,12 @@ export function CasvaScheduleList({
             left: indicatorLine.left,
             width: indicatorLine.width,
             height: '2px',
-            backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+            backgroundColor: willUnparent ? '#f97316' : '#A890D4',
             zIndex: 99998,
             pointerEvents: 'none',
             boxShadow: willUnparent 
               ? '0 0 4px rgba(249, 115, 22, 0.5)' 
-              : '0 0 4px rgba(187, 167, 219, 0.5)',
+              : '0 0 4px rgba(168, 144, 212, 0.5)',
           }}
         >
           <div
@@ -849,7 +849,7 @@ export function CasvaScheduleList({
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+              backgroundColor: willUnparent ? '#f97316' : '#A890D4',
             }}
           />
           <div
@@ -860,7 +860,7 @@ export function CasvaScheduleList({
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+              backgroundColor: willUnparent ? '#f97316' : '#A890D4',
             }}
           />
           {willUnparent && (

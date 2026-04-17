@@ -315,7 +315,7 @@ export default function SiteDiaryTemplates() {
             </DropdownMenuContent>
           </DropdownMenu>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
             data-testid="button-add-template"
           >
@@ -362,7 +362,7 @@ export default function SiteDiaryTemplates() {
           {!searchTerm && (
             <button 
               onClick={() => setIsAddingTemplate(true)} 
-              className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+              className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
               data-testid="button-create-first-template"
             >
               <Plus className="h-3 w-3" />
@@ -383,7 +383,7 @@ export default function SiteDiaryTemplates() {
                 {/* Default indicator */}
                 {template.isDefault && (
                   <div className="flex-shrink-0 pt-0.5">
-                    <Star className="h-3 w-3 text-[#bba7db] fill-current" data-testid={`template-default-indicator-${template.id}`} />
+                    <Star className="h-3 w-3 text-[#A890D4] fill-current" data-testid={`template-default-indicator-${template.id}`} />
                   </div>
                 )}
                 

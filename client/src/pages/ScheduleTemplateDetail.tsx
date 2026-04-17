@@ -101,7 +101,7 @@ const ITEM_TYPES = [
 ];
 
 const TYPE_COLORS: Record<string, string> = {
-  task: "#bba7db",
+  task: "#A890D4",
   milestone: "#9b87c7",
   inspection: "#c9b8e8",
   delivery: "#a494cc",
@@ -290,7 +290,7 @@ function SortableItem({
           }
           return null;
         })}
-        <div className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20" style={{ left: '0px' }} />
+        <div className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-20" style={{ left: '0px' }} />
         <div
           className={`absolute top-1 h-6 mx-1 rounded-sm flex items-center z-10 group/bar ${isDragging ? 'cursor-grabbing shadow-lg scale-105' : 'cursor-move hover:scale-105 hover:shadow-md'} transition-all`}
           style={{

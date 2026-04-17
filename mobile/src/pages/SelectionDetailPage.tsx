@@ -241,7 +241,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
         <p className="text-muted-foreground mb-4">Selection not found</p>
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-[#bba7db] font-medium"
+          className="flex items-center gap-2 text-[#A890D4] font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
@@ -282,7 +282,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
             onClick={() => setActiveTab("options")}
             className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "options"
-                ? "border-[#bba7db] text-[#bba7db]"
+                ? "border-[#A890D4] text-[#A890D4]"
                 : "border-transparent text-muted-foreground"
             }`}
             data-testid="tab-options"
@@ -293,7 +293,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
             onClick={() => setActiveTab("details")}
             className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "details"
-                ? "border-[#bba7db] text-[#bba7db]"
+                ? "border-[#A890D4] text-[#A890D4]"
                 : "border-transparent text-muted-foreground"
             }`}
             data-testid="tab-details"
@@ -330,7 +330,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                 </p>
                 <button
                   onClick={() => setIsAddOptionOpen(true)}
-                  className="inline-flex items-center gap-2 bg-[#bba7db] text-white px-4 py-2 rounded-lg font-medium"
+                  className="inline-flex items-center gap-2 bg-[#A890D4] text-white px-4 py-2 rounded-lg font-medium"
                   data-testid="button-add-first-option"
                 >
                   <Plus className="w-4 h-4" />
@@ -423,7 +423,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                       }}
                       className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-all ${
                         isSelected 
-                          ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                          ? "bg-[#A890D4] text-white border-[#A890D4]" 
                           : "hover-elevate border-border"
                       }`}
                       data-testid={`status-${status.key}`}
@@ -517,7 +517,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                     setHasUnsavedChanges(true);
                   }}
                   className={`w-11 h-6 rounded-full transition-colors ${
-                    formClientCanChange ? "bg-[#bba7db]" : "bg-gray-300 dark:bg-gray-600"
+                    formClientCanChange ? "bg-[#A890D4]" : "bg-gray-300 dark:bg-gray-600"
                   }`}
                   data-testid="toggle-client-can-change"
                 >
@@ -538,7 +538,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                     setHasUnsavedChanges(true);
                   }}
                   className={`w-11 h-6 rounded-full transition-colors ${
-                    formClientCanSeePrice ? "bg-[#bba7db]" : "bg-gray-300 dark:bg-gray-600"
+                    formClientCanSeePrice ? "bg-[#A890D4]" : "bg-gray-300 dark:bg-gray-600"
                   }`}
                   data-testid="toggle-client-can-see-price"
                 >
@@ -556,7 +556,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
       {activeTab === "options" && (
         <button
           onClick={() => setIsAddOptionOpen(true)}
-          className="fixed bottom-20 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-40"
+          className="fixed bottom-20 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-40"
           data-testid="button-add-option"
         >
           <Plus className="w-6 h-6" />

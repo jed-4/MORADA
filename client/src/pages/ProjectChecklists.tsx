@@ -813,7 +813,7 @@ export default function ProjectChecklists() {
       case "completed":
         return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
       case "in_progress":
-        return "bg-[#bba7db]/20 text-[#bba7db]";
+        return "bg-[#A890D4]/20 text-[#A890D4]";
       default:
         return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
     }
@@ -889,7 +889,7 @@ export default function ProjectChecklists() {
         </div>
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowAddDialog(true)}
             data-testid="button-add-checklist"
           >
@@ -906,7 +906,7 @@ export default function ProjectChecklists() {
             onClick={() => setActiveTab("all")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "all"
-                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                ? "bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-all"
@@ -918,7 +918,7 @@ export default function ProjectChecklists() {
             onClick={() => setActiveTab("upcoming")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "upcoming"
-                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                ? "bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-upcoming"
@@ -930,7 +930,7 @@ export default function ProjectChecklists() {
             onClick={() => setActiveTab("action")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "action"
-                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                ? "bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-action"
@@ -942,7 +942,7 @@ export default function ProjectChecklists() {
             onClick={() => setActiveTab("done")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "done"
-                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                ? "bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-done"
@@ -984,7 +984,7 @@ export default function ProjectChecklists() {
             onClick={() => setHideCompleted(!hideCompleted)}
             className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
               hideCompleted 
-                ? "bg-[#bba7db] text-white border-[#bba7db]/20" 
+                ? "bg-[#A890D4] text-white border-[#A890D4]/20" 
                 : "hover-elevate"
             } active-elevate-2`}
             data-testid="toggle-hide-completed"
@@ -1056,7 +1056,7 @@ export default function ProjectChecklists() {
                     <div className={`transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <FolderOpen className="h-4 w-4 text-[#bba7db]" />
+                    <FolderOpen className="h-4 w-4 text-[#A890D4]" />
                     <span className="text-sm font-medium flex-1 flex items-center gap-1.5">
                       {instance.name}
                       {instance.visibility === "assignee_only" && (
@@ -1172,7 +1172,7 @@ export default function ProjectChecklists() {
                   
                   {/* Checklists Grid - only show if not collapsed */}
                   {!isCollapsed && (
-                    <div className="space-y-3 ml-2 pl-4 border-l-2 border-[#bba7db]/30">
+                    <div className="space-y-3 ml-2 pl-4 border-l-2 border-[#A890D4]/30">
                       {groups.map((group) => {
                         const isExpanded = expandedChecklists.has(group.id);
                         const items = checklistItems[group.id] || [];
@@ -1220,7 +1220,7 @@ export default function ProjectChecklists() {
                                 </Badge>
                                 {getPriorityBadge(group.priority || "medium")}
                                 {(group.linkedTaskId || group.linkedScheduleItemId) && (
-                                  <span className="inline-flex items-center px-1 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db]">
+                                  <span className="inline-flex items-center px-1 py-0.5 rounded bg-[#A890D4]/10 text-[#A890D4]">
                                     <Link2 className="h-3 w-3" />
                                   </span>
                                 )}
@@ -1232,7 +1232,7 @@ export default function ProjectChecklists() {
                                         <Tooltip>
                                           <TooltipTrigger asChild>
                                             <Avatar className="h-5 w-5">
-                                              <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
+                                              <AvatarFallback className="text-[10px] bg-[#A890D4]/20 text-[#A890D4]">
                                                 {group.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                               </AvatarFallback>
                                             </Avatar>
@@ -1284,13 +1284,13 @@ export default function ProjectChecklists() {
                                             }}
                                           >
                                             <Avatar className="h-4 w-4 mr-2">
-                                              <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                              <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
                                                 {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                               </AvatarFallback>
                                             </Avatar>
                                             {member.displayName}
                                             {group.assigneeId === member.id && (
-                                              <Check className="h-3 w-3 ml-auto text-[#bba7db]" />
+                                              <Check className="h-3 w-3 ml-auto text-[#A890D4]" />
                                             )}
                                           </Button>
                                         ))}
@@ -1315,7 +1315,7 @@ export default function ProjectChecklists() {
                                       >
                                         <Tooltip>
                                           <TooltipTrigger asChild>
-                                            <Link2 className={`h-3.5 w-3.5 ${group.linkedTaskId || group.linkedScheduleItemId ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                                            <Link2 className={`h-3.5 w-3.5 ${group.linkedTaskId || group.linkedScheduleItemId ? 'text-[#A890D4]' : 'text-muted-foreground/50'}`} />
                                           </TooltipTrigger>
                                           <TooltipContent>Link to task or schedule</TooltipContent>
                                         </Tooltip>
@@ -1349,7 +1349,7 @@ export default function ProjectChecklists() {
                                                   >
                                                     <span className="truncate">{task.title}</span>
                                                     {group.linkedTaskId === task.id && (
-                                                      <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                      <Check className="h-3 w-3 ml-auto text-[#A890D4] shrink-0" />
                                                     )}
                                                   </Button>
                                                 ))}
@@ -1382,7 +1382,7 @@ export default function ProjectChecklists() {
                                                   >
                                                     <span className="truncate">{schedItem.name}</span>
                                                     {group.linkedScheduleItemId === schedItem.id && (
-                                                      <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                      <Check className="h-3 w-3 ml-auto text-[#A890D4] shrink-0" />
                                                     )}
                                                   </Button>
                                                 ))}
@@ -1559,7 +1559,7 @@ export default function ProjectChecklists() {
                                                     checkGroupAutoComplete(group.id, group.status, item.id, newStatus);
                                                   }
                                                 }}
-                                                className="mt-0.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+                                                className="mt-0.5 data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
                                               />
                                             )}
                                             {responseType === "text" && (
@@ -1623,7 +1623,7 @@ export default function ProjectChecklists() {
                                                         className="p-0.5 rounded hover:bg-muted/60 transition-colors"
                                                         onClick={(e) => { e.stopPropagation(); setShowNotesDialog(item); }}
                                                       >
-                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${hasHumanNotes(item.notes) ? 'text-[#bba7db] fill-[#bba7db]' : 'text-muted-foreground/40'}`} />
+                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${hasHumanNotes(item.notes) ? 'text-[#A890D4] fill-[#A890D4]' : 'text-muted-foreground/40'}`} />
                                                       </button>
                                                     </TooltipTrigger>
                                                     <TooltipContent side="top">
@@ -1635,7 +1635,7 @@ export default function ProjectChecklists() {
                                                       <button className="p-0.5 rounded hover:bg-muted/60 transition-colors" onClick={(e) => e.stopPropagation()}>
                                                         {item.assigneeName ? (
                                                           <Avatar className="h-5 w-5">
-                                                            <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                                                            <AvatarFallback className="text-[9px] bg-[#A890D4]/20 text-[#A890D4]">
                                                               {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                                             </AvatarFallback>
                                                           </Avatar>
@@ -1667,12 +1667,12 @@ export default function ProjectChecklists() {
                                                             }}
                                                           >
                                                             <Avatar className="h-4 w-4">
-                                                              <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                                              <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
                                                                 {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                                               </AvatarFallback>
                                                             </Avatar>
                                                             {member.displayName}
-                                                            {item.assigneeId === member.id && <Check className="h-3 w-3 ml-auto text-[#bba7db]" />}
+                                                            {item.assigneeId === member.id && <Check className="h-3 w-3 ml-auto text-[#A890D4]" />}
                                                           </button>
                                                         ))}
                                                       </div>
@@ -1682,9 +1682,9 @@ export default function ProjectChecklists() {
                                                     <PopoverTrigger asChild>
                                                       <button className="p-0.5 rounded hover:bg-muted/60 transition-colors" onClick={(e) => e.stopPropagation()}>
                                                         {uploadingItemId === item.id ? (
-                                                          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#bba7db]" />
+                                                          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#A890D4]" />
                                                         ) : (
-                                                          <Paperclip className={`h-3.5 w-3.5 shrink-0 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#bba7db]' : 'text-muted-foreground/40'}`} />
+                                                          <Paperclip className={`h-3.5 w-3.5 shrink-0 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#A890D4]' : 'text-muted-foreground/40'}`} />
                                                         )}
                                                       </button>
                                                     </PopoverTrigger>
@@ -1796,7 +1796,7 @@ export default function ProjectChecklists() {
                                                       <RadioGroupItem 
                                                         value={option} 
                                                         id={`${item.id}-${idx}`}
-                                                        className="h-3.5 w-3.5 border-muted-foreground/50 data-[state=checked]:border-[#bba7db] data-[state=checked]:text-[#bba7db]"
+                                                        className="h-3.5 w-3.5 border-muted-foreground/50 data-[state=checked]:border-[#A890D4] data-[state=checked]:text-[#A890D4]"
                                                       />
                                                       <label 
                                                         htmlFor={`${item.id}-${idx}`}
@@ -1838,7 +1838,7 @@ export default function ProjectChecklists() {
                                                               checkGroupAutoComplete(group.id, group.status, item.id, "completed");
                                                             }
                                                           }}
-                                                          className="h-3.5 w-3.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+                                                          className="h-3.5 w-3.5 data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
                                                         />
                                                         <label 
                                                           htmlFor={`${item.id}-mc-${idx}`}
@@ -2097,13 +2097,13 @@ export default function ProjectChecklists() {
                   onClick={() => setFormData({ ...formData, visibility: "everyone" })}
                   className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
                     formData.visibility === "everyone"
-                      ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                      ? "border-[#A890D4] bg-[#A890D4]/10 text-foreground"
                       : "border-border text-muted-foreground hover-elevate"
                   }`}
                   data-testid="visibility-everyone"
                 >
                   <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
-                    formData.visibility === "everyone" ? "border-[#bba7db] bg-[#bba7db]" : "border-muted-foreground"
+                    formData.visibility === "everyone" ? "border-[#A890D4] bg-[#A890D4]" : "border-muted-foreground"
                   }`} />
                   <div>
                     <div className="font-medium">Everyone</div>
@@ -2115,13 +2115,13 @@ export default function ProjectChecklists() {
                   onClick={() => setFormData({ ...formData, visibility: "assignee_only" })}
                   className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
                     formData.visibility === "assignee_only"
-                      ? "border-[#bba7db] bg-[#bba7db]/10 text-foreground"
+                      ? "border-[#A890D4] bg-[#A890D4]/10 text-foreground"
                       : "border-border text-muted-foreground hover-elevate"
                   }`}
                   data-testid="visibility-assignee-only"
                 >
                   <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
-                    formData.visibility === "assignee_only" ? "border-[#bba7db] bg-[#bba7db]" : "border-muted-foreground"
+                    formData.visibility === "assignee_only" ? "border-[#A890D4] bg-[#A890D4]" : "border-muted-foreground"
                   }`} />
                   <div>
                     <div className="font-medium flex items-center gap-1">
@@ -2141,7 +2141,7 @@ export default function ProjectChecklists() {
             <Button
               onClick={handleCreateChecklist}
               disabled={createMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
               data-testid="button-create-checklist"
             >
               {createMutation.isPending ? (
@@ -2210,7 +2210,7 @@ export default function ProjectChecklists() {
                       ) : (
                         <div key={idx} className="flex gap-2">
                           <Avatar className="h-6 w-6 shrink-0">
-                            <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                            <AvatarFallback className="text-[9px] bg-[#A890D4]/20 text-[#A890D4]">
                               {entry.author.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
@@ -2247,7 +2247,7 @@ export default function ProjectChecklists() {
                 />
                 <Button
                   size="icon"
-                  className="shrink-0 self-end bg-[#bba7db]"
+                  className="shrink-0 self-end bg-[#A890D4]"
                   onClick={handleAddNote}
                   disabled={!newNoteText.trim() || updateItemMutation.isPending}
                 >

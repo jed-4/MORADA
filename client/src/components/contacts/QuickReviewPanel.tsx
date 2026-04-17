@@ -449,7 +449,7 @@ export default function QuickReviewPanel({
               {currentContact?.labels && (currentContact.labels as string[]).length > 0 && (
                 <div className="flex gap-1">
                   {(currentContact.labels as string[]).slice(0, 3).map(label => (
-                    <Badge key={label} variant="outline" className="text-[10px] h-5 bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20">
+                    <Badge key={label} variant="outline" className="text-[10px] h-5 bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/20">
                       {label}
                     </Badge>
                   ))}
@@ -774,7 +774,7 @@ export default function QuickReviewPanel({
               
               <Button
                 size="sm"
-                className="h-7 text-[11px] bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                className="h-7 text-[11px] bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                 onClick={form.handleSubmit(onSubmit)}
                 disabled={updateMutation.isPending}
                 data-testid="button-save-next"
@@ -823,7 +823,7 @@ export default function QuickReviewPanel({
             <AlertDialogCancel data-testid="button-cancel-merge">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => mergeTargetId && mergeMutation.mutate(mergeTargetId)}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
               data-testid="button-confirm-merge"
             >
               Merge

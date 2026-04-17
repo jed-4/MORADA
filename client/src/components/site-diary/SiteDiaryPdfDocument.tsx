@@ -9,7 +9,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
-    borderBottom: "2 solid #bba7db",
+    borderBottom: "2 solid #A890D4",
     paddingBottom: 10,
   },
   title: {

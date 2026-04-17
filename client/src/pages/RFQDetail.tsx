@@ -509,7 +509,7 @@ export default function RFQDetail() {
           <Button
             size="sm"
             onClick={() => setShowSendDialog(true)}
-            className="h-7 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            className="h-7 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             data-testid="button-send-rfq"
           >
             <Send className="w-3 h-3 mr-1" />
@@ -527,7 +527,7 @@ export default function RFQDetail() {
           <Card className="overflow-hidden">
             {/* Card header */}
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
               <span className="text-xs font-medium">RFQ Info</span>
             </div>
 
@@ -1172,7 +1172,7 @@ export default function RFQDetail() {
             <Button
               onClick={() => createItemMutation.mutate(newItem)}
               disabled={!newItem.description || createItemMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               {createItemMutation.isPending ? "Adding..." : "Add Item"}
             </Button>
@@ -1260,7 +1260,7 @@ export default function RFQDetail() {
             <Button
               onClick={() => importItemsMutation.mutate(selectedEstimateItems)}
               disabled={selectedEstimateItems.length === 0 || importItemsMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               {importItemsMutation.isPending ? "Importing..." : `Import ${selectedEstimateItems.length} Items`}
             </Button>

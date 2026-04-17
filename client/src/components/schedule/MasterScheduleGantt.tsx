@@ -647,7 +647,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               {/* Today line */}
               {todayPos >= 0 && todayPos <= totalWidth && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                  className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
                   style={{ left: todayPos }}
                 />
               )}

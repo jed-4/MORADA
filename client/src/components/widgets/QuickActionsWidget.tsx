@@ -113,7 +113,7 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
                 onClick={() => toggleAction(action.id)}
                 className={`flex items-center gap-2 p-2 border rounded-md text-xs transition-colors ${
                   configEnabledActions.includes(action.id)
-                    ? 'bg-[#bba7db]/20 border-[#bba7db]'
+                    ? 'bg-[#A890D4]/20 border-[#A890D4]'
                     : 'hover-elevate'
                 }`}
                 data-testid={`toggle-action-${action.id}`}

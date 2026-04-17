@@ -226,7 +226,7 @@ export function ProjectAllowancesTab() {
               onClick={() => setTypeFilter(option.value)}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 typeFilter === option.value
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "bg-muted text-muted-foreground"
               }`}
               data-testid={`chip-type-${option.value}`}
@@ -242,7 +242,7 @@ export function ProjectAllowancesTab() {
               onClick={() => setStatusFilter(option.value)}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 statusFilter === option.value
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "bg-muted text-muted-foreground"
               }`}
               data-testid={`chip-status-${option.value}`}
@@ -385,7 +385,7 @@ export function ProjectAllowancesTab() {
                       disabled={updateStatusMutation.isPending}
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                         isSelected
-                          ? "bg-[#bba7db] text-white"
+                          ? "bg-[#A890D4] text-white"
                           : "bg-muted text-muted-foreground"
                       }`}
                       data-testid={`button-status-${option.value}`}

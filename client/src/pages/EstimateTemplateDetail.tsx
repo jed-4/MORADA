@@ -734,7 +734,7 @@ export default function EstimateTemplateDetail() {
             Add Group
           </button>
           <button
-            className="h-6 px-2 text-xs rounded-md bg-[#bba7db] text-white border border-[#bba7db]/20 active-elevate-2 flex items-center gap-1"
+            className="h-6 px-2 text-xs rounded-md bg-[#A890D4] text-white border border-[#A890D4]/20 active-elevate-2 flex items-center gap-1"
             onClick={() => handleAddItem(groups[groups.length - 1] || "ungrouped")}
             data-testid="button-add-item"
           >
@@ -780,7 +780,7 @@ export default function EstimateTemplateDetail() {
                 Add Group
               </button>
               <button
-                className="h-7 px-3 text-xs rounded-md bg-[#bba7db] text-white border border-[#bba7db]/20 active-elevate-2 flex items-center gap-1"
+                className="h-7 px-3 text-xs rounded-md bg-[#A890D4] text-white border border-[#A890D4]/20 active-elevate-2 flex items-center gap-1"
                 onClick={() => handleAddItem("ungrouped")}
                 data-testid="button-add-first-item"
               >
@@ -914,7 +914,7 @@ export default function EstimateTemplateDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveSettings} className="bg-[#bba7db] text-white border-[#bba7db]/20">
+            <Button onClick={handleSaveSettings} className="bg-[#A890D4] text-white border-[#A890D4]/20">
               Save
             </Button>
           </DialogFooter>
@@ -941,7 +941,7 @@ export default function EstimateTemplateDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddGroupDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddGroup} className="bg-[#bba7db] text-white border-[#bba7db]/20">
+            <Button onClick={handleAddGroup} className="bg-[#A890D4] text-white border-[#A890D4]/20">
               Add Group
             </Button>
           </DialogFooter>

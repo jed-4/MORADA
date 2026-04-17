@@ -493,7 +493,7 @@ export default function ScheduleTemplates() {
             <span>Import</span>
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleOpenAdd}
             data-testid="button-add-template"
           >
@@ -549,7 +549,7 @@ export default function ScheduleTemplates() {
                 </button>
                 <button 
                   onClick={handleOpenAdd} 
-                  className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+                  className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
                   data-testid="button-create-first-template"
                 >
                   <Plus className="h-3 w-3" />

@@ -155,7 +155,7 @@ export default function BusinessProjects() {
             onClick={() => setActiveTab("board")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "board" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-board"
@@ -167,7 +167,7 @@ export default function BusinessProjects() {
             onClick={() => setActiveTab("list")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "list" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-list"
@@ -195,7 +195,7 @@ export default function BusinessProjects() {
             size="icon"
             variant="ghost"
             onClick={() => updatePreference('groupBy', preferences.groupBy === 'phase' ? 'status' : 'phase')}
-            className={`h-6 w-6 ${preferences.groupBy === 'status' ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            className={`h-6 w-6 ${preferences.groupBy === 'status' ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
             data-testid="button-group-by"
             title={preferences.groupBy === 'phase' ? 'Grouped by Phase' : 'Grouped by Status'}
           >
@@ -241,7 +241,7 @@ export default function BusinessProjects() {
             size="icon"
             variant="ghost"
             onClick={() => updatePreference('hideEmptyColumns', !preferences.hideEmptyColumns)}
-            className={`h-6 w-6 ${preferences.hideEmptyColumns ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            className={`h-6 w-6 ${preferences.hideEmptyColumns ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
             data-testid="button-hide-empty"
             title={preferences.hideEmptyColumns ? 'Showing only columns with projects' : 'Showing all columns'}
           >
@@ -253,7 +253,7 @@ export default function BusinessProjects() {
             size="icon"
             variant="ghost"
             onClick={() => setEditMode(!editMode)}
-            className={`h-6 w-6 ${editMode ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            className={`h-6 w-6 ${editMode ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
             data-testid="button-edit-mode"
             title={editMode ? 'Edit Mode: ON - Drag projects to move' : 'Edit Mode: OFF'}
           >
@@ -262,7 +262,7 @@ export default function BusinessProjects() {
 
           {/* New Project Button */}
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsCreateProjectOpen(true)}
             data-testid="button-create-project"
           >

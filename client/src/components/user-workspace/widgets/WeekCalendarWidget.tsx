@@ -537,12 +537,12 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
           return (
             <div 
               key={day.toISOString()} 
-              className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-[#bba7db]/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+              className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-[#A890D4]/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
             >
               <div className="text-[10px] text-muted-foreground uppercase">
                 {formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}
               </div>
-              <div className={`text-sm font-medium ${isCurrentDay ? 'text-[#bba7db]' : ''}`}>
+              <div className={`text-sm font-medium ${isCurrentDay ? 'text-[#A890D4]' : ''}`}>
                 {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
               </div>
             </div>
@@ -603,7 +603,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               return (
                 <div 
                   key={day.toISOString()} 
-                  className={`border-r last:border-r-0 p-1 ${isCurrentDay ? 'bg-[#bba7db]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+                  className={`border-r last:border-r-0 p-1 ${isCurrentDay ? 'bg-[#A890D4]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
                 >
                   <div className="space-y-0.5">
                     {dayTimedEvents.map(event => (
@@ -651,7 +651,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               return (
                 <div 
                   key={day.toISOString()} 
-                  className={`relative border-r last:border-r-0 ${isCurrentDay ? 'bg-[#bba7db]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+                  className={`relative border-r last:border-r-0 ${isCurrentDay ? 'bg-[#A890D4]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
                   style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}
                 >
                   {/* Hour gridlines */}

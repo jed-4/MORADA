@@ -116,7 +116,7 @@ export default function Business() {
                 }}
                 className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
                   isActive
-                    ? 'text-[#bba7db] font-medium'
+                    ? 'text-[#A890D4] font-medium'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
                 data-testid={`tab-${tab.id}`}
@@ -124,7 +124,7 @@ export default function Business() {
                 <Icon className="w-3 h-3" />
                 <span>{tab.label}</span>
                 {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4]" />
                 )}
               </button>
             );

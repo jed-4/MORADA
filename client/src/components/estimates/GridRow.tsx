@@ -154,7 +154,7 @@ export const GridHeaderCell = React.memo(({
       <span className="truncate">{children}</span>
       {!isLastColumn && onResizeStart && (
         <div
-          className="absolute right-0 top-0 h-full w-1 cursor-col-resize opacity-0 group-hover/header:opacity-100 hover:bg-[#bba7db] bg-gray-300 transition-all z-10"
+          className="absolute right-0 top-0 h-full w-1 cursor-col-resize opacity-0 group-hover/header:opacity-100 hover:bg-[#A890D4] bg-gray-300 transition-all z-10"
           onMouseDown={(e) => onResizeStart(e, columnId)}
           data-testid={`resize-handle-${columnId}`}
         />

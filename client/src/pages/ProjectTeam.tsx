@@ -126,7 +126,7 @@ export default function ProjectTeam() {
             <TableCell className="py-2">
               <div className="flex items-center gap-3">
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
+                  <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
                     {getUserInitials(user)}
                   </AvatarFallback>
                 </Avatar>
@@ -142,9 +142,9 @@ export default function ProjectTeam() {
               <Badge 
                 className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
                 style={{
-                  backgroundColor: '#bba7db15',
-                  color: '#bba7db',
-                  borderColor: '#bba7db30'
+                  backgroundColor: '#A890D415',
+                  color: '#A890D4',
+                  borderColor: '#A890D430'
                 }}
               >
                 {user.role?.name || "No Role"}
@@ -176,7 +176,7 @@ export default function ProjectTeam() {
         </div>
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
-          className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90"
+          className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90"
           data-testid="button-assign-user"
         >
           <UserPlus className="h-3 w-3 mr-1" />
@@ -206,7 +206,7 @@ export default function ProjectTeam() {
           <Card className="border-2">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-4 py-3 border-b">
-                <Users className="h-4 w-4 text-[#bba7db]" />
+                <Users className="h-4 w-4 text-[#A890D4]" />
                 <h2 className="text-sm font-semibold">Team Members</h2>
               </div>
               {isLoading ? (
@@ -233,7 +233,7 @@ export default function ProjectTeam() {
           <Card className="border-2">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-4 py-3 border-b">
-                <Building2 className="h-4 w-4 text-[#bba7db]" />
+                <Building2 className="h-4 w-4 text-[#A890D4]" />
                 <h2 className="text-sm font-semibold">Suppliers</h2>
               </div>
               {isLoading ? (

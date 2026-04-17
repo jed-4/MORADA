@@ -1512,7 +1512,7 @@ export const supplierLabels = pgTable("supplier_labels", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id),
   name: text("name").notNull(),
-  color: text("color").default("#bba7db"), // Label color (lilac default)
+  color: text("color").default("#A890D4"), // Label color (lilac default)
   description: text("description"),
   displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),

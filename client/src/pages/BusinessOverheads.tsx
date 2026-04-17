@@ -380,7 +380,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 
   const FREQ_COLORS: Record<Frequency, string> = {
     weekly:    "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-    monthly:   "bg-[#bba7db]/10 text-[#8b6db5] dark:text-[#bba7db]",
+    monthly:   "bg-[#A890D4]/10 text-[#8b6db5] dark:text-[#A890D4]",
     quarterly: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
     annual:    "bg-green-500/10 text-green-700 dark:text-green-400",
   };
@@ -1447,7 +1447,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <button onClick={() => setAutoGrowth(v => !v)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            {autoGrowth ? <ToggleRight className="w-5 h-5 text-[#bba7db]" /> : <ToggleLeft className="w-5 h-5" />}
+            {autoGrowth ? <ToggleRight className="w-5 h-5 text-[#A890D4]" /> : <ToggleLeft className="w-5 h-5" />}
             <span className={autoGrowth ? "text-foreground font-medium" : ""}>Auto YoY growth (from actuals)</span>
           </button>
         </div>
@@ -1482,10 +1482,10 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <p className="text-[9px] text-muted-foreground/40">{year}</p>
               </div>
             ))}
-            <div className="w-px bg-[#bba7db]/40 self-stretch mx-0.5" />
+            <div className="w-px bg-[#A890D4]/40 self-stretch mx-0.5" />
             {next12.map(({ year, month }) => (
               <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-2">
-                <p className="text-[10px] text-[#bba7db] font-medium">{MONTH_NAMES[month - 1]}</p>
+                <p className="text-[10px] text-[#A890D4] font-medium">{MONTH_NAMES[month - 1]}</p>
                 <p className="text-[9px] text-muted-foreground/40">{year}</p>
               </div>
             ))}
@@ -1493,8 +1493,8 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           <div className="flex border-b border-border/30 bg-muted/10">
             <div className="w-44 flex-shrink-0" />
             <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-muted-foreground/50 py-0.5">← Actuals (last 12 months, readonly)</div>
-            <div className="w-px bg-[#bba7db]/40" />
-            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-[#bba7db]/60 py-0.5">Forecast — next 12 months (click to override) →</div>
+            <div className="w-px bg-[#A890D4]/40" />
+            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-[#A890D4]/60 py-0.5">Forecast — next 12 months (click to override) →</div>
           </div>
 
           {data.categories.map(cat => {
@@ -1505,7 +1505,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
                   <div className="w-44 flex-shrink-0 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
                   {last12.map(({ year, month }) => <div key={`a-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
-                  <div className="w-px bg-[#bba7db]/40 self-stretch" />
+                  <div className="w-px bg-[#A890D4]/40 self-stretch" />
                   {next12.map(({ year, month }) => <div key={`f-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
                 </div>
 
@@ -1520,12 +1520,12 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                         </div>
                       );
                     })}
-                    <div className="w-px bg-[#bba7db]/30 self-stretch" />
+                    <div className="w-px bg-[#A890D4]/30 self-stretch" />
                     {next12.map(({ year, month }, idx) => {
                       const projected = getForecastCents(item, year, month, idx);
                       const isOverridden = overrideMap.has(getKey(item.id, year, month));
                       return (
-                        <div key={`f-${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${isOverridden ? "bg-[#bba7db]/5" : ""}`}>
+                        <div key={`f-${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${isOverridden ? "bg-[#A890D4]/5" : ""}`}>
                           <ActualCell cents={projected} onSave={val => upsertForecastMut.mutate({ itemId: item.id, year, month, forecastCents: val })} />
                         </div>
                       );
@@ -1537,8 +1537,8 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center border-b border-border/30 bg-muted/10" style={{ height: 26 }}>
                   <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">Subtotal</div>
                   {last12.map(({ year, month }) => { const t = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0); return <div key={`a-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-muted-foreground">{t > 0 ? fmtK(t) : "—"}</div>; })}
-                  <div className="w-px bg-[#bba7db]/30 self-stretch" />
-                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-[#bba7db]/70">{fmtK(t)}</div>; })}
+                  <div className="w-px bg-[#A890D4]/30 self-stretch" />
+                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-[#A890D4]/70">{fmtK(t)}</div>; })}
                 </div>
               </div>
             );
@@ -1550,10 +1550,10 @@ function ForecastTab({ data }: { data: OverheadsData }) {
             {last12ActualTotals.map((t, idx) => (
               <div key={idx} className={`flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums ${t > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{t > 0 ? fmtK(t) : "—"}</div>
             ))}
-            <div className="w-px bg-[#bba7db]/40 self-stretch" />
+            <div className="w-px bg-[#A890D4]/40 self-stretch" />
             {next12.map(({ year, month }, idx) => {
               const t = data.items.reduce((s, item) => s + getForecastCents(item, year, month, idx), 0);
-              return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums text-[#bba7db]">{fmtK(t)}</div>;
+              return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums text-[#A890D4]">{fmtK(t)}</div>;
             })}
           </div>
         </div>
@@ -1888,10 +1888,10 @@ export default function BusinessOverheads() {
           const isActive = activeTab === id;
           return (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-t-sm transition-colors flex-shrink-0 ${isActive ? "text-[#bba7db] font-medium" : "text-muted-foreground hover:text-foreground"}`}>
+              className={`relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-t-sm transition-colors flex-shrink-0 ${isActive ? "text-[#A890D4] font-medium" : "text-muted-foreground hover:text-foreground"}`}>
               <Icon className="w-3 h-3" />
               {label}
-              {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />}
+              {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4]" />}
             </button>
           );
         })}

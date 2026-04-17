@@ -318,7 +318,7 @@ export default function SiteDiaryEntries() {
             </button>
           )}
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => handleAddEntry()}
             disabled={!isStandalone && !selectedProjectId}
             data-testid="button-add-site-diary"
@@ -333,7 +333,7 @@ export default function SiteDiaryEntries() {
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "list" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "list" ? "bg-[#A890D4] text-white border-[#A890D4]/20" : "hover-elevate active-elevate-2"}`}
             onClick={() => setViewMode("list")}
             data-testid="button-list-view"
           >
@@ -341,7 +341,7 @@ export default function SiteDiaryEntries() {
             <span>List</span>
           </button>
           <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "calendar" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "calendar" ? "bg-[#A890D4] text-white border-[#A890D4]/20" : "hover-elevate active-elevate-2"}`}
             onClick={() => setViewMode("calendar")}
             data-testid="button-calendar-view"
           >
@@ -349,7 +349,7 @@ export default function SiteDiaryEntries() {
             <span>Calendar</span>
           </button>
           <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "feed" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "feed" ? "bg-[#A890D4] text-white border-[#A890D4]/20" : "hover-elevate active-elevate-2"}`}
             onClick={() => setViewMode("feed")}
             data-testid="button-feed-view"
           >
@@ -393,7 +393,7 @@ export default function SiteDiaryEntries() {
                   <button
                     onClick={() => setSelectedProjectId("")}
                     className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
-                      !selectedProjectId || selectedProjectId === "all" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      !selectedProjectId || selectedProjectId === "all" ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                     }`}
                     data-testid="filter-project-all"
                   >
@@ -404,7 +404,7 @@ export default function SiteDiaryEntries() {
                       key={project.id}
                       onClick={() => setSelectedProjectId(project.id)}
                       className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
-                        selectedProjectId === project.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                        selectedProjectId === project.id ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                       }`}
                       data-testid={`filter-project-${project.id}`}
                     >
@@ -436,7 +436,7 @@ export default function SiteDiaryEntries() {
                 <button
                   onClick={() => setSelectedTemplateId("all")}
                   className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                    selectedTemplateId === "all" || !selectedTemplateId ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    selectedTemplateId === "all" || !selectedTemplateId ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                   }`}
                   data-testid="filter-template-all"
                 >
@@ -447,7 +447,7 @@ export default function SiteDiaryEntries() {
                     key={template.id}
                     onClick={() => setSelectedTemplateId(template.id)}
                     className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                      selectedTemplateId === template.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      selectedTemplateId === template.id ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
                     }`}
                     data-testid={`filter-template-${template.id}`}
                   >
@@ -494,7 +494,7 @@ export default function SiteDiaryEntries() {
             </p>
             {entries.length === 0 && (
               <button
-                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                 onClick={() => handleAddEntry()}
                 data-testid="button-add-first-entry"
               >
@@ -578,7 +578,7 @@ function SiteDiaryCalendarView({
               key={day.toISOString()}
               className={`bg-card min-h-[80px] p-1 ${!isCurrentMonth ? "opacity-40" : ""}`}
             >
-              <div className={`text-[10px] font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-[#bba7db] text-white" : "text-muted-foreground"}`}>
+              <div className={`text-[10px] font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-[#A890D4] text-white" : "text-muted-foreground"}`}>
                 {format(day, "d")}
               </div>
               <div className="space-y-0.5">
@@ -586,7 +586,7 @@ function SiteDiaryCalendarView({
                   <Badge
                     key={entry.id}
                     variant="secondary"
-                    className="w-full justify-start text-[9px] px-1 py-0 cursor-pointer truncate bg-[#bba7db]/10 text-[#bba7db] border-0"
+                    className="w-full justify-start text-[9px] px-1 py-0 cursor-pointer truncate bg-[#A890D4]/10 text-[#A890D4] border-0"
                     onClick={() => onViewEntry(entry)}
                     title={entry.title}
                   >
@@ -1131,7 +1131,7 @@ function TemplatePopoverSelector({
               type="button"
               onClick={() => { onSelect(template.id); setOpen(false); }}
               className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate flex items-center gap-2 ${
-                selectedTemplateId === template.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                selectedTemplateId === template.id ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
               }`}
               data-testid={`template-option-${template.id}`}
             >

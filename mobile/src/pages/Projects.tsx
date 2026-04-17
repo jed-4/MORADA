@@ -136,7 +136,7 @@ export function Projects() {
                 <div className="flex items-center gap-2.5">
                   <div
                     className="w-8 h-8 rounded-md flex-shrink-0"
-                    style={{ backgroundColor: project.color || "#bba7db" }}
+                    style={{ backgroundColor: project.color || "#A890D4" }}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

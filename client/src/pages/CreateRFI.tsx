@@ -158,7 +158,7 @@ export default function CreateRFI() {
             size="sm"
             onClick={handleSubmit}
             disabled={createRfiMutation.isPending}
-            className="h-7 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            className="h-7 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             data-testid="button-create-rfi"
           >
             {createRfiMutation.isPending ? "Creating..." : "Create RFI"}

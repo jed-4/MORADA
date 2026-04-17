@@ -55,7 +55,7 @@ import {
 } from "lucide-react";
 import type { SelectionTemplate, FieldCategory } from "@shared/schema";
 
-const CASVA_LILAC = '#bba7db';
+const CASVA_LILAC = '#A890D4';
 
 interface SelectionOption {
   id: string;
@@ -523,7 +523,7 @@ export default function SelectionTemplateItemDetail() {
           </Button>
         </div>
         <button
-          className="h-6 w-auto px-2 text-xs border rounded-md text-white border-[#bba7db]/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
+          className="h-6 w-auto px-2 text-xs border rounded-md text-white border-[#A890D4]/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
           style={{ backgroundColor: CASVA_LILAC }}
           onClick={handleAddOption}
           data-testid="button-add-option"
@@ -565,7 +565,7 @@ export default function SelectionTemplateItemDetail() {
                 Add options for this selection item
               </p>
               <button
-                className="h-6 px-2 text-xs border rounded-md text-white border-[#bba7db]/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                className="h-6 px-2 text-xs border rounded-md text-white border-[#A890D4]/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 style={{ backgroundColor: CASVA_LILAC }}
                 onClick={handleAddOption}
                 data-testid="button-add-first-option"
@@ -580,7 +580,7 @@ export default function SelectionTemplateItemDetail() {
                 <div
                   key={option.id}
                   className={`border rounded-lg p-3 bg-card hover-elevate transition-all ${
-                    option.isSelectedByClient ? 'ring-2 ring-[#bba7db]' : ''
+                    option.isSelectedByClient ? 'ring-2 ring-[#A890D4]' : ''
                   }`}
                   data-testid={`card-option-${option.id}`}
                 >
@@ -593,7 +593,7 @@ export default function SelectionTemplateItemDetail() {
                     </div>
                     <div className="flex items-center gap-1">
                       {option.isSelectedByClient && (
-                        <CheckCircle className="h-4 w-4 text-[#bba7db]" />
+                        <CheckCircle className="h-4 w-4 text-[#A890D4]" />
                       )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

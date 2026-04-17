@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import type { RfiTemplate, TemplateCategory } from "@shared/schema";
 
-const CASVA_LILAC = '#bba7db';
+const CASVA_LILAC = '#A890D4';
 
 const DIRECTED_TO_TYPES = [
   { value: "client", label: "Client" },

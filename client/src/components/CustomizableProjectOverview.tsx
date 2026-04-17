@@ -717,7 +717,7 @@ export default function CustomizableProjectOverview() {
       <div className="flex flex-col h-full" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#bba7db] mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#A890D4] mx-auto mb-4"></div>
             <p>Loading dashboard...</p>
           </div>
         </div>
@@ -735,7 +735,7 @@ export default function CustomizableProjectOverview() {
             <p className="mb-4">There was a problem loading your dashboard views.</p>
             <Button 
               onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] })}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               Try Again
             </Button>
@@ -937,7 +937,7 @@ export default function CustomizableProjectOverview() {
                   <Palette className="w-3 h-3" />
                 </button>
                 <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                   onClick={() => setIsAddingWidget(true)}
                   data-testid="button-add-widget"
                 >
@@ -978,7 +978,7 @@ export default function CustomizableProjectOverview() {
               }}
               className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
                 isActive
-                  ? 'text-[#bba7db] font-medium'
+                  ? 'text-[#A890D4] font-medium'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
               data-testid={`tab-${tab.id}`}
@@ -986,7 +986,7 @@ export default function CustomizableProjectOverview() {
               <Icon className="w-3 h-3" />
               <span>{tab.label}</span>
               {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
               )}
             </button>
           );
@@ -1053,11 +1053,11 @@ export default function CustomizableProjectOverview() {
                         <VisIcon className="w-3 h-3 text-muted-foreground" />
                         <span className="flex-1 truncate">{view.name}</span>
                         {view.id === activeViewId && (
-                          <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                          <Check className="w-3 h-3 text-[#A890D4] flex-shrink-0" />
                         )}
                       </button>
                       {view.isCompanyDefault && (
-                        <span className="text-[10px] px-1 py-0.5 bg-[#bba7db]/20 text-[#bba7db] rounded" title="Company Default">
+                        <span className="text-[10px] px-1 py-0.5 bg-[#A890D4]/20 text-[#A890D4] rounded" title="Company Default">
                           Default
                         </span>
                       )}
@@ -1164,7 +1164,7 @@ export default function CustomizableProjectOverview() {
                         </div>
                         <Button
                           onClick={() => setIsAddingWidget(true)}
-                          className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                          className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                         >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Your First Widget
@@ -1216,9 +1216,9 @@ export default function CustomizableProjectOverview() {
                   <div className="space-y-3">
                     {/* Widget Preview Header */}
                     <div className="flex items-center justify-between">
-                      <definition.icon className="h-5 w-5 text-[#bba7db]" />
+                      <definition.icon className="h-5 w-5 text-[#A890D4]" />
                       <div className="h-2 w-16 bg-muted rounded-full">
-                        <div className="h-full w-3/4 bg-[#bba7db] rounded-full"></div>
+                        <div className="h-full w-3/4 bg-[#A890D4] rounded-full"></div>
                       </div>
                     </div>
 
@@ -1367,7 +1367,7 @@ export default function CustomizableProjectOverview() {
             <Button
               onClick={handleCreateView}
               disabled={createViewMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               {createViewMutation.isPending ? "Creating..." : "Create View"}
             </Button>
@@ -1516,7 +1516,7 @@ export default function CustomizableProjectOverview() {
             <Button
               onClick={handleEditView}
               disabled={updateViewMutation.isPending || !editViewName.trim()}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               {updateViewMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>

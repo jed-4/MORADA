@@ -9,7 +9,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
-    borderBottom: "2 solid #bba7db",
+    borderBottom: "2 solid #A890D4",
     paddingBottom: 10,
   },
   title: {
@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
     borderRadius: 3,
-    borderLeft: "3 solid #bba7db",
+    borderLeft: "3 solid #A890D4",
   },
   groupTitle: {
     fontSize: 12,
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: 6,
-    backgroundColor: "#bba7db",
+    backgroundColor: "#A890D4",
     borderRadius: 3,
   },
   footer: {

@@ -187,7 +187,7 @@ export function SetReminderDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-[#bba7db]" />
+            <Bell className="h-5 w-5 text-[#A890D4]" />
             Set Reminder
           </DialogTitle>
           <DialogDescription>
@@ -294,7 +294,7 @@ export function SetReminderDialog({
               <Button 
                 type="submit" 
                 disabled={createMutation.isPending || !quickOption}
-                className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
                 data-testid="button-set-reminder"
               >
                 {createMutation.isPending ? "Setting..." : "Set Reminder"}

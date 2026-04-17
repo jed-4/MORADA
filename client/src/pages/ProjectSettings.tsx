@@ -1260,7 +1260,7 @@ export default function ProjectSettings() {
                             disabled={addTeamMemberMutation.isPending || removeTeamMemberMutation.isPending}
                           />
                           <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-[10px] bg-[#bba7db]/10 text-[#bba7db]">
+                            <AvatarFallback className="text-[10px] bg-[#A890D4]/10 text-[#A890D4]">
                               {getUserInitials(user)}
                             </AvatarFallback>
                           </Avatar>
@@ -1303,7 +1303,7 @@ export default function ProjectSettings() {
                     <TableCell>
                       <div className="flex items-center gap-2.5">
                         <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
+                          <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
                             {getUserInitials(member)}
                           </AvatarFallback>
                         </Avatar>

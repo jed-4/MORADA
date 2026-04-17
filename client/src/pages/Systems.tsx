@@ -46,7 +46,7 @@ export default function Systems() {
             onClick={() => setActiveTab("folders")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "folders"
-                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                ? "bg-[#A890D4]/10 text-[#A890D4]"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-folders"
@@ -60,7 +60,7 @@ export default function Systems() {
             onClick={() => setActiveTab("tasks")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "tasks"
-                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                ? "bg-[#A890D4]/10 text-[#A890D4]"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-tasks"
@@ -74,7 +74,7 @@ export default function Systems() {
             onClick={() => setActiveTab("workflows")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "workflows"
-                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                ? "bg-[#A890D4]/10 text-[#A890D4]"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-workflows"
@@ -88,7 +88,7 @@ export default function Systems() {
             onClick={() => setActiveTab("reminders")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "reminders"
-                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                ? "bg-[#A890D4]/10 text-[#A890D4]"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-reminders"
@@ -102,7 +102,7 @@ export default function Systems() {
             onClick={() => setActiveTab("diary")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "diary"
-                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                ? "bg-[#A890D4]/10 text-[#A890D4]"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-diary"
@@ -263,7 +263,7 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
       </Button>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
         onClick={() => taskLibraryRef.current?.openNewTemplateDialog()}
         data-testid="button-new-template"
       >
@@ -290,7 +290,7 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
       </div>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
         onClick={() => workflowBuilderRef.current?.openNewWorkflowDialog()}
         data-testid="button-new-workflow"
       >
@@ -317,7 +317,7 @@ function RemindersControls({ businessRemindersRef }: { businessRemindersRef: Rea
       </div>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
         onClick={() => businessRemindersRef.current?.openNewReminderDialog()}
         data-testid="button-new-reminder"
       >

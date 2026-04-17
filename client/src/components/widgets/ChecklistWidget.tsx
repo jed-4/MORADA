@@ -382,7 +382,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             <Button 
               size="icon" 
               variant="ghost"
-              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-[#bba7db]' : ''}`}
+              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-[#A890D4]' : ''}`}
               data-testid="checklist-widget-toggle-hide-completed"
             >
               {(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? (
@@ -863,7 +863,7 @@ function ChecklistGroupItem({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Avatar className="h-4 w-4 flex-shrink-0">
-                        <AvatarFallback className="text-[7px] bg-[#bba7db]/20 text-[#bba7db]">
+                        <AvatarFallback className="text-[7px] bg-[#A890D4]/20 text-[#A890D4]">
                           {getInitials(item.assigneeName)}
                         </AvatarFallback>
                       </Avatar>

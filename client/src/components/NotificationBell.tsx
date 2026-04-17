@@ -342,12 +342,12 @@ export function NotificationBell() {
                   >
                     <div className={`flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 ${
                       timeStatus.isOverdue ? "bg-destructive/10" : 
-                      (timeStatus as any).isSnoozed ? "bg-orange-500/10" : "bg-[#bba7db]/10"
+                      (timeStatus as any).isSnoozed ? "bg-orange-500/10" : "bg-[#A890D4]/10"
                     }`}>
                       {(timeStatus as any).isSnoozed ? (
                         <AlarmClockOff className="h-4 w-4 text-orange-500" />
                       ) : (
-                        <TypeIcon className={`h-4 w-4 ${timeStatus.isOverdue ? "text-destructive" : "text-[#bba7db]"}`} />
+                        <TypeIcon className={`h-4 w-4 ${timeStatus.isOverdue ? "text-destructive" : "text-[#A890D4]"}`} />
                       )}
                     </div>
                     

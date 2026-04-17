@@ -7090,7 +7090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             <p>Hi ${targetUser.firstName || 'there'},</p>
             <p>Your team administrator has requested a password reset for your BuildPro account.</p>
             <p>Click the link below to set a new password:</p>
-            <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #bba7db; color: white; text-decoration: none; border-radius: 6px;">Reset Password</a></p>
+            <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #A890D4; color: white; text-decoration: none; border-radius: 6px;">Reset Password</a></p>
             <p>This link will expire in 24 hours.</p>
             <p>If you did not request this, please ignore this email or contact your administrator.</p>
             <p>Thanks,<br>The BuildPro Team</p>

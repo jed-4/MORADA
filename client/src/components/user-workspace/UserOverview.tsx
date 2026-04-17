@@ -423,7 +423,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1.5"
                 data-testid="button-view-switcher"
               >
                 <span>{activeView?.name || 'Overview'}</span>
@@ -445,7 +445,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   >
                     <span className="flex-1 truncate">{view.name}</span>
                     {view.id === activeViewId && (
-                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                      <Check className="w-3 h-3 text-[#A890D4] flex-shrink-0" />
                     )}
                   </button>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -487,7 +487,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
                   data-testid="button-add-widget"
                 >
                   <Plus className="w-3 h-3" />
@@ -593,7 +593,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                 data-testid={`add-widget-${definition.type}`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <definition.icon className="h-4 w-4 text-[#bba7db]" />
+                  <definition.icon className="h-4 w-4 text-[#A890D4]" />
                   <span className="text-xs font-medium">{definition.name}</span>
                 </div>
                 <p className="text-[10px] text-muted-foreground line-clamp-2">
@@ -653,7 +653,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm flex items-center gap-2">
-              <Settings className="h-4 w-4 text-[#bba7db]" />
+              <Settings className="h-4 w-4 text-[#A890D4]" />
               Configure Widget
             </DialogTitle>
           </DialogHeader>

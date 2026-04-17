@@ -328,7 +328,7 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                 form.reset();
                 setIsDialogOpen(true);
               }}
-              className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+              className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
               data-testid="button-create-first-reminder"
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -348,9 +348,9 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   data-testid={`reminder-item-${reminder.id}`}
                 >
                   <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
-                    reminder.isActive ? "bg-[#bba7db]/10" : "bg-muted"
+                    reminder.isActive ? "bg-[#A890D4]/10" : "bg-muted"
                   }`}>
-                    <TypeIcon className={`h-5 w-5 ${reminder.isActive ? "text-[#bba7db]" : "text-muted-foreground"}`} />
+                    <TypeIcon className={`h-5 w-5 ${reminder.isActive ? "text-[#A890D4]" : "text-muted-foreground"}`} />
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -751,7 +751,7 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   <Button 
                     type="submit" 
                     disabled={createMutation.isPending || updateMutation.isPending}
-                    className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                    className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
                     data-testid="button-submit"
                   >
                     {createMutation.isPending || updateMutation.isPending ? "Saving..." : editingReminder ? "Update Reminder" : "Create Reminder"}

@@ -570,7 +570,7 @@ export default function SelectionDetail() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Selected</span>
-                            <span className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+                            <span className="text-sm font-semibold text-[#A890D4]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
                         
@@ -662,7 +662,7 @@ export default function SelectionDetail() {
                     onClick={() => setOptionsView("grid")}
                     className={cn(
                       "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
-                      optionsView === "grid" ? "bg-[#bba7db] text-white" : "hover-elevate"
+                      optionsView === "grid" ? "bg-[#A890D4] text-white" : "hover-elevate"
                     )}
                     data-testid="button-view-grid"
                   >
@@ -672,7 +672,7 @@ export default function SelectionDetail() {
                     onClick={() => setOptionsView("table")}
                     className={cn(
                       "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
-                      optionsView === "table" ? "bg-[#bba7db] text-white" : "hover-elevate"
+                      optionsView === "table" ? "bg-[#A890D4] text-white" : "hover-elevate"
                     )}
                     data-testid="button-view-table"
                   >
@@ -1073,7 +1073,7 @@ export default function SelectionDetail() {
                                   className={cn(
                                     "flex flex-col items-center gap-1 p-3 rounded-lg border transition-all",
                                     isSelected 
-                                      ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                                      ? "bg-[#A890D4] text-white border-[#A890D4]" 
                                       : "hover-elevate border-border"
                                   )}
                                   data-testid={`status-${status.key}`}
@@ -1103,7 +1103,7 @@ export default function SelectionDetail() {
                       <AccordionItem value="client" className="border rounded-lg mb-2 px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-client">
                           <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-[#bba7db]" />
+                            <Users className="w-4 h-4 text-[#A890D4]" />
                             <span className="text-sm font-medium">Client</span>
                           </div>
                         </AccordionTrigger>
@@ -1164,7 +1164,7 @@ export default function SelectionDetail() {
                       <AccordionItem value="vendors" className="border rounded-lg mb-2 px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-vendors">
                           <div className="flex items-center gap-2">
-                            <Truck className="w-4 h-4 text-[#bba7db]" />
+                            <Truck className="w-4 h-4 text-[#A890D4]" />
                             <span className="text-sm font-medium">Vendors</span>
                           </div>
                         </AccordionTrigger>
@@ -1194,7 +1194,7 @@ export default function SelectionDetail() {
                       <AccordionItem value="installer" className="border rounded-lg px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-installer">
                           <div className="flex items-center gap-2">
-                            <HardHat className="w-4 h-4 text-[#bba7db]" />
+                            <HardHat className="w-4 h-4 text-[#A890D4]" />
                             <span className="text-sm font-medium">Installer</span>
                           </div>
                         </AccordionTrigger>

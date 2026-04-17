@@ -174,7 +174,7 @@ export function ProjectDefectsTab() {
               onClick={() => setStatusFilter(status)}
               className={`h-6 px-2.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                 statusFilter === status
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "bg-muted text-muted-foreground hover-elevate"
               }`}
               data-testid={`filter-${status}`}
@@ -265,7 +265,7 @@ export function ProjectDefectsTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-defect"
       >
         <Plus className="w-6 h-6" />
@@ -322,7 +322,7 @@ export function ProjectDefectsTab() {
                     onClick={() => setNewType(type)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
                       newType === type
-                        ? "bg-[#bba7db] text-white"
+                        ? "bg-[#A890D4] text-white"
                         : "border hover-elevate"
                     }`}
                     data-testid={`type-select-${type}`}

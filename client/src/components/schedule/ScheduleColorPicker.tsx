@@ -41,17 +41,20 @@ const STANDARD_COLORS = [
   { name: "Gray", value: "#9ca3af" },
 ];
 
+const GRAY_COLOR = "#9ca3af";
+
 // Generate a deterministic color from a string (user ID or name)
 export function generateColorFromString(str: string): string {
-  if (!str) return STANDARD_COLORS[17].value; // Default gray
-  
+  if (!str) return GRAY_COLOR;
+
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
-  
-  const index = Math.abs(hash) % (STANDARD_COLORS.length - 1); // Exclude gray
-  return STANDARD_COLORS[index].value;
+
+  const pool = STANDARD_COLORS.filter(c => c.value !== GRAY_COLOR);
+  const index = Math.abs(hash) % pool.length;
+  return pool[index].value;
 }
 
 interface ScheduleColorPickerProps {

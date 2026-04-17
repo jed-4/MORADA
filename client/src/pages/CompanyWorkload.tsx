@@ -818,7 +818,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     className={cn(
                       "flex flex-col items-center justify-end shrink-0 border-l border-border/20 pb-1",
                       isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
-                      isToday && "bg-[#bba7db]/10"
+                      isToday && "bg-[#A890D4]/10"
                     )}
                     style={{ width: colWidth }}
                   >
@@ -838,10 +838,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                         {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                       </TooltipContent>
                     </Tooltip>
-                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#bba7db]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                       {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                     </div>
-                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#bba7db]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                       {format(day, "d")}
                     </div>
                   </div>
@@ -864,7 +864,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 if (todayIdx === -1) return null;
                 return (
                   <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-10"
+                    className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-10"
                     style={{ left: dayOffsets.offsets[todayIdx] + getColWidth(days[todayIdx]) / 2 }}
                   />
                 );
@@ -908,7 +908,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           className={cn(
                             "absolute top-0 h-full border-l border-border/10",
                             isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
-                            isToday && "bg-[#bba7db]/5",
+                            isToday && "bg-[#A890D4]/5",
                             isOverloadedDay && "bg-red-500/8"
                           )}
                           style={{ left: dayOffsets.offsets[dayIdx], width: colWidth }}

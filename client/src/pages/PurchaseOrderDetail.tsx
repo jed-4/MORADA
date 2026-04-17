@@ -790,7 +790,7 @@ export default function PurchaseOrderDetail() {
             {purchaseOrder.status === "draft" && (
               <Button
                 size="sm"
-                className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
                 onClick={() => setIsSendDialogOpen(true)}
                 data-testid="button-send-po"
               >
@@ -1197,7 +1197,7 @@ export default function PurchaseOrderDetail() {
             <Button
               onClick={() => sendPoMutation.mutate()}
               disabled={sendPoMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
             >
               {sendPoMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />

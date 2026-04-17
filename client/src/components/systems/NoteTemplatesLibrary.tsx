@@ -449,7 +449,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                 </p>
                 <Button
                   size="sm"
-                  className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                  className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
                   onClick={openNewTemplateDialog}
                   data-testid="button-create-first-template"
                 >
@@ -485,7 +485,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                                 <Badge 
                                   key={roleId} 
                                   variant="outline" 
-                                  className="h-4 px-1.5 text-[10px] bg-[#bba7db]/10 border-[#bba7db]/30 text-[#8b7ab3]"
+                                  className="h-4 px-1.5 text-[10px] bg-[#A890D4]/10 border-[#A890D4]/30 text-[#8b7ab3]"
                                 >
                                   {role.name}
                                 </Badge>
@@ -665,7 +665,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                                 <Badge 
                                   key={roleId} 
                                   variant="secondary" 
-                                  className="h-5 px-1.5 text-xs bg-[#bba7db]/20 text-[#8b7ab3] border-0"
+                                  className="h-5 px-1.5 text-xs bg-[#A890D4]/20 text-[#8b7ab3] border-0"
                                 >
                                   {role.name}
                                 </Badge>
@@ -712,7 +712,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                                 >
                                   <div className={`h-4 w-4 rounded border flex items-center justify-center ${
                                     isSelected 
-                                      ? 'bg-[#bba7db] border-[#bba7db]' 
+                                      ? 'bg-[#A890D4] border-[#A890D4]' 
                                       : 'border-input'
                                   }`}>
                                     {isSelected && <Check className="h-3 w-3 text-white" />}
@@ -800,7 +800,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                 Cancel
               </Button>
               <Button
-                className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
                 onClick={handleSubmit}
                 disabled={createTemplateMutation.isPending || updateTemplateMutation.isPending || isLoadingFields}
                 data-testid="button-save-template"
@@ -1019,7 +1019,7 @@ function FieldEditDialog({
             Cancel
           </Button>
           <Button
-            className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+            className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
             onClick={onSave}
             data-testid="button-save-field"
           >

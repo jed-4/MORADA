@@ -80,7 +80,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
       {/* Summary Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-[#bba7db]" />
+          <FileText className="h-4 w-4 text-[#A890D4]" />
           <span className="font-medium text-sm">Client Invoices</span>
         </div>
         <Badge variant="secondary" className="text-xs">

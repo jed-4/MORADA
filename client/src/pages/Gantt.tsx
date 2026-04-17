@@ -242,7 +242,7 @@ function useGanttRowDrag(
           ghost.style.borderRadius = '4px';
           ghost.style.overflow = 'hidden';
           ghost.style.background = 'var(--background)';
-          ghost.style.border = '2px solid #bba7db';
+          ghost.style.border = '2px solid #A890D4';
 
           const clone = rowEl.cloneNode(true) as HTMLElement;
           clone.style.opacity = '1';
@@ -2907,7 +2907,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           key={`${week.weekLabel}-${dayIdx}`}
                           className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
                             day.isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''
-                          } ${isToday ? 'text-[#bba7db] font-semibold' : 'text-foreground'}`}
+                          } ${isToday ? 'text-[#A890D4] font-semibold' : 'text-foreground'}`}
                           style={{ width: `${day.widthPx}px` }}
                         >
                           {day.label}
@@ -2925,7 +2925,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   return (
                     <div
                       key={idx}
-                      className={`border-r text-xs text-center py-1 flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                      className={`border-r text-xs text-center py-1 flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${isToday ? 'bg-[#A890D4]/20 text-[#A890D4]' : ''}`}
                       style={{ width: `${header.width}px` }}
                     >
                       {header.dateLabel} {header.dayLabel && `${header.dayLabel}`}
@@ -2992,7 +2992,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
               {/* Today line - lilac color */}
               <div
-                className="absolute top-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                className="absolute top-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
                 style={{ 
                   left: `${todayPosition}px`,
                   height: `${orderedItems.length * ROW_HEIGHT}px`,
@@ -3050,7 +3050,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 
                 return (
                   <div
-                    className="absolute h-6 rounded-sm border-2 border-dashed border-[#bba7db] bg-[#bba7db]/30 pointer-events-none z-40"
+                    className="absolute h-6 rounded-sm border-2 border-dashed border-[#A890D4] bg-[#A890D4]/30 pointer-events-none z-40"
                     style={{
                       left: `${previewLeft}px`,
                       width: `${previewWidth}px`,
@@ -3117,7 +3117,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       
                       <div
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
-                          ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
+                          ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#A890D4]' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
                         `}
@@ -3565,7 +3565,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
               {/* Today line */}
               <div
-                className="absolute top-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                className="absolute top-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
                 style={{ left: `${todayPosition}px`, height: `${orderedItems.length * ROW_HEIGHT}px` }}
               />
 
@@ -4021,10 +4021,10 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             left: rowDragIndicator.left,
             width: rowDragIndicator.width,
             height: '2px',
-            backgroundColor: '#bba7db',
+            backgroundColor: '#A890D4',
             zIndex: 99998,
             pointerEvents: 'none',
-            boxShadow: '0 0 4px rgba(187, 167, 219, 0.5)',
+            boxShadow: '0 0 4px rgba(168, 144, 212, 0.5)',
           }}
         >
           <div
@@ -4035,7 +4035,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#bba7db',
+              backgroundColor: '#A890D4',
             }}
           />
           <div
@@ -4046,7 +4046,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#bba7db',
+              backgroundColor: '#A890D4',
             }}
           />
         </div>,

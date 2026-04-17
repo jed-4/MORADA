@@ -405,7 +405,7 @@ export default function UserSettings() {
                       onClick={() => setActiveSection(category.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                         isActive 
-                          ? "bg-[#bba7db] text-white" 
+                          ? "bg-[#A890D4] text-white" 
                           : "text-foreground hover-elevate"
                       }`}
                       data-testid={`user-settings-nav-${category.id}`}

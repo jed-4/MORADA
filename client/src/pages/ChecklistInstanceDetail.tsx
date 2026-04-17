@@ -626,7 +626,7 @@ export default function ChecklistInstanceDetail() {
               Completed
             </Badge>
           ) : checklist.status === "in_progress" || progress > 0 ? (
-            <Badge className="bg-[#bba7db]/20 text-[#8b6bb8] dark:bg-[#bba7db]/10 dark:text-[#bba7db]">
+            <Badge className="bg-[#A890D4]/20 text-[#8b6bb8] dark:bg-[#A890D4]/10 dark:text-[#A890D4]">
               In Progress
             </Badge>
           ) : (
@@ -673,7 +673,7 @@ export default function ChecklistInstanceDetail() {
       {/* Row 2: Info */}
       <div className={`h-9 flex items-center justify-between px-2 border-b flex-shrink-0 transition-colors ${
         (checklist.status === "in_progress" || progress > 0) && checklist.status !== "completed"
-          ? "bg-[#bba7db]/5 border-[#bba7db]/20"
+          ? "bg-[#A890D4]/5 border-[#A890D4]/20"
           : "bg-background border-border"
       }`}>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -698,7 +698,7 @@ export default function ChecklistInstanceDetail() {
           {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 text-[#bba7db]" data-testid="linked-item-display">
+                <span className="flex items-center gap-1 text-[#A890D4]" data-testid="linked-item-display">
                   <Link2 className="h-3 w-3" />
                   <span className="truncate max-w-[120px]">
                     {checklist.linkedTaskId 
@@ -864,7 +864,7 @@ export default function ChecklistInstanceDetail() {
                                   <Button variant="ghost" size="icon" className="h-5 w-5" data-testid={`button-assign-item-${item.id}`}>
                                     {item.assigneeName ? (
                                       <Avatar className="h-4 w-4">
-                                        <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                        <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
                                           {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                         </AvatarFallback>
                                       </Avatar>
@@ -913,13 +913,13 @@ export default function ChecklistInstanceDetail() {
                                           }}
                                         >
                                           <Avatar className="h-4 w-4 mr-2">
-                                            <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                            <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
                                               {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                             </AvatarFallback>
                                           </Avatar>
                                           <span className="truncate">{member.name}</span>
                                           {item.assigneeId === member.id && (
-                                            <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                            <Check className="h-3 w-3 ml-auto text-[#A890D4] shrink-0" />
                                           )}
                                         </Button>
                                       ))}
@@ -960,7 +960,7 @@ export default function ChecklistInstanceDetail() {
                                     {isUploading && uploadingItemId === item.id ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
                                     ) : (
-                                      <Paperclip className={`h-3 w-3 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                                      <Paperclip className={`h-3 w-3 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#A890D4]' : 'text-muted-foreground/50'}`} />
                                     )}
                                   </Button>
                                 </TooltipTrigger>
@@ -1308,7 +1308,7 @@ export default function ChecklistInstanceDetail() {
                     {noteEntries.map((entry, idx) => (
                       <div key={idx} className="flex gap-2">
                         <Avatar className="h-6 w-6 shrink-0">
-                          <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                          <AvatarFallback className="text-[9px] bg-[#A890D4]/20 text-[#A890D4]">
                             {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
@@ -1345,7 +1345,7 @@ export default function ChecklistInstanceDetail() {
                 />
                 <Button
                   size="icon"
-                  className="h-8 w-8 shrink-0 self-end bg-[#bba7db] hover:bg-[#a896c9]"
+                  className="h-8 w-8 shrink-0 self-end bg-[#A890D4] hover:bg-[#a896c9]"
                   onClick={handleAddNote}
                   disabled={!newNoteText.trim() || updateItemMutation.isPending}
                 >

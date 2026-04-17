@@ -36,7 +36,7 @@
 
   --sidebar-border: 214 32% 91%;
 
-  --sidebar-primary: 265 44% 76%; /* Lilac Purple #bba7db */
+  --sidebar-primary: 265 44% 76%; /* Lilac Purple #A890D4 */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
@@ -801,20 +801,20 @@
 
   @keyframes casvaGlow {
     0%, 100% { 
-      box-shadow: 0 0 0 2px rgba(187, 167, 219, 0.3); 
+      box-shadow: 0 0 0 2px rgba(168, 144, 212, 0.3); 
     }
     50% { 
-      box-shadow: 0 0 0 4px rgba(187, 167, 219, 0.5), 0 0 12px rgba(187, 167, 219, 0.3); 
+      box-shadow: 0 0 0 4px rgba(168, 144, 212, 0.5), 0 0 12px rgba(168, 144, 212, 0.3); 
     }
   }
   
   /* Ripple effect on click - Lilac radial gradient */
   @keyframes casvaRipple {
     0% {
-      box-shadow: 0 0 0 0 rgba(187, 167, 219, 0.7);
+      box-shadow: 0 0 0 0 rgba(168, 144, 212, 0.7);
     }
     100% {
-      box-shadow: 0 0 0 10px rgba(187, 167, 219, 0);
+      box-shadow: 0 0 0 10px rgba(168, 144, 212, 0);
     }
   }
   
@@ -1158,7 +1158,7 @@
   }
 
   .rbc-current-time-indicator {
-    background-color: #bba7db;
+    background-color: #A890D4;
   }
 }
 

@@ -527,7 +527,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                   onClick={() => setCalendarMode(mode.value)}
                   className={`h-6 w-auto px-2 text-xs border rounded-md ${
                     calendarMode === mode.value
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                      ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
                       : 'hover-elevate'
                   } active-elevate-2`}
                 >

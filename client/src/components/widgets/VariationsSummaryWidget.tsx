@@ -82,7 +82,7 @@ export default function VariationsSummaryWidget({ widget, onUpdate, isConfigurin
       {/* Summary Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <FileEdit className="h-4 w-4 text-[#bba7db]" />
+          <FileEdit className="h-4 w-4 text-[#A890D4]" />
           <span className="font-medium text-sm">Variations</span>
         </div>
         <Badge variant="secondary" className="text-xs">

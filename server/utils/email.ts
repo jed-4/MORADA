@@ -206,7 +206,7 @@ export async function sendReminderEmail({
   const priorityLabel = priority === 'high' ? 'High Priority' : priority === 'low' ? 'Low Priority' : 'Normal';
   
   const linkedItemSection = linkedItemType && linkedItemTitle ? `
-    <p style="margin: 16px 0; padding: 16px; background-color: #f8fafc; border-radius: 8px; border-left: 4px solid #bba7db;">
+    <p style="margin: 16px 0; padding: 16px; background-color: #f8fafc; border-radius: 8px; border-left: 4px solid #A890D4;">
       <span style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Related ${linkedItemType.replace('_', ' ')}</span><br>
       <span style="color: #1e293b; font-size: 15px; font-weight: 500;">${linkedItemTitle}</span>
     </p>
@@ -227,7 +227,7 @@ export async function sendReminderEmail({
               <table role="presentation" style="width: 600px; max-width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
                 <!-- Header -->
                 <tr>
-                  <td style="padding: 32px 40px 16px; text-align: center; background: linear-gradient(135deg, #bba7db 0%, #9b87c4 100%); border-radius: 8px 8px 0 0;">
+                  <td style="padding: 32px 40px 16px; text-align: center; background: linear-gradient(135deg, #A890D4 0%, #9b87c4 100%); border-radius: 8px 8px 0 0;">
                     <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">BuildPro Reminder</h1>
                   </td>
                 </tr>

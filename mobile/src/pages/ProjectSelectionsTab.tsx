@@ -181,7 +181,7 @@ export function ProjectSelectionsTab() {
               onClick={() => setStatusFilter(status.key)}
               className={`h-6 px-2.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                 statusFilter === status.key
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-[#A890D4] text-white"
                   : "bg-muted text-muted-foreground hover-elevate"
               }`}
               data-testid={`filter-${status.key}`}
@@ -200,8 +200,8 @@ export function ProjectSelectionsTab() {
           </div>
         ) : projectSelections.length === 0 ? (
           <div className="text-center py-16 px-6">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#bba7db]/10 flex items-center justify-center">
-              <Plus className="w-8 h-8 text-[#bba7db]" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#A890D4]/10 flex items-center justify-center">
+              <Plus className="w-8 h-8 text-[#A890D4]" />
             </div>
             <h3 className="text-lg font-semibold mb-2">No Selections Yet</h3>
             <p className="text-muted-foreground text-sm mb-6">
@@ -209,7 +209,7 @@ export function ProjectSelectionsTab() {
             </p>
             <button
               onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center gap-2 bg-[#bba7db] text-white px-4 py-2 rounded-lg font-medium"
+              className="inline-flex items-center gap-2 bg-[#A890D4] text-white px-4 py-2 rounded-lg font-medium"
               data-testid="button-add-first-selection"
             >
               <Plus className="w-4 h-4" />
@@ -275,7 +275,7 @@ export function ProjectSelectionsTab() {
       {/* FAB */}
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-selection"
       >
         <Plus className="w-6 h-6" />
@@ -339,7 +339,7 @@ export function ProjectSelectionsTab() {
                     onClick={() => setFormStatus(status.value)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
                       formStatus === status.value
-                        ? "bg-[#bba7db] text-white"
+                        ? "bg-[#A890D4] text-white"
                         : "border hover-elevate"
                     }`}
                     data-testid={`form-status-${status.value}`}
