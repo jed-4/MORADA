@@ -1800,7 +1800,7 @@ export const billLineItems = pgTable("bill_line_items", {
   description: text("description").notNull(),
   costCodeId: varchar("cost_code_id").references(() => costCodes.id),
   priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }), // Link to price list
-  quantity: integer("quantity").notNull().default(1),
+  quantity: doublePrecision("quantity").notNull().default(1),
   unitPrice: integer("unit_price").notNull().default(0), // Price in cents
   tax: taxTypeEnum("tax").notNull().default("GST on expenses"),
   account: text("account"), // Xero account code
