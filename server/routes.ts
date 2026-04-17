@@ -8953,10 +8953,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const contact = await storage.updateContact(req.params.id, validationResult.data, companyId);
+      // Keep scheduleColor in sync with avatarColor (single contact colour)
+      const updateData = { ...validationResult.data };
+      if (updateData.avatarColor !== undefined) {
+        updateData.scheduleColor = updateData.avatarColor || null;
+      }
+
+      const contact = await storage.updateContact(req.params.id, updateData, companyId);
       if (!contact) {
         return res.status(404).json({ error: "Contact not found" });
       }
+
+      // Cascade new colour to any schedule items assigned to this contact
+      if (updateData.avatarColor !== undefined) {
+        const newColor = updateData.avatarColor || null;
+        await db.update(scheduleItems)
+          .set({ assignedToColor: newColor })
+          .where(eq(scheduleItems.assignedToId, req.params.id));
+      }
+
       res.json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to update contact" });
