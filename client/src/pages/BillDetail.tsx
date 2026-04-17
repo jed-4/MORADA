@@ -60,6 +60,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -128,6 +138,13 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [duplicateWarning, setDuplicateWarning] = useState<{ existingBillNumber: string; reference: string } | null>(null);
+  const pendingSubmitDataRef = useRef<BillFormData | null>(null);
+  const [unmatchedSupplierDialogOpen, setUnmatchedSupplierDialogOpen] = useState(false);
+  const [ocrSupplierData, setOcrSupplierData] = useState<{ name: string; email?: string; phone?: string } | null>(null);
+  const [unmatchedSupplierSelection, setUnmatchedSupplierSelection] = useState<string>("");
+  const [ocrFilePreviewUrl, setOcrFilePreviewUrl] = useState<string | null>(null);
+  const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const dueDateManuallySet = useRef(false);
@@ -234,6 +251,21 @@ export default function BillDetail() {
       supplierType: "supplier",
     },
   });
+
+  // Prefill the supplier dialog with OCR-extracted data when opened from
+  // either the unmatched-supplier flow or the supplier-picker create button.
+  useEffect(() => {
+    if (addSupplierDialogOpen) {
+      if (ocrSupplierData) {
+        supplierForm.reset({
+          name: ocrSupplierData.name || "",
+          email: ocrSupplierData.email || "",
+          phone: ocrSupplierData.phone || "",
+          supplierType: "supplier",
+        });
+      }
+    }
+  }, [addSupplierDialogOpen, ocrSupplierData, supplierForm]);
 
   const currentProjectId = form.watch("projectId") || bill?.projectId;
 
@@ -347,6 +379,21 @@ export default function BillDetail() {
 
   const watchedSupplierId = form.watch("supplierId");
   const watchedBillDate = form.watch("billDate");
+
+  // Manage object URL for OCR file preview (image/PDF)
+  useEffect(() => {
+    if (!uploadedFile) {
+      setOcrFilePreviewUrl(null);
+      setOcrFileIsImage(false);
+      return;
+    }
+    const url = URL.createObjectURL(uploadedFile);
+    setOcrFilePreviewUrl(url);
+    setOcrFileIsImage(uploadedFile.type.startsWith("image/"));
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [uploadedFile]);
 
   const { data: companySettings } = useQuery<any>({
     queryKey: ["/api/company-settings"],
@@ -939,21 +986,39 @@ export default function BillDetail() {
     onSuccess: async (data) => {
       setOcrResults(data);
       setOcrPreviewOpen(true);
+      let attachedOk = false;
+      let attachWarning = false;
       if (uploadedFile) {
         try {
           const uploadResult = await uploadFile(uploadedFile);
-          if (uploadResult?.objectPath && isEditMode && id) {
-            await apiRequest(`/api/bills/${id}`, "PATCH", {
-              attachmentUrls: [...attachmentUrls, uploadResult.objectPath],
-            });
+          if (uploadResult?.objectPath) {
+            // For edit mode, persist the attachment immediately so refresh keeps it.
+            // For new bills, the path is already in `attachmentUrls` via the useUpload
+            // hook's onSuccess callback and will be sent with the create payload.
+            if (isEditMode && id) {
+              try {
+                await apiRequest(`/api/bills/${id}`, "PATCH", {
+                  attachmentUrls: [...attachmentUrls, uploadResult.objectPath],
+                });
+                attachedOk = true;
+              } catch (patchErr) {
+                console.error("Failed to persist attachment to bill:", patchErr);
+                attachWarning = true;
+              }
+            } else {
+              attachedOk = true;
+            }
           }
         } catch (e) {
           console.error("Failed to auto-save attachment:", e);
+          attachWarning = true;
         }
       }
       toast({
         title: "Success",
-        description: "Invoice data extracted and saved as attachment",
+        description: attachedOk
+          ? "Invoice data extracted and saved as attachment"
+          : "Invoice data extracted",
       });
     },
     onError: (error: Error) => {
@@ -965,26 +1030,31 @@ export default function BillDetail() {
     },
   });
 
+  const performSubmit = (data: BillFormData) => {
+    if (isEditMode) {
+      updateMutation.mutate(data);
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
   const onSubmit = async (data: BillFormData) => {
     if (data.billReference) {
       try {
         const checkRes = await fetch(`/api/bills/check-reference?reference=${encodeURIComponent(data.billReference)}${isEditMode ? `&excludeBillId=${id}` : ''}`, { credentials: "include" });
         const checkData = await checkRes.json();
         if (checkData.exists) {
-          const proceed = window.confirm(
-            `A bill with reference "${data.billReference}" already exists (${checkData.existingBillNumber}). This is likely a duplicate. Do you still want to save?`
-          );
-          if (!proceed) return;
+          pendingSubmitDataRef.current = data;
+          setDuplicateWarning({
+            existingBillNumber: checkData.existingBillNumber || "",
+            reference: data.billReference,
+          });
+          return;
         }
       } catch (e) {
       }
     }
-
-    if (isEditMode) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
-    }
+    performSubmit(data);
   };
 
   const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1066,17 +1136,38 @@ export default function BillDetail() {
     }
 
     if (ocrResults.supplierName) {
-      const searchName = ocrResults.supplierName.toLowerCase().trim();
-      const matchedSupplier = suppliers.find((s: any) => {
-        const company = (s.company || "").toLowerCase().trim();
-        const name = (s.name || "").toLowerCase().trim();
-        const fullName = `${s.firstName || ""} ${s.lastName || ""}`.toLowerCase().trim();
-        return company === searchName || name === searchName || fullName === searchName
-          || company.includes(searchName) || searchName.includes(company)
-          || name.includes(searchName) || searchName.includes(name);
-      });
+      const normalize = (s: string) =>
+        s.toLowerCase().trim().replace(/\b(pty|ltd|limited|inc|llc|the|co|company)\b/g, "").replace(/[^a-z0-9]/g, "");
+      const searchNorm = normalize(ocrResults.supplierName);
+      // Tightened: require normalized exact match OR strong substring (>=4 chars and one fully contains the other)
+      const matchedSupplier = searchNorm.length >= 2 ? suppliers.find((s: any) => {
+        const candidates = [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`]
+          .filter(Boolean)
+          .map((v: string) => normalize(v))
+          .filter((v: string) => v.length > 0);
+        return candidates.some(c => {
+          if (c === searchNorm) return true;
+          if (c.length >= 4 && searchNorm.length >= 4 && (c.includes(searchNorm) || searchNorm.includes(c))) {
+            // Require the shorter one to be at least 70% of the longer to avoid loose substring matches
+            const shorter = Math.min(c.length, searchNorm.length);
+            const longer = Math.max(c.length, searchNorm.length);
+            return shorter / longer >= 0.7;
+          }
+          return false;
+        });
+      }) : undefined;
       if (matchedSupplier) {
         form.setValue("supplierId", matchedSupplier.id);
+      } else {
+        // No confident match — open the unmatched-supplier dialog so the user
+        // can pick an existing one or create a new one seeded with OCR data.
+        setOcrSupplierData({
+          name: ocrResults.supplierName,
+          email: ocrResults.supplierEmail,
+          phone: ocrResults.supplierPhone,
+        });
+        setUnmatchedSupplierSelection("");
+        setUnmatchedSupplierDialogOpen(true);
       }
     }
 
@@ -1330,25 +1421,37 @@ export default function BillDetail() {
                               <SelectValue placeholder="Select supplier..." />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
-                            {suppliers.map((supplier) => (
-                              <SelectItem key={supplier.id} value={supplier.id}>
-                                {supplier.name}
-                              </SelectItem>
-                            ))}
-                            <div className="border-t mt-1 pt-1">
+                          <SelectContent
+                            className="p-0"
+                            data-testid="select-supplier-content"
+                          >
+                            <div className="max-h-[280px] overflow-y-auto p-1">
+                              {suppliers.map((supplier) => (
+                                <SelectItem key={supplier.id} value={supplier.id}>
+                                  {supplier.name}
+                                </SelectItem>
+                              ))}
+                              {suppliers.length === 0 && (
+                                <div className="px-2 py-3 text-xs text-muted-foreground text-center">
+                                  No suppliers yet
+                                </div>
+                              )}
+                            </div>
+                            <div className="border-t p-1 bg-popover sticky bottom-0">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
+                                  // Keep ocrSupplierData if present so the dialog
+                                  // remains prefilled with extracted invoice data.
                                   setAddSupplierDialogOpen(true);
                                 }}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover:bg-accent rounded-sm"
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover-elevate rounded-sm"
                                 data-testid="button-add-supplier"
                               >
                                 <Plus className="h-3 w-3" />
-                                Add
+                                Create new contact
                               </button>
                             </div>
                           </SelectContent>
@@ -1540,6 +1643,24 @@ export default function BillDetail() {
                             <X className="h-3.5 w-3.5" />
                           </Button>
                         </div>
+
+                        {ocrFilePreviewUrl && (
+                          <div className="rounded-md border overflow-hidden bg-muted/20" data-testid="card-ocr-file-preview">
+                            {ocrFileIsImage ? (
+                              <img
+                                src={ocrFilePreviewUrl}
+                                alt="Invoice preview"
+                                className="w-full max-h-[260px] object-contain bg-white"
+                              />
+                            ) : (
+                              <iframe
+                                src={ocrFilePreviewUrl}
+                                title="Invoice PDF preview"
+                                className="w-full h-[260px] border-0"
+                              />
+                            )}
+                          </div>
+                        )}
 
                         {!ocrResults && (
                           <Button
@@ -2283,11 +2404,20 @@ export default function BillDetail() {
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={createMutation.isPending || updateMutation.isPending}
+                      disabled={
+                        createMutation.isPending ||
+                        updateMutation.isPending ||
+                        ocrMutation.isPending ||
+                        isUploading
+                      }
                       data-testid="button-save"
                     >
                       {createMutation.isPending || updateMutation.isPending
                         ? "Saving..."
+                        : ocrMutation.isPending
+                        ? "Processing invoice..."
+                        : isUploading
+                        ? "Uploading..."
                         : "Save"}
                     </Button>
                   </div>
@@ -2336,7 +2466,15 @@ export default function BillDetail() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addSupplierDialogOpen} onOpenChange={setAddSupplierDialogOpen}>
+      <Dialog
+        open={addSupplierDialogOpen}
+        onOpenChange={(open) => {
+          setAddSupplierDialogOpen(open);
+          if (!open) {
+            setOcrSupplierData(null);
+          }
+        }}
+      >
         <DialogContent data-testid="dialog-add-supplier">
           <DialogHeader>
             <DialogTitle>Add Supplier</DialogTitle>
@@ -2413,6 +2551,7 @@ export default function BillDetail() {
                   variant="outline"
                   onClick={() => {
                     setAddSupplierDialogOpen(false);
+                    setOcrSupplierData(null);
                     supplierForm.reset();
                   }}
                   data-testid="button-cancel-add-supplier"
@@ -2558,6 +2697,130 @@ export default function BillDetail() {
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={!!duplicateWarning}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDuplicateWarning(null);
+            pendingSubmitDataRef.current = null;
+          }
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-duplicate-bill-warning">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Possible duplicate bill</AlertDialogTitle>
+            <AlertDialogDescription>
+              A bill with reference{" "}
+              <span className="font-medium">"{duplicateWarning?.reference}"</span>
+              {duplicateWarning?.existingBillNumber
+                ? <> already exists ({duplicateWarning.existingBillNumber}).</>
+                : <> already exists.</>}
+              {" "}This is likely a duplicate. Do you still want to save it?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                pendingSubmitDataRef.current = null;
+              }}
+              data-testid="button-duplicate-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const data = pendingSubmitDataRef.current;
+                pendingSubmitDataRef.current = null;
+                setDuplicateWarning(null);
+                if (data) performSubmit(data);
+              }}
+              data-testid="button-duplicate-confirm"
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={unmatchedSupplierDialogOpen}
+        onOpenChange={(open) => {
+          setUnmatchedSupplierDialogOpen(open);
+          if (!open) {
+            setUnmatchedSupplierSelection("");
+          }
+        }}
+      >
+        <DialogContent data-testid="dialog-unmatched-supplier">
+          <DialogHeader>
+            <DialogTitle>Supplier not found</DialogTitle>
+            <DialogDescription>
+              We couldn't confidently match the supplier{" "}
+              <span className="font-medium">"{ocrSupplierData?.name}"</span>{" "}
+              to one of your existing contacts. Pick an existing supplier or create a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs font-medium mb-1 block">Existing supplier</label>
+              <Select
+                value={unmatchedSupplierSelection}
+                onValueChange={setUnmatchedSupplierSelection}
+              >
+                <SelectTrigger data-testid="select-unmatched-supplier">
+                  <SelectValue placeholder="Select supplier..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="max-h-[280px] overflow-y-auto">
+                    {suppliers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </div>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUnmatchedSupplierDialogOpen(false);
+                setUnmatchedSupplierSelection("");
+              }}
+              data-testid="button-unmatched-skip"
+            >
+              Skip
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setUnmatchedSupplierDialogOpen(false);
+                setAddSupplierDialogOpen(true);
+              }}
+              data-testid="button-unmatched-create"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Create new contact
+            </Button>
+            <Button
+              onClick={() => {
+                if (unmatchedSupplierSelection) {
+                  form.setValue("supplierId", unmatchedSupplierSelection);
+                }
+                setUnmatchedSupplierDialogOpen(false);
+                setUnmatchedSupplierSelection("");
+              }}
+              disabled={!unmatchedSupplierSelection}
+              data-testid="button-unmatched-use-existing"
+            >
+              Use selected
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

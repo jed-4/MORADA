@@ -145,7 +145,8 @@ import {
   projects as projectsTable,
   users as usersTable,
   userProjectAccess as userProjectAccessTable,
-  userRoles as userRolesTable
+  userRoles as userRolesTable,
+  bills as billsTable
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -9933,18 +9934,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/bills/check-reference", requireAuth, async (req, res) => {
     try {
       const { reference, excludeBillId } = req.query;
-      if (!reference) {
+      const companyId = (req.user as any)?.companyId;
+      if (!reference || !companyId) {
         return res.json({ exists: false });
       }
-      const allBills = await storage.getBills();
-      const duplicate = allBills.find((b: any) => 
-        b.billReference === reference && (!excludeBillId || b.id !== excludeBillId)
-      );
-      res.json({ 
-        exists: !!duplicate, 
-        existingBillNumber: duplicate?.billNumber || null 
+      // Scope duplicate check to current company by joining bills -> projects
+      const conditions = [
+        eq(billsTable.billReference, String(reference)),
+        eq(projectsTable.companyId, companyId),
+      ];
+      if (excludeBillId) {
+        const { ne } = await import("drizzle-orm");
+        conditions.push(ne(billsTable.id, String(excludeBillId)));
+      }
+      const rows = await db
+        .select({ id: billsTable.id, billNumber: billsTable.billNumber })
+        .from(billsTable)
+        .innerJoin(projectsTable, eq(billsTable.projectId, projectsTable.id))
+        .where(and(...conditions))
+        .limit(1);
+      const duplicate = rows[0];
+      res.json({
+        exists: !!duplicate,
+        existingBillNumber: duplicate?.billNumber || null,
       });
     } catch (error) {
+      console.error("check-reference error:", error);
       res.status(500).json({ error: "Failed to check reference" });
     }
   });
