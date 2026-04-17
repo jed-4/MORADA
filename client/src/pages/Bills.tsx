@@ -441,7 +441,7 @@ export default function Bills() {
             </Popover>
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => setLocation("/bills/new")}
+              onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
               data-testid="button-create-bill"
             >
               <Plus className="w-3 h-3" />
@@ -669,7 +669,7 @@ export default function Bills() {
                           {bills.length === 0 && (
                             <button
                               className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-                              onClick={() => setLocation("/bills/new")}
+                              onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
                               data-testid="button-add-first-bill"
                             >
                               <Plus className="w-3.5 h-3.5" />Add First Bill
