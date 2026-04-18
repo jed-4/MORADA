@@ -639,6 +639,7 @@ export interface IStorage {
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
   appendBillAttachment(id: string, attachment: import("@shared/schema").BillAttachment): Promise<Bill>;
+  removeBillAttachment(id: string, objectPath: string): Promise<Bill>;
   
   // Bill Line Items CRUD
   getBillLineItems(billId: string): Promise<BillLineItem[]>;
@@ -13073,6 +13074,35 @@ export class DbStorage implements IStorage {
       return updated[0];
     } catch (error) {
       console.error("Database error in appendBillAttachment:", error);
+      throw error;
+    }
+  }
+
+  async removeBillAttachment(id: string, objectPath: string): Promise<Bill> {
+    try {
+      // Read current attachments, filter out matches by objectPath, write back atomically.
+      // Handles both legacy string entries and rich record objects.
+      const existing = await db.select({ attachmentUrls: schema.bills.attachmentUrls })
+        .from(schema.bills)
+        .where(eq(schema.bills.id, id))
+        .limit(1);
+      if (!existing[0]) throw new Error("Bill not found");
+      type Entry = string | { objectPath?: string };
+      const current: Entry[] = Array.isArray(existing[0].attachmentUrls)
+        ? (existing[0].attachmentUrls as Entry[])
+        : [];
+      const next = current.filter((a) => {
+        const path = typeof a === "string" ? a : a?.objectPath;
+        return path !== objectPath;
+      });
+      const updated = await db.update(schema.bills)
+        .set({ attachmentUrls: next, updatedAt: new Date() })
+        .where(eq(schema.bills.id, id))
+        .returning();
+      if (!updated[0]) throw new Error("Bill not found");
+      return updated[0];
+    } catch (error) {
+      console.error("Database error in removeBillAttachment:", error);
       throw error;
     }
   }

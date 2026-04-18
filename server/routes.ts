@@ -10544,6 +10544,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Atomic remove of an attachment by objectPath
+  app.delete("/api/bills/:id/attachments", requireAuth, async (req, res) => {
+    try {
+      const objectPath = (req.query.objectPath as string) || (req.body && req.body.objectPath);
+      if (!objectPath || typeof objectPath !== "string") {
+        return res.status(400).json({ error: "objectPath is required" });
+      }
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      const userCompanyId = (req as any).user?.companyId;
+      const userRole = (req as any).user?.role;
+      if (!userCompanyId && userRole !== "admin") return res.status(403).json({ error: "Forbidden" });
+      if (bill.projectId) {
+        const project = await storage.getProjectById(bill.projectId);
+        if (!project) return res.status(403).json({ error: "Forbidden" });
+        if (userRole !== "admin" && project.companyId !== userCompanyId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      } else if (userRole !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const updated = await storage.removeBillAttachment(req.params.id, objectPath);
+      res.json({ bill: updated });
+    } catch (error: any) {
+      console.error("[bills/attachments DELETE] failed:", error);
+      res.status(500).json({ error: error?.message || "Failed to remove attachment" });
+    }
+  });
+
   app.delete("/api/bills/:id", async (req, res) => {
     try {
       await storage.deleteBill(req.params.id);

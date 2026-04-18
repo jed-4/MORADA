@@ -2014,9 +2014,26 @@ export default function BillDetail() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => {
-                                      setAttachmentUrls(prev => prev.filter((_, i) => i !== idx));
+                                    onClick={async () => {
+                                      // Optimistic local removal
+                                      const prev = attachmentUrls;
+                                      setAttachmentUrls(curr => curr.filter((_, i) => i !== idx));
                                       if (previewAttachment === url) setPreviewAttachment(null);
+                                      // For existing bills, persist removal via dedicated endpoint
+                                      if (isEditMode && id) {
+                                        try {
+                                          await apiRequest(
+                                            `/api/bills/${id}/attachments?objectPath=${encodeURIComponent(url)}`,
+                                            "DELETE",
+                                          );
+                                          queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+                                        } catch (err: unknown) {
+                                          // Revert local state on failure
+                                          setAttachmentUrls(prev);
+                                          const msg = err instanceof Error ? err.message : "Could not remove attachment";
+                                          toast({ variant: "destructive", title: "Remove failed", description: msg });
+                                        }
+                                      }
                                     }}
                                     data-testid={`button-remove-attachment-${idx}`}
                                   >
@@ -2820,19 +2837,11 @@ export default function BillDetail() {
             >
               <X className="h-5 w-5" />
             </Button>
-            {/\.(pdf)$/i.test(previewAttachment) ? (
-              <iframe
-                src={previewAttachment}
-                className="w-full h-full border-0 rounded-md"
-                title="PDF Preview Fullscreen"
-              />
-            ) : /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(previewAttachment) ? (
-              <img
-                src={previewAttachment}
-                alt="Attachment preview fullscreen"
-                className="w-full h-full object-contain"
-              />
-            ) : null}
+            <DocumentPreview
+              src={previewAttachment}
+              height="100%"
+              className="w-full h-full border-0 rounded-md object-contain bg-black"
+            />
           </div>
         </div>
       )}
