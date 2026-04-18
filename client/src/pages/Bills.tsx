@@ -138,6 +138,7 @@ function ImportFromXeroDialog({
   const { toast } = useToast();
   const [sinceDate, setSinceDate] = useState<string>("");
   const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
+  const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("draft");
   const { data: previewData, isLoading, error, refetch } = useQuery<{ bills: XeroBillPreview[]; page: number }>({
     queryKey: ["/api/xero/bills/import-preview", sinceDate],
     queryFn: async () => {
@@ -150,7 +151,7 @@ function ImportFromXeroDialog({
   });
 
   const importMutation = useMutation({
-    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string; unmappedSupplierAction: "skip" | "create" }) => {
+    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string; unmappedSupplierAction: "skip" | "create"; importStatus: "draft" | "awaiting_approval" | "from_xero" }) => {
       return await apiRequest("/api/xero/bills/import", "POST", payload);
     },
     onSuccess: (data: any) => {
@@ -234,6 +235,17 @@ function ImportFromXeroDialog({
               <SelectItem value="create">Auto-create</SelectItem>
             </SelectContent>
           </Select>
+          <span className="text-xs text-muted-foreground ml-2">Import as:</span>
+          <Select value={importStatus} onValueChange={(v) => setImportStatus(v as any)}>
+            <SelectTrigger className="h-8 w-44" data-testid="select-import-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="awaiting_approval">Awaiting approval</SelectItem>
+              <SelectItem value="from_xero">Match Xero status</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
             {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Refresh"}
           </Button>
@@ -305,7 +317,7 @@ function ImportFromXeroDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             disabled={selectedIds.size === 0 || !defaultProjectId || importMutation.isPending}
-            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId, unmappedSupplierAction: unmappedAction })}
+            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId, unmappedSupplierAction: unmappedAction, importStatus })}
             data-testid="button-confirm-import"
           >
             {importMutation.isPending ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" /> Importing...</> : `Import ${selectedIds.size}`}

@@ -207,6 +207,20 @@ async function pushBillToXeroInternal(
       console.error("[pushBillToXeroInternal] failed to update sync columns:", e);
     }
   };
+  const logOutcome = (outcome: { ok: boolean; reason?: string; message?: string; xeroInvoiceId?: string }) => {
+    try {
+      console.log(JSON.stringify({
+        event: "xero.bill.push",
+        billId,
+        companyId,
+        ok: outcome.ok,
+        reason: outcome.reason || (outcome.ok ? "OK" : "UNKNOWN"),
+        message: outcome.message,
+        xeroInvoiceId: outcome.xeroInvoiceId,
+        ts: new Date().toISOString(),
+      }));
+    } catch {}
+  };
 
   try {
     const connection = await storage.getXeroConnectionByCompanyId(companyId);
@@ -260,7 +274,9 @@ async function pushBillToXeroInternal(
     }
 
     if (!supplierXeroContactId) {
-      await writeSyncStatus("failed", `Unmapped supplier "${supplierName}" — link it to a Xero contact and retry`);
+      const msg = `Unmapped supplier "${supplierName}" — link it to a Xero contact and retry`;
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "UNMAPPED_CONTACT", message: msg });
       return {
         ok: false,
         status: 422,
@@ -368,6 +384,7 @@ async function pushBillToXeroInternal(
     }
 
     await writeSyncStatus("success");
+    logOutcome({ ok: true, reason: "OK", xeroInvoiceId: xeroBill?.InvoiceID });
 
     return {
       ok: true,
@@ -378,9 +395,11 @@ async function pushBillToXeroInternal(
     };
   } catch (error: any) {
     const msg = error?.message || "Failed to push bill to Xero";
+    const reason = /4\d\d|invalid|validation|required/i.test(msg) ? "VALIDATION" : "XERO_API_ERROR";
     console.error("[pushBillToXeroInternal] error:", msg);
     await writeSyncStatus("failed", msg);
-    return { ok: false, status: 500, error: "XERO_API_ERROR", message: msg };
+    logOutcome({ ok: false, reason, message: msg });
+    return { ok: false, status: 500, error: reason, message: msg };
   }
 }
 
@@ -23661,13 +23680,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { xeroInvoiceIds, projectId, unmappedSupplierAction, defaultCostCodeId } = req.body as {
+      const { xeroInvoiceIds, projectId, unmappedSupplierAction, defaultCostCodeId, importStatus } = req.body as {
         xeroInvoiceIds: string[];
         projectId: string;
         unmappedSupplierAction?: "skip" | "create";
         defaultCostCodeId?: string;
+        importStatus?: "draft" | "awaiting_approval" | "from_xero";
       };
       const unmappedAction: "skip" | "create" = unmappedSupplierAction === "create" ? "create" : "skip";
+      const statusChoice: "draft" | "awaiting_approval" | "from_xero" = importStatus ?? "draft";
       if (!Array.isArray(xeroInvoiceIds) || xeroInvoiceIds.length === 0) {
         return res.status(400).json({ error: "xeroInvoiceIds is required (non-empty array)" });
       }
@@ -23756,9 +23777,16 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
           const xeroStatus: string = xeroInvoice.Status;
 
-          let status: "draft" | "awaiting_approval" | "awaiting_payment" | "paid" = "awaiting_payment";
-          if (xeroStatus === "PAID") status = "paid";
-          else if (xeroStatus === "DRAFT" || xeroStatus === "SUBMITTED") status = "awaiting_approval";
+          let status: "draft" | "awaiting_approval" | "awaiting_payment" | "paid";
+          if (statusChoice === "draft") {
+            status = "draft";
+          } else if (statusChoice === "awaiting_approval") {
+            status = "awaiting_approval";
+          } else {
+            status = "awaiting_payment";
+            if (xeroStatus === "PAID") status = "paid";
+            else if (xeroStatus === "DRAFT" || xeroStatus === "SUBMITTED") status = "awaiting_approval";
+          }
 
           const billNumber = await storage.getNextBillNumber();
           const newBill = await storage.createBill({
