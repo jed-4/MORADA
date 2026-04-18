@@ -111,6 +111,28 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* Compact data-table tokens (light) */
+  --table-surface: 0 0% 100%;
+  --table-header-bg: 257 30% 98%;            /* #F8F7FC */
+  --table-header-fg: 290 5% 63%;             /* #A29AA5 */
+  --table-row-fg: 318 11% 10%;               /* #1E161C */
+  --table-row-divider: 0 0% 0% / 0.06;
+  --table-text-muted: 290 5% 63%;
+  --tab-inactive: 290 5% 63%;                /* #A29AA5 */
+  --tab-active: 261 44% 70%;                 /* #A890D4 */
+
+  /* Status pill tokens (soft pastel pills) */
+  --status-success-fg: 145 40% 65%;          /* #82C8A2 sage */
+  --status-success-bg: 145 60% 94%;          /* #E8F8EE */
+  --status-warning-fg: 39 50% 64%;           /* #D4B670 amber */
+  --status-warning-bg: 43 80% 93%;           /* #FCF4E0 */
+  --status-info-fg:    261 44% 70%;          /* #A890D4 lavender */
+  --status-info-bg:    265 70% 95%;          /* #EEE9FA */
+  --status-danger-fg:  11 53% 70%;           /* #DA988A coral */
+  --status-danger-bg:  4 86% 95%;            /* #FDE9E8 */
+  --status-action-fg:  222 56% 71%;          /* #8AA5DE sky */
+  --status-action-bg:  186 70% 94%;          /* #E4F8FA */
+
   /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
 
   /* Fallback for older browsers */
@@ -242,6 +264,27 @@
   --shadow-card: 0px 2px 4px -1px hsl(220 20% 8% / 0.30), 0px 1px 2px -1px hsl(220 20% 8% / 0.20);
   --shadow-card-hover: 0px 4px 8px -1px hsl(220 20% 8% / 0.40), 0px 2px 4px -1px hsl(220 20% 8% / 0.25);
 
+  /* Compact data-table tokens (dark) */
+  --table-surface: 220 5% 16%;               /* #252629 */
+  --table-header-bg: 230 7% 13%;             /* #1E1F23 */
+  --table-header-fg: 290 5% 63%;
+  --table-row-fg: 290 12% 92%;               /* #EEEAED */
+  --table-row-divider: 0 0% 100% / 0.06;
+  --table-text-muted: 290 5% 63%;
+  --tab-inactive: 290 5% 63%;
+  --tab-active: 261 44% 70%;
+
+  /* Status pill tokens (soft pastel pills, dark mode = translucent on tint) */
+  --status-success-fg: 145 40% 65%;
+  --status-success-bg: 145 40% 65% / 0.18;
+  --status-warning-fg: 39 50% 64%;
+  --status-warning-bg: 39 50% 64% / 0.18;
+  --status-info-fg:    261 44% 70%;
+  --status-info-bg:    261 44% 70% / 0.18;
+  --status-danger-fg:  11 53% 70%;
+  --status-danger-bg:  11 53% 70% / 0.18;
+  --status-action-fg:  222 56% 71%;
+  --status-action-bg:  222 56% 71% / 0.18;
 }
 
 /* =========================================================

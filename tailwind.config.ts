@@ -93,6 +93,36 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        // Compact data-table tokens
+        "table-surface": "hsl(var(--table-surface) / <alpha-value>)",
+        "table-header": {
+          DEFAULT: "hsl(var(--table-header-bg) / <alpha-value>)",
+          foreground: "hsl(var(--table-header-fg) / <alpha-value>)",
+        },
+        "table-row": {
+          foreground: "hsl(var(--table-row-fg) / <alpha-value>)",
+        },
+        // Status pill (soft pastel) tokens
+        "status-success": {
+          DEFAULT: "hsl(var(--status-success-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-success-bg))",
+        },
+        "status-warning": {
+          DEFAULT: "hsl(var(--status-warning-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-warning-bg))",
+        },
+        "status-info": {
+          DEFAULT: "hsl(var(--status-info-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-info-bg))",
+        },
+        "status-danger": {
+          DEFAULT: "hsl(var(--status-danger-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-danger-bg))",
+        },
+        "status-action": {
+          DEFAULT: "hsl(var(--status-action-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-action-bg))",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],

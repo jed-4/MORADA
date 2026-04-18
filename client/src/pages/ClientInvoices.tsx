@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { type ClientInvoice, type Project, type Variation } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { StatusBadge } from "@/components/StatusBadge";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -46,30 +47,12 @@ const STATUS_OPTIONS = [
   { value: "overdue", label: "Overdue" },
 ];
 
-const STATUS_CHIP: Record<string, string> = {
-  draft:   "bg-muted text-muted-foreground border-transparent",
-  sent:    "bg-blue-50   dark:bg-blue-950/60   text-blue-700   dark:text-blue-300   border-blue-200   dark:border-blue-800",
-  partial: "bg-amber-50  dark:bg-amber-950/60  text-amber-700  dark:text-amber-300  border-amber-200  dark:border-amber-800",
-  paid:    "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
-  overdue: "bg-red-50    dark:bg-red-950/60    text-red-700    dark:text-red-300    border-red-200    dark:border-red-800",
-};
-
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draft", sent: "Sent", partial: "Partial", paid: "Paid", overdue: "Overdue",
 };
 
 function StatusChip({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center w-16 py-0.5 rounded text-[11px] font-medium border",
-        STATUS_CHIP[status] ?? "bg-muted text-muted-foreground border-transparent"
-      )}
-      data-testid={`badge-status-${status}`}
-    >
-      {STATUS_LABEL[status] ?? status}
-    </span>
-  );
+  return <StatusBadge status={status} label={STATUS_LABEL[status]} />;
 }
 
 // ── Column configuration ───────────────────────────────────────────────────

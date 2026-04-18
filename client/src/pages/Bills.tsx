@@ -60,6 +60,7 @@ import {
 } from "lucide-react";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -542,15 +543,16 @@ export default function Bills() {
     return totals;
   }, [bills]);
 
-  const getStatusBadge = (status: string, size: "sm" | "md" = "md") => {
-    const sizeClass = size === "sm" ? "h-4 px-1.5 text-[10px]" : "";
-    switch (status) {
-      case "draft": return <Badge variant="secondary" className={sizeClass} data-testid="badge-status-draft">Draft</Badge>;
-      case "awaiting_approval": return <Badge variant="destructive" className={sizeClass} data-testid="badge-status-awaiting-approval">Awaiting Approval</Badge>;
-      case "awaiting_payment": return <Badge variant="default" className={sizeClass} data-testid="badge-status-awaiting-payment">Awaiting Payment</Badge>;
-      case "paid": return <Badge variant="outline" className={`border-green-500 text-green-700 ${sizeClass}`} data-testid="badge-status-paid">Paid</Badge>;
-      default: return <Badge variant="outline" className={sizeClass} data-testid={`badge-status-${status}`}>{status}</Badge>;
-    }
+  const getStatusBadge = (status: string, _size: "sm" | "md" = "md") => {
+    // The new soft pill StatusBadge is already a fixed compact size, so the
+    // legacy `size` parameter is intentionally ignored.
+    const labelMap: Record<string, string> = {
+      draft: "Draft",
+      awaiting_approval: "Awaiting Approval",
+      awaiting_payment: "Awaiting Payment",
+      paid: "Paid",
+    };
+    return <StatusBadge status={status} label={labelMap[status]} />;
   };
 
   const handleSelectAll = (checked: boolean) => {
