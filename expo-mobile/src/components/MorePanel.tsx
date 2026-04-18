@@ -50,6 +50,7 @@ const moreItems: MoreItem[] = [
   { id: 'notes', label: 'Notes', icon: 'document-text', color: '#10b981', action: 'navigate', screen: 'Notes' },
   { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#b196d2', action: 'navigate', screen: 'SiteDiaryList' },
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'navigate', screen: 'Tasks' },
+  { id: 'timesheets', label: 'Timesheets', icon: 'time', color: '#f59e0b', action: 'navigate', screen: 'Timesheets' },
   { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#22c55e', action: 'navigate', screen: 'Checklists' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#10b981', action: 'navigate', tab: 'Messages' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#f59e0b', action: 'coming-soon' },
