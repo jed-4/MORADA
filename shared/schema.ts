@@ -1765,6 +1765,9 @@ export const bills = pgTable("bills", {
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
   xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
   xeroPaidStatus: text("xero_paid_status"), // Synced from Xero
+  xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
+  xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'error' | 'pending'
+  xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results
@@ -1787,6 +1790,9 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   total: z.number().default(0),
   paidAmount: z.number().default(0),
   attachmentUrls: z.array(z.string()).optional(),
+  xeroLastSyncAt: z.coerce.date().optional().nullable(),
+  xeroLastSyncStatus: z.string().optional().nullable(),
+  xeroLastSyncError: z.string().optional().nullable(),
 });
 
 export type InsertBill = z.infer<typeof insertBillSchema>;

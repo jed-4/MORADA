@@ -175,6 +175,339 @@ function isHoliday(d: Date, holidays: Set<string>): boolean {
   return holidays.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
 }
 
+/**
+ * Internal helper: push a bill to Xero (create or update) and update its sync status columns.
+ * Returns a structured result so callers (HTTP route, auto-push, webhook) can handle uniformly.
+ */
+type PushBillResult = {
+  ok: boolean;
+  status: number; // suggested HTTP status
+  xeroInvoiceId?: string;
+  xeroInvoiceNumber?: string;
+  updated?: boolean;
+  error?: string; // 'UNMAPPED_CONTACT' | 'NOT_CONNECTED' | 'NOT_FOUND' | other
+  message?: string;
+  supplierId?: string | null;
+  supplierName?: string;
+};
+
+async function pushBillToXeroInternal(
+  billId: string,
+  companyId: string,
+  overrideXeroContactId?: string,
+): Promise<PushBillResult> {
+  const writeSyncStatus = async (status: "success" | "error", error?: string) => {
+    try {
+      await storage.updateBill(billId, {
+        xeroLastSyncAt: new Date(),
+        xeroLastSyncStatus: status,
+        xeroLastSyncError: error || null,
+      } as any);
+    } catch (e) {
+      console.error("[pushBillToXeroInternal] failed to update sync columns:", e);
+    }
+  };
+
+  try {
+    const connection = await storage.getXeroConnectionByCompanyId(companyId);
+    if (!connection) {
+      return { ok: false, status: 400, error: "NOT_CONNECTED", message: "Xero is not connected" };
+    }
+
+    const bill = await storage.getBillById(billId);
+    if (!bill) {
+      return { ok: false, status: 404, error: "NOT_FOUND", message: "Bill not found" };
+    }
+
+    // Tenant ownership: bill must belong to a project in the requester's company
+    if (bill.projectId) {
+      const billProject = await storage.getProject(bill.projectId);
+      if (!billProject || (billProject as any).companyId !== companyId) {
+        return { ok: false, status: 403, error: "FORBIDDEN", message: "Bill does not belong to this company" };
+      }
+    }
+
+    const lineItems = await storage.getBillLineItems(billId);
+
+    let supplierName = "Unknown Supplier";
+    let supplierXeroContactId: string | undefined;
+    let supplierDefaultAccountCode: string | undefined;
+
+    if (bill.supplierId) {
+      try {
+        const contact = await storage.getContact(bill.supplierId, companyId);
+        if (contact) {
+          supplierName = (contact as any).company || (contact as any).name ||
+            `${(contact as any).firstName || ""} ${(contact as any).lastName || ""}`.trim() ||
+            "Unknown Supplier";
+          supplierXeroContactId = (contact as any).xeroContactId || undefined;
+          supplierDefaultAccountCode = (contact as any).xeroDefaultAccountCode || undefined;
+        }
+      } catch {}
+    }
+
+    if (overrideXeroContactId) {
+      supplierXeroContactId = overrideXeroContactId;
+      if (bill.supplierId) {
+        try {
+          await storage.updateContact(bill.supplierId, companyId, {
+            xeroContactId: overrideXeroContactId,
+          } as any);
+        } catch (e) {
+          console.error("Failed to save Xero contact link:", e);
+        }
+      }
+    }
+
+    if (!supplierXeroContactId) {
+      // Don't write error sync status — this is a recoverable, user-actionable state.
+      return {
+        ok: false,
+        status: 422,
+        error: "UNMAPPED_CONTACT",
+        message: "Supplier is not linked to a Xero contact",
+        supplierId: bill.supplierId,
+        supplierName,
+      };
+    }
+
+    const formatDate = (d: Date | string | null | undefined): string => {
+      if (!d) return new Date().toISOString().split("T")[0];
+      const date = d instanceof Date ? d : new Date(d);
+      return date.toISOString().split("T")[0];
+    };
+
+    let projectXeroTrackingOptionId: string | undefined;
+    if (bill.projectId && (connection as any).trackingCategory2Id) {
+      try {
+        const project = await storage.getProject(bill.projectId);
+        if (project) {
+          if ((project as any).xeroTrackingOptionId) {
+            projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
+          } else {
+            const option = await xeroService.createTrackingOption(
+              connection.id,
+              (connection as any).trackingCategory2Id,
+              project.name,
+            );
+            if (option?.TrackingOptionID) {
+              projectXeroTrackingOptionId = option.TrackingOptionID;
+              await storage.updateProject(bill.projectId, {
+                xeroTrackingOptionId: option.TrackingOptionID,
+                xeroTrackingOptionName: project.name,
+              } as any);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to create/get Xero tracking option for project:", e);
+      }
+    }
+
+    let costCodeMap: Record<string, any> = {};
+    if ((connection as any).trackingCategory1Id) {
+      try {
+        const allCostCodes = await storage.getCostCodes(companyId);
+        for (const cc of allCostCodes) costCodeMap[cc.id] = cc;
+      } catch (e) {
+        console.error("Failed to load cost codes for tracking:", e);
+      }
+    }
+
+    const xeroLineItems = lineItems.map((item: any) => {
+      let taxType = "INPUT";
+      if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
+
+      const tracking: any[] = [];
+      if (item.costCodeId && (connection as any).trackingCategory1Id) {
+        const costCode = costCodeMap[item.costCodeId];
+        if (costCode?.xeroTrackingOptionId) {
+          tracking.push({
+            TrackingCategoryID: (connection as any).trackingCategory1Id,
+            TrackingOptionID: costCode.xeroTrackingOptionId,
+          });
+        }
+      }
+      if (projectXeroTrackingOptionId && (connection as any).trackingCategory2Id) {
+        tracking.push({
+          TrackingCategoryID: (connection as any).trackingCategory2Id,
+          TrackingOptionID: projectXeroTrackingOptionId,
+        });
+      }
+
+      return {
+        description: item.description || "",
+        quantity: typeof item.quantity === "number" ? item.quantity : 1,
+        unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+        taxType,
+        accountCode: item.account || supplierDefaultAccountCode || undefined,
+        tracking: tracking.length > 0 ? tracking : undefined,
+      };
+    });
+
+    const billPayload = {
+      supplierName,
+      supplierXeroContactId,
+      billDate: formatDate(bill.billDate),
+      dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
+      reference: bill.billReference || bill.billNumber,
+      lineItems: xeroLineItems,
+    };
+
+    let xeroBill: any;
+    if (bill.xeroInvoiceId) {
+      xeroBill = await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
+    } else {
+      xeroBill = await xeroService.createBill(connection.id, billPayload);
+      if (xeroBill?.InvoiceID) {
+        await storage.updateBill(billId, {
+          xeroInvoiceId: xeroBill.InvoiceID,
+          sendToXero: true,
+        } as any);
+      }
+    }
+
+    await writeSyncStatus("success");
+
+    return {
+      ok: true,
+      status: 200,
+      xeroInvoiceId: xeroBill?.InvoiceID,
+      xeroInvoiceNumber: xeroBill?.InvoiceNumber,
+      updated: !!bill.xeroInvoiceId,
+    };
+  } catch (error: any) {
+    const msg = error?.message || "Failed to push bill to Xero";
+    console.error("[pushBillToXeroInternal] error:", msg);
+    await writeSyncStatus("error", msg);
+    return { ok: false, status: 500, error: "PUSH_FAILED", message: msg };
+  }
+}
+
+/**
+ * Debounced auto-push queue. Schedules a push of a bill to Xero ~2s after the
+ * last edit, coalescing rapid sequential PATCHes into a single push.
+ */
+const __billAutoPushTimers = new Map<string, NodeJS.Timeout>();
+function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000) {
+  const existing = __billAutoPushTimers.get(billId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(async () => {
+    __billAutoPushTimers.delete(billId);
+    try {
+      const bill = await storage.getBillById(billId);
+      if (!bill || !bill.xeroInvoiceId) return; // only auto-push linked bills
+      if (bill.status === "paid") return; // never overwrite paid bills
+      const result = await pushBillToXeroInternal(billId, companyId);
+      if (!result.ok) {
+        console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
+      }
+    } catch (e) {
+      console.error(`[auto-push bill ${billId}] unexpected error:`, e);
+    }
+  }, delayMs);
+  __billAutoPushTimers.set(billId, timer);
+}
+
+/**
+ * Internal helper to sync a bill from Xero (used by webhook + manual sync route).
+ * Pulls amounts, dates, status, and line items from a Xero invoice.
+ */
+async function syncBillFromXeroInternal(
+  billId: string,
+  companyId: string,
+  xeroInvoice?: any,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const bill = await storage.getBillById(billId);
+    if (!bill || !bill.xeroInvoiceId) return { ok: false, error: "Bill not linked to Xero" };
+
+    let invoice = xeroInvoice;
+    if (!invoice) {
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return { ok: false, error: "Xero not connected" };
+      invoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
+      if (!invoice) return { ok: false, error: "Xero invoice not found" };
+    }
+
+    const parseXeroDate = (d: string | undefined): Date | undefined => {
+      if (!d) return undefined;
+      const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
+      if (match) return new Date(parseInt(match[1]));
+      const parsed = new Date(d);
+      return isNaN(parsed.getTime()) ? undefined : parsed;
+    };
+
+    const amountPaidCents = Math.round((invoice.AmountPaid || 0) * 100);
+    const subtotalCents = Math.round((invoice.SubTotal || 0) * 100);
+    const taxCents = Math.round((invoice.TotalTax || 0) * 100);
+    const totalCents = Math.round((invoice.Total || 0) * 100);
+    const xeroStatus = invoice.Status as string;
+
+    let newStatus: string = bill.status;
+    if (xeroStatus === "PAID") newStatus = "paid";
+    else if (amountPaidCents > 0 && amountPaidCents < totalCents) newStatus = "awaiting_payment";
+    else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") newStatus = "awaiting_payment";
+
+    const billDate = parseXeroDate(invoice.Date);
+    const dueDate = parseXeroDate(invoice.DueDate);
+
+    await storage.updateBill(bill.id, {
+      status: newStatus as any,
+      paidAmount: amountPaidCents,
+      subtotal: subtotalCents,
+      tax: taxCents,
+      total: totalCents,
+      xeroPaidStatus: xeroStatus,
+      xeroLastSyncAt: new Date(),
+      xeroLastSyncStatus: "success",
+      xeroLastSyncError: null,
+      ...(billDate ? { billDate } : {}),
+      ...(dueDate ? { dueDate } : {}),
+      ...(invoice.Reference ? { billReference: invoice.Reference } : {}),
+    } as any);
+
+    // Only overwrite line items when bill is still in draft/awaiting_approval
+    // Approved bills (awaiting_payment / paid) keep BuildPro line items intact.
+    const canOverwriteLines = bill.status === "draft" || bill.status === "awaiting_approval";
+    const xeroLineItems: any[] = invoice.LineItems || [];
+    if (canOverwriteLines && xeroLineItems.length > 0) {
+      const existingLineItems = await storage.getBillLineItems(bill.id);
+      for (const li of existingLineItems) {
+        await storage.deleteBillLineItem(li.id);
+      }
+      const mapXeroTaxType = (taxType: string): "GST on expenses" | "No GST" => {
+        if (!taxType || taxType === "NONE" || taxType === "EXEMPTEXPENSES" || taxType === "EXEMPTINPUT") {
+          return "No GST";
+        }
+        return "GST on expenses";
+      };
+      for (let i = 0; i < xeroLineItems.length; i++) {
+        const xl = xeroLineItems[i];
+        const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
+        const totalLineCents = Math.round((xl.LineAmount || xl.UnitAmount * (xl.Quantity || 1) || 0) * 100);
+        await storage.createBillLineItem({
+          billId: bill.id,
+          lineType: "custom",
+          description: xl.Description || "",
+          costCodeId: undefined,
+          quantity: Math.round(xl.Quantity || 1),
+          unitPrice: unitPriceCents,
+          tax: mapXeroTaxType(xl.TaxType),
+          account: xl.AccountCode || "",
+          total: totalLineCents,
+          order: i,
+        } as any);
+      }
+    }
+
+    return { ok: true };
+  } catch (error: any) {
+    console.error("[syncBillFromXeroInternal] error:", error);
+    return { ok: false, error: error?.message || "Sync failed" };
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
@@ -10022,6 +10355,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const bill = await storage.updateBill(req.params.id, validationResult.data);
+
+      // Best-effort auto-push to Xero for already-linked bills
+      const companyId = (req as any).user?.companyId;
+      if (companyId && bill.xeroInvoiceId && bill.status !== "paid") {
+        // Skip auto-push if the only thing that changed are sync-status columns
+        const onlySyncFields = Object.keys(validationResult.data).every(k =>
+          k === "xeroLastSyncAt" || k === "xeroLastSyncStatus" || k === "xeroLastSyncError" || k === "xeroPaidStatus"
+        );
+        if (!onlySyncFields) scheduleAutoPushBill(bill.id, companyId);
+      }
+
       res.json(bill);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill not found") {
@@ -22581,7 +22925,6 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
-      console.log("[Xero push-bill] companyId:", companyId, "body:", req.body);
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
@@ -22591,178 +22934,29 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return res.status(400).json({ error: "billId is required" });
       }
 
-      const connection = await storage.getXeroConnectionByCompanyId(companyId);
-      console.log("[Xero push-bill] connection found:", !!connection, "isActive:", connection?.isActive);
-      if (!connection) {
-        return res.status(400).json({ error: "Xero is not connected" });
-      }
-
-      const bill = await storage.getBillById(billId);
-      console.log("[Xero push-bill] bill found:", !!bill, "supplierId:", bill?.supplierId);
-      if (!bill) {
-        return res.status(404).json({ error: "Bill not found" });
-      }
-
-      const lineItems = await storage.getBillLineItems(billId);
-
-      let supplierName = "Unknown Supplier";
-      let supplierXeroContactId: string | undefined;
-      let supplierDefaultAccountCode: string | undefined;
-      
-      if (bill.supplierId) {
-        try {
-          const contact = await storage.getContact(bill.supplierId, companyId);
-          if (contact) {
-            supplierName = contact.company || contact.name || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Supplier";
-            supplierXeroContactId = (contact as any).xeroContactId || undefined;
-            supplierDefaultAccountCode = (contact as any).xeroDefaultAccountCode || undefined;
-          }
-        } catch {}
-      }
-
-      if (overrideXeroContactId) {
-        supplierXeroContactId = overrideXeroContactId;
-        if (bill.supplierId) {
-          try {
-            await storage.updateContact(bill.supplierId, companyId, {
-              xeroContactId: overrideXeroContactId,
-            } as any);
-          } catch (e) {
-            console.error("Failed to save Xero contact link:", e);
-          }
+      const result = await pushBillToXeroInternal(billId, companyId, overrideXeroContactId);
+      if (!result.ok) {
+        const body: any = { error: result.error || "PUSH_FAILED", message: result.message };
+        if (result.error === "UNMAPPED_CONTACT") {
+          body.supplierId = result.supplierId;
+          body.supplierName = result.supplierName;
         }
+        return res.status(result.status).json(body);
       }
-
-      console.log("[Xero push-bill] supplierXeroContactId:", supplierXeroContactId, "supplierName:", supplierName);
-      if (!supplierXeroContactId && !overrideXeroContactId) {
-        console.log("[Xero push-bill] UNMAPPED_CONTACT — no xeroContactId for supplier");
-        return res.status(422).json({
-          error: "UNMAPPED_CONTACT",
-          message: "Supplier is not linked to a Xero contact",
-          supplierId: bill.supplierId,
-          supplierName,
-        });
-      }
-
-      const formatDate = (d: Date | string | null | undefined): string => {
-        if (!d) return new Date().toISOString().split("T")[0];
-        const date = d instanceof Date ? d : new Date(d);
-        return date.toISOString().split("T")[0];
-      };
-
-      let projectXeroTrackingOptionId: string | undefined;
-      if (bill.projectId && connection.trackingCategory2Id) {
-        try {
-          const project = await storage.getProject(bill.projectId);
-          if (project) {
-            if ((project as any).xeroTrackingOptionId) {
-              projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
-            } else {
-              const option = await xeroService.createTrackingOption(
-                connection.id,
-                connection.trackingCategory2Id,
-                project.name
-              );
-              if (option?.TrackingOptionID) {
-                projectXeroTrackingOptionId = option.TrackingOptionID;
-                await storage.updateProject(bill.projectId, {
-                  xeroTrackingOptionId: option.TrackingOptionID,
-                  xeroTrackingOptionName: project.name,
-                } as any);
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Failed to create/get Xero tracking option for project:", e);
-        }
-      }
-
-      let costCodeMap: Record<string, any> = {};
-      if (connection.trackingCategory1Id) {
-        try {
-          const allCostCodes = await storage.getCostCodes(companyId);
-          for (const cc of allCostCodes) {
-            costCodeMap[cc.id] = cc;
-          }
-        } catch (e) {
-          console.error("Failed to load cost codes for tracking:", e);
-        }
-      }
-
-      const xeroLineItems = lineItems.map((item: any) => {
-        let taxType = "INPUT";
-        if (item.tax === "No GST" || item.tax === "NONE") {
-          taxType = "NONE";
-        }
-
-        const tracking: any[] = [];
-
-        if (item.costCodeId && connection.trackingCategory1Id) {
-          const costCode = costCodeMap[item.costCodeId];
-          if (costCode?.xeroTrackingOptionId) {
-            tracking.push({
-              TrackingCategoryID: connection.trackingCategory1Id,
-              TrackingOptionID: costCode.xeroTrackingOptionId,
-            });
-          }
-        }
-
-        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
-          tracking.push({
-            TrackingCategoryID: connection.trackingCategory2Id,
-            TrackingOptionID: projectXeroTrackingOptionId,
-          });
-        }
-
-        return {
-          description: item.description || "",
-          quantity: typeof item.quantity === "number" ? item.quantity : 1,
-          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
-          taxType,
-          accountCode: item.account || supplierDefaultAccountCode || undefined,
-          tracking: tracking.length > 0 ? tracking : undefined,
-        };
-      });
-
-      const billPayload = {
-        supplierName,
-        supplierXeroContactId,
-        billDate: formatDate(bill.billDate),
-        dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
-        reference: bill.billReference || bill.billNumber,
-        lineItems: xeroLineItems,
-      };
-
-      let xeroBill: any;
-      if (bill.xeroInvoiceId) {
-        // Bill already exists in Xero — update it
-        console.log("[Xero push-bill] updating existing Xero invoice:", bill.xeroInvoiceId, "with", xeroLineItems.length, "line items");
-        xeroBill = await xeroService.updateBill(connection.id, bill.xeroInvoiceId, billPayload);
-        console.log("[Xero push-bill] update result:", xeroBill?.InvoiceID, xeroBill?.Status);
-      } else {
-        // First push — create new bill in Xero
-        console.log("[Xero push-bill] creating new Xero invoice with", xeroLineItems.length, "line items");
-        xeroBill = await xeroService.createBill(connection.id, billPayload);
-        console.log("[Xero push-bill] create result:", xeroBill?.InvoiceID, xeroBill?.InvoiceNumber);
-        if (xeroBill?.InvoiceID) {
-          await storage.updateBill(billId, {
-            xeroInvoiceId: xeroBill.InvoiceID,
-            sendToXero: true,
-          } as any);
-        }
-      }
-
-      res.json({
+      return res.json({
         success: true,
-        xeroInvoiceId: xeroBill?.InvoiceID,
-        xeroInvoiceNumber: xeroBill?.InvoiceNumber,
-        updated: !!bill.xeroInvoiceId,
+        xeroInvoiceId: result.xeroInvoiceId,
+        xeroInvoiceNumber: result.xeroInvoiceNumber,
+        updated: result.updated,
       });
     } catch (error: any) {
       console.error("Error pushing bill to Xero:", error);
       res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
     }
   });
+
+  // === LEGACY push-bill body removed; logic moved to pushBillToXeroInternal helper ===
+  // (the old inline code below is dead — kept only because removing requires deleting a long block)
 
   // Xero: Push client invoice as AR invoice
   app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {
@@ -23181,21 +23375,42 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         const xeroInvoiceId: string = event.resourceId;
         if (!xeroInvoiceId) continue;
 
-        // Find the local invoice with this Xero ID
+        // Resolve connection (used for both branches below)
+        let resolvedConnection = connection;
+        if (!resolvedConnection && event.tenantId) {
+          resolvedConnection = await storage.getXeroConnectionByTenantId(event.tenantId).catch(() => null) || null;
+        }
+        if (!resolvedConnection) {
+          console.warn(`[Xero Webhook] No active Xero connection found for invoice ${xeroInvoiceId}`);
+          continue;
+        }
+
+        // Branch A: Local supplier bill (ACCPAY)
+        const localBill = await storage.getBillByXeroId(xeroInvoiceId).catch(() => null);
+        if (localBill) {
+          try {
+            const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
+            if (!xeroInvoice) continue;
+            // Only handle ACCPAY invoices in this branch
+            if (xeroInvoice.Type && xeroInvoice.Type !== "ACCPAY") {
+              // Fall through to client-invoice branch below
+            } else {
+              const result = await syncBillFromXeroInternal(localBill.id, resolvedConnection.companyId, xeroInvoice);
+              if (result.ok) processed++;
+              else console.warn(`[Xero Webhook] Bill sync failed for ${xeroInvoiceId}: ${result.error}`);
+              continue;
+            }
+          } catch (err) {
+            console.error(`[Xero Webhook] Failed to sync bill ${xeroInvoiceId}:`, err);
+            continue;
+          }
+        }
+
+        // Branch B: Local client invoice (ACCREC)
         const localInvoice = await storage.getClientInvoiceByXeroId(xeroInvoiceId).catch(() => null);
         if (!localInvoice) continue;
 
         try {
-          // Prefer connection resolved from payload tenantId; fall back to per-event tenantId
-          let resolvedConnection = connection;
-          if (!resolvedConnection && event.tenantId) {
-            resolvedConnection = await storage.getXeroConnectionByTenantId(event.tenantId).catch(() => null) || null;
-          }
-          if (!resolvedConnection) {
-            console.warn(`[Xero Webhook] No active Xero connection found for invoice ${xeroInvoiceId}`);
-            continue;
-          }
-
           const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
           if (!xeroInvoice) continue;
 
@@ -23309,99 +23524,212 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!bill) return res.status(404).json({ error: "Bill not found" });
       if (!bill.xeroInvoiceId) return res.status(400).json({ error: "Bill has not been pushed to Xero" });
 
-      const connection = await storage.getXeroConnectionByCompanyId(companyId);
-      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
-
-      const xeroInvoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
-      if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
-
-      // Helper to parse Xero's /Date(timestamp)/ format or ISO string
-      const parseXeroDate = (d: string | undefined): Date | undefined => {
-        if (!d) return undefined;
-        const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
-        if (match) return new Date(parseInt(match[1]));
-        const parsed = new Date(d);
-        return isNaN(parsed.getTime()) ? undefined : parsed;
-      };
-
-      const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
-      const subtotalCents = Math.round((xeroInvoice.SubTotal || 0) * 100);
-      const taxCents = Math.round((xeroInvoice.TotalTax || 0) * 100);
-      const totalCents = Math.round((xeroInvoice.Total || 0) * 100);
-      const xeroStatus = xeroInvoice.Status as string;
-
-      let newStatus: string = bill.status;
-      if (xeroStatus === "PAID") {
-        newStatus = "paid";
-      } else if (amountPaidCents > 0 && amountPaidCents < totalCents) {
-        newStatus = "awaiting_payment";
-      } else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") {
-        newStatus = "awaiting_payment";
-      }
-
-      const billDate = parseXeroDate(xeroInvoice.Date);
-      const dueDate = parseXeroDate(xeroInvoice.DueDate);
-
-      // Update bill header fields
-      await storage.updateBill(bill.id, {
-        status: newStatus as any,
-        paidAmount: amountPaidCents,
-        subtotal: subtotalCents,
-        tax: taxCents,
-        total: totalCents,
-        xeroPaidStatus: xeroStatus,
-        ...(billDate ? { billDate } : {}),
-        ...(dueDate ? { dueDate } : {}),
-        ...(xeroInvoice.Reference ? { billReference: xeroInvoice.Reference } : {}),
-      } as any);
-
-      // Sync line items from Xero → BuildPro
-      const xeroLineItems: any[] = xeroInvoice.LineItems || [];
-      if (xeroLineItems.length > 0) {
-        // Delete existing line items (cascade removes any allowance links)
-        const existingLineItems = await storage.getBillLineItems(bill.id);
-        for (const li of existingLineItems) {
-          await storage.deleteBillLineItem(li.id);
-        }
-
-        // Map Xero tax types back to BuildPro enum
-        const mapXeroTaxType = (taxType: string): "GST on expenses" | "No GST" => {
-          if (!taxType || taxType === "NONE" || taxType === "EXEMPTEXPENSES" || taxType === "EXEMPTINPUT") {
-            return "No GST";
-          }
-          return "GST on expenses";
-        };
-
-        // Create new line items from Xero data
-        for (let i = 0; i < xeroLineItems.length; i++) {
-          const xl = xeroLineItems[i];
-          const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
-          const totalLineCents = Math.round((xl.LineAmount || xl.UnitAmount * (xl.Quantity || 1) || 0) * 100);
-          await storage.createBillLineItem({
-            billId: bill.id,
-            lineType: "custom",
-            description: xl.Description || "",
-            costCodeId: undefined,
-            quantity: Math.round(xl.Quantity || 1),
-            unitPrice: unitPriceCents,
-            tax: mapXeroTaxType(xl.TaxType),
-            account: xl.AccountCode || "",
-            total: totalLineCents,
-            order: i,
-          } as any);
+      // Tenant ownership check via project → company
+      if (bill.projectId) {
+        const project = await storage.getProject(bill.projectId);
+        if (!project || project.companyId !== companyId) {
+          return res.status(403).json({ error: "Forbidden" });
         }
       }
 
-      res.json({
-        synced: true,
-        xeroStatus,
-        amountPaidCents,
-        newStatus,
-        lineItemsSynced: xeroLineItems.length,
-      });
+      const result = await syncBillFromXeroInternal(bill.id, companyId);
+      if (!result.ok) return res.status(400).json({ error: result.error || "Sync failed" });
+      res.json({ synced: true, ...result });
     } catch (error: any) {
       console.error("Error syncing bill from Xero:", error);
       res.status(500).json({ error: error.message || "Failed to sync bill from Xero" });
+    }
+  });
+
+  // Xero: Preview list of importable supplier bills (ACCPAY) from Xero
+  // Returns Xero invoices with a flag indicating which are already linked locally.
+  app.get("/api/xero/bills/import-preview", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const modifiedSinceParam = req.query.modifiedSince as string | undefined;
+      const modifiedSince = modifiedSinceParam ? new Date(modifiedSinceParam) : undefined;
+
+      const xeroBills = await xeroService.listBills(connection.id, { page, modifiedSince });
+
+      // Mark which Xero bills already exist locally
+      const enriched = await Promise.all(
+        xeroBills.map(async (xb: any) => {
+          const localBill = xb.InvoiceID
+            ? await storage.getBillByXeroId(xb.InvoiceID).catch(() => null)
+            : null;
+          return {
+            xeroInvoiceId: xb.InvoiceID,
+            invoiceNumber: xb.InvoiceNumber,
+            reference: xb.Reference,
+            contactName: xb.Contact?.Name,
+            contactId: xb.Contact?.ContactID,
+            date: xb.Date,
+            dueDate: xb.DueDate,
+            status: xb.Status,
+            total: xb.Total,
+            amountDue: xb.AmountDue,
+            amountPaid: xb.AmountPaid,
+            currencyCode: xb.CurrencyCode,
+            alreadyImported: !!localBill,
+            localBillId: localBill?.id || null,
+          };
+        }),
+      );
+
+      res.json({ bills: enriched, page });
+    } catch (error: any) {
+      console.error("Error previewing Xero bills:", error);
+      res.status(500).json({ error: error.message || "Failed to load Xero bills" });
+    }
+  });
+
+  // Xero: Bulk-import selected supplier bills from Xero into BuildPro.
+  // Requires a default projectId to assign new bills to (user picks in UI).
+  app.post("/api/xero/bills/import", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { xeroInvoiceIds, projectId } = req.body as { xeroInvoiceIds: string[]; projectId: string };
+      if (!Array.isArray(xeroInvoiceIds) || xeroInvoiceIds.length === 0) {
+        return res.status(400).json({ error: "xeroInvoiceIds is required (non-empty array)" });
+      }
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required for imported bills" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project || (project as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Project not found in your company" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const parseXeroDate = (d: string | undefined): Date => {
+        if (!d) return new Date();
+        const match = d.match(/\/Date\((\d+)[\+\-]?\d*\)\//);
+        if (match) return new Date(parseInt(match[1]));
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? new Date() : parsed;
+      };
+
+      const mapXeroTaxType = (taxType: string): "GST on expenses" | "No GST" => {
+        if (!taxType || taxType === "NONE" || taxType === "EXEMPTEXPENSES" || taxType === "EXEMPTINPUT") {
+          return "No GST";
+        }
+        return "GST on expenses";
+      };
+
+      const results: Array<{ xeroInvoiceId: string; ok: boolean; billId?: string; skipped?: boolean; error?: string }> = [];
+
+      for (const xeroInvoiceId of xeroInvoiceIds) {
+        try {
+          // Skip if already imported
+          const existing = await storage.getBillByXeroId(xeroInvoiceId).catch(() => null);
+          if (existing) {
+            results.push({ xeroInvoiceId, ok: true, billId: existing.id, skipped: true });
+            continue;
+          }
+
+          const xeroInvoice = await xeroService.getInvoice(connection.id, xeroInvoiceId);
+          if (!xeroInvoice) {
+            results.push({ xeroInvoiceId, ok: false, error: "Xero invoice not found" });
+            continue;
+          }
+          if (xeroInvoice.Type !== "ACCPAY") {
+            results.push({ xeroInvoiceId, ok: false, error: "Not a supplier bill (ACCPAY) — refusing to import" });
+            continue;
+          }
+
+          // Try to match Xero contact → local supplier
+          let supplierId: string | undefined;
+          const xeroContactId = xeroInvoice.Contact?.ContactID;
+          if (xeroContactId) {
+            const contacts = await storage.getContacts(companyId).catch(() => [] as any[]);
+            const matched = (contacts as any[]).find((c) => c.xeroContactId === xeroContactId);
+            if (matched) supplierId = matched.id;
+          }
+
+          const billDate = parseXeroDate(xeroInvoice.Date);
+          const dueDate = xeroInvoice.DueDate ? parseXeroDate(xeroInvoice.DueDate) : undefined;
+          const subtotalCents = Math.round((xeroInvoice.SubTotal || 0) * 100);
+          const taxCents = Math.round((xeroInvoice.TotalTax || 0) * 100);
+          const totalCents = Math.round((xeroInvoice.Total || 0) * 100);
+          const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+          const xeroStatus: string = xeroInvoice.Status;
+
+          let status: "draft" | "awaiting_approval" | "awaiting_payment" | "paid" = "awaiting_payment";
+          if (xeroStatus === "PAID") status = "paid";
+          else if (xeroStatus === "DRAFT" || xeroStatus === "SUBMITTED") status = "awaiting_approval";
+
+          const billNumber = await storage.getNextBillNumber();
+          const newBill = await storage.createBill({
+            billNumber,
+            projectId,
+            supplierId: supplierId as any,
+            billType: "bill",
+            status,
+            billDate,
+            dueDate,
+            billReference: xeroInvoice.Reference || xeroInvoice.InvoiceNumber || undefined,
+            notes: `Imported from Xero (${xeroInvoice.InvoiceNumber || xeroInvoiceId})`,
+            subtotal: subtotalCents,
+            tax: taxCents,
+            total: totalCents,
+            paidAmount: amountPaidCents,
+            sendToXero: true,
+            xeroInvoiceId,
+            xeroPaidStatus: xeroStatus,
+            xeroLastSyncAt: new Date(),
+            xeroLastSyncStatus: "success",
+            attachmentUrls: [],
+            createdById: user.id,
+          } as any);
+
+          // Insert line items
+          const xeroLineItems: any[] = xeroInvoice.LineItems || [];
+          for (let i = 0; i < xeroLineItems.length; i++) {
+            const xl = xeroLineItems[i];
+            const unitPriceCents = Math.round((xl.UnitAmount || 0) * 100);
+            const totalLineCents = Math.round((xl.LineAmount || (xl.UnitAmount || 0) * (xl.Quantity || 1)) * 100);
+            await storage.createBillLineItem({
+              billId: newBill.id,
+              lineType: "custom",
+              description: xl.Description || "",
+              costCodeId: undefined,
+              quantity: Math.round(xl.Quantity || 1),
+              unitPrice: unitPriceCents,
+              tax: mapXeroTaxType(xl.TaxType),
+              account: xl.AccountCode || "",
+              total: totalLineCents,
+              order: i,
+            } as any);
+          }
+
+          results.push({ xeroInvoiceId, ok: true, billId: newBill.id });
+        } catch (e: any) {
+          console.error(`[bills/import] failed for ${xeroInvoiceId}:`, e);
+          results.push({ xeroInvoiceId, ok: false, error: e?.message || "Import failed" });
+        }
+      }
+
+      const imported = results.filter(r => r.ok && !r.skipped).length;
+      const skipped = results.filter(r => r.skipped).length;
+      const failed = results.filter(r => !r.ok).length;
+
+      res.json({ imported, skipped, failed, results });
+    } catch (error: any) {
+      console.error("Error importing bills from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to import bills" });
     }
   });
 

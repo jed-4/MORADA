@@ -550,6 +550,53 @@ export class XeroService {
     return data.Invoices?.[0] || data;
   }
 
+  /**
+   * List ACCPAY (supplier bill) invoices from Xero.
+   * Pulls AUTHORISED + PAID + SUBMITTED bills, paginated.
+   */
+  async listBills(
+    connectionId: string,
+    opts: { modifiedSince?: Date; page?: number; statuses?: string[] } = {}
+  ): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const statuses = opts.statuses && opts.statuses.length > 0
+      ? opts.statuses
+      : ["AUTHORISED", "PAID", "SUBMITTED"];
+
+    // Build filter: Type=="ACCPAY" AND (Status=="AUTHORISED" OR ...)
+    const statusClause = statuses.map(s => `Status=="${s}"`).join(" OR ");
+    const where = `Type=="ACCPAY" AND (${statusClause})`;
+
+    const params = new URLSearchParams({
+      where,
+      order: "Date DESC",
+      page: String(opts.page || 1),
+    });
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-Tenant-Id": connection.tenantId,
+      Accept: "application/json",
+    };
+
+    if (opts.modifiedSince) {
+      headers["If-Modified-Since"] = opts.modifiedSince.toUTCString();
+    }
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices?${params}`, { headers });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch Xero bills: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Invoices || [];
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

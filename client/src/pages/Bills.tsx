@@ -54,6 +54,9 @@ import {
   GripVertical,
   Lock,
   CheckCircle2,
+  Download,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -100,6 +103,193 @@ function saveBillColumnConfig(config: { id: string; visible: boolean; order: num
   } catch {}
 }
 
+type XeroBillPreview = {
+  xeroInvoiceId: string;
+  invoiceNumber?: string;
+  reference?: string;
+  contactName?: string;
+  date?: string;
+  dueDate?: string;
+  status?: string;
+  total?: number;
+  amountDue?: number;
+  amountPaid?: number;
+  alreadyImported: boolean;
+  localBillId?: string | null;
+};
+
+function ImportFromXeroDialog({
+  open,
+  onOpenChange,
+  projects,
+  defaultProjectId,
+  onProjectChange,
+  selectedIds,
+  onSelectedIdsChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: Project[];
+  defaultProjectId: string;
+  onProjectChange: (id: string) => void;
+  selectedIds: Set<string>;
+  onSelectedIdsChange: (ids: Set<string>) => void;
+}) {
+  const { toast } = useToast();
+  const { data: previewData, isLoading, error, refetch } = useQuery<{ bills: XeroBillPreview[]; page: number }>({
+    queryKey: ["/api/xero/bills/import-preview"],
+    enabled: open,
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string }) => {
+      return await apiRequest("/api/xero/bills/import", "POST", payload);
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Import complete",
+        description: `${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed.`,
+      });
+      onSelectedIdsChange(new Set());
+      onOpenChange(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const xeroBills = previewData?.bills || [];
+  const importableBills = xeroBills.filter(b => !b.alreadyImported);
+
+  const toggleAll = (checked: boolean) => {
+    if (checked) {
+      onSelectedIdsChange(new Set(importableBills.map(b => b.xeroInvoiceId)));
+    } else {
+      onSelectedIdsChange(new Set());
+    }
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    const next = new Set(selectedIds);
+    if (checked) next.add(id); else next.delete(id);
+    onSelectedIdsChange(next);
+  };
+
+  const formatDate = (d?: string) => {
+    if (!d) return "—";
+    const match = d.match(/\/Date\((\d+)/);
+    const date = match ? new Date(parseInt(match[1])) : new Date(d);
+    if (isNaN(date.getTime())) return "—";
+    return format(date, "dd MMM yyyy");
+  };
+
+  const formatMoney = (n?: number) => {
+    if (n === undefined || n === null) return "—";
+    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" data-testid="dialog-import-xero-bills">
+        <DialogHeader>
+          <DialogTitle>Import bills from Xero</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex items-center gap-2 py-2">
+          <span className="text-xs text-muted-foreground">Assign to project:</span>
+          <Select value={defaultProjectId} onValueChange={onProjectChange}>
+            <SelectTrigger className="h-8 w-64" data-testid="select-import-project">
+              <SelectValue placeholder="Select project..." />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
+            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Refresh"}
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-auto border rounded-md min-h-[200px]">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading Xero bills...
+            </div>
+          ) : error ? (
+            <div className="p-6 text-sm text-destructive flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {(error as Error).message || "Failed to load Xero bills"}
+            </div>
+          ) : xeroBills.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground text-center">No bills found in Xero.</div>
+          ) : (
+            <Table>
+              <TableHeader className="sticky top-0 bg-background">
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={importableBills.length > 0 && importableBills.every(b => selectedIds.has(b.xeroInvoiceId))}
+                      onCheckedChange={(c) => toggleAll(!!c)}
+                      data-testid="checkbox-import-select-all"
+                    />
+                  </TableHead>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {xeroBills.map((b) => (
+                  <TableRow key={b.xeroInvoiceId} className={b.alreadyImported ? "opacity-50" : ""}>
+                    <TableCell>
+                      <Checkbox
+                        disabled={b.alreadyImported}
+                        checked={selectedIds.has(b.xeroInvoiceId)}
+                        onCheckedChange={(c) => toggleOne(b.xeroInvoiceId, !!c)}
+                        data-testid={`checkbox-import-${b.xeroInvoiceId}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{b.invoiceNumber || "—"}</TableCell>
+                    <TableCell className="text-xs">{b.contactName || "—"}</TableCell>
+                    <TableCell className="text-xs">{b.reference || "—"}</TableCell>
+                    <TableCell className="text-xs">{formatDate(b.date)}</TableCell>
+                    <TableCell>
+                      {b.alreadyImported ? (
+                        <Badge variant="outline" className="text-[10px]">Already imported</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">{b.status}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-right">{formatMoney(b.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        <DialogFooter>
+          <span className="text-xs text-muted-foreground mr-auto">{selectedIds.size} selected</span>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            disabled={selectedIds.size === 0 || !defaultProjectId || importMutation.isPending}
+            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId })}
+            data-testid="button-confirm-import"
+          >
+            {importMutation.isPending ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" /> Importing...</> : `Import ${selectedIds.size}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Bills() {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
@@ -120,6 +310,9 @@ export default function Bills() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [columnConfig, setColumnConfig] = useState<{ id: string; visible: boolean; order: number }[]>(loadBillColumnConfig);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importProjectId, setImportProjectId] = useState<string>("");
+  const [selectedXeroBillIds, setSelectedXeroBillIds] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -440,6 +633,18 @@ export default function Bills() {
               </PopoverContent>
             </Popover>
             <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              onClick={() => {
+                setImportProjectId(projectIdFromUrl || "");
+                setSelectedXeroBillIds(new Set());
+                setImportDialogOpen(true);
+              }}
+              data-testid="button-import-from-xero"
+            >
+              <Download className="w-3 h-3" />
+              <span>Import from Xero</span>
+            </button>
+            <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
               onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
               data-testid="button-create-bill"
@@ -564,6 +769,16 @@ export default function Bills() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportFromXeroDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        projects={projects}
+        defaultProjectId={importProjectId}
+        onProjectChange={setImportProjectId}
+        selectedIds={selectedXeroBillIds}
+        onSelectedIdsChange={setSelectedXeroBillIds}
+      />
 
       {/* ── Content ── */}
       <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">

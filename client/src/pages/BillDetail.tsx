@@ -2418,6 +2418,18 @@ export default function BillDetail() {
                     })()}
                   </div>
                   <div className="flex items-center gap-2">
+                    {isEditMode && (bill as any)?.xeroInvoiceId && (
+                      <div className="text-[11px] text-muted-foreground" data-testid="text-xero-sync-status">
+                        {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
+                          <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
+                        )}
+                        {(bill as any)?.xeroLastSyncStatus === "error" && (
+                          <span className="text-destructive" title={(bill as any)?.xeroLastSyncError || ""}>
+                            Sync error: {((bill as any)?.xeroLastSyncError || "unknown").slice(0, 60)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
                       <Button
                         type="button"
