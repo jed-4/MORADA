@@ -638,7 +638,7 @@ export interface IStorage {
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
-  appendBillAttachment(id: string, attachment: any): Promise<Bill>;
+  appendBillAttachment(id: string, objectPath: string): Promise<Bill>;
   
   // Bill Line Items CRUD
   getBillLineItems(billId: string): Promise<BillLineItem[]>;
@@ -13056,18 +13056,23 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async appendBillAttachment(id: string, attachment: any): Promise<Bill> {
+  async appendBillAttachment(id: string, objectPath: string): Promise<Bill> {
     try {
-      const existing = await db.select({ attachmentUrls: schema.bills.attachmentUrls }).from(schema.bills).where(eq(schema.bills.id, id)).limit(1);
-      if (!existing[0]) throw new Error("Bill not found");
-      const current = Array.isArray(existing[0].attachmentUrls) ? (existing[0].attachmentUrls as any[]) : [];
-      const next = [...current, attachment];
-      const updated = await db.update(schema.bills)
-        .set({ attachmentUrls: next as any, updatedAt: new Date() })
-        .where(eq(schema.bills.id, id))
-        .returning();
-      if (!updated[0]) throw new Error("Bill not found");
-      return updated[0];
+      // Atomic JSONB append in a single SQL statement avoids read-modify-write
+      // races when multiple uploads happen concurrently against the same bill.
+      const payload = JSON.stringify([objectPath]);
+      const updated = await db.execute(sql`
+        UPDATE bills
+        SET attachment_urls = (
+          COALESCE(attachment_urls::jsonb, '[]'::jsonb) || ${payload}::jsonb
+        )::json,
+            updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `);
+      const row = (updated as any).rows?.[0] ?? (Array.isArray(updated) ? (updated as any)[0] : undefined);
+      if (!row) throw new Error("Bill not found");
+      return row as Bill;
     } catch (error) {
       console.error("Database error in appendBillAttachment:", error);
       throw error;

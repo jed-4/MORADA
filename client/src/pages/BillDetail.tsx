@@ -1022,7 +1022,7 @@ export default function BillDetail() {
                   size: uploadedFile.size,
                   source: "ai_reader",
                 });
-                setAttachmentUrls(prev => [...prev, uploadResult.objectPath]);
+                // useUpload.onSuccess already updated local state; just refresh server cache.
                 queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
                 attachedOk = true;
               } catch (patchErr) {

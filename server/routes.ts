@@ -10494,28 +10494,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Atomic append of an attachment to a bill (prevents read-modify-write races)
-  app.post("/api/bills/:id/attachments", async (req, res) => {
+  // Atomic append of an attachment to a bill (prevents read-modify-write races).
+  // Stays wire-compatible with the existing string[] shape of bills.attachmentUrls.
+  app.post("/api/bills/:id/attachments", requireAuth, async (req, res) => {
     try {
-      const { objectPath, filename, mimeType, size, source } = req.body || {};
+      const { objectPath } = req.body || {};
       if (!objectPath || typeof objectPath !== "string") {
         return res.status(400).json({ error: "objectPath is required" });
       }
       const bill = await storage.getBillById(req.params.id);
       if (!bill) return res.status(404).json({ error: "Bill not found" });
 
+      // Tenant scoping: ensure the requesting user belongs to the bill's company
       const userId = (req as any).user?.id;
-      const record = {
-        objectPath,
-        filename: filename || objectPath.split("/").pop() || "attachment",
-        mimeType: mimeType || undefined,
-        size: typeof size === "number" ? size : undefined,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: userId || undefined,
-        source: source || "manual",
-      };
-      const updated = await storage.appendBillAttachment(req.params.id, record);
-      res.json({ bill: updated, attachment: record });
+      const userCompanyId = (req as any).user?.companyId;
+      if (bill.projectId) {
+        const project = await storage.getProjectById(bill.projectId);
+        if (project && userCompanyId && project.companyId !== userCompanyId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
+
+      const updated = await storage.appendBillAttachment(req.params.id, objectPath);
+      res.json({ bill: updated, attachment: { objectPath, uploadedBy: userId, uploadedAt: new Date().toISOString() } });
     } catch (error: any) {
       console.error("[bills/attachments] failed:", error);
       res.status(500).json({ error: error?.message || "Failed to append attachment" });

@@ -13,8 +13,10 @@ function detectKind(src: string, mimeType?: string): "image" | "pdf" | "other" {
     if (mimeType.startsWith("image/")) return "image";
     if (mimeType === "application/pdf") return "pdf";
   }
-  if (/\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(src)) return "image";
-  if (/\.pdf$/i.test(src)) return "pdf";
+  // Strip query string + fragment so signed URLs (with ?token=...) still match
+  const path = src.split("?")[0].split("#")[0];
+  if (/\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path)) return "image";
+  if (/\.pdf$/i.test(path)) return "pdf";
   return "other";
 }
 
