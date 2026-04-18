@@ -210,8 +210,11 @@ async function pushBillToXeroInternal(
   };
   const logOutcome = (outcome: { ok: boolean; reason?: string; message?: string; xeroInvoiceId?: string; validationErrors?: XeroValidationIssue[] }) => {
     try {
+      // Successful pushes log as `xero.bill.push.ok`; failures log as
+      // `xero.bill.push.failed` so production log filters can target the
+      // failure channel directly (and pick up structured `validationErrors`).
       console.log(JSON.stringify({
-        event: "xero.bill.push",
+        event: outcome.ok ? "xero.bill.push.ok" : "xero.bill.push.failed",
         billId,
         companyId,
         ok: outcome.ok,
