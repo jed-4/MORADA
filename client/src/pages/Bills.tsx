@@ -136,13 +136,21 @@ function ImportFromXeroDialog({
   onSelectedIdsChange: (ids: Set<string>) => void;
 }) {
   const { toast } = useToast();
+  const [sinceDate, setSinceDate] = useState<string>("");
+  const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
   const { data: previewData, isLoading, error, refetch } = useQuery<{ bills: XeroBillPreview[]; page: number }>({
-    queryKey: ["/api/xero/bills/import-preview"],
+    queryKey: ["/api/xero/bills/import-preview", sinceDate],
+    queryFn: async () => {
+      const qs = sinceDate ? `?since=${encodeURIComponent(sinceDate)}` : "";
+      const res = await fetch(`/api/xero/bills/import-preview${qs}`, { credentials: "include" });
+      if (!res.ok) throw new Error((await res.text()) || "Failed to load Xero bills");
+      return res.json();
+    },
     enabled: open,
   });
 
   const importMutation = useMutation({
-    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string }) => {
+    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string; unmappedSupplierAction: "skip" | "create" }) => {
       return await apiRequest("/api/xero/bills/import", "POST", payload);
     },
     onSuccess: (data: any) => {
@@ -196,16 +204,34 @@ function ImportFromXeroDialog({
           <DialogTitle>Import bills from Xero</DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 py-2">
+        <div className="flex flex-wrap items-center gap-2 py-2">
           <span className="text-xs text-muted-foreground">Assign to project:</span>
           <Select value={defaultProjectId} onValueChange={onProjectChange}>
-            <SelectTrigger className="h-8 w-64" data-testid="select-import-project">
+            <SelectTrigger className="h-8 w-56" data-testid="select-import-project">
               <SelectValue placeholder="Select project..." />
             </SelectTrigger>
             <SelectContent>
               {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground ml-2">From date:</span>
+          <Input
+            type="date"
+            value={sinceDate}
+            onChange={(e) => setSinceDate(e.target.value)}
+            className="h-8 w-40"
+            data-testid="input-import-since"
+          />
+          <span className="text-xs text-muted-foreground ml-2">Unmapped suppliers:</span>
+          <Select value={unmappedAction} onValueChange={(v) => setUnmappedAction(v as "skip" | "create")}>
+            <SelectTrigger className="h-8 w-36" data-testid="select-unmapped-action">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="skip">Skip</SelectItem>
+              <SelectItem value="create">Auto-create</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
@@ -279,7 +305,7 @@ function ImportFromXeroDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             disabled={selectedIds.size === 0 || !defaultProjectId || importMutation.isPending}
-            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId })}
+            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId, unmappedSupplierAction: unmappedAction })}
             data-testid="button-confirm-import"
           >
             {importMutation.isPending ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" /> Importing...</> : `Import ${selectedIds.size}`}

@@ -260,7 +260,7 @@ async function pushBillToXeroInternal(
     }
 
     if (!supplierXeroContactId) {
-      // Don't write error sync status — this is a recoverable, user-actionable state.
+      await writeSyncStatus("failed", `Unmapped supplier "${supplierName}" — link it to a Xero contact and retry`);
       return {
         ok: false,
         status: 422,
@@ -23659,7 +23659,13 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { xeroInvoiceIds, projectId } = req.body as { xeroInvoiceIds: string[]; projectId: string };
+      const { xeroInvoiceIds, projectId, unmappedSupplierAction, defaultCostCodeId } = req.body as {
+        xeroInvoiceIds: string[];
+        projectId: string;
+        unmappedSupplierAction?: "skip" | "create";
+        defaultCostCodeId?: string;
+      };
+      const unmappedAction: "skip" | "create" = unmappedSupplierAction === "create" ? "create" : "skip";
       if (!Array.isArray(xeroInvoiceIds) || xeroInvoiceIds.length === 0) {
         return res.status(400).json({ error: "xeroInvoiceIds is required (non-empty array)" });
       }
@@ -23714,10 +23720,30 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           // Try to match Xero contact → local supplier
           let supplierId: string | undefined;
           const xeroContactId = xeroInvoice.Contact?.ContactID;
+          const xeroContactName: string = xeroInvoice.Contact?.Name || "";
           if (xeroContactId) {
             const contacts = await storage.getContacts(companyId).catch(() => [] as any[]);
             const matched = (contacts as any[]).find((c) => c.xeroContactId === xeroContactId);
             if (matched) supplierId = matched.id;
+          }
+          if (!supplierId) {
+            if (unmappedAction === "skip") {
+              results.push({ xeroInvoiceId, ok: false, error: `Unmapped supplier "${xeroContactName || "(unknown)"}" — skipped` });
+              continue;
+            }
+            // auto-create
+            try {
+              const created = await storage.createContact({
+                companyId,
+                contactType: "supplier",
+                name: xeroContactName || "Imported from Xero",
+                xeroContactId: xeroContactId || undefined,
+              } as any);
+              supplierId = (created as any).id;
+            } catch (e: any) {
+              results.push({ xeroInvoiceId, ok: false, error: `Could not auto-create supplier: ${e?.message || e}` });
+              continue;
+            }
           }
 
           const billDate = parseXeroDate(xeroInvoice.Date);
@@ -23764,9 +23790,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             const totalLineCents = Math.round((xl.LineAmount || (xl.UnitAmount || 0) * (xl.Quantity || 1)) * 100);
             await storage.createBillLineItem({
               billId: newBill.id,
-              lineType: "custom",
+              lineType: defaultCostCodeId ? "cost_code" : "custom",
               description: xl.Description || "",
-              costCodeId: undefined,
+              costCodeId: defaultCostCodeId || undefined,
               quantity: Math.round(xl.Quantity || 1),
               unitPrice: unitPriceCents,
               tax: mapXeroTaxType(xl.TaxType),

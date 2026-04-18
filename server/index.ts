@@ -151,6 +151,13 @@ app.use((req, res, next) => {
     reusePort: true,
   }, async () => {
     log(`serving on port ${port}`);
+
+    if (process.env.NODE_ENV === "production") {
+      const missingXero = ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET", "XERO_WEBHOOK_KEY"].filter(k => !process.env[k]);
+      if (missingXero.length) {
+        console.warn(`[startup] WARNING: Missing Xero env vars in production: ${missingXero.join(", ")} — Xero integration features will be unavailable or insecure.`);
+      }
+    }
     
     // Auto-seed missing built-in field categories (for production databases)
     try {

@@ -633,7 +633,7 @@ export interface IStorage {
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
   getBillById(id: string): Promise<Bill | null>;
-  getBillByXeroId(xeroInvoiceId: string): Promise<Bill | null>;
+  getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null>;
   getNextBillNumber(): Promise<string>;
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
