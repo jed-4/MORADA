@@ -1766,7 +1766,7 @@ export const bills = pgTable("bills", {
   xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
   xeroPaidStatus: text("xero_paid_status"), // Synced from Xero
   xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful push or pull timestamp
-  xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'error' | 'pending'
+  xeroLastSyncStatus: text("xero_last_sync_status"), // 'success' | 'failed'
   xeroLastSyncError: text("xero_last_sync_error"), // Last error message if any
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),

@@ -501,9 +501,9 @@ async function syncBillFromXeroInternal(
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
 
-    // Only overwrite line items when bill is still in draft/awaiting_approval
-    // Approved bills (awaiting_payment / paid) keep BuildPro line items intact.
-    const canOverwriteLines = bill.status === "draft" || bill.status === "awaiting_approval";
+    // Only overwrite line items when local bill is still in draft.
+    // Once submitted/approved/paid, BuildPro line items are preserved.
+    const canOverwriteLines = bill.status === "draft";
     const xeroLineItems: any[] = invoice.LineItems || [];
     if (canOverwriteLines && xeroLineItems.length > 0) {
       const existingLineItems = await storage.getBillLineItems(bill.id);
