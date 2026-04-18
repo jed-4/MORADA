@@ -2418,7 +2418,7 @@ const DEFAULT_CLIENT_INVOICE_TERMS = "This payment claim is in accordance with y
 function TermsConditionsSection() {
   const { toast } = useToast();
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }>; clientInvoiceDefaultXeroAccount?: string | null }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }>; clientInvoiceDefaultXeroAccount?: string | null; billDefaultXeroAccount?: string | null }>({
     queryKey: ["/api/company-settings"],
   });
 
@@ -2437,6 +2437,20 @@ function TermsConditionsSection() {
     },
     onError: () => {
       toast({ title: "Failed to save default account", variant: "destructive" });
+    },
+  });
+
+  const saveBillDefaultAccountMutation = useMutation({
+    mutationFn: async (accountCode: string | null) => {
+      const res = await apiRequest("/api/company-settings", "PATCH", { billDefaultXeroAccount: accountCode });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Default bill account saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save default bill account", variant: "destructive" });
     },
   });
 
@@ -2613,7 +2627,7 @@ function TermsConditionsSection() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h4 className="font-semibold text-sm">Default Xero Account</h4>
+              <h4 className="font-semibold text-sm">Default Xero Account (Client Invoices)</h4>
               <p className="text-sm text-muted-foreground mt-0.5">Applied automatically to new custom line items on client invoices</p>
             </div>
             {xeroAccounts.length > 0 ? (
@@ -2623,6 +2637,38 @@ function TermsConditionsSection() {
                 disabled={saveDefaultAccountMutation.isPending}
               >
                 <SelectTrigger className="w-64" data-testid="select-default-xero-account">
+                  <SelectValue placeholder="Select account..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {xeroAccounts.map((acc) => (
+                    <SelectItem key={acc.code} value={acc.code}>
+                      {acc.code} — {acc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Connect Xero in Integrations to enable this setting</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h4 className="font-semibold text-sm">Default Xero Account (Bills)</h4>
+              <p className="text-sm text-muted-foreground mt-0.5">Used as a fallback when a bill line item has no account code and the supplier has no Xero default account set</p>
+            </div>
+            {xeroAccounts.length > 0 ? (
+              <Select
+                value={companySettings?.billDefaultXeroAccount || "__none__"}
+                onValueChange={(val) => saveBillDefaultAccountMutation.mutate(val === "__none__" ? null : val)}
+                disabled={saveBillDefaultAccountMutation.isPending}
+              >
+                <SelectTrigger className="w-64" data-testid="select-bill-default-xero-account">
                   <SelectValue placeholder="Select account..." />
                 </SelectTrigger>
                 <SelectContent>

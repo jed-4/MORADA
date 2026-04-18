@@ -34,6 +34,96 @@ export interface XeroBillData {
   lineItems: XeroBillLineItem[];
 }
 
+export interface XeroValidationIssue {
+  scope: "invoice" | "lineItem" | "contact" | "unknown";
+  lineIndex?: number;
+  message: string;
+}
+
+/**
+ * Typed error thrown when Xero responds with HTTP 400 + a ValidationException
+ * payload. Carries a structured list of per-invoice / per-line-item messages
+ * so callers can log them as fields and surface them to users.
+ */
+export class XeroValidationError extends Error {
+  status: number;
+  validationErrors: XeroValidationIssue[];
+  rawBody: string;
+  constructor(status: number, validationErrors: XeroValidationIssue[], rawBody: string) {
+    const summary = validationErrors[0]?.message || "Xero validation failed";
+    super(summary);
+    this.name = "XeroValidationError";
+    this.status = status;
+    this.validationErrors = validationErrors;
+    this.rawBody = rawBody;
+  }
+}
+
+/**
+ * Parse a Xero error response body. If the body contains a ValidationException
+ * with per-element / per-line-item ValidationErrors, return a flattened list.
+ * Returns null when the body isn't a recognised Xero validation envelope.
+ */
+function parseXeroValidationErrors(body: string): XeroValidationIssue[] | null {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  if (parsed.Type !== "ValidationException" && !Array.isArray(parsed.Elements)) return null;
+
+  const issues: XeroValidationIssue[] = [];
+  const elements = Array.isArray(parsed.Elements) ? parsed.Elements : [];
+  for (const el of elements) {
+    if (Array.isArray(el?.ValidationErrors)) {
+      for (const ve of el.ValidationErrors) {
+        if (ve?.Message) issues.push({ scope: "invoice", message: String(ve.Message) });
+      }
+    }
+    if (el?.Contact?.ValidationErrors && Array.isArray(el.Contact.ValidationErrors)) {
+      for (const ve of el.Contact.ValidationErrors) {
+        if (ve?.Message) issues.push({ scope: "contact", message: String(ve.Message) });
+      }
+    }
+    if (Array.isArray(el?.LineItems)) {
+      el.LineItems.forEach((li: any, idx: number) => {
+        if (Array.isArray(li?.ValidationErrors)) {
+          for (const ve of li.ValidationErrors) {
+            if (ve?.Message) {
+              issues.push({ scope: "lineItem", lineIndex: idx, message: String(ve.Message) });
+            }
+          }
+        }
+      });
+    }
+  }
+
+  if (issues.length === 0 && parsed.Message) {
+    issues.push({ scope: "unknown", message: String(parsed.Message) });
+  }
+  return issues.length > 0 ? issues : null;
+}
+
+/**
+ * Wrap a non-OK Xero response in either a XeroValidationError (when the body
+ * is a parseable ValidationException) or a generic Error containing the raw
+ * status + body. The intent is that callers can `instanceof XeroValidationError`
+ * for clean structured handling, while preserving the existing generic-error
+ * behaviour for everything else (auth failures, 500s, etc).
+ */
+async function xeroErrorFromResponse(response: Response, fallbackPrefix: string): Promise<Error> {
+  const errorText = await response.text();
+  if (response.status === 400) {
+    const issues = parseXeroValidationErrors(errorText);
+    if (issues && issues.length > 0) {
+      return new XeroValidationError(response.status, issues, errorText);
+    }
+  }
+  return new Error(`${fallbackPrefix}: ${response.status} ${errorText}`);
+}
+
 interface XeroTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -251,6 +341,28 @@ export class XeroService {
     return data.Accounts || [];
   }
 
+  async getTaxRates(connectionId: string): Promise<Array<{ Name: string; TaxType: string; Status?: string }>> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/TaxRates`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get Xero tax rates: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.TaxRates || [];
+  }
+
   async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
@@ -397,8 +509,7 @@ export class XeroService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to create Xero bill: ${response.status} ${errorText}`);
+      throw await xeroErrorFromResponse(response, "Failed to create Xero bill");
     }
 
     const data = (await response.json()) as any;
@@ -458,8 +569,7 @@ export class XeroService {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to update Xero bill: ${response.status} ${errorText}`);
+      throw await xeroErrorFromResponse(response, "Failed to update Xero bill");
     }
 
     const data = (await response.json()) as any;

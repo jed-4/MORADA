@@ -138,6 +138,29 @@ type LineItem = {
   allowanceItemId?: string;
 };
 
+type XeroValidationIssue = {
+  scope: "invoice" | "lineItem" | "contact" | "unknown";
+  lineIndex?: number;
+  message: string;
+};
+
+/**
+ * Build a human-readable description for a failed Xero push. When the server
+ * returned a structured `validationErrors` list (XeroValidationException, or
+ * pre-flight rejection), we join the messages so the user can see all issues
+ * at once instead of a generic "Xero sync failed" toast.
+ */
+function formatXeroErrorDescription(e: any): string {
+  const issues: XeroValidationIssue[] | undefined = e?.validationErrors;
+  if (Array.isArray(issues) && issues.length > 0) {
+    return issues
+      .slice(0, 4)
+      .map((iss) => iss.message)
+      .join(" • ") + (issues.length > 4 ? ` • (+${issues.length - 4} more)` : "");
+  }
+  return e?.message || "Could not push to Xero. Check your Xero connection in Settings.";
+}
+
 export default function BillDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
@@ -714,13 +737,16 @@ export default function BillDetail() {
               toast({ title: "Bill created", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page for mapping
             }
-            throw new Error(errData.message || errData.error || "Xero sync failed");
+            const err: any = new Error(errData.message || errData.error || "Xero sync failed");
+            err.validationErrors = errData.validationErrors;
+            throw err;
           }
           toast({ title: "Bill created & synced to Xero", description: "New bill created in Xero." });
         } catch (e: any) {
+          const desc = formatXeroErrorDescription(e);
           toast({
             title: "Bill created — Xero sync failed",
-            description: e.message || "Could not push to Xero. Check your Xero connection in Settings.",
+            description: desc,
             variant: "destructive",
           });
           return; // stay on page so user can see the error
@@ -855,7 +881,9 @@ export default function BillDetail() {
               toast({ title: "Bill saved", description: "Supplier not linked to Xero — select the matching contact below to complete the sync." });
               return; // stay on page so user can complete the mapping
             }
-            throw new Error(errData.message || errData.error || "Xero sync failed");
+            const err: any = new Error(errData.message || errData.error || "Xero sync failed");
+            err.validationErrors = errData.validationErrors;
+            throw err;
           }
           const result = await pushRes.json();
           toast({
@@ -866,7 +894,7 @@ export default function BillDetail() {
           // Stay on page so user can see the error and retry
           toast({
             title: "Bill saved — Xero sync failed",
-            description: e.message || "Could not push to Xero. Check your Xero connection in Settings.",
+            description: formatXeroErrorDescription(e),
             variant: "destructive",
           });
           return; // don't navigate away so they can see the error

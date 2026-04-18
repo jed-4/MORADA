@@ -1148,6 +1148,7 @@ export const systemConfiguration = pgTable("system_configuration", {
   variationStartNumber: integer("variation_start_number").notNull().default(1000),
   clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
   clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
+  billDefaultXeroAccount: text("bill_default_xero_account"),
   billStartNumber: integer("bill_start_number").notNull().default(1000),
   purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
   rfqStartNumber: integer("rfq_start_number").notNull().default(1000),

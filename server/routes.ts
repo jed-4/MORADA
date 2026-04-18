@@ -9,7 +9,7 @@ import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionField
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
-import { xeroService } from "./services/xeroService";
+import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -185,10 +185,11 @@ type PushBillResult = {
   xeroInvoiceId?: string;
   xeroInvoiceNumber?: string;
   updated?: boolean;
-  error?: string; // 'UNMAPPED_CONTACT' | 'NOT_CONNECTED' | 'NOT_FOUND' | other
+  error?: string; // 'UNMAPPED_CONTACT' | 'NOT_CONNECTED' | 'NOT_FOUND' | 'XERO_VALIDATION' | 'MISSING_ACCOUNT_CODE' | 'INVALID_TAX_TYPE' | other
   message?: string;
   supplierId?: string | null;
   supplierName?: string;
+  validationErrors?: XeroValidationIssue[];
 };
 
 async function pushBillToXeroInternal(
@@ -207,7 +208,7 @@ async function pushBillToXeroInternal(
       console.error("[pushBillToXeroInternal] failed to update sync columns:", e);
     }
   };
-  const logOutcome = (outcome: { ok: boolean; reason?: string; message?: string; xeroInvoiceId?: string }) => {
+  const logOutcome = (outcome: { ok: boolean; reason?: string; message?: string; xeroInvoiceId?: string; validationErrors?: XeroValidationIssue[] }) => {
     try {
       console.log(JSON.stringify({
         event: "xero.bill.push",
@@ -217,6 +218,7 @@ async function pushBillToXeroInternal(
         reason: outcome.reason || (outcome.ok ? "OK" : "UNKNOWN"),
         message: outcome.message,
         xeroInvoiceId: outcome.xeroInvoiceId,
+        validationErrors: outcome.validationErrors,
         ts: new Date().toISOString(),
       }));
     } catch {}
@@ -337,6 +339,15 @@ async function pushBillToXeroInternal(
       }
     }
 
+    // Company-level fallback account code for bills (used when neither the
+    // line item nor the supplier specifies one). Surfaces "AccountCode is
+    // required" 400s as a friendly pre-flight error instead of a Xero round-trip.
+    let companyDefaultAccountCode: string | undefined;
+    try {
+      const settings = await storage.getCompanySettings();
+      companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
+    } catch {}
+
     const xeroLineItems = lineItems.map((item: any) => {
       let taxType = "INPUT";
       if (item.tax === "No GST" || item.tax === "NONE") taxType = "NONE";
@@ -363,10 +374,71 @@ async function pushBillToXeroInternal(
         quantity: typeof item.quantity === "number" ? item.quantity : 1,
         unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
         taxType,
-        accountCode: item.account || supplierDefaultAccountCode || undefined,
+        accountCode: item.account || supplierDefaultAccountCode || companyDefaultAccountCode || undefined,
         tracking: tracking.length > 0 ? tracking : undefined,
       };
     });
+
+    // Pre-flight: every line must have an AccountCode, otherwise Xero responds
+    // with a 400 "AccountCode is required for this line item" which previously
+    // surfaced as a generic "Failed to create Xero bill" toast.
+    const missingAcctIdx = xeroLineItems
+      .map((li, i) => (li.accountCode ? -1 : i))
+      .filter((i) => i >= 0);
+    if (missingAcctIdx.length > 0) {
+      const issues: XeroValidationIssue[] = missingAcctIdx.map((i) => ({
+        scope: "lineItem",
+        lineIndex: i,
+        message: `Line ${i + 1}: missing AccountCode. Set an account on the line item, on the supplier (Xero default account), or set a company-wide default in Settings → Documents → Default Xero Account for Bills.`,
+      }));
+      const msg = issues[0].message;
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "MISSING_ACCOUNT_CODE", message: msg, validationErrors: issues });
+      return {
+        ok: false,
+        status: 422,
+        error: "MISSING_ACCOUNT_CODE",
+        message: msg,
+        validationErrors: issues,
+      };
+    }
+
+    // Pre-flight: tax types referenced on lines must exist on the connected
+    // Xero org. We only block when we can confidently confirm a mismatch — if
+    // the TaxRates fetch fails (network, scope, etc) we let Xero be the source
+    // of truth and surface its validation errors after the fact.
+    try {
+      const taxRates = await xeroService.getTaxRates(connection.id);
+      if (Array.isArray(taxRates) && taxRates.length > 0) {
+        const validTaxTypes = new Set(
+          taxRates
+            .filter((tr: any) => !tr.Status || tr.Status === "ACTIVE")
+            .map((tr: any) => tr.TaxType),
+        );
+        const badIdx = xeroLineItems
+          .map((li, i) => (validTaxTypes.has(li.taxType) ? -1 : i))
+          .filter((i) => i >= 0);
+        if (badIdx.length > 0) {
+          const issues: XeroValidationIssue[] = badIdx.map((i) => ({
+            scope: "lineItem",
+            lineIndex: i,
+            message: `Line ${i + 1}: tax type "${xeroLineItems[i].taxType}" is not configured on this Xero organisation.`,
+          }));
+          const msg = issues[0].message;
+          await writeSyncStatus("failed", msg);
+          logOutcome({ ok: false, reason: "INVALID_TAX_TYPE", message: msg, validationErrors: issues });
+          return {
+            ok: false,
+            status: 422,
+            error: "INVALID_TAX_TYPE",
+            message: msg,
+            validationErrors: issues,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("[pushBillToXeroInternal] tax-rate pre-flight skipped:", (e as any)?.message || e);
+    }
 
     const billPayload = {
       supplierName,
@@ -401,6 +473,24 @@ async function pushBillToXeroInternal(
       updated: !!bill.xeroInvoiceId,
     };
   } catch (error: any) {
+    if (error instanceof XeroValidationError) {
+      const summary = error.validationErrors[0]?.message || error.message;
+      console.error("[pushBillToXeroInternal] Xero validation error:", error.validationErrors);
+      await writeSyncStatus("failed", summary);
+      logOutcome({
+        ok: false,
+        reason: "XERO_VALIDATION",
+        message: summary,
+        validationErrors: error.validationErrors,
+      });
+      return {
+        ok: false,
+        status: 400,
+        error: "XERO_VALIDATION",
+        message: summary,
+        validationErrors: error.validationErrors,
+      };
+    }
     const msg = error?.message || "Failed to push bill to Xero";
     const reason = /4\d\d|invalid|validation|required/i.test(msg) ? "VALIDATION" : "XERO_API_ERROR";
     console.error("[pushBillToXeroInternal] error:", msg);
@@ -23101,6 +23191,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         if (result.error === "UNMAPPED_CONTACT") {
           body.supplierId = result.supplierId;
           body.supplierName = result.supplierName;
+        }
+        if ((result as any).validationErrors) {
+          body.validationErrors = (result as any).validationErrors;
         }
         return res.status(result.status).json(body);
       }
