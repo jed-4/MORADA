@@ -167,8 +167,8 @@ function MainTabs() {
   }, []);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#b196d2', inactive: '#64748b' }
-    : { bg: '#f8fafc', card: '#ffffff', border: '#e2e8f0', active: '#9b7fc4', inactive: '#94a3b8' };
+    ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#A890D4', inactive: '#64748b' }
+    : { bg: '#F7F5FC', card: '#ffffff', border: '#EAE4F2', active: '#A890D4', inactive: '#A29AA5' };
 
   return (
     <>
@@ -189,8 +189,11 @@ function MainTabs() {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
             borderTopWidth: 1,
+            height: 72,
+            paddingTop: 8,
+            paddingBottom: 14,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
           headerShown: false,
         })}
       >

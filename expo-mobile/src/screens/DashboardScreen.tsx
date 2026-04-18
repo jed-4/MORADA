@@ -225,8 +225,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
-    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', cardHover: '#eeede9' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449', topBar: '#1a1410', topBarText: '#f5e9d8', sectionLabel: '#94a3b8' }
+    : { bg: '#F7F5FC', card: '#ffffff', text: '#2E2018', secondary: '#78716c', border: '#EAE4F2', accent: '#A890D4', muted: '#C9C0D8', cardHover: '#F2EDFB', topBar: '#2E2018', topBarText: '#F5E9D8', sectionLabel: '#A29AA5' };
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
@@ -535,19 +535,77 @@ export default function DashboardScreen({ navigation }: Props) {
     );
   }
 
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
+  const SectionHeader = ({ label, right }: { label: string; right?: React.ReactNode }) => (
+    <View style={styles.sectionHeaderWrap}>
+      <View style={[styles.sectionHeaderDivider, { backgroundColor: colors.border }]} />
+      <View style={styles.sectionHeaderInner}>
+        <Text style={[styles.sectionHeaderLabel, { color: colors.sectionLabel }]}>{label}</Text>
+        {right}
+      </View>
+    </View>
+  );
+
+  const scheduleTiles: Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; color: string; onPress: () => void }> = [
+    {
+      key: 'scope',
+      icon: 'list-outline',
+      label: 'Scope',
+      color: '#A890D4',
+      onPress: () => navigation.getParent()?.navigate('Projects'),
+    },
+    {
+      key: 'kanban',
+      icon: 'grid-outline',
+      label: 'Kanban',
+      color: '#F59E0B',
+      onPress: () => navigation.getParent()?.navigate('More', { screen: 'Tasks' }),
+    },
+    {
+      key: 'calendar',
+      icon: 'calendar-outline',
+      label: 'Calendar',
+      color: '#10B981',
+      onPress: () => navigation.getParent()?.navigate('More', { screen: 'MyCalendar' }),
+    },
+    {
+      key: 'costs',
+      icon: 'cash-outline',
+      label: 'Costs',
+      color: '#EF4444',
+      onPress: () => navigation.navigate('BusinessDashboard'),
+    },
+  ];
+
+  const initials = (name?: string) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || 'U';
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
-        <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserMenu(v => !v)} activeOpacity={0.7}>
-          <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{fullDisplayName}</Text>
-          <Ionicons name="chevron-down" size={14} color={colors.secondary} style={{ marginLeft: 4 }} />
-        </TouchableOpacity>
-        <View style={styles.headerRight}>
+      {/* Top espresso bar */}
+      <View style={[styles.topBar, { backgroundColor: colors.topBar }]}>
+        <View style={styles.topBarLeft}>
+          <Text style={[styles.topBarGreeting, { color: colors.accent }]} numberOfLines={1}>
+            {greeting}, {firstName || fullDisplayName}
+          </Text>
+          <Text style={styles.topBarBrand} numberOfLines={1}>BuildPro</Text>
+        </View>
+        <View style={styles.topBarRight}>
           <TouchableOpacity
-            onPress={() => { navigation.navigate('Notifications'); }}
-            style={styles.headerIconBtn}
+            onPress={() => navigation.navigate('Notifications')}
+            style={styles.topBarIconBtn}
+            activeOpacity={0.7}
           >
-            <Ionicons name="notifications-outline" size={22} color={colors.text} />
+            <Ionicons name="notifications-outline" size={22} color={colors.topBarText} />
             {unreadCount > 0 && (
               <View style={styles.bellBadge}>
                 <Text style={styles.bellBadgeText}>
@@ -555,6 +613,13 @@ export default function DashboardScreen({ navigation }: Props) {
                 </Text>
               </View>
             )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowUserMenu(v => !v)}
+            style={[styles.topBarAvatar, { backgroundColor: colors.accent }]}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.topBarAvatarText}>{initials(fullDisplayName)}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -571,7 +636,7 @@ export default function DashboardScreen({ navigation }: Props) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.userMenuItem, { borderBottomColor: colors.border }]}
-            onPress={() => { setShowUserMenu(false); navigation.navigate('More'); }}
+            onPress={() => { setShowUserMenu(false); navigation.getParent()?.navigate('More'); }}
             activeOpacity={0.7}
           >
             <Ionicons name="settings-outline" size={18} color={colors.secondary} />
@@ -593,58 +658,89 @@ export default function DashboardScreen({ navigation }: Props) {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryRow}
-          style={styles.categoryScroll}
-        >
-          {categoryTiles.map(tile => (
-            <View key={tile.key} style={[styles.categoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name={tile.icon} size={22} color={colors.secondary} />
-              <Text style={[styles.categoryLabel, { color: colors.text }]}>{tile.label}</Text>
-              <Text style={[styles.categoryCount, { color: colors.secondary }]}>
-                {tile.count > 0 ? `${tile.count} new` : '—'}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-
-        <View style={[styles.section, styles.todayRow]}>
-          <Text style={[styles.todayText, { color: colors.secondary }]}>
-            {new Date().toLocaleDateString('en-AU', { weekday: 'long' })}
-          </Text>
-          <Text style={[styles.todayText, { color: colors.secondary }]}>
-            {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long' })}
-          </Text>
-        </View>
-
-        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeaderRow}
-            onPress={() => setTimesheetsCollapsed(v => !v)}
-            activeOpacity={0.7}
+        {/* Project tiles row */}
+        {projects.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.projectTilesRow}
+            style={styles.projectTilesScroll}
           >
-            <Text style={[styles.todayText, { color: colors.secondary }]}>Timesheets</Text>
-            <View style={styles.sectionHeaderRight}>
+            {projects.slice(0, 12).map(p => {
+              const tint = p.color || getProjectColor(p.id);
+              const typeLabel = p.projectSubStatus || p.currentSystemPhase || '';
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => navigation.getParent()?.navigate('Projects', {
+                    screen: 'ProjectDetail',
+                    params: { projectId: p.id, projectName: p.name },
+                  })}
+                  activeOpacity={0.85}
+                  style={[styles.projectTile, { backgroundColor: tint }]}
+                >
+                  <View style={styles.projectTileOverlay}>
+                    <Text style={styles.projectTileName} numberOfLines={1}>{p.name}</Text>
+                    {!!typeLabel && (
+                      <Text style={styles.projectTileType} numberOfLines={1}>{typeLabel}</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* TIMESHEETS */}
+        <SectionHeader
+          label="TIMESHEETS"
+          right={
+            <TouchableOpacity onPress={() => setTimesheetsCollapsed(v => !v)} activeOpacity={0.7}>
               <Ionicons
                 name={timesheetsCollapsed ? 'chevron-forward' : 'chevron-down'}
-                size={18}
-                color={colors.secondary}
+                size={16}
+                color={colors.sectionLabel}
               />
-            </View>
-          </TouchableOpacity>
-          {!timesheetsCollapsed && (
-            recentTimesheets.length === 0 ? (
+            </TouchableOpacity>
+          }
+        />
+        {!timesheetsCollapsed && (
+          <View>
+            {activeTimesheet && (() => {
+              const projColor = getProjectColor(activeTimesheet.projectId);
+              return (
+                <View style={[styles.activeTsCard, { backgroundColor: colors.card, borderLeftColor: projColor }]}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.activeTsName, { color: colors.text }]} numberOfLines={1}>
+                      {fullDisplayName}
+                    </Text>
+                    <Text style={[styles.activeTsTask, { color: colors.secondary }]} numberOfLines={1}>
+                      {getProjectName(activeTimesheet.projectId)}
+                    </Text>
+                    <Text style={[styles.activeTsDate, { color: colors.muted }]}>
+                      Today · started {new Date(activeTimesheet.clockInTime).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                  <View style={styles.activeTsBadges}>
+                    <View style={[styles.pillBadge, { backgroundColor: colors.accent + '22' }]}>
+                      <Text style={[styles.pillBadgeText, { color: colors.accent }]}>
+                        {formatTimeSince(activeTimesheet.clockInTime)}
+                      </Text>
+                    </View>
+                    <View style={[styles.pillBadge, { backgroundColor: '#10B98122' }]}>
+                      <View style={styles.pillDot} />
+                      <Text style={[styles.pillBadgeText, { color: '#059669' }]}>Clocked In</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
+            {recentTimesheets.length === 0 && !activeTimesheet ? (
               <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Ionicons name="time-outline" size={24} color={colors.muted} />
+                <Ionicons name="time-outline" size={22} color={colors.muted} />
                 <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent timesheets</Text>
               </View>
-            ) : (
+            ) : recentTimesheets.length > 0 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -653,192 +749,196 @@ export default function DashboardScreen({ navigation }: Props) {
                 {recentTimesheets.map(ts => {
                   const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
                   const costCodeName = ccId ? getCostCodeLabel(ccId) : '';
-                  const cardWidth = Dimensions.get('window').width * 0.864 - 16;
+                  const projColor = getProjectColor(ts.projectId);
+                  const cardWidth = Dimensions.get('window').width * 0.78;
                   return (
                     <TouchableOpacity
                       key={ts.id}
-                      style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, width: cardWidth }]}
+                      style={[styles.recentTsCard, { backgroundColor: colors.card, borderLeftColor: projColor, width: cardWidth }]}
                       onPress={() => setSelectedTimesheetDetail(ts)}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.timesheetCardContent}>
-                        <View style={styles.timesheetCardRow}>
-                          <Text style={[styles.timesheetCardProject, { color: colors.text }]} numberOfLines={1}>
-                            {ts.projectId ? getProjectName(ts.projectId) : 'No project'}
-                          </Text>
-                          <Text style={[styles.timesheetCardDate, { color: colors.secondary }]}>
-                            {formatDateShort(ts.date)}
-                          </Text>
-                        </View>
-                        <View style={styles.timesheetCardRow}>
-                          <Text style={[styles.timesheetCardCostCode, { color: colors.secondary }]} numberOfLines={1}>
-                            {costCodeName || '—'}
-                          </Text>
-                          <Text style={[styles.timesheetCardHours, { color: colors.text }]}>
-                            {parseFloat(ts.duration).toFixed(1)}h
-                          </Text>
-                        </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.recentTsProject, { color: colors.text }]} numberOfLines={1}>
+                          {ts.projectId ? getProjectName(ts.projectId) : 'No project'}
+                        </Text>
+                        <Text style={[styles.recentTsCostCode, { color: colors.secondary }]} numberOfLines={1}>
+                          {costCodeName || '—'}
+                        </Text>
+                        <Text style={[styles.recentTsDate, { color: colors.muted }]}>
+                          {formatDateLabel(ts.date)}
+                        </Text>
+                      </View>
+                      <View style={[styles.pillBadge, { backgroundColor: colors.accent + '22' }]}>
+                        <Text style={[styles.pillBadgeText, { color: colors.accent }]}>
+                          {parseFloat(ts.duration).toFixed(1)}h
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   );
                 })}
               </ScrollView>
-            )
-          )}
-        </View>
-
-        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.todayText, { color: colors.secondary }]}>Today's Tasks</Text>
-            <Text style={[styles.sectionCount, { color: colors.secondary }]}>{todayTasks.filter(t => isComplete(t.status)).length}/{todayTasks.length}</Text>
+            ) : null}
           </View>
-          {todayTasks.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="checkmark-circle-outline" size={24} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No tasks due today</Text>
-            </View>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.taskScroll}>
-              {(() => {
-                const taskCardWidth = Dimensions.get('window').width * 0.62 - 16;
-                const displayed = todayTasks.slice(0, 16);
-                const columns: typeof displayed[] = [];
-                for (let i = 0; i < displayed.length; i += 4) columns.push(displayed.slice(i, i + 4));
-                return columns.map((col, colIdx) => (
-                  <View key={colIdx} style={{ width: taskCardWidth, gap: 6 }}>
-                    {col.map(task => {
-                      const projectColor = getProjectColor(task.projectId);
-                      const done = isComplete(task.status);
-                      return (
-                        <TouchableOpacity
-                          key={task.id}
-                          style={[styles.taskCard, { backgroundColor: colors.card, width: taskCardWidth }]}
-                          onPress={() => openTaskModal(task)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.taskColorBar, { backgroundColor: projectColor + '45' }]} />
-                          <Text
-                            style={[styles.taskCardTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
-                            numberOfLines={1}
-                          >
-                            {task.title}
-                          </Text>
-                          <View style={[styles.checkbox, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent', marginRight: 10 }]}>
-                            {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ));
-              })()}
-            </ScrollView>
-          )}
-        </View>
+        )}
 
-        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.todayText, { color: colors.secondary }]}>Schedule</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Calendar')} activeOpacity={0.7}>
-              <Text style={[styles.sectionLink, { color: colors.accent }]}>Calendar</Text>
-            </TouchableOpacity>
+        {/* TODAY'S TASKS */}
+        <SectionHeader
+          label="TODAY'S TASKS"
+          right={
+            <Text style={[styles.sectionHeaderCount, { color: colors.sectionLabel }]}>
+              {todayTasks.filter(t => isComplete(t.status)).length}/{todayTasks.length}
+            </Text>
+          }
+        />
+        {todayTasks.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="checkmark-circle-outline" size={22} color={colors.muted} />
+            <Text style={[styles.emptyText, { color: colors.secondary }]}>No tasks due today</Text>
           </View>
-          {(() => {
-            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-            const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-            const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-            const tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setHours(23, 59, 59, 999);
-
-            const realToday = scheduleItems.filter(i => new Date(i.startDate) >= todayStart && new Date(i.startDate) <= todayEnd);
-            const realTomorrow = scheduleItems.filter(i => new Date(i.startDate) >= tomorrowStart && new Date(i.startDate) <= tomorrowEnd);
-
-            const todayItems = realToday;
-            const tomorrowItems = realTomorrow;
-
-            const renderCard = (item: typeof todayItems[0], isTomorrow: boolean) => {
-              const scheduleColor = getProjectColor(item.projectId);
+        ) : (
+          <View style={{ gap: 8 }}>
+            {todayTasks.map(task => {
+              const projectColor = getProjectColor(task.projectId);
+              const done = isComplete(task.status);
+              const projName = task.projectId ? getProjectName(task.projectId) : '';
               return (
                 <TouchableOpacity
-                  key={item.id}
-                  style={[styles.scheduleCard, { backgroundColor: scheduleColor + '18', borderColor: scheduleColor + '45' }]}
-                  onPress={() => openScheduleModal(item)}
+                  key={task.id}
+                  style={[styles.taskRow, { backgroundColor: colors.card }]}
+                  onPress={() => openTaskModal(task)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                  {item.projectName && (
-                    <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
-                  )}
-                  {isTomorrow && (
-                    <Text style={[styles.scheduleTomorrow, { color: colors.muted }]}>Tomorrow</Text>
-                  )}
+                  <TouchableOpacity
+                    onPress={(e: any) => { e.stopPropagation?.(); toggleTaskComplete(task.id, task.status); }}
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                    style={[
+                      styles.taskCheckbox,
+                      {
+                        borderColor: done ? '#10B981' : colors.muted,
+                        backgroundColor: done ? '#10B981' : 'transparent',
+                      },
+                    ]}
+                  >
+                    {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+                  </TouchableOpacity>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text
+                      style={[
+                        styles.taskRowTitle,
+                        { color: done ? colors.muted : colors.text },
+                        done && styles.taskTitleDone,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {task.title}
+                    </Text>
+                    {!!projName && (
+                      <Text style={[styles.taskRowProject, { color: colors.secondary }]} numberOfLines={1}>
+                        {projName}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={[styles.taskRowDot, { backgroundColor: projectColor }]} />
                 </TouchableOpacity>
               );
-            };
-
-            if (todayItems.length === 0 && tomorrowItems.length === 0) {
-              return (
-                <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="calendar-outline" size={24} color={colors.muted} />
-                  <Text style={[styles.emptyText, { color: colors.secondary }]}>No upcoming schedule items</Text>
-                </View>
-              );
-            }
-
-            return (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
-                {todayItems.map(item => renderCard(item, false))}
-                {tomorrowItems.length > 0 && (
-                  <View style={[styles.scheduleVerticalDivider, { backgroundColor: colors.border }]} />
-                )}
-                {tomorrowItems.map(item => renderCard(item, true))}
-              </ScrollView>
-            );
-          })()}
-        </View>
-
-        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.todayText, { color: colors.secondary }]}>Recent Activity</Text>
+            })}
           </View>
-          {recentActivities.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="pulse-outline" size={24} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent activity</Text>
-            </View>
-          ) : (
-            recentActivities.map(activity => {
-              const projectLabel = activity.projectId ? getProjectName(activity.projectId) : null;
-              const metaLine = [activity.userName, projectLabel].filter(Boolean).join(' · ');
+        )}
+
+        {/* SCHEDULE */}
+        <SectionHeader label="SCHEDULE" />
+        <View style={styles.scheduleTilesRow}>
+          {scheduleTiles.map(tile => (
+            <TouchableOpacity
+              key={tile.key}
+              style={[styles.scheduleTile, { backgroundColor: tile.color + (isDark ? '22' : '15') }]}
+              onPress={tile.onPress}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.scheduleTileBar, { backgroundColor: tile.color }]} />
+              <View style={styles.scheduleTileBody}>
+                <Ionicons name={tile.icon} size={20} color={tile.color} />
+                <Text style={[styles.scheduleTileLabel, { color: colors.text }]}>{tile.label}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {(() => {
+          const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+          const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+          const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+          const tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setHours(23, 59, 59, 999);
+          const todayItems = scheduleItems.filter(i => new Date(i.startDate) >= todayStart && new Date(i.startDate) <= todayEnd);
+          const tomorrowItems = scheduleItems.filter(i => new Date(i.startDate) >= tomorrowStart && new Date(i.startDate) <= tomorrowEnd);
+          if (todayItems.length === 0 && tomorrowItems.length === 0) return null;
+          const renderCard = (item: ScheduleItem, isTomorrow: boolean) => {
+            const sc = getProjectColor(item.projectId);
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.scheduleItemCard, { backgroundColor: colors.card, borderLeftColor: sc }]}
+                onPress={() => openScheduleModal(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.scheduleItemName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                {item.projectName && (
+                  <Text style={[styles.scheduleItemProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
+                )}
+                <Text style={[styles.scheduleItemMeta, { color: colors.muted }]}>
+                  {isTomorrow ? 'Tomorrow' : 'Today'}
+                  {item.startTime ? ` · ${item.startTime.slice(0, 5)}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          };
+          return (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleItemsScroll}>
+              {todayItems.map(it => renderCard(it, false))}
+              {tomorrowItems.map(it => renderCard(it, true))}
+            </ScrollView>
+          );
+        })()}
+
+        {/* RECENT ACTIVITY */}
+        <SectionHeader label="RECENT ACTIVITY" />
+        {recentActivities.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="pulse-outline" size={22} color={colors.muted} />
+            <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent activity</Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {recentActivities.map(activity => {
+              const projColor = activity.projectId ? getProjectColor(activity.projectId) : colors.accent;
+              const userName = activity.userName || 'System';
               return (
-                <View
+                <TouchableOpacity
                   key={activity.id}
-                  style={[styles.activityRow, { borderColor: colors.border }]}
+                  style={[styles.activityRowNew, { backgroundColor: colors.card, borderLeftColor: projColor }]}
+                  onPress={() => navigation.navigate('Notifications')}
+                  activeOpacity={0.7}
                 >
-                  <View style={[styles.activityIcon, { backgroundColor: colors.accent + '30' }]}>
-                    <Ionicons name={getActivityIcon(activity.activityType)} size={15} color={colors.accent} />
+                  <View style={[styles.activityAvatar, { backgroundColor: projColor }]}>
+                    <Text style={styles.activityAvatarText}>{initials(userName)}</Text>
                   </View>
-                  <View style={styles.activityContent}>
-                    <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.activityNameLine, { color: colors.text }]} numberOfLines={1}>
+                      {userName}
+                    </Text>
+                    <Text style={[styles.activityDescLine, { color: colors.secondary }]} numberOfLines={2}>
                       {activity.description}
                     </Text>
-                    {metaLine ? (
-                      <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>
-                        {metaLine}
-                      </Text>
-                    ) : null}
                   </View>
-                  <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(activity.createdAt)}</Text>
-                </View>
+                  <Text style={[styles.activityTimeNew, { color: colors.muted }]}>
+                    {formatTimeAgo(activity.createdAt)}
+                  </Text>
+                </TouchableOpacity>
               );
-            })
-          )}
-        </View>
+            })}
+          </View>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -846,7 +946,7 @@ export default function DashboardScreen({ navigation }: Props) {
       <View style={[styles.clockBtnWrap, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
         {activeTimesheet ? (
           <TouchableOpacity
-            style={[styles.clockBtn, { backgroundColor: '#ef4444', borderColor: '#ef444480' }]}
+            style={[styles.clockBtn, { backgroundColor: '#ef4444', borderColor: '#ef4444' }]}
             onPress={() => { setSelectedBreakMinutes(0); setShowBreakModal(true); }}
             activeOpacity={0.8}
             disabled={clockingOut}
@@ -862,12 +962,12 @@ export default function DashboardScreen({ navigation }: Props) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.clockBtn, { backgroundColor: colors.accent + '30', borderColor: colors.accent + '50' }]}
+            style={[styles.clockBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
             onPress={openClockInModal}
             activeOpacity={0.8}
           >
-            <Ionicons name="play-circle-outline" size={18} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={[styles.clockBtnText, { color: colors.accent }]}>Clock In</Text>
+            <Ionicons name="play-circle-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
+            <Text style={[styles.clockBtnText, { color: '#ffffff' }]}>Clock In</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -2036,5 +2136,287 @@ const styles = StyleSheet.create({
   checklistItemText: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  // ----- Redesigned Dashboard styles -----
+  topBar: {
+    paddingTop: 56,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  topBarLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+  topBarGreeting: {
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+    marginBottom: 2,
+  },
+  topBarBrand: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topBarIconBtn: {
+    padding: 4,
+    position: 'relative',
+  },
+  topBarAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  projectTilesScroll: {
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  projectTilesRow: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  projectTile: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  projectTileOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+  projectTileName: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  projectTileType: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 9,
+    marginTop: 1,
+  },
+  sectionHeaderWrap: {
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  sectionHeaderDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  sectionHeaderInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  sectionHeaderLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  sectionHeaderCount: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // Active timesheet card
+  activeTsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    gap: 10,
+  },
+  activeTsName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  activeTsTask: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  activeTsDate: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  activeTsBadges: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  pillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
+  },
+  pillBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  recentTsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    gap: 10,
+  },
+  recentTsProject: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recentTsCostCode: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  recentTsDate: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  // Today's tasks rows
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 10,
+  },
+  taskCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskRowTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  taskRowProject: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  taskRowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  // Schedule tiles
+  scheduleTilesRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 10,
+  },
+  scheduleTile: {
+    flex: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+    minHeight: 70,
+  },
+  scheduleTileBar: {
+    height: 4,
+  },
+  scheduleTileBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 4,
+  },
+  scheduleTileLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  scheduleItemsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  scheduleItemCard: {
+    width: 160,
+    padding: 10,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+  },
+  scheduleItemName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  scheduleItemProject: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  scheduleItemMeta: {
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  // Recent activity rows (new)
+  activityRowNew: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    gap: 10,
+  },
+  activityAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  activityNameLine: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activityDescLine: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  activityTimeNew: {
+    fontSize: 10,
+    fontWeight: '500',
   },
 });
