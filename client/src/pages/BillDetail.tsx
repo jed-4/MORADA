@@ -2423,7 +2423,7 @@ export default function BillDetail() {
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
                           <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
                         )}
-                        {(bill as any)?.xeroLastSyncStatus === "error" && (
+                        {(bill as any)?.xeroLastSyncStatus === "failed" && (
                           <span className="text-destructive" title={(bill as any)?.xeroLastSyncError || ""}>
                             Sync error: {((bill as any)?.xeroLastSyncError || "unknown").slice(0, 60)}
                           </span>

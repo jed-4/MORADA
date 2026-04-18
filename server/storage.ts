@@ -12972,8 +12972,20 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getBillByXeroId(xeroInvoiceId: string): Promise<Bill | null> {
+  async getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null> {
     try {
+      // Scope by company through the project relation when provided to prevent cross-tenant matches
+      if (companyId) {
+        const result = await db.select({ bill: schema.bills })
+          .from(schema.bills)
+          .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+          .where(and(
+            eq(schema.bills.xeroInvoiceId, xeroInvoiceId),
+            eq(schema.projects.companyId, companyId),
+          ))
+          .limit(1);
+        return (result[0]?.bill as Bill) || null;
+      }
       const bills = await db.select()
         .from(schema.bills)
         .where(eq(schema.bills.xeroInvoiceId, xeroInvoiceId))

@@ -196,7 +196,7 @@ async function pushBillToXeroInternal(
   companyId: string,
   overrideXeroContactId?: string,
 ): Promise<PushBillResult> {
-  const writeSyncStatus = async (status: "success" | "error", error?: string) => {
+  const writeSyncStatus = async (status: "success" | "failed", error?: string) => {
     try {
       await storage.updateBill(billId, {
         xeroLastSyncAt: new Date(),
@@ -379,7 +379,7 @@ async function pushBillToXeroInternal(
   } catch (error: any) {
     const msg = error?.message || "Failed to push bill to Xero";
     console.error("[pushBillToXeroInternal] error:", msg);
-    await writeSyncStatus("error", msg);
+    await writeSyncStatus("failed", msg);
     return { ok: false, status: 500, error: "PUSH_FAILED", message: msg };
   }
 }
@@ -445,7 +445,12 @@ async function syncBillFromXeroInternal(
     const xeroStatus = invoice.Status as string;
 
     let newStatus: string = bill.status;
+    let extraNotes: string | undefined;
     if (xeroStatus === "PAID") newStatus = "paid";
+    else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
+      newStatus = "draft";
+      extraNotes = `Voided/Deleted in Xero on ${new Date().toISOString().slice(0, 10)}`;
+    }
     else if (amountPaidCents > 0 && amountPaidCents < totalCents) newStatus = "awaiting_payment";
     else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") newStatus = "awaiting_payment";
 
@@ -465,6 +470,7 @@ async function syncBillFromXeroInternal(
       ...(billDate ? { billDate } : {}),
       ...(dueDate ? { dueDate } : {}),
       ...(invoice.Reference ? { billReference: invoice.Reference } : {}),
+      ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
 
     // Only overwrite line items when bill is still in draft/awaiting_approval
@@ -10354,16 +10360,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const previous = await storage.getBillById(req.params.id);
       const bill = await storage.updateBill(req.params.id, validationResult.data);
 
-      // Best-effort auto-push to Xero for already-linked bills
+      // Best-effort auto-push to Xero
       const companyId = (req as any).user?.companyId;
-      if (companyId && bill.xeroInvoiceId && bill.status !== "paid") {
-        // Skip auto-push if the only thing that changed are sync-status columns
-        const onlySyncFields = Object.keys(validationResult.data).every(k =>
-          k === "xeroLastSyncAt" || k === "xeroLastSyncStatus" || k === "xeroLastSyncError" || k === "xeroPaidStatus"
-        );
-        if (!onlySyncFields) scheduleAutoPushBill(bill.id, companyId);
+      const onlySyncFields = Object.keys(validationResult.data).every(k =>
+        k === "xeroLastSyncAt" || k === "xeroLastSyncStatus" || k === "xeroLastSyncError" || k === "xeroPaidStatus"
+      );
+      if (companyId && !onlySyncFields) {
+        if (bill.xeroInvoiceId && bill.status !== "paid") {
+          scheduleAutoPushBill(bill.id, companyId);
+        } else if (!bill.xeroInvoiceId && bill.status === "awaiting_payment" && previous?.status !== "awaiting_payment") {
+          // Create-first push: when an unlinked bill transitions to awaiting_payment, push to Xero
+          scheduleAutoPushBill(bill.id, companyId);
+        }
+
+        // Push payment to Xero when bill is marked paid locally (and was previously not paid)
+        if (bill.xeroInvoiceId && bill.status === "paid" && previous?.status !== "paid" && (bill.paidAmount || 0) > 0) {
+          (async () => {
+            try {
+              const connection = await storage.getXeroConnectionByCompanyId(companyId);
+              if (!connection) return;
+              await xeroService.createPayment(connection.id, {
+                invoiceId: bill.xeroInvoiceId!,
+                amount: (bill.paidAmount || bill.total || 0) / 100,
+                date: new Date().toISOString().slice(0, 10),
+                accountCode: process.env.XERO_DEFAULT_BANK_CODE || "090",
+                reference: `BuildPro bill ${bill.billNumber || bill.id}`,
+              });
+              await storage.updateBill(bill.id, {
+                xeroLastSyncAt: new Date(),
+                xeroLastSyncStatus: "success",
+                xeroLastSyncError: null,
+              } as any);
+            } catch (err: any) {
+              console.error("[auto-payment-push] failed:", err?.message || err);
+              await storage.updateBill(bill.id, {
+                xeroLastSyncAt: new Date(),
+                xeroLastSyncStatus: "failed",
+                xeroLastSyncError: (err?.message || "Payment push failed").slice(0, 500),
+              } as any).catch(() => {});
+            }
+          })();
+        }
       }
 
       res.json(bill);
@@ -10444,6 +10484,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: schedule auto-push for the parent bill if linked to Xero and not paid
+  const maybeAutoPushParentBill = async (billId: string, companyId?: string) => {
+    if (!companyId) return;
+    try {
+      const parent = await storage.getBillById(billId);
+      if (parent?.xeroInvoiceId && parent.status !== "paid") {
+        scheduleAutoPushBill(parent.id, companyId);
+      }
+    } catch {}
+  };
+
   app.post("/api/bills/:billId/line-items", async (req, res) => {
     try {
       const validationResult = insertBillLineItemSchema.safeParse(req.body);
@@ -10455,6 +10506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const lineItem = await storage.createBillLineItem(validationResult.data);
+      void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
       res.status(201).json(lineItem);
     } catch (error) {
       res.status(500).json({ error: "Failed to create bill line item" });
@@ -10472,6 +10524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const lineItem = await storage.updateBillLineItem(req.params.id, validationResult.data);
+      void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
       res.json(lineItem);
     } catch (error) {
       if (error instanceof Error && error.message === "Bill line item not found") {
@@ -10484,6 +10537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/bills/:billId/line-items/:id", async (req, res) => {
     try {
       await storage.deleteBillLineItem(req.params.id);
+      void maybeAutoPushParentBill(req.params.billId, (req as any).user?.companyId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
@@ -23385,8 +23439,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           continue;
         }
 
-        // Branch A: Local supplier bill (ACCPAY)
-        const localBill = await storage.getBillByXeroId(xeroInvoiceId).catch(() => null);
+        // Branch A: Local supplier bill (ACCPAY) — scope by tenant's company
+        const localBill = await storage.getBillByXeroId(xeroInvoiceId, resolvedConnection.companyId).catch(() => null);
         if (localBill) {
           try {
             const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
@@ -23541,9 +23595,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
-  // Xero: Preview list of importable supplier bills (ACCPAY) from Xero
+  // Xero: Preview list of importable supplier bills (ACCPAY) from Xero.
   // Returns Xero invoices with a flag indicating which are already linked locally.
-  app.get("/api/xero/bills/import-preview", requireAuth, async (req, res) => {
+  // Supports `since` (YYYY-MM-DD), `modifiedSince`, `page`, and `supplierContactId` query params.
+  const importPreviewHandler = async (req: any, res: any) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -23553,16 +23608,20 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
-      const modifiedSinceParam = req.query.modifiedSince as string | undefined;
-      const modifiedSince = modifiedSinceParam ? new Date(modifiedSinceParam) : undefined;
+      const sinceParam = (req.query.since || req.query.modifiedSince) as string | undefined;
+      const modifiedSince = sinceParam ? new Date(sinceParam) : undefined;
+      const supplierContactId = req.query.supplierContactId as string | undefined;
 
-      const xeroBills = await xeroService.listBills(connection.id, { page, modifiedSince });
+      let xeroBills = await xeroService.listBills(connection.id, { page, modifiedSince });
+      if (supplierContactId) {
+        xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
+      }
 
       // Mark which Xero bills already exist locally
       const enriched = await Promise.all(
         xeroBills.map(async (xb: any) => {
           const localBill = xb.InvoiceID
-            ? await storage.getBillByXeroId(xb.InvoiceID).catch(() => null)
+            ? await storage.getBillByXeroId(xb.InvoiceID, companyId).catch(() => null)
             : null;
           return {
             xeroInvoiceId: xb.InvoiceID,
@@ -23588,7 +23647,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       console.error("Error previewing Xero bills:", error);
       res.status(500).json({ error: error.message || "Failed to load Xero bills" });
     }
-  });
+  };
+  app.get("/api/xero/bills/import-preview", requireAuth, importPreviewHandler);
+  app.get("/api/xero/bills/import", requireAuth, importPreviewHandler);
 
   // Xero: Bulk-import selected supplier bills from Xero into BuildPro.
   // Requires a default projectId to assign new bills to (user picks in UI).
@@ -23634,7 +23695,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       for (const xeroInvoiceId of xeroInvoiceIds) {
         try {
           // Skip if already imported
-          const existing = await storage.getBillByXeroId(xeroInvoiceId).catch(() => null);
+          const existing = await storage.getBillByXeroId(xeroInvoiceId, companyId).catch(() => null);
           if (existing) {
             results.push({ xeroInvoiceId, ok: true, billId: existing.id, skipped: true });
             continue;

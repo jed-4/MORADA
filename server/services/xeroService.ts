@@ -597,6 +597,55 @@ export class XeroService {
     return data.Invoices || [];
   }
 
+  /**
+   * Create a payment in Xero against an invoice (POST /Payments).
+   * accountCode: Xero bank account code (e.g. "090") or accountId
+   */
+  async createPayment(
+    connectionId: string,
+    payment: {
+      invoiceId: string;
+      amount: number; // in dollars
+      date?: string; // YYYY-MM-DD
+      accountCode?: string;
+      accountId?: string;
+      reference?: string;
+    }
+  ): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const body: any = {
+      Invoice: { InvoiceID: payment.invoiceId },
+      Amount: payment.amount,
+      Date: payment.date || new Date().toISOString().slice(0, 10),
+    };
+    if (payment.accountId) body.Account = { AccountID: payment.accountId };
+    else if (payment.accountCode) body.Account = { Code: payment.accountCode };
+    else throw new Error("createPayment requires accountCode or accountId");
+    if (payment.reference) body.Reference = payment.reference;
+
+    const response = await fetch(`${XERO_API_BASE}/Payments`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create Xero payment: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Payments?.[0] || null;
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
