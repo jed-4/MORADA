@@ -1776,6 +1776,17 @@ export const bills = pgTable("bills", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const billAttachmentSchema = z.object({
+  objectPath: z.string(),
+  filename: z.string().optional(),
+  mimeType: z.string().optional(),
+  size: z.number().optional(),
+  uploadedAt: z.string().optional(),
+  uploadedBy: z.string().optional(),
+  source: z.enum(["manual", "ai_reader", "email", "xero"]).optional(),
+});
+export type BillAttachment = z.infer<typeof billAttachmentSchema>;
+
 export const insertBillSchema = createInsertSchema(bills).omit({
   id: true,
   createdAt: true,
@@ -1789,7 +1800,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   tax: z.number().default(0),
   total: z.number().default(0),
   paidAmount: z.number().default(0),
-  attachmentUrls: z.array(z.string()).optional(),
+  attachmentUrls: z.array(z.union([z.string(), billAttachmentSchema])).optional(),
   xeroLastSyncAt: z.coerce.date().optional().nullable(),
   xeroLastSyncStatus: z.string().optional().nullable(),
   xeroLastSyncError: z.string().optional().nullable(),

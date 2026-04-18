@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DocumentPreview } from "@/components/DocumentPreview";
+import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -323,7 +324,12 @@ export default function BillDetail() {
         paidAmount: bill.paidAmount / 100,
         sendToXero: bill.sendToXero,
       });
-      setAttachmentUrls(Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as string[]) : []);
+      // attachmentUrls may now contain either legacy string entries or rich
+      // attachment record objects ({objectPath, filename, mimeType, ...}).
+      // Normalize down to a string[] of object paths for the existing UI;
+      // richer metadata is rendered as a follow-up.
+      const raw = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as any[]) : [];
+      setAttachmentUrls(raw.map((a) => (typeof a === "string" ? a : a?.objectPath)).filter(Boolean) as string[]);
     }
   }, [bill, isEditMode]);
 
@@ -736,7 +742,9 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
-        attachmentUrls,
+        // attachmentUrls is intentionally omitted — attachments are managed
+        // through the dedicated POST /api/bills/:id/attachments endpoint to
+        // preserve richer metadata and avoid overwriting concurrent uploads.
       };
 
       const updatedBill = await apiRequest(`/api/bills/${id}`, "PATCH", billData) as Bill;
@@ -1006,10 +1014,13 @@ export default function BillDetail() {
       setOcrPreviewOpen(true);
       let attachedOk = false;
       let attachWarning = false;
+      let lastUploadedObjectPath: string | undefined;
+      const fileForRetry = uploadedFile;
       if (uploadedFile) {
         try {
           const uploadResult = await uploadFile(uploadedFile);
           if (uploadResult?.objectPath) {
+            lastUploadedObjectPath = uploadResult.objectPath;
             // For edit mode, persist the attachment immediately so refresh keeps it.
             // For new bills, the path is already in `attachmentUrls` via the useUpload
             // hook's onSuccess callback and will be sent with the create payload.
@@ -1049,7 +1060,48 @@ export default function BillDetail() {
           variant: "destructive",
           title: "Attachment not saved",
           description:
-            "We extracted the invoice data but couldn't attach the file. Please try uploading it again from the attachments section.",
+            "We extracted the invoice data but couldn't attach the file.",
+          action: (
+            <ToastAction
+              altText="Retry attaching the invoice file"
+              onClick={async () => {
+                try {
+                  if (isEditMode && id) {
+                    if (lastUploadedObjectPath) {
+                      await apiRequest(`/api/bills/${id}/attachments`, "POST", {
+                        objectPath: lastUploadedObjectPath,
+                        filename: fileForRetry?.name,
+                        mimeType: fileForRetry?.type,
+                        size: fileForRetry?.size,
+                        source: "ai_reader",
+                      });
+                    } else if (fileForRetry) {
+                      const uploadResult = await uploadFile(fileForRetry);
+                      if (uploadResult?.objectPath) {
+                        await apiRequest(`/api/bills/${id}/attachments`, "POST", {
+                          objectPath: uploadResult.objectPath,
+                          filename: fileForRetry.name,
+                          mimeType: fileForRetry.type,
+                          size: fileForRetry.size,
+                          source: "ai_reader",
+                        });
+                      }
+                    }
+                    queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+                    toast({ title: "Attachment saved" });
+                  }
+                } catch (err: any) {
+                  toast({
+                    variant: "destructive",
+                    title: "Retry failed",
+                    description: err?.message || "Please try uploading from the Attachments tab.",
+                  });
+                }
+              }}
+            >
+              Retry
+            </ToastAction>
+          ),
         });
       }
     },

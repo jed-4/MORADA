@@ -10498,25 +10498,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stays wire-compatible with the existing string[] shape of bills.attachmentUrls.
   app.post("/api/bills/:id/attachments", requireAuth, async (req, res) => {
     try {
-      const { objectPath } = req.body || {};
+      const { objectPath, filename, mimeType, size, source } = req.body || {};
       if (!objectPath || typeof objectPath !== "string") {
         return res.status(400).json({ error: "objectPath is required" });
       }
       const bill = await storage.getBillById(req.params.id);
       if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-      // Tenant scoping: ensure the requesting user belongs to the bill's company
+      // Authorization — require an authenticated user with a companyId, and
+      // require the bill's project (when present) to belong to that company.
       const userId = (req as any).user?.id;
       const userCompanyId = (req as any).user?.companyId;
+      const userRole = (req as any).user?.role;
+      if (!userCompanyId && userRole !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       if (bill.projectId) {
         const project = await storage.getProjectById(bill.projectId);
-        if (project && userCompanyId && project.companyId !== userCompanyId) {
+        if (!project) return res.status(403).json({ error: "Forbidden" });
+        if (userRole !== "admin" && project.companyId !== userCompanyId) {
           return res.status(403).json({ error: "Forbidden" });
         }
+      } else if (userRole !== "admin") {
+        // Bills without a project are admin-only for safety.
+        return res.status(403).json({ error: "Forbidden" });
       }
 
-      const updated = await storage.appendBillAttachment(req.params.id, objectPath);
-      res.json({ bill: updated, attachment: { objectPath, uploadedBy: userId, uploadedAt: new Date().toISOString() } });
+      const allowedSources = new Set(["manual", "ai_reader", "email", "xero"]);
+      const record = {
+        objectPath,
+        filename: typeof filename === "string" ? filename : (objectPath.split("/").pop() || "attachment"),
+        mimeType: typeof mimeType === "string" ? mimeType : undefined,
+        size: typeof size === "number" ? size : undefined,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: userId || undefined,
+        source: allowedSources.has(source) ? source : "manual",
+      };
+      const updated = await storage.appendBillAttachment(req.params.id, record as any);
+      res.json({ bill: updated, attachment: record });
     } catch (error: any) {
       console.error("[bills/attachments] failed:", error);
       res.status(500).json({ error: error?.message || "Failed to append attachment" });

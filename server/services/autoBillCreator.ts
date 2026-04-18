@@ -183,7 +183,11 @@ export class AutoBillCreatorService {
           ? `/objects/company/${companyId}/uploads/${objectNameSuffix}`
           : `/objects/uploads/${objectNameSuffix}`;
         // Atomic append in case the bill is also being touched by another flow.
-        await storage.appendBillAttachment(createdBill.id, attachmentUrl);
+        await storage.appendBillAttachment(createdBill.id, {
+          objectPath: attachmentUrl,
+          source: "email",
+          uploadedAt: new Date().toISOString(),
+        });
       }
     } catch (uploadErr: any) {
       console.error("autoBillCreator: failed to upload invoice attachment:", uploadErr.message);
