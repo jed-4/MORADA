@@ -10524,17 +10524,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
-      const allowedSources = new Set(["manual", "ai_reader", "email", "xero"]);
-      const record = {
+      const allowedSources = ["manual", "ai_reader", "email", "xero"] as const;
+      type SourceLiteral = typeof allowedSources[number];
+      const isSource = (s: any): s is SourceLiteral => allowedSources.includes(s);
+      const record: import("@shared/schema").BillAttachment = {
         objectPath,
         filename: typeof filename === "string" ? filename : (objectPath.split("/").pop() || "attachment"),
         mimeType: typeof mimeType === "string" ? mimeType : undefined,
         size: typeof size === "number" ? size : undefined,
         uploadedAt: new Date().toISOString(),
         uploadedBy: userId || undefined,
-        source: allowedSources.has(source) ? source : "manual",
+        source: isSource(source) ? source : "manual",
       };
-      const updated = await storage.appendBillAttachment(req.params.id, record as any);
+      const updated = await storage.appendBillAttachment(req.params.id, record);
       res.json({ bill: updated, attachment: record });
     } catch (error: any) {
       console.error("[bills/attachments] failed:", error);

@@ -328,8 +328,12 @@ export default function BillDetail() {
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
       // richer metadata is rendered as a follow-up.
-      const raw = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as any[]) : [];
-      setAttachmentUrls(raw.map((a) => (typeof a === "string" ? a : a?.objectPath)).filter(Boolean) as string[]);
+      type AttachmentEntry = string | { objectPath?: string };
+      const raw: AttachmentEntry[] = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as AttachmentEntry[]) : [];
+      const paths = raw
+        .map((a) => (typeof a === "string" ? a : a?.objectPath))
+        .filter((p): p is string => typeof p === "string" && p.length > 0);
+      setAttachmentUrls(paths);
     }
   }, [bill, isEditMode]);
 
@@ -1145,7 +1149,31 @@ export default function BillDetail() {
     const files = e.target.files;
     if (!files) return;
     for (let i = 0; i < files.length; i++) {
-      await uploadFile(files[i]);
+      const file = files[i];
+      try {
+        const uploadResult = await uploadFile(file);
+        if (uploadResult?.objectPath && isEditMode && id) {
+          // Persist immediately on existing bills via the dedicated endpoint
+          // so the manual upload survives a page refresh and avoids racing
+          // any concurrent bill edits.
+          try {
+            await apiRequest(`/api/bills/${id}/attachments`, "POST", {
+              objectPath: uploadResult.objectPath,
+              filename: file.name,
+              mimeType: file.type,
+              size: file.size,
+              source: "manual",
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+          } catch (postErr: unknown) {
+            const msg = postErr instanceof Error ? postErr.message : "Please try again from the Attachments tab.";
+            toast({ variant: "destructive", title: "Attachment not saved", description: msg });
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        toast({ variant: "destructive", title: "Upload failed", description: msg });
+      }
     }
     e.target.value = '';
   };
@@ -1952,9 +1980,11 @@ export default function BillDetail() {
                             </div>
                           )}
                           {attachmentUrls.map((url, idx) => {
-                            const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
-                            const isImage = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(url);
-                            const isPdf = /\.(pdf)$/i.test(url);
+                            // Strip query string + fragment so signed URLs (?token=...) still match
+                            const path = url.split('?')[0].split('#')[0];
+                            const fileName = path.split('/').pop() || `Attachment ${idx + 1}`;
+                            const isImage = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path);
+                            const isPdf = /\.(pdf)$/i.test(path);
                             const canPreview = isImage || isPdf;
                             const isActive = previewAttachment === url;
                             return (
