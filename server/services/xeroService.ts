@@ -341,7 +341,18 @@ export class XeroService {
     return data.Accounts || [];
   }
 
+  // Short-lived in-process cache for /TaxRates so back-to-back bill pushes
+  // (e.g. AI bill reader bulk import, debounced auto-push) don't each pay a
+  // round-trip + Xero rate-limit hit. Keyed per Xero connection.
+  private static TAX_RATE_CACHE_TTL_MS = 5 * 60 * 1000;
+  private taxRateCache = new Map<string, { fetchedAt: number; rates: Array<{ Name: string; TaxType: string; Status?: string }> }>();
+
   async getTaxRates(connectionId: string): Promise<Array<{ Name: string; TaxType: string; Status?: string }>> {
+    const cached = this.taxRateCache.get(connectionId);
+    if (cached && Date.now() - cached.fetchedAt < XeroService.TAX_RATE_CACHE_TTL_MS) {
+      return cached.rates;
+    }
+
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
@@ -360,7 +371,14 @@ export class XeroService {
     }
 
     const data = (await response.json()) as any;
-    return data.TaxRates || [];
+    const rates = data.TaxRates || [];
+    this.taxRateCache.set(connectionId, { fetchedAt: Date.now(), rates });
+    return rates;
+  }
+
+  /** Invalidate cached tax rates for a connection (e.g. after re-auth). */
+  invalidateTaxRateCache(connectionId: string): void {
+    this.taxRateCache.delete(connectionId);
   }
 
   async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {

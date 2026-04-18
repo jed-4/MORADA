@@ -155,7 +155,17 @@ function formatXeroErrorDescription(e: any): string {
   if (Array.isArray(issues) && issues.length > 0) {
     return issues
       .slice(0, 4)
-      .map((iss) => iss.message)
+      .map((iss) => {
+        // Prepend a "Line N:" prefix when the issue is scoped to a line item
+        // and the message doesn't already begin with one. This guarantees
+        // line-numbered guidance regardless of whether the message string
+        // happens to include the index itself.
+        const prefix =
+          iss.scope === "lineItem" && typeof iss.lineIndex === "number" && !/^line\s*\d+/i.test(iss.message)
+            ? `Line ${iss.lineIndex + 1}: `
+            : "";
+        return prefix + iss.message;
+      })
       .join(" • ") + (issues.length > 4 ? ` • (+${issues.length - 4} more)` : "");
   }
   return e?.message || "Could not push to Xero. Check your Xero connection in Settings.";

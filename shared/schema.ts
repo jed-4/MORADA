@@ -1074,6 +1074,14 @@ export const companySettings = pgTable("company_settings", {
   // Financial Targets
   annualRevenueTarget: numeric("annual_revenue_target", { precision: 15, scale: 2 }),
 
+  // Xero Defaults
+  // Fallback Xero AccountCode applied to bill line items that don't have an
+  // account on the line and where the supplier has no xeroDefaultAccountCode.
+  // Used by pushBillToXeroInternal pre-flight to avoid Xero 400 "AccountCode
+  // is required" errors. Stored on companySettings (per company) rather than
+  // systemConfiguration (which is global / non-tenant-scoped).
+  billDefaultXeroAccount: text("bill_default_xero_account"),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1148,7 +1156,6 @@ export const systemConfiguration = pgTable("system_configuration", {
   variationStartNumber: integer("variation_start_number").notNull().default(1000),
   clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
   clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
-  billDefaultXeroAccount: text("bill_default_xero_account"),
   billStartNumber: integer("bill_start_number").notNull().default(1000),
   purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
   rfqStartNumber: integer("rfq_start_number").notNull().default(1000),
