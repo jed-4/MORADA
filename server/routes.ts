@@ -348,7 +348,7 @@ async function pushBillToXeroInternal(
     let companyDefaultAccountCode: string | undefined;
     try {
       const settings = await storage.getCompanySettings();
-      companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
+      companyDefaultAccountCode = settings?.billDefaultXeroAccount || undefined;
     } catch {}
 
     const xeroLineItems = lineItems.map((item: any) => {
@@ -23195,8 +23195,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           body.supplierId = result.supplierId;
           body.supplierName = result.supplierName;
         }
-        if ((result as any).validationErrors) {
-          body.validationErrors = (result as any).validationErrors;
+        if (result.validationErrors) {
+          body.validationErrors = result.validationErrors;
         }
         return res.status(result.status).json(body);
       }

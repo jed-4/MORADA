@@ -154,7 +154,7 @@ function formatXeroErrorDescription(e: any): string {
   const issues: XeroValidationIssue[] | undefined = e?.validationErrors;
   if (Array.isArray(issues) && issues.length > 0) {
     return issues
-      .slice(0, 4)
+      .slice(0, 3)
       .map((iss) => {
         // Prepend a "Line N:" prefix when the issue is scoped to a line item
         // and the message doesn't already begin with one. This guarantees
