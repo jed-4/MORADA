@@ -166,7 +166,7 @@ function formatXeroErrorDescription(e: any): string {
             : "";
         return prefix + iss.message;
       })
-      .join(" • ") + (issues.length > 4 ? ` • (+${issues.length - 4} more)` : "");
+      .join(" • ") + (issues.length > 3 ? ` • (+${issues.length - 3} more)` : "");
   }
   return e?.message || "Could not push to Xero. Check your Xero connection in Settings.";
 }
