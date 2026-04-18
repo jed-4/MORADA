@@ -427,11 +427,30 @@ export default function BillDetail() {
     queryKey: ["/api/company-settings"],
   });
 
+  // For new (unsaved) bills we collect rich attachment metadata locally so the
+  // create payload can persist objects (objectPath/filename/mimeType/size/source)
+  // instead of bare strings. Existing bills go through the dedicated endpoint.
+  type LocalAttachment = { objectPath: string; filename?: string; mimeType?: string; size?: number; source?: "manual" | "ai_reader" };
+  const [pendingAttachments, setPendingAttachments] = useState<LocalAttachment[]>([]);
+
   const { uploadFile, isUploading: isUploadingAttachment } = useUpload({
     onSuccess: (response) => {
       setAttachmentUrls(prev => [...prev, response.objectPath]);
     },
   });
+
+  // Helper: record a rich attachment for unsaved bills so the create payload
+  // can persist the new object shape (objectPath/filename/mimeType/size/source).
+  const recordPendingAttachment = (objectPath: string, file: File, source: "manual" | "ai_reader") => {
+    if (isEditMode) return;
+    setPendingAttachments(prev => [...prev, {
+      objectPath,
+      filename: file.name,
+      mimeType: file.type,
+      size: file.size,
+      source,
+    }]);
+  };
 
   useEffect(() => {
     if (!watchedSupplierId || !watchedBillDate) return;
@@ -635,8 +654,15 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
-        
-        attachmentUrls,
+        // Persist rich attachment objects when we have them (for files uploaded
+        // in this session); fall back to bare object-path strings otherwise.
+        // Server schema accepts a union of either shape.
+        attachmentUrls: attachmentUrls.map((url) => {
+          const rich = pendingAttachments.find((p) => p.objectPath === url);
+          return rich
+            ? { ...rich, uploadedAt: new Date().toISOString() }
+            : url;
+        }),
       };
 
       const newBill = await apiRequest("/api/bills", "POST", billData) as Bill;
@@ -1025,6 +1051,9 @@ export default function BillDetail() {
           const uploadResult = await uploadFile(uploadedFile);
           if (uploadResult?.objectPath) {
             lastUploadedObjectPath = uploadResult.objectPath;
+            // Track rich record for new (unsaved) bills so the create payload
+            // can persist the new object shape.
+            recordPendingAttachment(uploadResult.objectPath, uploadedFile, "ai_reader");
             // For edit mode, persist the attachment immediately so refresh keeps it.
             // For new bills, the path is already in `attachmentUrls` via the useUpload
             // hook's onSuccess callback and will be sent with the create payload.
@@ -1152,6 +1181,7 @@ export default function BillDetail() {
       const file = files[i];
       try {
         const uploadResult = await uploadFile(file);
+        if (uploadResult?.objectPath) recordPendingAttachment(uploadResult.objectPath, file, "manual");
         if (uploadResult?.objectPath && isEditMode && id) {
           // Persist immediately on existing bills via the dedicated endpoint
           // so the manual upload survives a page refresh and avoids racing
