@@ -225,11 +225,15 @@ async function pushBillToXeroInternal(
   try {
     const connection = await storage.getXeroConnectionByCompanyId(companyId);
     if (!connection) {
-      return { ok: false, status: 400, error: "NO_CONNECTION", message: "Xero is not connected" };
+      const msg = "Xero is not connected";
+      await writeSyncStatus("failed", msg);
+      logOutcome({ ok: false, reason: "NO_CONNECTION", message: msg });
+      return { ok: false, status: 400, error: "NO_CONNECTION", message: msg };
     }
 
     const bill = await storage.getBillById(billId);
     if (!bill) {
+      logOutcome({ ok: false, reason: "NOT_FOUND", message: "Bill not found" });
       return { ok: false, status: 404, error: "NOT_FOUND", message: "Bill not found" };
     }
 
@@ -237,7 +241,10 @@ async function pushBillToXeroInternal(
     if (bill.projectId) {
       const billProject = await storage.getProject(bill.projectId);
       if (!billProject || (billProject as any).companyId !== companyId) {
-        return { ok: false, status: 403, error: "FORBIDDEN", message: "Bill does not belong to this company" };
+        const msg = "Bill does not belong to this company";
+        await writeSyncStatus("failed", msg);
+        logOutcome({ ok: false, reason: "FORBIDDEN", message: msg });
+        return { ok: false, status: 403, error: "FORBIDDEN", message: msg };
       }
     }
 
@@ -23029,9 +23036,6 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
     }
   });
-
-  // === LEGACY push-bill body removed; logic moved to pushBillToXeroInternal helper ===
-  // (the old inline code below is dead — kept only because removing requires deleting a long block)
 
   // Xero: Push client invoice as AR invoice
   app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {

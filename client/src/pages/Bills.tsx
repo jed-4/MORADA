@@ -139,6 +139,7 @@ function ImportFromXeroDialog({
   const [sinceDate, setSinceDate] = useState<string>("");
   const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
   const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("draft");
+  const [supplierFilter, setSupplierFilter] = useState<string>("");
   const { data: previewData, isLoading, error, refetch } = useQuery<{ bills: XeroBillPreview[]; page: number }>({
     queryKey: ["/api/xero/bills/import-preview", sinceDate],
     queryFn: async () => {
@@ -168,7 +169,10 @@ function ImportFromXeroDialog({
     },
   });
 
-  const xeroBills = previewData?.bills || [];
+  const allXeroBills = previewData?.bills || [];
+  const xeroBills = supplierFilter
+    ? allXeroBills.filter(b => (b.contactName || "").toLowerCase().includes(supplierFilter.toLowerCase()))
+    : allXeroBills;
   const importableBills = xeroBills.filter(b => !b.alreadyImported);
 
   const toggleAll = (checked: boolean) => {
@@ -235,6 +239,15 @@ function ImportFromXeroDialog({
               <SelectItem value="create">Auto-create</SelectItem>
             </SelectContent>
           </Select>
+          <span className="text-xs text-muted-foreground ml-2">Supplier:</span>
+          <Input
+            type="text"
+            placeholder="Filter by name..."
+            value={supplierFilter}
+            onChange={(e) => setSupplierFilter(e.target.value)}
+            className="h-8 w-44"
+            data-testid="input-supplier-filter"
+          />
           <span className="text-xs text-muted-foreground ml-2">Import as:</span>
           <Select value={importStatus} onValueChange={(v) => setImportStatus(v as any)}>
             <SelectTrigger className="h-8 w-44" data-testid="select-import-status">
