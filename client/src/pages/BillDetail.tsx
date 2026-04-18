@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DocumentPreview } from "@/components/DocumentPreview";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1014,9 +1015,15 @@ export default function BillDetail() {
             // hook's onSuccess callback and will be sent with the create payload.
             if (isEditMode && id) {
               try {
-                await apiRequest(`/api/bills/${id}`, "PATCH", {
-                  attachmentUrls: [...attachmentUrls, uploadResult.objectPath],
+                await apiRequest(`/api/bills/${id}/attachments`, "POST", {
+                  objectPath: uploadResult.objectPath,
+                  filename: uploadedFile.name,
+                  mimeType: uploadedFile.type,
+                  size: uploadedFile.size,
+                  source: "ai_reader",
                 });
+                setAttachmentUrls(prev => [...prev, uploadResult.objectPath]);
+                queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
                 attachedOk = true;
               } catch (patchErr) {
                 console.error("Failed to persist attachment to bill:", patchErr);
@@ -1707,19 +1714,12 @@ export default function BillDetail() {
 
                         {ocrFilePreviewUrl && (
                           <div className="rounded-md border overflow-hidden bg-muted/20" data-testid="card-ocr-file-preview">
-                            {ocrFileIsImage ? (
-                              <img
-                                src={ocrFilePreviewUrl}
-                                alt="Invoice preview"
-                                className="w-full max-h-[260px] object-contain bg-white"
-                              />
-                            ) : (
-                              <iframe
-                                src={ocrFilePreviewUrl}
-                                title="Invoice PDF preview"
-                                className="w-full h-[260px] border-0"
-                              />
-                            )}
+                            <DocumentPreview
+                              src={ocrFilePreviewUrl}
+                              mimeType={ocrFileIsImage ? "image/*" : "application/pdf"}
+                              filename={uploadedFile?.name}
+                              height={260}
+                            />
                           </div>
                         )}
 
@@ -1896,23 +1896,7 @@ export default function BillDetail() {
                                   </Button>
                                 </div>
                               </div>
-                              {/\.(pdf)$/i.test(previewAttachment) ? (
-                                <iframe
-                                  src={previewAttachment}
-                                  className="w-full h-[300px] border-0"
-                                  title="PDF Preview"
-                                />
-                              ) : /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(previewAttachment) ? (
-                                <img
-                                  src={previewAttachment}
-                                  alt="Attachment preview"
-                                  className="w-full max-h-[300px] object-contain"
-                                />
-                              ) : (
-                                <div className="flex items-center justify-center h-20 text-[11px] text-muted-foreground">
-                                  Preview not available for this file type
-                                </div>
-                              )}
+                              <DocumentPreview src={previewAttachment} height={300} />
                             </div>
                           )}
                           {attachmentUrls.map((url, idx) => {

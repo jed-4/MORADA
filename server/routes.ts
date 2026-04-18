@@ -10494,6 +10494,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Atomic append of an attachment to a bill (prevents read-modify-write races)
+  app.post("/api/bills/:id/attachments", async (req, res) => {
+    try {
+      const { objectPath, filename, mimeType, size, source } = req.body || {};
+      if (!objectPath || typeof objectPath !== "string") {
+        return res.status(400).json({ error: "objectPath is required" });
+      }
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+
+      const userId = (req as any).user?.id;
+      const record = {
+        objectPath,
+        filename: filename || objectPath.split("/").pop() || "attachment",
+        mimeType: mimeType || undefined,
+        size: typeof size === "number" ? size : undefined,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: userId || undefined,
+        source: source || "manual",
+      };
+      const updated = await storage.appendBillAttachment(req.params.id, record);
+      res.json({ bill: updated, attachment: record });
+    } catch (error: any) {
+      console.error("[bills/attachments] failed:", error);
+      res.status(500).json({ error: error?.message || "Failed to append attachment" });
+    }
+  });
+
   app.delete("/api/bills/:id", async (req, res) => {
     try {
       await storage.deleteBill(req.params.id);

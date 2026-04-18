@@ -638,6 +638,7 @@ export interface IStorage {
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
+  appendBillAttachment(id: string, attachment: any): Promise<Bill>;
   
   // Bill Line Items CRUD
   getBillLineItems(billId: string): Promise<BillLineItem[]>;
@@ -13051,6 +13052,24 @@ export class DbStorage implements IStorage {
       return updatedBills[0];
     } catch (error) {
       console.error("Database error in updateBill:", error);
+      throw error;
+    }
+  }
+
+  async appendBillAttachment(id: string, attachment: any): Promise<Bill> {
+    try {
+      const existing = await db.select({ attachmentUrls: schema.bills.attachmentUrls }).from(schema.bills).where(eq(schema.bills.id, id)).limit(1);
+      if (!existing[0]) throw new Error("Bill not found");
+      const current = Array.isArray(existing[0].attachmentUrls) ? (existing[0].attachmentUrls as any[]) : [];
+      const next = [...current, attachment];
+      const updated = await db.update(schema.bills)
+        .set({ attachmentUrls: next as any, updatedAt: new Date() })
+        .where(eq(schema.bills.id, id))
+        .returning();
+      if (!updated[0]) throw new Error("Bill not found");
+      return updated[0];
+    } catch (error) {
+      console.error("Database error in appendBillAttachment:", error);
       throw error;
     }
   }
