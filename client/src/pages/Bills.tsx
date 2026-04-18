@@ -997,12 +997,25 @@ export default function Bills() {
                                     {(bill as any).billType === "credit" ? `-${formatCurrency(bill.total)}` : formatCurrency(bill.total)}
                                   </TableCell>
                                 );
-                              case "xero":
+                              case "xero": {
+                                const syncStatus = (bill as any).xeroLastSyncStatus as string | undefined;
+                                const syncErr = (bill as any).xeroLastSyncError as string | undefined;
+                                const syncAt = (bill as any).xeroLastSyncAt as string | undefined;
+                                const tip = syncStatus === "failed"
+                                  ? `Last push failed${syncAt ? ` (${new Date(syncAt).toLocaleString()})` : ""}: ${syncErr || "unknown error"}`
+                                  : syncStatus === "success" && syncAt
+                                    ? `Synced ${new Date(syncAt).toLocaleString()}`
+                                    : bill.xeroInvoiceId ? "Linked to Xero" : "";
                                 return (
                                   <TableCell key="xero" style={{ minWidth: 50, width: 50 }} className="text-center px-2 py-1" data-testid={`icon-sync-${bill.id}`}>
-                                    {bill.xeroInvoiceId && <Circle className="h-3 w-3 inline fill-blue-500 text-blue-500" />}
+                                    {syncStatus === "failed" ? (
+                                      <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
+                                    ) : bill.xeroInvoiceId ? (
+                                      <span title={tip}><Circle className="h-3 w-3 inline fill-blue-500 text-blue-500" /></span>
+                                    ) : null}
                                   </TableCell>
                                 );
+                              }
                               case "due":
                                 return (
                                   <TableCell key="due" style={{ minWidth: 90, width: 90 }} className="text-xs font-medium text-right px-2 py-1" data-testid={`text-due-${bill.id}`}>

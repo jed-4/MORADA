@@ -211,7 +211,7 @@ async function pushBillToXeroInternal(
   try {
     const connection = await storage.getXeroConnectionByCompanyId(companyId);
     if (!connection) {
-      return { ok: false, status: 400, error: "NOT_CONNECTED", message: "Xero is not connected" };
+      return { ok: false, status: 400, error: "NO_CONNECTION", message: "Xero is not connected" };
     }
 
     const bill = await storage.getBillById(billId);
@@ -380,7 +380,7 @@ async function pushBillToXeroInternal(
     const msg = error?.message || "Failed to push bill to Xero";
     console.error("[pushBillToXeroInternal] error:", msg);
     await writeSyncStatus("failed", msg);
-    return { ok: false, status: 500, error: "PUSH_FAILED", message: msg };
+    return { ok: false, status: 500, error: "XERO_API_ERROR", message: msg };
   }
 }
 
@@ -396,8 +396,10 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
     __billAutoPushTimers.delete(billId);
     try {
       const bill = await storage.getBillById(billId);
-      if (!bill || !bill.xeroInvoiceId) return; // only auto-push linked bills
+      if (!bill) return;
       if (bill.status === "paid") return; // never overwrite paid bills
+      // Linked: always allowed. Unlinked: only when sendToXero and approved (awaiting_payment).
+      if (!bill.xeroInvoiceId && !(bill.sendToXero && bill.status === "awaiting_payment")) return;
       const result = await pushBillToXeroInternal(billId, companyId);
       if (!result.ok) {
         console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
