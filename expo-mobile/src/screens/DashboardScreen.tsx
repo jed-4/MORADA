@@ -558,7 +558,17 @@ export default function DashboardScreen({ navigation }: Props) {
       icon: 'list-outline',
       label: 'Scope',
       color: '#A890D4',
-      onPress: () => navigation.getParent()?.navigate('Projects'),
+      onPress: () => {
+        const target = projects.find(p => p.isFavourite) || projects[0];
+        if (target) {
+          navigation.getParent()?.navigate('Projects', {
+            screen: 'Scope',
+            params: { projectId: target.id, projectName: target.name },
+          });
+        } else {
+          navigation.getParent()?.navigate('Projects');
+        }
+      },
     },
     {
       key: 'kanban',
@@ -810,7 +820,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   activeOpacity={0.7}
                 >
                   <TouchableOpacity
-                    onPress={(e: any) => { e.stopPropagation?.(); toggleTaskComplete(task.id, task.status); }}
+                    onPress={() => toggleTaskComplete(task.id, task.status)}
                     activeOpacity={0.7}
                     hitSlop={8}
                     style={[
