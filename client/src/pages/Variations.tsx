@@ -580,7 +580,9 @@ export default function Variations() {
     if (!activeVariation) return;
 
     let targetStatus: string | undefined;
-    const overData = over.data?.current as any;
+    const overData = over.data?.current as
+      | { sortable?: { containerId?: string }; columnId?: string }
+      | undefined;
     if (overData?.sortable?.containerId) {
       targetStatus = overData.sortable.containerId;
     } else if (overData?.columnId) {
@@ -625,7 +627,7 @@ export default function Variations() {
                   {columnVariations.map((variation) => (
                     <DraggableKanbanCard
                       key={variation.id}
-                      variation={variation as any}
+                      variation={variation}
                       columnId={statusOption.key}
                       onCardClick={handleRowClick}
                       projectIdFromUrl={projectIdFromUrl}
