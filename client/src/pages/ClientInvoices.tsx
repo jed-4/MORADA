@@ -660,6 +660,7 @@ export default function ClientInvoices() {
               data={filteredInvoices}
               columns={columnDefs}
               storageKey="client-invoices"
+              legacyConfigKey="client-invoices-column-config-v1"
               rowKey={(inv) => inv.id}
               onRowClick={(inv) => handleRowClick(inv.id)}
               rowHeight={40}

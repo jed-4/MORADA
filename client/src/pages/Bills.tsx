@@ -627,7 +627,7 @@ export default function Bills() {
         id: "project",
         header: "Project",
         accessorFn: (b: Bill) => getProject(b.projectId)?.name || "",
-        cell: ({ row }: any) => {
+        cell: ({ row }) => {
           const project = getProject(row.original.projectId);
           return project ? (
             <div className="flex items-center gap-1.5">
@@ -679,7 +679,7 @@ export default function Bills() {
         header: "Xero",
         enableSorting: false,
         cell: ({ row }) => {
-          const bill: any = row.original;
+          const bill = row.original;
           const syncStatus = bill.xeroLastSyncStatus;
           const syncErr = bill.xeroLastSyncError;
           const syncAt = bill.xeroLastSyncAt;
