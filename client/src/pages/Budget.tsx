@@ -8,14 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
 import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -161,6 +153,156 @@ export default function BudgetPage() {
   const totalActualHours = totalPendingHours + totalApprovedHours;
   const hoursRemaining = totalBudgetedHours - totalActualHours;
   const hoursPercentUsed = totalBudgetedHours > 0 ? Math.round((totalActualHours / totalBudgetedHours) * 100) : 0;
+
+  type CostRow =
+    | { kind: "category"; id: string; categoryTitle: string; count: number; budgeted: number; actual: number; forecast: number; variance: number }
+    | { kind: "item"; id: string; item: BudgetLineItem; categoryTitle: string };
+
+  const costRows = useMemo<CostRow[]>(() => {
+    const catMap = new Map<string, BudgetLineItem[]>();
+    lineItems.forEach((item) => {
+      const key = item.categoryTitle || "Uncategorized";
+      if (!catMap.has(key)) catMap.set(key, []);
+      catMap.get(key)!.push(item);
+    });
+    const sorted = Array.from(catMap.entries()).sort((a, b) => {
+      if (a[0] === "Uncategorized") return 1;
+      if (b[0] === "Uncategorized") return -1;
+      return a[0].localeCompare(b[0]);
+    });
+    const rows: CostRow[] = [];
+    sorted.forEach(([categoryTitle, catItems]) => {
+      const budgeted = catItems.reduce((s, i) => s + i.budgetedAmount, 0);
+      const actual = catItems.reduce((s, i) => s + i.actualAmount, 0);
+      const forecast = catItems.reduce((s, i) => s + i.forecastAmount, 0);
+      const variance = catItems.reduce((s, i) => s + i.variance, 0);
+      rows.push({
+        kind: "category",
+        id: `cat-${categoryTitle}`,
+        categoryTitle,
+        count: catItems.length,
+        budgeted,
+        actual,
+        forecast,
+        variance,
+      });
+      const isCollapsed = collapsedCategories.has(categoryTitle);
+      if (!isCollapsed) {
+        catItems.forEach((item) => {
+          rows.push({ kind: "item", id: item.id, item, categoryTitle });
+        });
+      }
+    });
+    return rows;
+  }, [lineItems, collapsedCategories]);
+
+  const costColumns = useMemo<ColumnDef<CostRow, unknown>[]>(() => [
+    {
+      id: "category",
+      header: "Cost Code",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.kind === "category") {
+          const isCollapsed = collapsedCategories.has(r.categoryTitle);
+          return (
+            <div className="flex items-center gap-1.5 font-semibold text-xs">
+              {isCollapsed ? (
+                <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+              )}
+              <span>{r.categoryTitle}</span>
+              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{r.count}</Badge>
+            </div>
+          );
+        }
+        return <div className="text-xs pl-5 font-medium">{r.item.costCodeTitle || "—"}</div>;
+      },
+      size: 280,
+      meta: { defaultWidth: 280, headerLabel: "Cost Code" },
+    },
+    {
+      id: "budgeted",
+      header: "Budgeted",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.budgeted : r.item.budgetedAmount;
+        return (
+          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-budgeted-${r.id}` : undefined}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Budgeted" },
+    },
+    {
+      id: "actual",
+      header: "Actual",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.actual : r.item.actualAmount;
+        return (
+          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-actual-${r.id}` : undefined}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Actual" },
+    },
+    {
+      id: "forecast",
+      header: "Forecast",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.forecast : r.item.forecastAmount;
+        return (
+          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold")} data-testid={r.kind === "item" ? `text-forecast-${r.id}` : undefined}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Forecast" },
+    },
+    {
+      id: "variance",
+      header: "Variance",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.variance : r.item.variance;
+        return (
+          <span className={cn("text-xs tabular-nums", r.kind === "category" && "font-semibold", getVarianceColor(value))} data-testid={r.kind === "item" ? `text-variance-${r.id}` : undefined}>
+            {formatCurrency(value)}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Variance" },
+    },
+    {
+      id: "status",
+      header: "Status",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        const value = r.kind === "category" ? r.variance : r.item.variance;
+        return (
+          <Badge variant={getVarianceBadgeVariant(value)} className="h-4 px-1.5 text-[10px]">
+            {value > 0 ? "Under" : value < 0 ? "Over" : "On Track"}
+          </Badge>
+        );
+      },
+      size: 90,
+      meta: { defaultWidth: 90, align: "right", headerLabel: "Status" },
+    },
+  ], [collapsedCategories]);
 
   const filteredLabourHours = hideEmptyCostCodes
     ? labourHours.filter(item => {
@@ -502,96 +644,25 @@ export default function BudgetPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Cost Code</TableHead>
-                          <TableHead className="text-xs text-right">Budgeted</TableHead>
-                          <TableHead className="text-xs text-right">Actual</TableHead>
-                          <TableHead className="text-xs text-right">Forecast</TableHead>
-                          <TableHead className="text-xs text-right">Variance</TableHead>
-                          <TableHead className="text-xs text-right">Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(() => {
-                          const catMap = new Map<string, BudgetLineItem[]>();
-                          lineItems.forEach(item => {
-                            const key = item.categoryTitle || "Uncategorized";
-                            if (!catMap.has(key)) catMap.set(key, []);
-                            catMap.get(key)!.push(item);
+                  <div className="h-[480px]">
+                    <DataTable
+                      data={costRows}
+                      columns={costColumns}
+                      storageKey="budget-costs"
+                      legacyConfigKey="budget-column-config-v1"
+                      rowKey={(row) => row.id}
+                      onRowClick={(row) => {
+                        if (row.kind === "category") {
+                          setCollapsedCategories((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(row.categoryTitle)) next.delete(row.categoryTitle);
+                            else next.add(row.categoryTitle);
+                            return next;
                           });
-                          const sorted = Array.from(catMap.entries()).sort((a, b) => {
-                            if (a[0] === "Uncategorized") return 1;
-                            if (b[0] === "Uncategorized") return -1;
-                            return a[0].localeCompare(b[0]);
-                          });
-                          return sorted.map(([categoryTitle, catItems]) => {
-                            const isCollapsed = collapsedCategories.has(categoryTitle);
-                            const catBudgeted = catItems.reduce((s, i) => s + i.budgetedAmount, 0);
-                            const catActual = catItems.reduce((s, i) => s + i.actualAmount, 0);
-                            const catForecast = catItems.reduce((s, i) => s + i.forecastAmount, 0);
-                            const catVariance = catItems.reduce((s, i) => s + i.variance, 0);
-                            return (
-                              <>
-                                <TableRow
-                                  key={`cat-${categoryTitle}`}
-                                  className="bg-muted/40 hover:bg-muted/50 cursor-pointer select-none"
-                                  onClick={() => setCollapsedCategories(prev => {
-                                    const next = new Set(prev);
-                                    if (next.has(categoryTitle)) next.delete(categoryTitle); else next.add(categoryTitle);
-                                    return next;
-                                  })}
-                                  data-testid={`row-category-${categoryTitle}`}
-                                >
-                                  <TableCell className="text-xs font-semibold">
-                                    <div className="flex items-center gap-1.5">
-                                      {isCollapsed ? <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
-                                      <span>{categoryTitle}</span>
-                                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{catItems.length}</Badge>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catBudgeted)}</TableCell>
-                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catActual)}</TableCell>
-                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catForecast)}</TableCell>
-                                  <TableCell className={`text-xs text-right font-semibold ${getVarianceColor(catVariance)}`}>{formatCurrency(catVariance)}</TableCell>
-                                  <TableCell className="text-right">
-                                    <Badge variant={getVarianceBadgeVariant(catVariance)} className="h-4 px-1.5 text-[10px]">
-                                      {catVariance > 0 ? "Under" : catVariance < 0 ? "Over" : "On Track"}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                                {!isCollapsed && catItems.map(item => (
-                                  <TableRow key={item.id} data-testid={`row-budget-item-${item.id}`}>
-                                    <TableCell className="text-xs pl-7">
-                                      <div className="font-medium">{item.costCodeTitle || "—"}</div>
-                                    </TableCell>
-                                    <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
-                                      {formatCurrency(item.budgetedAmount)}
-                                    </TableCell>
-                                    <TableCell className="text-xs text-right" data-testid={`text-actual-${item.id}`}>
-                                      {formatCurrency(item.actualAmount)}
-                                    </TableCell>
-                                    <TableCell className="text-xs text-right" data-testid={`text-forecast-${item.id}`}>
-                                      {formatCurrency(item.forecastAmount)}
-                                    </TableCell>
-                                    <TableCell className={`text-xs text-right ${getVarianceColor(item.variance)}`} data-testid={`text-variance-${item.id}`}>
-                                      {formatCurrency(item.variance)}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      <Badge variant={getVarianceBadgeVariant(item.variance)} className="h-4 px-1.5 text-[10px]">
-                                        {item.variance > 0 ? "Under" : item.variance < 0 ? "Over" : "On Track"}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </>
-                            );
-                          });
-                        })()}
-                      </TableBody>
-                    </Table>
+                        }
+                      }}
+                      rowClassName={(row) => row.kind === "category" ? "bg-muted/40" : ""}
+                    />
                   </div>
                 )}
               </CardContent>
@@ -706,15 +777,20 @@ export default function BudgetPage() {
                       Click "Recalculate" to generate hours budget from estimates and timesheets.
                     </p>
                   </div>
+                ) : filteredLabourHours.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-muted-foreground">
+                    {hideEmptyCostCodes
+                      ? "All cost codes have zero hours. Turn off \"Hide empty\" to see all."
+                      : "No labour hours data available."}
+                  </div>
                 ) : (
                   <div className="h-[480px]">
                     <DataTable
                       data={filteredLabourHours}
                       columns={labourHoursColumns}
-                      storageKey="budget"
+                      storageKey="budget-hours"
                       legacyConfigKey="budget-column-config-v1"
                       rowKey={(row) => row.id}
-                      emptyState={hideEmptyCostCodes ? "All cost codes have zero hours. Turn off \"Hide empty\" to see all." : "No labour hours data available."}
                     />
                   </div>
                 )}
