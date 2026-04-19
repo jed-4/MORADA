@@ -48,6 +48,8 @@ export interface DataTableColumnMeta {
   pinned?: boolean;
   /** Display label shown in context menu / column picker. */
   headerLabel?: string;
+  /** Hidden by default on first load (when no persisted state exists). */
+  defaultHidden?: boolean;
 }
 
 export interface DataTableProps<TData> {
@@ -128,7 +130,7 @@ interface DraggableHeaderProps {
 }
 
 function DraggableHeader({ id, children, width, pinned, sticky, align, onContextMenu }: DraggableHeaderProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, over, active } =
     useSortable({ id, disabled: pinned });
 
   const style: React.CSSProperties = {
@@ -147,13 +149,22 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
 
   const dragProps = pinned ? {} : { ...attributes, ...listeners };
 
+  // Drop-insertion indicator: show a vertical accent bar on the side of this
+  // header that the dragged column would be inserted at.
+  const showInsertionLine = isOver && active && over && active.id !== over.id && !pinned;
+  const insertSide: "left" | "right" =
+    showInsertionLine && (active.data?.current?.sortable?.index ?? 0) <
+      (over.data?.current?.sortable?.index ?? 0)
+      ? "right"
+      : "left";
+
   return (
     <th
       ref={setNodeRef}
       style={style}
       onContextMenu={onContextMenu}
       className={cn(
-        "h-7 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted/50 select-none",
+        "h-7 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted/50 select-none relative",
         align === "right" && "text-right",
         align === "center" && "text-center",
         !pinned && "cursor-grab active:cursor-grabbing",
@@ -161,6 +172,13 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
       {...dragProps}
     >
       {children}
+      {showInsertionLine && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-[#A890D4] z-20"
+          style={{ [insertSide]: -1 } as React.CSSProperties}
+        />
+      )}
     </th>
   );
 }
@@ -187,7 +205,17 @@ export function DataTable<TData>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   );
   const initialHidden = useMemo<VisibilityState>(
-    () => loadJSON(lsKey(storageKey, "hidden"), {}),
+    () => {
+      const stored = loadJSON<VisibilityState | null>(lsKey(storageKey, "hidden"), null);
+      if (stored && Object.keys(stored).length > 0) return stored;
+      // No persisted state — seed from column meta `defaultHidden`.
+      const seeded: VisibilityState = {};
+      columns.forEach((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        if (meta.defaultHidden && c.id) seeded[c.id as string] = false;
+      });
+      return seeded;
+    },
     [storageKey],
     // eslint-disable-next-line react-hooks/exhaustive-deps
   );

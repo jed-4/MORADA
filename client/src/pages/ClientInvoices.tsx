@@ -332,8 +332,8 @@ export default function ClientInvoices() {
   };
 
   // ── TanStack column defs ─────────────────────────────────────────────────
-  const columnDefs = useMemo<ColumnDef<ClientInvoice, any>[]>(() => {
-    const defs: ColumnDef<ClientInvoice, any>[] = DEFAULT_COLUMNS.map((col) => ({
+  const columnDefs = useMemo<ColumnDef<ClientInvoice, unknown>[]>(() => {
+    const defs: ColumnDef<ClientInvoice, unknown>[] = DEFAULT_COLUMNS.map((col) => ({
       id: col.key,
       header: col.label,
       enableSorting: SORTABLE_COLUMNS.has(col.key),

@@ -470,7 +470,7 @@ export default function Variations() {
           </span>
         ),
         size: 90,
-        meta: { defaultWidth: 90, align: "right", headerLabel: "Paid" },
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Paid", defaultHidden: true },
       },
       {
         id: "balance",
@@ -490,7 +490,7 @@ export default function Variations() {
           </span>
         ),
         size: 100,
-        meta: { defaultWidth: 100, align: "right", headerLabel: "Balance Due" },
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Balance Due", defaultHidden: true },
       },
       {
         id: "seen",
@@ -515,7 +515,7 @@ export default function Variations() {
           </button>
         ),
         size: 60,
-        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen" },
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen", defaultHidden: true },
       },
       {
         id: "deadline",
@@ -527,7 +527,7 @@ export default function Variations() {
           </span>
         ),
         size: 120,
-        meta: { defaultWidth: 120, headerLabel: "Approval Deadline" },
+        meta: { defaultWidth: 120, headerLabel: "Approval Deadline", defaultHidden: true },
       },
     );
 
@@ -545,7 +545,7 @@ export default function Variations() {
           );
         },
         size: 150,
-        meta: { defaultWidth: 150, headerLabel: "Related" },
+        meta: { defaultWidth: 150, headerLabel: "Related", defaultHidden: true },
       });
     }
 
