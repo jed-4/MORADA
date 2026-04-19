@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -74,35 +76,19 @@ const STATUS_OPTIONS = [
   { key: "paid", label: "Paid" },
 ];
 
-const ALL_BILL_COLUMNS = [
-  { id: "checkbox", label: "", required: true, width: 40 },
-  { id: "billNumber", label: "ID", required: false, width: 90 },
-  { id: "status", label: "Status", required: false, width: 130 },
-  { id: "supplier", label: "Supplier", required: false, width: 160 },
-  { id: "project", label: "Project", required: false, width: 150 },
-  { id: "reference", label: "Reference", required: false, width: 120 },
-  { id: "date", label: "Date", required: false, width: 100 },
-  { id: "total", label: "Total", required: false, width: 90 },
-  { id: "xero", label: "Xero", required: false, width: 50 },
-  { id: "due", label: "Due", required: false, width: 90 },
-  { id: "attachments", label: "", required: false, width: 40 },
+const BILL_COLUMN_LABELS: { id: string; label: string; pinned?: boolean }[] = [
+  { id: "checkbox", label: "Select", pinned: true },
+  { id: "billNumber", label: "ID" },
+  { id: "status", label: "Status" },
+  { id: "supplier", label: "Supplier" },
+  { id: "project", label: "Project" },
+  { id: "reference", label: "Reference" },
+  { id: "date", label: "Date" },
+  { id: "total", label: "Total" },
+  { id: "xero", label: "Xero" },
+  { id: "due", label: "Due" },
+  { id: "attachments", label: "Files" },
 ];
-
-const BILL_COL_STORAGE_KEY = "bills-column-config-v1";
-
-function loadBillColumnConfig() {
-  try {
-    const saved = localStorage.getItem(BILL_COL_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return ALL_BILL_COLUMNS.map((col, i) => ({ id: col.id, visible: true, order: i }));
-}
-
-function saveBillColumnConfig(config: { id: string; visible: boolean; order: number }[]) {
-  try {
-    localStorage.setItem(BILL_COL_STORAGE_KEY, JSON.stringify(config));
-  } catch {}
-}
 
 type XeroBillPreview = {
   xeroInvoiceId: string;
@@ -360,22 +346,10 @@ export default function Bills() {
   const [changeSupplierDialogOpen, setChangeSupplierDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
-  const [columnConfig, setColumnConfig] = useState<{ id: string; visible: boolean; order: number }[]>(loadBillColumnConfig);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importProjectId, setImportProjectId] = useState<string>("");
   const [selectedXeroBillIds, setSelectedXeroBillIds] = useState<Set<string>>(new Set());
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const bodyScrollRef = useRef<HTMLDivElement>(null);
-
-  const syncHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (headerScrollRef.current) {
-      headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-    }
-  };
 
   const { toast } = useToast();
 
@@ -588,39 +562,202 @@ export default function Bills() {
     toast({ title: "Copied to clipboard", description: "Webhook URL has been copied to your clipboard." });
   };
 
-  // Column config helpers
-  const isColVisible = (id: string) => {
-    if (id === "project" && projectIdFromUrl) return false;
-    const col = columnConfig.find((c) => c.id === id);
-    const def = ALL_BILL_COLUMNS.find((d) => d.id === id);
-    if (!col || !def) return false;
-    return def.required ? true : col.visible;
-  };
+  // ── DataTable column defs ───────────────────────────────────────────────
+  const billColumns = useMemo<ColumnDef<Bill, any>[]>(() => {
+    const cols: (ColumnDef<Bill, any> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "checkbox",
+        header: () => (
+          <Checkbox
+            checked={filteredBills.length > 0 && selectedBills.size === filteredBills.length}
+            onCheckedChange={(c) => handleSelectAll(c as boolean)}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <span onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selectedBills.has(row.original.id)}
+              onCheckedChange={(c) => handleSelectBill(row.original.id, c as boolean)}
+              data-testid={`checkbox-bill-${row.original.id}`}
+            />
+          </span>
+        ),
+        enableSorting: false,
+        size: 40,
+        meta: { defaultWidth: 40, align: "center", pinned: true, headerLabel: "Select" },
+      },
+      {
+        id: "billNumber",
+        header: "ID",
+        accessorFn: (b) => b.billNumber || "",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1 font-medium">
+            {row.original.billNumber}
+            {(row.original as any).billType === "credit" && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
+            )}
+          </div>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "ID" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (b) => b.status,
+        cell: ({ row }) => getStatusBadge(row.original.status, "sm"),
+        size: 130,
+        meta: { defaultWidth: 130, headerLabel: "Status" },
+      },
+      {
+        id: "supplier",
+        header: "Supplier",
+        accessorFn: (b) => getSupplierName(b.supplierId ?? "", b),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1">
+            <Building2 className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            <span className="truncate">{getSupplierName(row.original.supplierId ?? "", row.original)}</span>
+          </div>
+        ),
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Supplier" },
+      },
+      ...(projectIdFromUrl ? [] : [{
+        id: "project",
+        header: "Project",
+        accessorFn: (b: Bill) => getProject(b.projectId)?.name || "",
+        cell: ({ row }: any) => {
+          const project = getProject(row.original.projectId);
+          return project ? (
+            <div className="flex items-center gap-1.5">
+              <ProjectIcon icon={project.icon} color={project.color} className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{project.name}</span>
+            </div>
+          ) : null;
+        },
+        size: 150,
+        meta: { defaultWidth: 150, headerLabel: "Project" },
+      } as ColumnDef<Bill, any> & { meta: DataTableColumnMeta }]),
+      {
+        id: "reference",
+        header: "Reference",
+        accessorFn: (b) => b.billReference || "",
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.billReference || "-"}</span>,
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Reference" },
+      },
+      {
+        id: "date",
+        header: "Date",
+        accessorFn: (b) => (b.billDate ? new Date(b.billDate).getTime() : 0),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1">
+            <Calendar className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            {formatDate(row.original.billDate)}
+          </div>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Date" },
+      },
+      {
+        id: "total",
+        header: "Total",
+        accessorFn: (b) => ((b as any).billType === "credit" ? -b.total : b.total),
+        cell: ({ row }) => (
+          <span className={cn("font-medium", (row.original as any).billType === "credit" && "text-green-600 dark:text-green-400")}>
+            {(row.original as any).billType === "credit"
+              ? `-${formatCurrency(row.original.total)}`
+              : formatCurrency(row.original.total)}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Total" },
+      },
+      {
+        id: "xero",
+        header: "Xero",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const bill: any = row.original;
+          const syncStatus = bill.xeroLastSyncStatus;
+          const syncErr = bill.xeroLastSyncError;
+          const syncAt = bill.xeroLastSyncAt;
+          const tip = syncStatus === "failed"
+            ? `Last push failed${syncAt ? ` (${new Date(syncAt).toLocaleString()})` : ""}: ${syncErr || "unknown error"}`
+            : syncStatus === "success" && syncAt
+              ? `Synced ${new Date(syncAt).toLocaleString()}`
+              : bill.xeroInvoiceId ? "Linked to Xero" : "";
+          return syncStatus === "failed" ? (
+            <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
+          ) : bill.xeroInvoiceId ? (
+            <span title={tip}><Circle className="h-3 w-3 inline fill-blue-500 text-blue-500" /></span>
+          ) : null;
+        },
+        size: 60,
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Xero" },
+      },
+      {
+        id: "due",
+        header: "Due",
+        accessorFn: (b) => b.total - b.paidAmount,
+        cell: ({ row }) => (
+          <span className="font-medium">{formatCurrency(row.original.total - row.original.paidAmount)}</span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Due" },
+      },
+      {
+        id: "attachments",
+        header: () => <Paperclip className="h-3 w-3 inline" />,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const bill = row.original;
+          const attachmentCount = Array.isArray(bill.attachmentUrls) ? bill.attachmentUrls.length : 0;
+          if (attachmentCount === 0) return null;
+          return (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="flex items-center justify-center gap-0.5 mx-auto hover-elevate rounded px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                  <FileText className="h-3 w-3" />
+                  <span className="text-xs">{attachmentCount}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="left" align="center" className="w-72 p-2" onClick={(e) => e.stopPropagation()}>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({attachmentCount})</p>
+                <div className="flex flex-col gap-1">
+                  {(bill.attachmentUrls as string[]).map((url, idx) => {
+                    const filename = url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
+                    const isImage = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
+                    return (
+                      <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-md p-1.5 hover-elevate">
+                        {isImage ? (
+                          <img src={url} alt={filename} className="h-8 w-8 rounded object-cover shrink-0 border border-border" />
+                        ) : (
+                          <div className="h-8 w-8 rounded border border-border bg-muted flex items-center justify-center shrink-0">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <span className="text-xs truncate text-foreground">{decodeURIComponent(filename)}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          );
+        },
+        size: 50,
+        meta: { defaultWidth: 50, align: "center", headerLabel: "Files" },
+      },
+    ];
+    return cols;
+  }, [filteredBills.length, selectedBills, projectIdFromUrl, projects, suppliers]);
 
-  const toggleColumn = (id: string) => {
-    const updated = columnConfig.map((c) => c.id === id ? { ...c, visible: !c.visible } : c);
-    setColumnConfig(updated);
-    saveBillColumnConfig(updated);
-  };
-
-  const onDragStart = (id: string) => setDragId(id);
-  const onDragOver = (id: string, e: React.DragEvent) => { e.preventDefault(); setDragOverId(id); };
-  const onDrop = (targetId: string) => {
-    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
-    const sorted = [...columnConfig].sort((a, b) => a.order - b.order);
-    const fromIdx = sorted.findIndex((c) => c.id === dragId);
-    const toIdx = sorted.findIndex((c) => c.id === targetId);
-    const reordered = [...sorted];
-    const [moved] = reordered.splice(fromIdx, 1);
-    reordered.splice(toIdx, 0, moved);
-    const updated = reordered.map((c, i) => ({ ...c, order: i }));
-    setColumnConfig(updated);
-    saveBillColumnConfig(updated);
-    setDragId(null);
-    setDragOverId(null);
-  };
-
-  const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
+  const billPickerColumns = useMemo(
+    () => BILL_COLUMN_LABELS.filter((c) => !(c.id === "project" && projectIdFromUrl)),
+    [projectIdFromUrl],
+  );
 
   return (
     <div className="flex flex-col h-full" data-testid="page-bills">
@@ -863,238 +1000,41 @@ export default function Bills() {
                     <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-52 p-3" align="end">
-                  <p className="text-xs font-medium mb-2 text-muted-foreground">Columns — drag to reorder</p>
-                  <div className="space-y-1">
-                    {[...columnConfig].sort((a, b) => a.order - b.order).map((col) => {
-                      const def = ALL_BILL_COLUMNS.find((d) => d.id === col.id)!;
-                      if (col.id === "project" && projectIdFromUrl) return null;
-                      if (!def) return null;
-                      return (
-                        <div
-                          key={col.id}
-                          draggable
-                          onDragStart={() => onDragStart(col.id)}
-                          onDragOver={(e) => onDragOver(col.id, e)}
-                          onDrop={() => onDrop(col.id)}
-                          className={cn(
-                            "flex items-center gap-2 p-1.5 rounded-md text-sm select-none",
-                            dragOverId === col.id ? "bg-accent" : "hover-elevate"
-                          )}
-                        >
-                          <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
-                          <Checkbox checked={def.required ? true : col.visible} disabled={def.required} onCheckedChange={() => toggleColumn(col.id)} className="border-border/50" />
-                          <span className={cn("flex-1 text-xs", def.required && "text-muted-foreground")}>{def.label || col.id}</span>
-                          {def.required && <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
-                        </div>
-                      );
-                    })}
-                  </div>
+                <PopoverContent className="w-52 p-1" align="end">
+                  <DataTableColumnPicker storageKey="bills" columns={billPickerColumns} />
                 </PopoverContent>
               </Popover>
             </div>
 
-            {/* Column header — slim, sticky below search */}
-            <div ref={headerScrollRef} className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/50">
-              <Table style={{ tableLayout: "fixed" }}>
-                <TableHeader>
-                  <TableRow className="h-5 bg-muted/50 hover:bg-muted/50">
-                    {orderedColumns.map((col) => {
-                      const def = ALL_BILL_COLUMNS.find((d) => d.id === col.id)!;
-                      const isRight = ["total", "due"].includes(col.id);
-                      const isCenter = ["checkbox", "xero", "attachments"].includes(col.id);
-                      return (
-                        <TableHead
-                          key={col.id}
-                          style={{ minWidth: def.width, width: def.width }}
-                          className={cn(
-                            "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2",
-                            isRight && "text-right",
-                            isCenter && "text-center"
-                          )}
-                          data-testid={`header-${col.id}`}
-                        >
-                          {col.id === "attachments" ? <Paperclip className="h-3 w-3 inline" /> : def.label}
-                        </TableHead>
-                      );
-                    })}
-                  </TableRow>
-                </TableHeader>
-              </Table>
-            </div>
-
-            {/* Table body */}
-            <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto">
-              <Table style={{ tableLayout: "fixed" }}>
-                <TableBody>
-                  {filteredBills.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={orderedColumns.length} className="text-center py-8">
-                        <div className="flex flex-col items-center gap-3">
-                          <p className="text-muted-foreground text-sm">
-                            {bills.length === 0 ? "No bills found" : "No matching bills"}
-                          </p>
-                          {bills.length === 0 && (
-                            <button
-                              className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
-                              onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
-                              data-testid="button-add-first-bill"
-                            >
-                              <Plus className="w-3.5 h-3.5" />Add First Bill
-                            </button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredBills.map((bill) => {
-                      const project = getProject(bill.projectId);
-                      const dueAmount = bill.total - bill.paidAmount;
-                      const attachmentCount = Array.isArray(bill.attachmentUrls) ? bill.attachmentUrls.length : 0;
-                      return (
-                        <TableRow
-                          key={bill.id}
-                          className="cursor-pointer hover-elevate h-9"
-                          onClick={() => handleRowClick(bill.id)}
-                          data-testid={`row-bill-${bill.id}`}
-                        >
-                          {orderedColumns.map((col) => {
-                            switch (col.id) {
-                              case "checkbox":
-                                return (
-                                  <TableCell key="checkbox" style={{ minWidth: 40, width: 40 }} className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                    <Checkbox checked={selectedBills.has(bill.id)} onCheckedChange={(checked) => handleSelectBill(bill.id, checked as boolean)} data-testid={`checkbox-bill-${bill.id}`} />
-                                  </TableCell>
-                                );
-                              case "billNumber":
-                                return (
-                                  <TableCell key="billNumber" style={{ minWidth: 90, width: 90 }} className="text-xs font-medium px-2 py-1" data-testid={`text-bill-number-${bill.id}`}>
-                                    <div className="flex items-center gap-1">
-                                      {bill.billNumber}
-                                      {(bill as any).billType === "credit" && (
-                                        <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
-                                      )}
-                                    </div>
-                                  </TableCell>
-                                );
-                              case "status":
-                                return (
-                                  <TableCell key="status" style={{ minWidth: 130, width: 130 }} className="px-2 py-1" data-testid={`badge-bill-status-${bill.id}`}>
-                                    {getStatusBadge(bill.status, "sm")}
-                                  </TableCell>
-                                );
-                              case "supplier":
-                                return (
-                                  <TableCell key="supplier" style={{ minWidth: 160, width: 160 }} className="text-xs px-2 py-1" data-testid={`text-supplier-name-${bill.id}`}>
-                                    <div className="flex items-center gap-1">
-                                      <Building2 className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                                      <span className="truncate">{getSupplierName(bill.supplierId, bill)}</span>
-                                    </div>
-                                  </TableCell>
-                                );
-                              case "project":
-                                return (
-                                  <TableCell key="project" style={{ minWidth: 150, width: 150 }} className="px-2 py-1" data-testid={`text-project-${bill.id}`}>
-                                    {project && (
-                                      <div className="flex items-center gap-1.5">
-                                        <ProjectIcon icon={project.icon} color={project.color} className="w-3 h-3 flex-shrink-0" />
-                                        <span className="text-xs truncate">{project.name}</span>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                );
-                              case "reference":
-                                return (
-                                  <TableCell key="reference" style={{ minWidth: 120, width: 120 }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`text-reference-${bill.id}`}>
-                                    {bill.billReference || "-"}
-                                  </TableCell>
-                                );
-                              case "date":
-                                return (
-                                  <TableCell key="date" style={{ minWidth: 100, width: 100 }} className="text-xs px-2 py-1" data-testid={`text-date-${bill.id}`}>
-                                    <div className="flex items-center gap-1">
-                                      <Calendar className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                                      {formatDate(bill.billDate)}
-                                    </div>
-                                  </TableCell>
-                                );
-                              case "total":
-                                return (
-                                  <TableCell key="total" style={{ minWidth: 90, width: 90 }} className={cn("text-xs font-medium text-right px-2 py-1", (bill as any).billType === "credit" && "text-green-600 dark:text-green-400")} data-testid={`text-total-${bill.id}`}>
-                                    {(bill as any).billType === "credit" ? `-${formatCurrency(bill.total)}` : formatCurrency(bill.total)}
-                                  </TableCell>
-                                );
-                              case "xero": {
-                                const syncStatus = (bill as any).xeroLastSyncStatus as string | undefined;
-                                const syncErr = (bill as any).xeroLastSyncError as string | undefined;
-                                const syncAt = (bill as any).xeroLastSyncAt as string | undefined;
-                                const tip = syncStatus === "failed"
-                                  ? `Last push failed${syncAt ? ` (${new Date(syncAt).toLocaleString()})` : ""}: ${syncErr || "unknown error"}`
-                                  : syncStatus === "success" && syncAt
-                                    ? `Synced ${new Date(syncAt).toLocaleString()}`
-                                    : bill.xeroInvoiceId ? "Linked to Xero" : "";
-                                return (
-                                  <TableCell key="xero" style={{ minWidth: 50, width: 50 }} className="text-center px-2 py-1" data-testid={`icon-sync-${bill.id}`}>
-                                    {syncStatus === "failed" ? (
-                                      <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
-                                    ) : bill.xeroInvoiceId ? (
-                                      <span title={tip}><Circle className="h-3 w-3 inline fill-blue-500 text-blue-500" /></span>
-                                    ) : null}
-                                  </TableCell>
-                                );
-                              }
-                              case "due":
-                                return (
-                                  <TableCell key="due" style={{ minWidth: 90, width: 90 }} className="text-xs font-medium text-right px-2 py-1" data-testid={`text-due-${bill.id}`}>
-                                    {formatCurrency(dueAmount)}
-                                  </TableCell>
-                                );
-                              case "attachments":
-                                return (
-                                  <TableCell key="attachments" style={{ minWidth: 40, width: 40 }} className="text-center px-2 py-1" data-testid={`text-attachments-${bill.id}`}>
-                                    {attachmentCount > 0 && (
-                                      <Popover>
-                                        <PopoverTrigger asChild>
-                                          <button className="flex items-center justify-center gap-0.5 mx-auto hover-elevate rounded px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                            <FileText className="h-3 w-3" />
-                                            <span className="text-xs">{attachmentCount}</span>
-                                          </button>
-                                        </PopoverTrigger>
-                                        <PopoverContent side="left" align="center" className="w-72 p-2" onClick={(e) => e.stopPropagation()}>
-                                          <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({attachmentCount})</p>
-                                          <div className="flex flex-col gap-1">
-                                            {(bill.attachmentUrls as string[]).map((url, idx) => {
-                                              const filename = url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
-                                              const isImage = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
-                                              return (
-                                                <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-md p-1.5 hover-elevate">
-                                                  {isImage ? (
-                                                    <img src={url} alt={filename} className="h-8 w-8 rounded object-cover shrink-0 border border-border" />
-                                                  ) : (
-                                                    <div className="h-8 w-8 rounded border border-border bg-muted flex items-center justify-center shrink-0">
-                                                      <FileText className="h-4 w-4 text-muted-foreground" />
-                                                    </div>
-                                                  )}
-                                                  <span className="text-xs truncate text-foreground">{decodeURIComponent(filename)}</span>
-                                                </a>
-                                              );
-                                            })}
-                                          </div>
-                                        </PopoverContent>
-                                      </Popover>
-                                    )}
-                                  </TableCell>
-                                );
-                              default:
-                                return null;
-                            }
-                          })}
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
+            {/* DataTable */}
+            <div className="flex-1 min-h-0">
+              {filteredBills.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="flex flex-col items-center gap-3">
+                    <p className="text-muted-foreground text-sm">
+                      {bills.length === 0 ? "No bills found" : "No matching bills"}
+                    </p>
+                    {bills.length === 0 && (
+                      <button
+                        className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                        onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
+                        data-testid="button-add-first-bill"
+                      >
+                        <Plus className="w-3.5 h-3.5" />Add First Bill
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <DataTable
+                  storageKey="bills"
+                  data={filteredBills}
+                  columns={billColumns}
+                  rowKey={(b) => b.id}
+                  onRowClick={(b) => handleRowClick(b.id)}
+                  className="max-h-[calc(100vh-260px)]"
+                />
+              )}
             </div>
           </div>
         )}
@@ -1102,3 +1042,4 @@ export default function Bills() {
     </div>
   );
 }
+

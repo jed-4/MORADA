@@ -1,5 +1,7 @@
-import { useState, useMemo, useRef, useCallback, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useLocation, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,11 +25,6 @@ import {
   Loader2,
   RefreshCw,
   Columns3,
-  ChevronUp,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
 } from "lucide-react";
 import { type ClientInvoice, type Project, type Variation } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -90,91 +87,8 @@ const SORTABLE_COLUMNS = new Set<ColumnKey>([
   "invoice_number", "name", "status", "invoice_date", "due_date", "total", "paid", "due",
 ]);
 
-type SortDir = "asc" | "desc" | null;
-
-const ACTIONS_WIDTH = 56; // w-14
+const ACTIONS_WIDTH = 72;
 const PROJECT_COL_WIDTH = 160;
-const ROW_PADDING = 24; // px-3 both sides
-const GAP = 8; // gap-2
-
-// ── Header cell with sort + resize ────────────────────────────────────────
-
-function HeaderCell({
-  col,
-  width,
-  sortCol,
-  sortDir,
-  onSort,
-  onResize,
-}: {
-  col: ColumnConfig;
-  width: number;
-  sortCol: ColumnKey | null;
-  sortDir: SortDir;
-  onSort: (key: ColumnKey) => void;
-  onResize: (key: ColumnKey, w: number) => void;
-}) {
-  const isSortable = SORTABLE_COLUMNS.has(col.key);
-  const isActive = sortCol === col.key;
-  const dir = isActive ? sortDir : null;
-  const [isResizing, setIsResizing] = useState(false);
-  const startXRef = useRef(0);
-  const startWRef = useRef(width);
-
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsResizing(true);
-    startXRef.current = e.clientX;
-    startWRef.current = width;
-
-    const onMove = (mv: MouseEvent) => {
-      const delta = mv.clientX - startXRef.current;
-      const newW = Math.max(col.minWidth, startWRef.current + delta);
-      onResize(col.key, newW);
-    };
-    const onUp = () => {
-      setIsResizing(false);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
-
-  return (
-    <div
-      className={cn(
-        "relative flex items-center gap-0.5 select-none text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0 group/hdr",
-        col.align === "right"  && "justify-end",
-        col.align === "center" && "justify-center",
-        isSortable && "cursor-pointer hover:text-foreground",
-      )}
-      style={{ width: `${width}px` }}
-      onClick={() => isSortable && onSort(col.key)}
-    >
-      <span className="truncate">{col.label}</span>
-      {isSortable && (
-        <>
-          {dir === "asc"  && <ArrowUp   className="h-2.5 w-2.5 flex-shrink-0" />}
-          {dir === "desc" && <ArrowDown  className="h-2.5 w-2.5 flex-shrink-0" />}
-          {!dir           && <ArrowUpDown className="h-2.5 w-2.5 flex-shrink-0 opacity-0 group-hover/hdr:opacity-40" />}
-        </>
-      )}
-      {/* Resize handle */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center"
-        onMouseDown={handleResizeMouseDown}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={cn(
-          "w-0.5 h-4 rounded-full transition-colors",
-          isResizing ? "bg-primary" : "bg-transparent group-hover/hdr:bg-border"
-        )} />
-      </div>
-    </div>
-  );
-}
 
 // ── Main component ─────────────────────────────────────────────────────────
 
@@ -188,45 +102,6 @@ export default function ClientInvoices() {
   const [searchQuery, setSearchQuery]       = useState("");
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
   const [colPopoverOpen, setColPopoverOpen]       = useState(false);
-  const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
-
-  // Column widths (pixel values, keyed by ColumnKey)
-  const [colWidths, setColWidths] = useState<Record<ColumnKey, number>>(() =>
-    Object.fromEntries(DEFAULT_COLUMNS.map((c) => [c.key, c.defaultWidth])) as Record<ColumnKey, number>
-  );
-
-  // Sort state
-  const [sortCol, setSortCol] = useState<ColumnKey | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>(null);
-
-  const handleSort = useCallback((key: ColumnKey) => {
-    setSortCol((prevCol) => {
-      if (prevCol !== key) {
-        setSortDir("asc");
-        return key;
-      }
-      // Same column — cycle asc → desc → clear
-      setSortDir((prevDir) => {
-        if (prevDir === "asc") return "desc";
-        // desc → clear: also reset sortCol
-        setSortCol(null);
-        return null;
-      });
-      return prevCol;
-    });
-  }, []);
-
-  const handleResize = useCallback((key: ColumnKey, w: number) => {
-    setColWidths((prev) => ({ ...prev, [key]: w }));
-  }, []);
-
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const bodyScrollRef   = useRef<HTMLDivElement>(null);
-  const syncHeaderScroll = useCallback(() => {
-    if (headerScrollRef.current && bodyScrollRef.current) {
-      headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
-    }
-  }, []);
 
   // ── Queries ───────────────────────────────────────────────────────────────
 
@@ -299,40 +174,8 @@ export default function ClientInvoices() {
       );
     });
 
-    if (sortCol && sortDir) {
-      list = [...list].sort((a, b) => {
-        let cmp = 0;
-        switch (sortCol) {
-          case "invoice_number":
-            cmp = (a.invoiceNumber || "").localeCompare(b.invoiceNumber || "");
-            break;
-          case "name":
-            cmp = ((a as any).name || "").localeCompare((b as any).name || "");
-            break;
-          case "status":
-            cmp = (a.status || "").localeCompare(b.status || "");
-            break;
-          case "invoice_date":
-            cmp = new Date(a.invoiceDate ?? 0).getTime() - new Date(b.invoiceDate ?? 0).getTime();
-            break;
-          case "due_date":
-            cmp = new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime();
-            break;
-          case "total":
-            cmp = a.totalAmount - b.totalAmount;
-            break;
-          case "paid":
-            cmp = a.paidAmount - b.paidAmount;
-            break;
-          case "due":
-            cmp = a.balanceAmount - b.balanceAmount;
-            break;
-        }
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
     return list;
-  }, [invoices, searchQuery, projects, sortCol, sortDir]);
+  }, [invoices, searchQuery, projects]);
 
   const statusCounts = useMemo(() =>
     STATUS_OPTIONS.reduce((acc, s) => ({
@@ -377,30 +220,7 @@ export default function ClientInvoices() {
 
   // ── Column management ─────────────────────────────────────────────────────
 
-  const visibleColumns = useMemo(() => columns.filter((c) => c.visible), [columns]);
-
-  const moveColumn = (key: ColumnKey, dir: -1 | 1) => {
-    setColumns((prev) => {
-      const idx = prev.findIndex((c) => c.key === key);
-      const newIdx = idx + dir;
-      if (newIdx < 0 || newIdx >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
-      return next;
-    });
-  };
-
-  const toggleColumn = (key: ColumnKey) => {
-    setColumns((prev) => prev.map((c) => c.key === key ? { ...c, visible: !c.visible } : c));
-  };
-
-  // Total inner width for the min-width wrapper (enables horizontal scroll)
-  const totalInnerWidth = useMemo(() => {
-    const colsWidth = visibleColumns.reduce((s, c) => s + colWidths[c.key], 0);
-    const gapsWidth = Math.max(0, visibleColumns.length - 1) * GAP;
-    const projectCol = projectIdFromUrl ? 0 : PROJECT_COL_WIDTH + GAP;
-    return ROW_PADDING + colsWidth + gapsWidth + projectCol + GAP + ACTIONS_WIDTH;
-  }, [visibleColumns, colWidths, projectIdFromUrl]);
+  // (moved below renderCell — column defs are built from DEFAULT_COLUMNS + renderCell)
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -505,15 +325,111 @@ export default function ClientInvoices() {
     }
 
     return (
-      <div
-        key={col.key}
-        className={cn("flex items-start flex-shrink-0", alignClass)}
-        style={{ width: `${colWidths[col.key]}px` }}
-      >
+      <div className={cn("flex items-center w-full", alignClass)}>
         {content}
       </div>
     );
   };
+
+  // ── TanStack column defs ─────────────────────────────────────────────────
+  const columnDefs = useMemo<ColumnDef<ClientInvoice, any>[]>(() => {
+    const defs: ColumnDef<ClientInvoice, any>[] = DEFAULT_COLUMNS.map((col) => ({
+      id: col.key,
+      header: col.label,
+      enableSorting: SORTABLE_COLUMNS.has(col.key),
+      size: col.defaultWidth,
+      minSize: col.minWidth,
+      accessorFn: (inv) => {
+        switch (col.key) {
+          case "invoice_number": return inv.invoiceNumber || "";
+          case "name":           return (inv as any).name || "";
+          case "status":         return inv.status || "";
+          case "invoice_date":   return inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0;
+          case "due_date":       return inv.dueDate ? new Date(inv.dueDate).getTime() : 0;
+          case "total":          return inv.totalAmount;
+          case "paid":           return inv.paidAmount;
+          case "due":            return inv.balanceAmount;
+          default:               return "";
+        }
+      },
+      cell: ({ row }) => renderCell(col, row.original),
+      meta: {
+        defaultWidth: col.defaultWidth,
+        align: col.align,
+        headerLabel: col.label,
+      } satisfies DataTableColumnMeta,
+    }));
+
+    if (!projectIdFromUrl) {
+      defs.push({
+        id: "project",
+        header: "Project",
+        enableSorting: false,
+        size: PROJECT_COL_WIDTH,
+        minSize: 100,
+        cell: ({ row }) => {
+          const proj = getProject(row.original.projectId);
+          if (!proj) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <div className="flex items-center gap-1.5" data-testid={`cell-project-${row.original.id}`}>
+              <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
+              <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
+            </div>
+          );
+        },
+        meta: { defaultWidth: PROJECT_COL_WIDTH, headerLabel: "Project" } satisfies DataTableColumnMeta,
+      });
+    }
+
+    defs.push({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      size: ACTIONS_WIDTH,
+      minSize: ACTIONS_WIDTH,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1" data-testid={`cell-actions-${row.original.id}`}>
+          <button
+            className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
+            onClick={(e) => { e.stopPropagation(); handleRowClick(row.original.id); }}
+            data-testid={`button-view-${row.original.id}`}
+          >
+            <Eye className="h-3 w-3" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" data-testid={`button-menu-${row.original.id}`}>
+                <MoreVertical className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" data-testid={`menu-${row.original.id}`}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRowClick(row.original.id); }} data-testid={`menu-edit-${row.original.id}`}>Edit</DropdownMenuItem>
+              <DropdownMenuItem data-testid={`menu-duplicate-${row.original.id}`}>Duplicate</DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${row.original.id}`}>Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      meta: { defaultWidth: ACTIONS_WIDTH, pinned: true, align: "right", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    });
+
+    return defs;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIdFromUrl, projects]);
+
+  const pickerColumns = useMemo(
+    () => columnDefs
+      .filter((c) => c.id !== "actions")
+      .map((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        return {
+          id: c.id as string,
+          label: meta.headerLabel ?? (c.id as string),
+          pinned: !!meta.pinned || c.id === "invoice_number" || c.id === "name",
+        };
+      }),
+    [columnDefs],
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -714,141 +630,41 @@ export default function ClientInvoices() {
                       <Columns3 className="w-3.5 h-3.5" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-56 p-2" align="end" data-testid="popover-columns">
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1 mb-2">Columns</p>
-                    <div className="space-y-0.5">
-                      {columns.map((col, idx) => (
-                        <div key={col.key} className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group">
-                          <input
-                            type="checkbox"
-                            checked={col.visible}
-                            disabled={col.required}
-                            onChange={() => !col.required && toggleColumn(col.key)}
-                            className="w-3.5 h-3.5 accent-[#A890D4] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          />
-                          <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
-                            {col.label}
-                            {col.inactive && <span className="ml-1 text-[10px] text-muted-foreground/50 italic">soon</span>}
-                          </span>
-                          <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20" onClick={() => moveColumn(col.key, -1)} disabled={idx === 0}>
-                              <ChevronUp className="w-2.5 h-2.5 text-muted-foreground" />
-                            </button>
-                            <button className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20" onClick={() => moveColumn(col.key, 1)} disabled={idx === columns.length - 1}>
-                              <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  <PopoverContent className="w-56 p-0" align="end" data-testid="popover-columns">
+                    <DataTableColumnPicker storageKey="client-invoices" columns={pickerColumns} />
                   </PopoverContent>
                 </Popover>
               </div>
           </div>
 
-          {/* Table area — column header extracted for correct sticky behaviour */}
-
-          {/* Column header row — sticky, overflow-hidden so it clips without scrollbar */}
-          {!invoicesLoading && filteredInvoices.length > 0 && (
-            <div
-              ref={headerScrollRef}
-              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/30"
-            >
-              <div style={{ minWidth: `${totalInnerWidth}px` }}>
-                <div className="h-7 px-3 flex items-center gap-2">
-                  {visibleColumns.map((col) => (
-                    <HeaderCell
-                      key={col.key}
-                      col={col}
-                      width={colWidths[col.key]}
-                      sortCol={sortCol}
-                      sortDir={sortDir}
-                      onSort={handleSort}
-                      onResize={handleResize}
-                    />
-                  ))}
-                  {!projectIdFromUrl && (
-                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }}>
-                      Project
-                    </div>
-                  )}
-                  <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
-                </div>
-              </div>
+          {/* Table */}
+          {invoicesLoading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
+          ) : filteredInvoices.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3">
+              <FileText className="w-8 h-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">
+                {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
+              </p>
+              {invoices.length === 0 && (
+                <Button size="sm" variant="outline" className="h-7 text-xs px-3" onClick={handleCreateInvoice} data-testid="button-add-first-invoice">
+                  <Plus className="w-3 h-3 mr-1" />
+                  Create First Invoice
+                </Button>
+              )}
+            </div>
+          ) : (
+            <DataTable
+              data={filteredInvoices}
+              columns={columnDefs}
+              storageKey="client-invoices"
+              rowKey={(inv) => inv.id}
+              onRowClick={(inv) => handleRowClick(inv.id)}
+              rowHeight={40}
+            />
           )}
-
-          {/* Body — scrolls horizontally; scroll position synced to header */}
-          <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto">
-            <div style={{ minWidth: `${totalInnerWidth}px` }}>
-
-            {/* Body — loading / empty / rows */}
-            {invoicesLoading ? (
-              <div className="flex items-center justify-center h-48">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredInvoices.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 gap-3">
-                <FileText className="w-8 h-8 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">
-                  {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
-                </p>
-                {invoices.length === 0 && (
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-3" onClick={handleCreateInvoice} data-testid="button-add-first-invoice">
-                    <Plus className="w-3 h-3 mr-1" />
-                    Create First Invoice
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                {/* Data rows */}
-                {filteredInvoices.map((invoice) => (
-                  <div
-                    key={invoice.id}
-                    className="min-h-[40px] px-3 flex items-center gap-2 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
-                    onClick={() => handleRowClick(invoice.id)}
-                    data-testid={`row-invoice-${invoice.id}`}
-                  >
-                    {visibleColumns.map((col) => renderCell(col, invoice))}
-
-                    {!projectIdFromUrl && (() => {
-                      const proj = getProject(invoice.projectId);
-                      return (
-                        <div key="project" className="flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }} data-testid={`cell-project-${invoice.id}`}>
-                          {proj ? (
-                            <div className="flex items-center gap-1.5">
-                              <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
-                              <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
-                            </div>
-                          ) : <span className="text-xs text-muted-foreground">—</span>}
-                        </div>
-                      );
-                    })()}
-
-                    <div className="flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ width: `${ACTIONS_WIDTH}px` }} data-testid={`cell-actions-${invoice.id}`}>
-                      <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }} data-testid={`button-view-${invoice.id}`}>
-                        <Eye className="h-3 w-3" />
-                      </button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" data-testid={`button-menu-${invoice.id}`}>
-                            <MoreVertical className="h-3 w-3" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }} data-testid={`menu-edit-${invoice.id}`}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-            </div>{/* end minWidth */}
-          </div>{/* end overflow-x-auto body */}
         </div>{/* end card */}
       </div>{/* end flex-1 scroll */}
     </div>
