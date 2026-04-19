@@ -495,7 +495,7 @@ function DataTableRow<TData>({
           <td
             key={cell.id}
             className={cn(
-              "px-2 text-xs align-middle",
+              "px-2 text-xs align-middle overflow-hidden text-ellipsis whitespace-nowrap",
               meta.align === "right" && "text-right",
               meta.align === "center" && "text-center",
             )}
