@@ -1770,6 +1770,7 @@ export const bills = pgTable("bills", {
   tax: integer("tax").notNull().default(0), // Tax amount in cents
   total: integer("total").notNull().default(0), // Total amount in cents
   paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
+  taxMode: text("tax_mode").notNull().default("exclusive"), // "inclusive" or "exclusive" — line totals interpretation
   sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
   xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
   xeroPaidStatus: text("xero_paid_status"), // Synced from Xero

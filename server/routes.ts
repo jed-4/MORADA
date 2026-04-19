@@ -193,6 +193,92 @@ type PushBillResult = {
   validationErrors?: XeroValidationIssue[];
 };
 
+/**
+ * Best-effort uploader: streams each BuildPro attachment on a bill into the
+ * matching Xero invoice via the Attachments endpoint. Idempotent — files
+ * whose filename already exists on the Xero invoice are skipped.
+ */
+async function pushBillAttachmentsToXero(
+  connectionId: string,
+  xeroInvoiceId: string,
+  bill: any,
+  companyId?: string,
+): Promise<void> {
+  type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
+  const raw: Att[] = Array.isArray(bill?.attachmentUrls) ? bill.attachmentUrls : [];
+  if (raw.length === 0) return;
+
+  // Lazy-import to avoid a circular at module-load time.
+  const { ObjectStorageService } = await import("./replit_integrations/object_storage");
+  const oss = new ObjectStorageService();
+
+  let existingNames = new Set<string>();
+  try {
+    const existing = await xeroService.getInvoiceAttachments(connectionId, xeroInvoiceId);
+    existingNames = new Set(
+      existing.map((a) => (typeof a.FileName === "string" ? a.FileName : "")).filter(Boolean),
+    );
+  } catch (e: any) {
+    // If we can't list, fall back to "upload everything" — Xero will reject
+    // duplicate filenames with a 400 which we surface in the per-file catch.
+    console.warn("[pushBillAttachmentsToXero] could not list existing attachments:", e?.message || e);
+  }
+
+  for (const entry of raw) {
+    const objectPath = typeof entry === "string" ? entry : entry?.objectPath;
+    if (!objectPath || typeof objectPath !== "string") continue;
+
+    // Object paths may have been stored either as the raw `/objects/...`
+    // form or the company-scoped `/objects/company/<id>/objects/...` form
+    // emitted by uploadObjectEntity. Normalise to the raw form expected by
+    // getObjectEntityFile.
+    let normalised = objectPath;
+    const m = normalised.match(/^\/objects\/company\/[^/]+(\/.+)$/);
+    if (m && m[1]) normalised = `/objects${m[1].startsWith("/") ? m[1] : `/${m[1]}`}`;
+    if (!normalised.startsWith("/objects/")) {
+      console.warn(`[pushBillAttachmentsToXero] skipping non-object-path entry: ${objectPath}`);
+      continue;
+    }
+
+    const richFilename = typeof entry === "string" ? undefined : entry?.filename;
+    const fallbackName = decodeURIComponent(objectPath.split("?")[0].split("#")[0].split("/").pop() || "attachment");
+    const filename = richFilename || fallbackName;
+
+    if (existingNames.has(filename)) continue;
+
+    try {
+      const file = await oss.getObjectEntityFile(normalised);
+      const [metadata] = await file.getMetadata();
+      // Defense in depth: when an object has a stamped companyId in its
+      // metadata, refuse to push it to Xero unless it matches the bill's
+      // company. Objects uploaded via the legacy presigned-URL flow may not
+      // have this stamp — those are still permitted (they live under our
+      // PRIVATE_OBJECT_DIR which getObjectEntityFile already enforces).
+      const objCompanyId = (metadata?.metadata as any)?.companyId as string | undefined;
+      if (companyId && objCompanyId && objCompanyId !== companyId) {
+        console.warn(
+          `[pushBillAttachmentsToXero] skipping ${filename} — object companyId ${objCompanyId} does not match bill company ${companyId}`,
+        );
+        continue;
+      }
+      const contentType = (typeof entry === "object" && entry?.mimeType)
+        || (metadata?.contentType as string | undefined)
+        || "application/octet-stream";
+      const [buffer] = await file.download();
+      await xeroService.uploadInvoiceAttachment(
+        connectionId,
+        xeroInvoiceId,
+        filename,
+        contentType,
+        buffer,
+      );
+      existingNames.add(filename);
+    } catch (e: any) {
+      console.warn(`[pushBillAttachmentsToXero] failed for ${filename}:`, e?.message || e);
+    }
+  }
+}
+
 async function pushBillToXeroInternal(
   billId: string,
   companyId: string,
@@ -444,12 +530,22 @@ async function pushBillToXeroInternal(
       console.warn("[pushBillToXeroInternal] tax-rate pre-flight skipped:", (e as any)?.message || e);
     }
 
+    // Reference mapping:
+    //   - Supplier's invoice number (bill.billReference) → Xero InvoiceNumber
+    //     (this is what users search by in Xero and what controls the
+    //     "Invoice already exists" duplicate check on the Xero side).
+    //   - BuildPro's internal bill number → Xero Reference (for cross-system
+    //     traceability).
     const billPayload = {
       supplierName,
       supplierXeroContactId,
       billDate: formatDate(bill.billDate),
       dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
-      reference: bill.billReference || bill.billNumber,
+      reference: bill.billNumber || undefined,
+      invoiceNumber: bill.billReference || undefined,
+      taxMode: ((bill as any).taxMode === "inclusive" ? "inclusive" : "exclusive") as
+        | "inclusive"
+        | "exclusive",
       lineItems: xeroLineItems,
     };
 
@@ -463,6 +559,18 @@ async function pushBillToXeroInternal(
           xeroInvoiceId: xeroBill.InvoiceID,
           sendToXero: true,
         } as any);
+      }
+    }
+
+    // Best-effort: push BuildPro attachments to Xero. Failures here must not
+    // fail the overall sync — the bill itself is already in Xero. We log a
+    // warning and let users retry from the bill page.
+    const xeroInvoiceIdForAttachments = xeroBill?.InvoiceID || bill.xeroInvoiceId;
+    if (xeroInvoiceIdForAttachments) {
+      try {
+        await pushBillAttachmentsToXero(connection.id, xeroInvoiceIdForAttachments, bill, companyId);
+      } catch (e: any) {
+        console.warn("[pushBillToXeroInternal] attachment sync warning:", e?.message || e);
       }
     }
 
@@ -591,7 +699,10 @@ async function syncBillFromXeroInternal(
       xeroLastSyncError: null,
       ...(billDate ? { billDate } : {}),
       ...(dueDate ? { dueDate } : {}),
-      ...(invoice.Reference ? { billReference: invoice.Reference } : {}),
+      // Reference mapping (mirror of push):
+      //   Xero InvoiceNumber → BuildPro billReference (supplier's invoice #).
+      //   Xero Reference holds our own bill number; we don't overwrite it back.
+      ...(invoice.InvoiceNumber ? { billReference: invoice.InvoiceNumber } : {}),
       ...(extraNotes ? { notes: ((bill as any).notes ? (bill as any).notes + "\n" : "") + extraNotes } : {}),
     } as any);
 
@@ -23999,7 +24110,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             status,
             billDate,
             dueDate,
-            billReference: xeroInvoice.Reference || xeroInvoice.InvoiceNumber || undefined,
+            // Prefer Xero InvoiceNumber (the supplier's invoice #) for our
+            // billReference; fall back to Reference for legacy invoices that
+            // only had a Reference set.
+            billReference: xeroInvoice.InvoiceNumber || xeroInvoice.Reference || undefined,
             notes: `Imported from Xero (${xeroInvoice.InvoiceNumber || xeroInvoiceId})`,
             subtotal: subtotalCents,
             tax: taxCents,

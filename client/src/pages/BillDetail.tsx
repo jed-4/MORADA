@@ -362,7 +362,11 @@ export default function BillDetail() {
       form.reset({
         billNumber: bill.billNumber,
         projectId: bill.projectId,
-        supplierId: bill.supplierId,
+        // Bills imported from Xero (or created before a supplier link) may
+        // have a null supplierId. The form schema requires a non-empty
+        // string; coerce to "" so the page still renders (unsaved bills
+        // already use "" as their default).
+        supplierId: bill.supplierId || "",
         billType: bill.billType as "bill" | "credit",
         status: bill.status as "draft" | "awaiting_approval" | "awaiting_payment" | "paid",
         billDate: bill.billDate ? format(new Date(bill.billDate), "yyyy-MM-dd") : "",
@@ -370,9 +374,15 @@ export default function BillDetail() {
         billReference: bill.billReference || "",
         notes: bill.notes || "",
         reminders: bill.reminders || "",
-        paidAmount: bill.paidAmount / 100,
-        sendToXero: bill.sendToXero,
+        paidAmount: (bill.paidAmount || 0) / 100,
+        sendToXero: !!bill.sendToXero,
       });
+      // Hydrate the persisted tax mode so reopening a bill calculates totals
+      // the same way the user originally entered them.
+      const persistedTaxMode = (bill as any).taxMode;
+      if (persistedTaxMode === "inclusive" || persistedTaxMode === "exclusive") {
+        setTaxMode(persistedTaxMode);
+      }
       // attachmentUrls may now contain either legacy string entries or rich
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
@@ -695,6 +705,16 @@ export default function BillDetail() {
 
   const createMutation = useMutation({
     mutationFn: async (data: BillFormData) => {
+      // Safety net: include any pending attachments (e.g. uploaded via OCR
+      // during this session) that haven't yet propagated into attachmentUrls
+      // state — guarantees the file persists with the new bill even if a
+      // setState batch lagged behind the user clicking Save.
+      const mergedPaths: string[] = [...attachmentUrls];
+      for (const p of pendingAttachments) {
+        if (p?.objectPath && !mergedPaths.includes(p.objectPath)) {
+          mergedPaths.push(p.objectPath);
+        }
+      }
       const billData = {
         ...data,
         billDate: new Date(data.billDate),
@@ -703,10 +723,11 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
+        taxMode,
         // Persist rich attachment objects when we have them (for files uploaded
         // in this session); fall back to bare object-path strings otherwise.
         // Server schema accepts a union of either shape.
-        attachmentUrls: attachmentUrls.map((url) => {
+        attachmentUrls: mergedPaths.map((url) => {
           const rich = pendingAttachments.find((p) => p.objectPath === url);
           return rich
             ? { ...rich, uploadedAt: new Date().toISOString() }
@@ -826,6 +847,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
+        taxMode,
         // attachmentUrls is intentionally omitted — attachments are managed
         // through the dedicated POST /api/bills/:id/attachments endpoint to
         // preserve richer metadata and avoid overwriting concurrent uploads.

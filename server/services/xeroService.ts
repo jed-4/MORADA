@@ -31,7 +31,17 @@ export interface XeroBillData {
   billDate: string;
   dueDate?: string;
   reference?: string;
+  invoiceNumber?: string;
+  taxMode?: "inclusive" | "exclusive";
   lineItems: XeroBillLineItem[];
+}
+
+export interface XeroAttachmentSummary {
+  AttachmentID?: string;
+  FileName?: string;
+  Url?: string;
+  MimeType?: string;
+  ContentLength?: number;
 }
 
 export interface XeroValidationIssue {
@@ -504,7 +514,7 @@ export class XeroService {
       Contact: { ContactID: contactId },
       Date: billData.billDate,
       LineItems: xeroLineItems,
-      LineAmountTypes: "Exclusive",
+      LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
       Status: "AUTHORISED",
     };
 
@@ -513,6 +523,9 @@ export class XeroService {
     }
     if (billData.reference) {
       invoicePayload.Reference = billData.reference;
+    }
+    if (billData.invoiceNumber) {
+      invoicePayload.InvoiceNumber = billData.invoiceNumber;
     }
 
     const response = await fetch(`${XERO_API_BASE}/Invoices`, {
@@ -568,12 +581,13 @@ export class XeroService {
       Contact: { ContactID: contactId },
       Date: billData.billDate,
       LineItems: xeroLineItems,
-      LineAmountTypes: "Exclusive",
+      LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
       Status: "AUTHORISED",
     };
 
     if (billData.dueDate) invoicePayload.DueDate = billData.dueDate;
     if (billData.reference) invoicePayload.Reference = billData.reference;
+    if (billData.invoiceNumber) invoicePayload.InvoiceNumber = billData.invoiceNumber;
 
     const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}`, {
       method: "POST",
@@ -592,6 +606,73 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     return data.Invoices?.[0] || data;
+  }
+
+  /**
+   * Returns the existing attachment summaries on a Xero invoice. Used to
+   * skip re-uploading files we've already pushed (idempotent attachment sync).
+   */
+  async getInvoiceAttachments(connectionId: string, xeroInvoiceId: string): Promise<XeroAttachmentSummary[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+    const response = await fetch(`${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      // 404 from Xero means "no attachments yet" — treat as empty.
+      if (response.status === 404) return [];
+      const txt = await response.text();
+      throw new Error(`Failed to list Xero attachments: ${response.status} ${txt}`);
+    }
+    const data = (await response.json()) as any;
+    return Array.isArray(data?.Attachments) ? data.Attachments : [];
+  }
+
+  /**
+   * Uploads a single file to a Xero invoice via the Attachments endpoint.
+   * Xero requires the raw file body (not multipart) and the filename in the URL.
+   * Honour Xero's 25MB cap with a clear error so callers can surface it.
+   */
+  async uploadInvoiceAttachment(
+    connectionId: string,
+    xeroInvoiceId: string,
+    filename: string,
+    contentType: string,
+    body: Buffer,
+  ): Promise<any> {
+    const MAX_BYTES = 25 * 1024 * 1024;
+    if (body.byteLength > MAX_BYTES) {
+      throw new Error(`Attachment "${filename}" exceeds Xero's 25MB limit (${body.byteLength} bytes)`);
+    }
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+    // Xero requires the filename to be URL-encoded in the path.
+    const safeName = encodeURIComponent(filename);
+    const response = await fetch(
+      `${XERO_API_BASE}/Invoices/${xeroInvoiceId}/Attachments/${safeName}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          "Content-Type": contentType || "application/octet-stream",
+          Accept: "application/json",
+        },
+        body: body as any,
+      },
+    );
+    if (!response.ok) {
+      const txt = await response.text();
+      throw new Error(`Failed to upload attachment "${filename}": ${response.status} ${txt}`);
+    }
+    return response.json().catch(() => ({}));
   }
 
   async createInvoice(connectionId: string, invoiceData: {
