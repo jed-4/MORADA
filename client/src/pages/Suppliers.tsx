@@ -3,14 +3,17 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +58,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance, type SupplierLabel } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2 } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, Store, Search, X, Building2, Users, Shield, Tag, Calendar, AlertTriangle, ChevronRight, Link2, Settings2 } from "lucide-react";
 import { z } from "zod";
 import BulkXeroContactMappingDialog from "@/components/BulkXeroContactMappingDialog";
 import { format } from "date-fns";
@@ -527,6 +530,150 @@ export default function Suppliers() {
     return PAYMENT_TERMS_OPTIONS.find(opt => opt.value === value)?.label || value;
   };
 
+  const supplierColumns = useMemo<ColumnDef<Supplier, unknown>[]>(() => {
+    const cols: (ColumnDef<Supplier, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "name",
+        header: "Name",
+        accessorFn: (s) => s.name,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2 text-sm font-medium" data-testid={`text-supplier-name-${row.original.id}`}>
+            {row.original.name}
+            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          </div>
+        ),
+        size: 220,
+        meta: { defaultWidth: 220, headerLabel: "Name" },
+      },
+      {
+        id: "email",
+        header: "Email",
+        accessorFn: (s) => s.email ?? "",
+        cell: ({ row }) => (
+          <span className="text-sm" data-testid={`text-supplier-email-${row.original.id}`}>
+            {row.original.email || <span className="text-muted-foreground">-</span>}
+          </span>
+        ),
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Email" },
+      },
+      {
+        id: "phone",
+        header: "Phone",
+        accessorFn: (s) => s.phone ?? "",
+        cell: ({ row }) => (
+          <span className="text-sm" data-testid={`text-supplier-phone-${row.original.id}`}>
+            {row.original.phone || <span className="text-muted-foreground">-</span>}
+          </span>
+        ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Phone" },
+      },
+      {
+        id: "abn",
+        header: "ABN",
+        accessorFn: (s) => s.abn ?? "",
+        cell: ({ row }) => (
+          <span className="text-sm" data-testid={`text-supplier-abn-${row.original.id}`}>
+            {row.original.abn || <span className="text-muted-foreground">-</span>}
+          </span>
+        ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "ABN" },
+      },
+      {
+        id: "paymentTerms",
+        header: "Payment Terms",
+        accessorFn: (s) => getPaymentTermsLabel(s.paymentTerms),
+        cell: ({ row }) => (
+          <span className="text-sm" data-testid={`text-supplier-payment-terms-${row.original.id}`}>
+            {getPaymentTermsLabel(row.original.paymentTerms)}
+          </span>
+        ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Payment Terms" },
+      },
+      {
+        id: "xeroStatus",
+        header: "Xero Status",
+        accessorFn: (s) => (s.xeroContactId ? "Linked" : "Not Linked"),
+        cell: ({ row }) => (
+          <span data-testid={`text-supplier-xero-status-${row.original.id}`}>
+            {row.original.xeroContactId ? (
+              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                Linked
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs">Not Linked</Badge>
+            )}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Xero Status" },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`button-actions-${row.original.id}`}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditSupplier(row.original);
+                }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteSupplier(row.original.id);
+                }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+        size: 60,
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Actions" },
+      },
+    ];
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "name", label: "Name" },
+      { id: "email", label: "Email" },
+      { id: "phone", label: "Phone" },
+      { id: "abn", label: "ABN" },
+      { id: "paymentTerms", label: "Payment Terms" },
+      { id: "xeroStatus", label: "Xero Status" },
+      { id: "actions", label: "Actions" },
+    ],
+    [],
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* Row 1 - Page Title + Action Button (36px) */}
@@ -589,6 +736,22 @@ export default function Suppliers() {
             </Button>
           )}
         </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              data-testid="button-column-picker"
+            >
+              <Settings2 className="w-3 h-3 mr-1" />
+              Columns
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0 w-auto">
+            <DataTableColumnPicker storageKey="suppliers" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Content Area */}
@@ -606,95 +769,14 @@ export default function Suppliers() {
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-xs font-medium">Name</TableHead>
-                <TableHead className="text-xs font-medium">Email</TableHead>
-                <TableHead className="text-xs font-medium">Phone</TableHead>
-                <TableHead className="text-xs font-medium">ABN</TableHead>
-                <TableHead className="text-xs font-medium">Payment Terms</TableHead>
-                <TableHead className="text-xs font-medium">Xero Status</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {suppliers.map((supplier) => (
-                <TableRow 
-                  key={supplier.id} 
-                  className="hover-elevate cursor-pointer"
-                  onClick={() => setSelectedSupplier(supplier)}
-                  data-testid={`row-supplier-${supplier.id}`}
-                >
-                  <TableCell className="text-sm font-medium py-2" data-testid={`text-supplier-name-${supplier.id}`}>
-                    <div className="flex items-center gap-2">
-                      {supplier.name}
-                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-supplier-email-${supplier.id}`}>
-                    {supplier.email || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-supplier-phone-${supplier.id}`}>
-                    {supplier.phone || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-supplier-abn-${supplier.id}`}>
-                    {supplier.abn || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-supplier-payment-terms-${supplier.id}`}>
-                    {getPaymentTermsLabel(supplier.paymentTerms)}
-                  </TableCell>
-                  <TableCell className="py-2" data-testid={`text-supplier-xero-status-${supplier.id}`}>
-                    {supplier.xeroContactId ? (
-                      <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                        Linked
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">Not Linked</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-actions-${supplier.id}`}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditSupplier(supplier);
-                          }}
-                          data-testid={`button-edit-${supplier.id}`}
-                        >
-                          <Pencil className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteSupplier(supplier.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${supplier.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            data={suppliers}
+            columns={supplierColumns}
+            storageKey="suppliers"
+            legacyConfigKey="suppliers-column-config-v1"
+            rowKey={(s) => s.id}
+            onRowClick={(s) => setSelectedSupplier(s)}
+          />
         )}
       </div>
 

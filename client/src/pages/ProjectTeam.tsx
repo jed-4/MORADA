@@ -1,19 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute } from "wouter";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -24,6 +18,15 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import AssignUserDialog from "@/components/AssignUserDialog";
 
+interface TeamUser {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  userCategory?: string | null;
+  role?: { name?: string | null } | null;
+}
+
 export default function ProjectTeam() {
   const [, params] = useRoute("/projects/:projectId/team");
   const projectId = params?.projectId || "";
@@ -31,11 +34,10 @@ export default function ProjectTeam() {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
-  // Fetch project for title display
-  const { data: project } = useQuery({
+  const { data: project } = useQuery<{ name?: string }>({
     queryKey: [`/api/projects/${projectId}`],
     queryFn: async () => {
-      const response = await fetch(`/api/projects/${projectId}`, { credentials: 'include' });
+      const response = await fetch(`/api/projects/${projectId}`, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch project");
       return response.json();
     },
@@ -44,25 +46,27 @@ export default function ProjectTeam() {
 
   const pageTitle = project?.name ? `${project.name} - Team` : "Project Team";
 
-  const { data: teamMembers = [], isLoading } = useQuery({
+  const { data: teamMembers = [], isLoading } = useQuery<TeamUser[]>({
     queryKey: [`/api/projects/${projectId}/team`],
     queryFn: async () => {
-      const response = await fetch(`/api/projects/${projectId}/team`, { credentials: 'include' });
+      const response = await fetch(`/api/projects/${projectId}/team`, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch team members");
       return response.json();
     },
     enabled: !!projectId,
   });
 
-  const teamUsers = teamMembers.filter((user: any) => user.userCategory === "team");
-  const supplierUsers = teamMembers.filter((user: any) => user.userCategory === "supplier");
+  const teamUsers = teamMembers.filter((user) => user.userCategory === "team");
+  const supplierUsers = teamMembers.filter((user) => user.userCategory === "supplier");
 
-  const filterUsers = (users: any[]) => {
+  const filterUsers = (users: TeamUser[]) => {
     if (!searchQuery) return users;
-    return users.filter((user: any) => {
-      const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
-      return fullName.includes(searchQuery.toLowerCase()) || 
-             user.email?.toLowerCase().includes(searchQuery.toLowerCase());
+    return users.filter((user) => {
+      const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.toLowerCase();
+      return (
+        fullName.includes(searchQuery.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     });
   };
 
@@ -71,9 +75,7 @@ export default function ProjectTeam() {
 
   const removeUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      return apiRequest(`/api/projects/${projectId}/team/${userId}`, {
-        method: "DELETE",
-      });
+      return apiRequest(`/api/projects/${projectId}/team/${userId}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/team`] });
@@ -97,82 +99,93 @@ export default function ProjectTeam() {
     }
   };
 
-
-  const renderUserTable = (users: any[], type: "team" | "supplier") => (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-muted/30">
-          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-            User
-          </TableHead>
-          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-            Email
-          </TableHead>
-          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-            Role
-          </TableHead>
-          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8 text-right">
-            Actions
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {users.map((user: any, index: number) => (
-          <TableRow 
-            key={user.id} 
-            className={`hover-elevate ${index % 2 === 0 ? 'bg-background' : 'bg-gray-50/50'}`}
-            data-testid={`${type}-row-${user.id}`}
+  const columns = useMemo<ColumnDef<TeamUser, unknown>[]>(() => {
+    const cols: (ColumnDef<TeamUser, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "user",
+        header: "User",
+        accessorFn: (u) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-3" data-testid={`cell-user-${row.original.id}`}>
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
+                {getUserInitials(row.original)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="font-medium text-sm">{getUserDisplayName(row.original)}</span>
+          </div>
+        ),
+        size: 240,
+        meta: { defaultWidth: 240, headerLabel: "User" },
+      },
+      {
+        id: "email",
+        header: "Email",
+        accessorFn: (u) => u.email ?? "",
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground" data-testid={`cell-email-${row.original.id}`}>
+            {row.original.email}
+          </span>
+        ),
+        size: 260,
+        meta: { defaultWidth: 260, headerLabel: "Email" },
+      },
+      {
+        id: "role",
+        header: "Role",
+        accessorFn: (u) => u.role?.name ?? "",
+        cell: ({ row }) => (
+          <Badge
+            className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
+            style={{
+              backgroundColor: "#A890D415",
+              color: "#A890D4",
+              borderColor: "#A890D430",
+            }}
+            data-testid={`cell-role-${row.original.id}`}
           >
-            <TableCell className="py-2">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
-                    {getUserInitials(user)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="font-medium text-sm">
-                  {getUserDisplayName(user)}
-                </span>
-              </div>
-            </TableCell>
-            <TableCell className="py-2 text-sm text-muted-foreground">
-              {user.email}
-            </TableCell>
-            <TableCell className="py-2">
-              <Badge 
-                className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
-                style={{
-                  backgroundColor: '#A890D415',
-                  color: '#A890D4',
-                  borderColor: '#A890D430'
-                }}
-              >
-                {user.role?.name || "No Role"}
-              </Badge>
-            </TableCell>
-            <TableCell className="py-2 text-right">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6"
-                onClick={() => handleRemoveUser(user.id)}
-                data-testid={`button-remove-${user.id}`}
-              >
-                <Trash2 className="h-3 w-3 text-destructive" />
-              </Button>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+            {row.original.role?.name || "No Role"}
+          </Badge>
+        ),
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Role" },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex justify-end" data-testid={`cell-actions-${row.original.id}`}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoveUser(row.original.id);
+              }}
+              data-testid={`button-remove-${row.original.id}`}
+            >
+              <Trash2 className="h-3 w-3 text-destructive" />
+            </Button>
+          </div>
+        ),
+        size: 80,
+        meta: { defaultWidth: 80, align: "right", pinned: true, headerLabel: "Actions" },
+      },
+    ];
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col h-full" data-testid="project-team-page">
       {/* Row 1 - Title Bar */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold text-foreground" data-testid="text-page-title">{pageTitle}</h1>
+          <h1 className="text-sm font-semibold text-foreground" data-testid="text-page-title">
+            {pageTitle}
+          </h1>
         </div>
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
@@ -215,13 +228,18 @@ export default function ProjectTeam() {
                 </div>
               ) : filteredTeamUsers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  {searchQuery 
+                  {searchQuery
                     ? `No team members found matching "${searchQuery}"`
-                    : "No team members assigned to this project"
-                  }
+                    : "No team members assigned to this project"}
                 </div>
               ) : (
-                renderUserTable(filteredTeamUsers, "team")
+                <DataTable
+                  data={filteredTeamUsers}
+                  columns={columns}
+                  storageKey="project-team-members"
+                  legacyConfigKey="project-team-column-config-v1"
+                  rowKey={(row) => row.id}
+                />
               )}
             </CardContent>
           </Card>
@@ -242,13 +260,18 @@ export default function ProjectTeam() {
                 </div>
               ) : filteredSupplierUsers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  {searchQuery 
+                  {searchQuery
                     ? `No suppliers found matching "${searchQuery}"`
-                    : "No suppliers assigned to this project"
-                  }
+                    : "No suppliers assigned to this project"}
                 </div>
               ) : (
-                renderUserTable(filteredSupplierUsers, "supplier")
+                <DataTable
+                  data={filteredSupplierUsers}
+                  columns={columns}
+                  storageKey="project-team-suppliers"
+                  legacyConfigKey="project-team-column-config-v1"
+                  rowKey={(row) => row.id}
+                />
               )}
             </CardContent>
           </Card>

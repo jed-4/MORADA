@@ -1,18 +1,16 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,17 +40,15 @@ import {
   HelpCircle,
   MoreHorizontal,
   Search,
-  Clock,
-  CheckCircle2,
   Send,
   CalendarIcon,
   AlertCircle,
-  FileText,
   Users,
+  Columns3,
 } from "lucide-react";
 import { type Rfi, type Project, type Contact, type User } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { format, formatDistanceToNow, isPast } from "date-fns";
+import { format, isPast } from "date-fns";
 import { useRfiStatusOptions } from "@/hooks/useRfiStatusOptions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -81,6 +77,7 @@ export default function RFIs() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
   const { statusOptions, getStatusInfo } = useRfiStatusOptions();
 
@@ -130,13 +127,11 @@ export default function RFIs() {
     return projects.find((p) => p.id === projectId);
   };
 
-  // Get current project for title display
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
-  const pageTitle = currentProject 
+  const pageTitle = currentProject
     ? `${currentProject.name} - Requests for Information`
     : "Requests for Information";
 
-  // Project-aware navigation helper
   const getNavigationPath = (path: string) => {
     return projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
   };
@@ -189,7 +184,7 @@ export default function RFIs() {
       });
 
       queryClient.invalidateQueries({ queryKey: ["/api/rfis"] });
-      
+
       toast({
         title: "RFI Created",
         description: `Created RFI "${response.rfiNumber}"`,
@@ -237,6 +232,205 @@ export default function RFIs() {
     const { color, label } = config[priority] || config.normal;
     return <Badge className={color}>{label}</Badge>;
   };
+
+  // ── DataTable column defs ───────────────────────────────────────────────
+  const rfiColumns = useMemo<ColumnDef<Rfi, unknown>[]>(() => {
+    const cols: (ColumnDef<Rfi, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "rfiNumber",
+        header: "RFI Number",
+        accessorFn: (r) => r.rfiNumber || "",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2 font-medium" data-testid={`cell-number-${row.original.id}`}>
+            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+            {row.original.rfiNumber}
+          </div>
+        ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "RFI Number" },
+      },
+      {
+        id: "subject",
+        header: "Subject",
+        accessorFn: (r) => r.subject || "",
+        cell: ({ row }) => (
+          <div data-testid={`cell-subject-${row.original.id}`}>
+            <div className="font-medium truncate">{row.original.subject}</div>
+            {row.original.question && (
+              <div className="text-xs text-muted-foreground line-clamp-1">
+                {row.original.question}
+              </div>
+            )}
+          </div>
+        ),
+        size: 260,
+        meta: { defaultWidth: 260, headerLabel: "Subject" },
+      },
+    ];
+
+    if (!projectIdFromUrl) {
+      cols.push({
+        id: "project",
+        header: "Project",
+        accessorFn: (r) => getProject(r.projectId)?.name || "",
+        cell: ({ row }) => {
+          const project = getProject(row.original.projectId);
+          if (!project) return <span className="text-muted-foreground">-</span>;
+          return (
+            <div className="flex items-center gap-2" data-testid={`cell-project-${row.original.id}`}>
+              <ProjectIcon color={project.color} size="sm" className="shrink-0" />
+              <span className="truncate">{project.name}</span>
+            </div>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Project" },
+      });
+    }
+
+    cols.push(
+      {
+        id: "directedTo",
+        header: "Directed To",
+        accessorFn: (r) => r.directedToName || "",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2" data-testid={`cell-directed-${row.original.id}`}>
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="truncate">{row.original.directedToName || "-"}</span>
+          </div>
+        ),
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Directed To" },
+      },
+      {
+        id: "dueDate",
+        header: "Due Date",
+        accessorFn: (r) => (r.dueDate ? new Date(r.dueDate).getTime() : 0),
+        cell: ({ row }) => {
+          const rfi = row.original;
+          const isOverdue =
+            rfi.dueDate &&
+            isPast(new Date(rfi.dueDate)) &&
+            rfi.status !== "closed" &&
+            rfi.status !== "answered";
+          if (!rfi.dueDate) {
+            return <span className="text-xs text-muted-foreground">-</span>;
+          }
+          return (
+            <div
+              className={`flex items-center gap-1 text-xs ${isOverdue ? "text-destructive" : ""}`}
+              data-testid={`cell-due-${rfi.id}`}
+            >
+              {isOverdue && <AlertCircle className="h-3.5 w-3.5" />}
+              {format(new Date(rfi.dueDate), "MMM d, yyyy")}
+            </div>
+          );
+        },
+        size: 130,
+        meta: { defaultWidth: 130, headerLabel: "Due Date" },
+      },
+      {
+        id: "priority",
+        header: "Priority",
+        accessorFn: (r) => r.priority || "normal",
+        cell: ({ row }) => (
+          <span data-testid={`cell-priority-${row.original.id}`}>
+            {getPriorityBadge(row.original.priority || "normal")}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Priority" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (r) => r.status || "",
+        cell: ({ row }) => {
+          const statusInfo = getStatusInfo(row.original.status);
+          return (
+            <Badge
+              style={{ backgroundColor: statusInfo.color, color: "#fff" }}
+              data-testid={`cell-status-${row.original.id}`}
+            >
+              {statusInfo.name}
+            </Badge>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
+        id: "createdAt",
+        header: "Created",
+        accessorFn: (r) => (r.createdAt ? new Date(r.createdAt).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-created-${row.original.id}`}>
+            {format(new Date(row.original.createdAt), "MMM d, yyyy")}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Created" },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                data-testid={`button-rfi-actions-${row.original.id}`}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRowClick(row.original.id);
+                }}
+              >
+                <HelpCircle className="mr-2 h-4 w-4" />
+                View Details
+              </DropdownMenuItem>
+              {row.original.status === "draft" && (
+                <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send RFI
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+        size: 60,
+        meta: { defaultWidth: 60, align: "center", pinned: true, headerLabel: "Actions" },
+      },
+    );
+
+    return cols;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIdFromUrl, projects, getStatusInfo]);
+
+  const pickerColumns = useMemo(() => {
+    const list: { id: string; label: string; pinned?: boolean }[] = [
+      { id: "rfiNumber", label: "RFI Number" },
+      { id: "subject", label: "Subject" },
+    ];
+    if (!projectIdFromUrl) list.push({ id: "project", label: "Project" });
+    list.push(
+      { id: "directedTo", label: "Directed To" },
+      { id: "dueDate", label: "Due Date" },
+      { id: "priority", label: "Priority" },
+      { id: "status", label: "Status" },
+      { id: "createdAt", label: "Created" },
+      { id: "actions", label: "Actions", pinned: true },
+    );
+    return list;
+  }, [projectIdFromUrl]);
 
   return (
     <div className="flex flex-col h-full">
@@ -286,17 +480,35 @@ export default function RFIs() {
             ))}
           </SelectContent>
         </Select>
+        <div className="ml-auto">
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                data-testid="button-column-picker"
+              >
+                <Columns3 className="w-3 h-3" />
+                Columns
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0 w-auto">
+              <DataTableColumnPicker storageKey="rfis" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-2">
+      <div className="flex-1 overflow-auto">
         {isLoading ? (
-          <Card className="p-8 text-center text-muted-foreground">
+          <Card className="m-2 p-8 text-center text-muted-foreground">
             Loading RFIs...
           </Card>
         ) : filteredRFIs.length === 0 ? (
           searchQuery || statusFilter !== "all" ? (
-            <Card className="p-8 text-center text-muted-foreground">
+            <Card className="m-2 p-8 text-center text-muted-foreground">
               No RFIs match your search
             </Card>
           ) : (
@@ -321,128 +533,14 @@ export default function RFIs() {
             </div>
           )
         ) : (
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>RFI Number</TableHead>
-                  <TableHead>Subject</TableHead>
-                  {!projectIdFromUrl && <TableHead>Project</TableHead>}
-                  <TableHead>Directed To</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRFIs.map((rfi) => {
-                  const project = getProject(rfi.projectId);
-                  const statusInfo = getStatusInfo(rfi.status);
-                  const isOverdue = rfi.dueDate && isPast(new Date(rfi.dueDate)) && rfi.status !== "closed" && rfi.status !== "answered";
-                  
-                  return (
-                    <TableRow
-                      key={rfi.id}
-                      className="cursor-pointer h-10 hover-elevate active-elevate-2"
-                      onClick={() => handleRowClick(rfi.id)}
-                      data-testid={`row-rfi-${rfi.id}`}
-                    >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                          {rfi.rfiNumber}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{rfi.subject}</div>
-                        {rfi.question && (
-                          <div className="text-sm text-muted-foreground line-clamp-1">
-                            {rfi.question}
-                          </div>
-                        )}
-                      </TableCell>
-                      {!projectIdFromUrl && (
-                        <TableCell>
-                          {project && (
-                            <div className="flex items-center gap-2">
-                              <ProjectIcon
-                                color={project.color}
-                                size="sm"
-                                className="shrink-0"
-                              />
-                              <span className="truncate">{project.name}</span>
-                            </div>
-                          )}
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{rfi.directedToName || "-"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {rfi.dueDate ? (
-                          <div className={`flex items-center gap-1 text-sm ${isOverdue ? "text-destructive" : ""}`}>
-                            {isOverdue && <AlertCircle className="h-3.5 w-3.5" />}
-                            {format(new Date(rfi.dueDate), "MMM d, yyyy")}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{getPriorityBadge(rfi.priority || "normal")}</TableCell>
-                      <TableCell>
-                        <Badge style={{ backgroundColor: statusInfo.color, color: "#fff" }}>
-                          {statusInfo.name}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {format(new Date(rfi.createdAt), "MMM d, yyyy")}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              data-testid={`button-rfi-actions-${rfi.id}`}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRowClick(rfi.id);
-                              }}
-                            >
-                              <HelpCircle className="mr-2 h-4 w-4" />
-                              View Details
-                            </DropdownMenuItem>
-                            {rfi.status === "draft" && (
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                }}
-                              >
-                                <Send className="mr-2 h-4 w-4" />
-                                Send RFI
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
+          <DataTable
+            data={filteredRFIs}
+            columns={rfiColumns}
+            storageKey="rfis"
+            legacyConfigKey="rfis-column-config-v1"
+            rowKey={(r) => r.id}
+            onRowClick={(r) => handleRowClick(r.id)}
+          />
         )}
       </div>
 

@@ -1,11 +1,17 @@
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Archive, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, RotateCcw, Trash2, Columns3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Project } from "@shared/schema";
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,29 +20,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 export default function ArchivedProjects() {
   const { toast } = useToast();
   const [projectToRestore, setProjectToRestore] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ['/api/projects'],
   });
 
-  const archivedProjects = projects.filter(p => p.isArchived);
+  const archivedProjects = useMemo(
+    () => projects.filter((p) => p.isArchived),
+    [projects],
+  );
 
   const restoreMutation = useMutation({
     mutationFn: async (projectId: string) => {
@@ -87,10 +94,115 @@ export default function ArchivedProjects() {
 
   const isConfirmValid = projectToDelete && confirmText === projectToDelete.name;
 
+  const columns = useMemo<ColumnDef<Project, unknown>[]>(() => {
+    const cols: (ColumnDef<Project, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "project",
+        header: "Project",
+        accessorFn: (p) => p.name || "",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2" data-testid={`cell-project-${row.original.id}`}>
+            <ProjectIcon
+              icon={row.original.icon}
+              color={row.original.color}
+              className="w-6 h-6 flex-shrink-0"
+            />
+            <span className="font-medium truncate">{row.original.name}</span>
+          </div>
+        ),
+        size: 300,
+        meta: { defaultWidth: 300, headerLabel: "Project" },
+      },
+      {
+        id: "type",
+        header: "Type",
+        accessorFn: (p) => p.projectType || "",
+        cell: ({ row }) => (
+          row.original.projectType ? (
+            <Badge variant="outline" className="text-xs">
+              {row.original.projectType}
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground text-xs">—</span>
+          )
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Type" },
+      },
+      {
+        id: "jobNumber",
+        header: "Job Number",
+        accessorFn: (p) => p.jobNumber || "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-job-${row.original.id}`}>
+            {row.original.jobNumber || '-'}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Job Number" },
+      },
+      {
+        id: "description",
+        header: "Description",
+        accessorFn: (p) => p.description || "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-desc-${row.original.id}`}>
+            {row.original.description || '-'}
+          </span>
+        ),
+        size: 320,
+        meta: { defaultWidth: 320, headerLabel: "Description" },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setProjectToRestore(row.original)}
+              data-testid={`button-restore-${row.original.id}`}
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Restore
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+              onClick={() => setProjectToDelete(row.original)}
+              data-testid={`button-delete-${row.original.id}`}
+            >
+              <Trash2 className="h-3 w-3 mr-1" />
+              Delete
+            </Button>
+          </div>
+        ),
+        size: 160,
+        meta: { defaultWidth: 160, align: "right", pinned: true, headerLabel: "Actions" },
+      },
+    ];
+    return cols;
+  }, []);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "project", label: "Project" },
+      { id: "type", label: "Type" },
+      { id: "jobNumber", label: "Job Number" },
+      { id: "description", label: "Description" },
+      { id: "actions", label: "Actions", pinned: true },
+    ],
+    [],
+  );
+
   return (
     <div className="flex h-full flex-col" data-testid="archived-projects">
-      {/* Header Row - matches Tasks page design */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0">
+      {/* Header Row */}
+      <div className="h-9 bg-background flex items-center justify-between gap-2 px-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <Archive className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Archived Projects</span>
@@ -100,6 +212,22 @@ export default function ArchivedProjects() {
             </Badge>
           )}
         </div>
+        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              data-testid="button-column-picker"
+            >
+              <Columns3 className="h-3 w-3 mr-1" />
+              Columns
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0 w-auto">
+            <DataTableColumnPicker storageKey="archived-projects" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Content */}
@@ -117,70 +245,13 @@ export default function ArchivedProjects() {
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[300px]">Project</TableHead>
-                <TableHead className="w-[120px]">Type</TableHead>
-                <TableHead className="w-[120px]">Job Number</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="w-[140px] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {archivedProjects.map((project) => (
-                <TableRow key={project.id} data-testid={`row-project-${project.id}`}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <ProjectIcon
-                        icon={project.icon}
-                        color={project.color}
-                        className="w-6 h-6 flex-shrink-0"
-                      />
-                      <span className="font-medium truncate">{project.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {project.projectType && (
-                      <Badge variant="outline" className="text-xs">
-                        {project.projectType}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {project.jobNumber || '-'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm truncate max-w-[300px]">
-                    {project.description || '-'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => setProjectToRestore(project)}
-                        data-testid={`button-restore-${project.id}`}
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1" />
-                        Restore
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                        onClick={() => setProjectToDelete(project)}
-                        data-testid={`button-delete-${project.id}`}
-                      >
-                        <Trash2 className="h-3 w-3 mr-1" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            data={archivedProjects}
+            columns={columns}
+            storageKey="archived-projects"
+            legacyConfigKey="archived-projects-column-config-v1"
+            rowKey={(p) => p.id}
+          />
         )}
       </div>
 

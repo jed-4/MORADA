@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
@@ -563,6 +565,138 @@ export default function Trades() {
     return PAYMENT_TERMS_OPTIONS.find(opt => opt.value === value)?.label || value;
   };
 
+  const tradeColumns = useMemo<ColumnDef<Supplier, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name || "",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-sm font-medium" data-testid={`text-trade-name-${row.original.id}`}>
+          {row.original.name}
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+        </div>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (t) => t.tradeCategory || "",
+      cell: ({ row }) => (
+        <span data-testid={`text-trade-category-${row.original.id}`}>
+          <Badge
+            variant="secondary"
+            className="text-xs bg-[#A890D4]/20 text-[#A890D4] border-[#A890D4]/30"
+          >
+            {row.original.tradeCategory || "Not Set"}
+          </Badge>
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Category" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "phone",
+      header: "Phone",
+      accessorFn: (t) => t.phone || "",
+      cell: ({ row }) => (
+        <span className="text-sm" data-testid={`text-trade-phone-${row.original.id}`}>
+          {row.original.phone || <span className="text-muted-foreground">-</span>}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Phone" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "license",
+      header: "License",
+      accessorFn: (t) => t.licenseNumber || "",
+      cell: ({ row }) => (
+        <span className="text-sm" data-testid={`text-trade-license-${row.original.id}`}>
+          {row.original.licenseNumber || <span className="text-muted-foreground">-</span>}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "License" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "paymentTerms",
+      header: "Payment Terms",
+      accessorFn: (t) => getPaymentTermsLabel(t.paymentTerms),
+      cell: ({ row }) => (
+        <span className="text-sm" data-testid={`text-trade-payment-terms-${row.original.id}`}>
+          {getPaymentTermsLabel(row.original.paymentTerms)}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Payment Terms" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "xeroStatus",
+      header: "Xero Status",
+      accessorFn: (t) => (t.xeroContactId ? "Linked" : "Not Linked"),
+      cell: ({ row }) => (
+        <span data-testid={`text-trade-xero-status-${row.original.id}`}>
+          {row.original.xeroContactId ? (
+            <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+              Linked
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs">Not Linked</Badge>
+          )}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Xero Status" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`button-actions-${row.original.id}`}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditTrade(row.original);
+              }}
+              data-testid={`button-edit-${row.original.id}`}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteTrade(row.original.id);
+              }}
+              className="text-destructive"
+              data-testid={`button-delete-${row.original.id}`}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+      size: 60,
+      meta: { defaultWidth: 60, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  ], []);
+
   return (
     <div className="flex h-full flex-col">
       {/* Row 1 - Page Title + Action Button (36px) */}
@@ -642,100 +776,14 @@ export default function Trades() {
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-xs font-medium">Name</TableHead>
-                <TableHead className="text-xs font-medium">Category</TableHead>
-                <TableHead className="text-xs font-medium">Phone</TableHead>
-                <TableHead className="text-xs font-medium">License</TableHead>
-                <TableHead className="text-xs font-medium">Payment Terms</TableHead>
-                <TableHead className="text-xs font-medium">Xero Status</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {trades.map((trade) => (
-                <TableRow 
-                  key={trade.id} 
-                  className="hover-elevate cursor-pointer"
-                  onClick={() => setSelectedTrade(trade)}
-                  data-testid={`row-trade-${trade.id}`}
-                >
-                  <TableCell className="text-sm font-medium py-2" data-testid={`text-trade-name-${trade.id}`}>
-                    <div className="flex items-center gap-2">
-                      {trade.name}
-                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                    </div>
-                  </TableCell>
-                  <TableCell className="py-2" data-testid={`text-trade-category-${trade.id}`}>
-                    <Badge 
-                      variant="secondary" 
-                      className="text-xs bg-[#A890D4]/20 text-[#A890D4] border-[#A890D4]/30"
-                    >
-                      {trade.tradeCategory || "Not Set"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-trade-phone-${trade.id}`}>
-                    {trade.phone || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-trade-license-${trade.id}`}>
-                    {trade.licenseNumber || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2" data-testid={`text-trade-payment-terms-${trade.id}`}>
-                    {getPaymentTermsLabel(trade.paymentTerms)}
-                  </TableCell>
-                  <TableCell className="py-2" data-testid={`text-trade-xero-status-${trade.id}`}>
-                    {trade.xeroContactId ? (
-                      <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                        Linked
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">Not Linked</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-actions-${trade.id}`}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditTrade(trade);
-                          }}
-                          data-testid={`button-edit-${trade.id}`}
-                        >
-                          <Pencil className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTrade(trade.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${trade.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            data={trades}
+            columns={tradeColumns}
+            storageKey="trades"
+            legacyConfigKey="trades-column-config-v1"
+            rowKey={(t) => t.id}
+            onRowClick={(t) => setSelectedTrade(t)}
+          />
         )}
       </div>
 

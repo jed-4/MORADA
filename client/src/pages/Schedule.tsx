@@ -2094,6 +2094,17 @@ export default function Schedule() {
         ) : (
           <>
             {activeView === "list" && (
+              // TODO(data-table): convert list view to shared <DataTable>.
+              // The list view is implemented via <CasvaScheduleList>, which
+              // supports 3-level hierarchical rows with drag-to-reorder and
+              // hold-to-nest gestures, ripple feedback, ghost drag elements,
+              // collapsible parents, and inline editing of every cell. The
+              // shared DataTable currently models a flat sortable/resizable
+              // grid only, so a migration would require either generalising
+              // DataTable to support nested rows + nesting DnD or rewriting
+              // the schedule UX. Left intentionally on the legacy path until
+              // those prerequisites land. Storage scope reserved: "schedule"
+              // (legacyConfigKey: "schedule-column-config-v1").
               <div className="flex-1 overflow-auto p-4">
                 {filteredItems.length === 0 ? (
                   <Card className="p-12 text-center">

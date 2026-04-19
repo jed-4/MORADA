@@ -6,14 +6,17 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -21,16 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { DollarSign, TrendingUp, TrendingDown, Search, ChevronDown } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, Search, Columns3 } from "lucide-react";
 import { type Estimate } from "@shared/schema";
 
 type EstimateItem = {
@@ -219,6 +216,209 @@ export default function Allowances() {
     { key: "finalized", name: "Finalized", color: "#10B981" }
   ];
 
+  // ── DataTable column defs ──────────────────────────────────────────────
+  const allowanceColumns = useMemo<ColumnDef<AllowanceWithCosts, unknown>[]>(() => {
+    const cols: (ColumnDef<AllowanceWithCosts, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "name",
+        header: "Description",
+        accessorFn: (a) => a.item.name,
+        cell: ({ row }) => (
+          <span className="font-medium" data-testid={`text-name-${row.original.item.id}`}>
+            {row.original.item.name}
+          </span>
+        ),
+        size: 300,
+        meta: { defaultWidth: 300, headerLabel: "Description" },
+      },
+      {
+        id: "type",
+        header: "Type",
+        accessorFn: (a) => a.item.allowance,
+        cell: ({ row }) => (
+          <Badge
+            variant="outline"
+            className={row.original.item.allowance === "Prime Cost"
+              ? "bg-blue-50 text-blue-700 border-blue-200"
+              : "bg-amber-50 text-amber-700 border-amber-200"
+            }
+          >
+            {row.original.item.allowance === "Prime Cost" ? "PC" : "PS"}
+          </Badge>
+        ),
+        size: 80,
+        meta: { defaultWidth: 80, headerLabel: "Type" },
+      },
+      {
+        id: "estimate",
+        header: "Estimate",
+        accessorFn: (a) => a.item.priceIncTax,
+        cell: ({ row }) => (
+          <span data-testid={`text-estimate-${row.original.item.id}`}>
+            {formatCurrency(row.original.item.priceIncTax)}
+          </span>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, align: "right", headerLabel: "Estimate" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (a) => a.item.allowanceStatus,
+        cell: ({ row }) => {
+          const item = row.original.item;
+          return (
+            <span onClick={(e) => e.stopPropagation()}>
+              <Select
+                value={item.allowanceStatus}
+                onValueChange={(value) =>
+                  updateStatusMutation.mutate({ itemId: item.id, status: value })
+                }
+                disabled={updateStatusMutation.isPending}
+              >
+                <SelectTrigger
+                  className="w-fit border-0 p-0 h-auto"
+                  data-testid={`select-status-${item.id}`}
+                >
+                  {(() => {
+                    const statusInfo = getStatusInfo(item.allowanceStatus);
+                    const color = statusInfo.color || "#6B7280";
+                    return (
+                      <Badge
+                        style={{
+                          backgroundColor: `${color}15`,
+                          color: color,
+                        }}
+                        className="border-0"
+                        data-testid={`badge-status-${item.id}`}
+                      >
+                        {statusInfo.name}
+                      </Badge>
+                    );
+                  })()}
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((opt) => (
+                    <SelectItem key={opt.key} value={opt.key}>
+                      {opt.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </span>
+          );
+        },
+        size: 130,
+        meta: { defaultWidth: 130, headerLabel: "Status" },
+      },
+      {
+        id: "markup",
+        header: "Markup",
+        accessorFn: (a) => a.item.pcMarkupPercent ?? 0,
+        cell: ({ row }) => {
+          const item = row.original.item;
+          if (item.allowance !== "Prime Cost") {
+            return <span className="text-muted-foreground text-xs">N/A</span>;
+          }
+          if (editingMarkup === item.id) {
+            return (
+              <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
+                <Input
+                  type="number"
+                  value={markupValue}
+                  onChange={(e) => setMarkupValue(e.target.value)}
+                  className="w-16 h-6 text-xs"
+                  data-testid={`input-markup-${item.id}`}
+                />
+                <span className="text-xs">%</span>
+                <Button
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => handleMarkupSave(item.id)}
+                  disabled={updateMarkupMutation.isPending}
+                  data-testid={`button-save-markup-${item.id}`}
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setEditingMarkup(null)}
+                  data-testid={`button-cancel-markup-${item.id}`}
+                >
+                  Cancel
+                </Button>
+              </div>
+            );
+          }
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMarkupEdit(item.id, item.pcMarkupPercent);
+              }}
+              data-testid={`button-edit-markup-${item.id}`}
+            >
+              {item.pcMarkupPercent || 0}%
+            </Button>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, align: "right", headerLabel: "Markup" },
+      },
+      {
+        id: "actual",
+        header: "Actual",
+        accessorFn: (a) => a.actualCost,
+        cell: ({ row }) => (
+          <span data-testid={`text-actual-${row.original.item.id}`}>
+            {formatCurrency(row.original.actualCost)}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, align: "right", headerLabel: "Actual" },
+      },
+      {
+        id: "variance",
+        header: "Variance",
+        accessorFn: (a) => a.variance,
+        cell: ({ row }) => {
+          const variance = row.original.variance;
+          return (
+            <div className="flex items-center justify-end gap-1">
+              {variance > 0 ? (
+                <TrendingUp className="h-3 w-3 text-red-500" />
+              ) : variance < 0 ? (
+                <TrendingDown className="h-3 w-3 text-green-500" />
+              ) : null}
+              <span
+                className={`text-sm ${variance > 0 ? "text-red-500" : variance < 0 ? "text-green-500" : ""}`}
+                data-testid={`text-variance-${row.original.item.id}`}
+              >
+                {formatCurrency(Math.abs(variance))}
+              </span>
+            </div>
+          );
+        },
+        size: 120,
+        meta: { defaultWidth: 120, align: "right", headerLabel: "Variance" },
+      },
+    ];
+    return cols;
+  }, [statusOptions, getStatusInfo, updateStatusMutation, updateMarkupMutation, editingMarkup, markupValue]);
+
+  const pickerColumns = useMemo(
+    () => allowanceColumns.map((c) => {
+      const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+      return { id: c.id as string, label: meta.headerLabel ?? (c.id as string) };
+    }),
+    [allowanceColumns],
+  );
+
   if (!currentProject) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16">
@@ -396,6 +596,18 @@ export default function Allowances() {
             </Badge>
           </Button>
         </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1" data-testid="button-columns">
+              <Columns3 className="w-3 h-3" />
+              <span>Columns</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0">
+            <DataTableColumnPicker storageKey="allowances" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Table Content Area */}
@@ -419,148 +631,15 @@ export default function Allowances() {
             </p>
           </div>
         ) : (
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[30%]">Description</TableHead>
-                  <TableHead className="w-[10%]">Type</TableHead>
-                  <TableHead className="w-[12%] text-right">Estimate</TableHead>
-                  <TableHead className="w-[12%]">Status</TableHead>
-                  <TableHead className="w-[10%] text-right">Markup</TableHead>
-                  <TableHead className="w-[13%] text-right">Actual</TableHead>
-                  <TableHead className="w-[13%] text-right">Variance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAllowances.map(({ item, actualCost, variance }) => (
-                  <TableRow 
-                    key={item.id}
-                    className="cursor-pointer hover-elevate"
-                    onClick={() => setLocation(`/projects/${projectId}/allowances/${item.id}`)}
-                    data-testid={`row-allowance-${item.id}`}
-                  >
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant="outline" 
-                        className={item.allowance === "Prime Cost" 
-                          ? "bg-blue-50 text-blue-700 border-blue-200" 
-                          : "bg-amber-50 text-amber-700 border-amber-200"
-                        }
-                      >
-                        {item.allowance === "Prime Cost" ? "PC" : "PS"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right" data-testid={`text-estimate-${item.id}`}>
-                      {formatCurrency(item.priceIncTax)}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Select
-                        value={item.allowanceStatus}
-                        onValueChange={(value) =>
-                          updateStatusMutation.mutate({ itemId: item.id, status: value })
-                        }
-                        disabled={updateStatusMutation.isPending}
-                      >
-                        <SelectTrigger
-                          className="w-fit border-0 p-0 h-auto"
-                          data-testid={`select-status-${item.id}`}
-                        >
-                          {(() => {
-                            const statusInfo = getStatusInfo(item.allowanceStatus);
-                            const color = statusInfo.color || "#6B7280";
-                            return (
-                              <Badge
-                                style={{
-                                  backgroundColor: `${color}15`,
-                                  color: color,
-                                }}
-                                className="border-0"
-                                data-testid={`badge-status-${item.id}`}
-                              >
-                                {statusInfo.name}
-                              </Badge>
-                            );
-                          })()}
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statusOptions.map((opt) => (
-                            <SelectItem key={opt.key} value={opt.key}>
-                              {opt.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {item.allowance === "Prime Cost" ? (
-                        editingMarkup === item.id ? (
-                          <div className="flex items-center gap-1 justify-end">
-                            <Input
-                              type="number"
-                              value={markupValue}
-                              onChange={(e) => setMarkupValue(e.target.value)}
-                              className="w-16 h-6 text-xs"
-                              data-testid={`input-markup-${item.id}`}
-                            />
-                            <span className="text-xs">%</span>
-                            <Button
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              onClick={() => handleMarkupSave(item.id)}
-                              disabled={updateMarkupMutation.isPending}
-                              data-testid={`button-save-markup-${item.id}`}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-2 text-xs"
-                              onClick={() => setEditingMarkup(null)}
-                              data-testid={`button-cancel-markup-${item.id}`}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => handleMarkupEdit(item.id, item.pcMarkupPercent)}
-                            data-testid={`button-edit-markup-${item.id}`}
-                          >
-                            {item.pcMarkupPercent || 0}%
-                          </Button>
-                        )
-                      ) : (
-                        <span className="text-muted-foreground text-xs">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right" data-testid={`text-actual-${item.id}`}>
-                      {formatCurrency(actualCost)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {variance > 0 ? (
-                          <TrendingUp className="h-3 w-3 text-red-500" />
-                        ) : variance < 0 ? (
-                          <TrendingDown className="h-3 w-3 text-green-500" />
-                        ) : null}
-                        <span
-                          className={`text-sm ${variance > 0 ? "text-red-500" : variance < 0 ? "text-green-500" : ""}`}
-                          data-testid={`text-variance-${item.id}`}
-                        >
-                          {formatCurrency(Math.abs(variance))}
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <Card className="h-full overflow-hidden">
+            <DataTable
+              data={filteredAllowances}
+              columns={allowanceColumns}
+              storageKey="allowances"
+              legacyConfigKey="allowances-column-config-v1"
+              rowKey={(r) => r.item.id}
+              onRowClick={(r) => setLocation(`/projects/${projectId}/allowances/${r.item.id}`)}
+            />
           </Card>
         )}
       </div>

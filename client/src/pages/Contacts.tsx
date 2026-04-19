@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -257,6 +259,241 @@ export default function Contacts() {
     { value: "client", label: "Clients", count: tabCounts.client },
   ];
 
+  const contactColumns = useMemo<ColumnDef<Contact, unknown>[]>(() => {
+    return [
+      {
+        id: "select",
+        header: () => (
+          <Checkbox
+            checked={filteredContacts.length > 0 && selectedIds.size === filteredContacts.length}
+            onCheckedChange={toggleSelectAll}
+            data-testid="checkbox-select-all"
+          />
+        ),
+        cell: ({ row }) => (
+          <span onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selectedIds.has(row.original.id)}
+              onCheckedChange={() => toggleSelection(row.original.id)}
+              data-testid={`checkbox-contact-${row.original.id}`}
+            />
+          </span>
+        ),
+        enableSorting: false,
+        size: 32,
+        meta: { defaultWidth: 32, align: "center", pinned: true, headerLabel: "Select" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "avatar",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const contact = row.original;
+          return (
+            <Avatar
+              className="h-7 w-7"
+              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
+            >
+              {contact.avatarUrl && (
+                <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
+              )}
+              <AvatarFallback className="text-white text-xs" style={{ backgroundColor: "transparent" }}>
+                {getInitials(contact)}
+              </AvatarFallback>
+            </Avatar>
+          );
+        },
+        size: 44,
+        meta: { defaultWidth: 44, align: "center", headerLabel: "Avatar" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "businessName",
+        header: "Business Name",
+        accessorFn: (c) => c.name || c.company || "",
+        cell: ({ row }) => {
+          const contact = row.original;
+          return (
+            <span className="text-sm font-medium">
+              {contact.name || contact.company || "-"}
+              {contact.isArchived && (
+                <Badge variant="outline" className="ml-2 text-xs">Archived</Badge>
+              )}
+            </span>
+          );
+        },
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Business Name" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "keyPerson",
+        header: "Key Person",
+        accessorFn: (c) => [c.firstName, c.lastName].filter(Boolean).join(" "),
+        cell: ({ row }) => {
+          const contact = row.original;
+          const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+          return name ? (
+            <span className="text-sm">{name}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Key Person" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "role",
+        header: "Role",
+        accessorFn: (c) => (c.contactType === "team" ? c.role : c.position) || "",
+        cell: ({ row }) => {
+          const contact = row.original;
+          const value = contact.contactType === "team" ? contact.role : contact.position;
+          return value ? (
+            <span className="text-sm">{value}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          );
+        },
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Role" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "phone",
+        header: "Phone",
+        accessorFn: (c) => c.mobile || c.phone || "",
+        cell: ({ row }) => {
+          const contact = row.original;
+          const displayPhone = contact.mobile || contact.phone;
+          return displayPhone ? (
+            <a
+              href={`tel:${displayPhone}`}
+              className="text-sm text-[#A890D4] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {displayPhone}
+            </a>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          );
+        },
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Phone" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "email",
+        header: "Email",
+        accessorFn: (c) => c.email || "",
+        cell: ({ row }) => {
+          const contact = row.original;
+          return contact.email ? (
+            <a
+              href={`mailto:${contact.email}`}
+              className="text-sm text-[#A890D4] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {contact.email}
+            </a>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          );
+        },
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Email" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "type",
+        header: "Type",
+        accessorFn: (c) => c.contactType || "",
+        cell: ({ row }) => {
+          const contact = row.original;
+          return (
+            <Badge
+              variant="secondary"
+              className={`text-xs capitalize ${
+                contact.contactType === "team"
+                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  : contact.contactType === "trade"
+                  ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+                  : contact.contactType === "supplier"
+                  ? "bg-[#A890D4]/20 text-[#A890D4]"
+                  : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+              }`}
+            >
+              {contact.contactType}
+            </Badge>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Type" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const contact = row.original;
+          return (
+            <span onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    data-testid={`button-actions-${contact.id}`}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => handleEdit(contact)}
+                    data-testid={`menu-edit-${contact.id}`}
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                  {!contact.isArchived && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setMergeSourceId(contact.id);
+                        setIsMergeDialogOpen(true);
+                      }}
+                      data-testid={`menu-merge-${contact.id}`}
+                    >
+                      <Merge className="h-4 w-4 mr-2" />
+                      Merge Into...
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  {contact.isArchived ? (
+                    <DropdownMenuItem
+                      onClick={() => handleRestore(contact.id)}
+                      data-testid={`menu-restore-${contact.id}`}
+                    >
+                      <ArchiveRestore className="h-4 w-4 mr-2" />
+                      Restore
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => handleArchive(contact.id)}
+                      data-testid={`menu-archive-${contact.id}`}
+                    >
+                      <Archive className="h-4 w-4 mr-2" />
+                      Archive
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
+          );
+        },
+        size: 56,
+        meta: { defaultWidth: 56, align: "center", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredContacts, selectedIds]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Row 1 - Page Title + Action Button (36px) */}
@@ -407,164 +644,15 @@ export default function Contacts() {
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-8">
-                  <Checkbox
-                    checked={selectedIds.size > 0 && selectedIds.size === filteredContacts.length}
-                    onCheckedChange={toggleSelectAll}
-                    data-testid="checkbox-select-all"
-                  />
-                </TableHead>
-                <TableHead className="w-10"></TableHead>
-                <TableHead className="text-xs font-medium">Business Name</TableHead>
-                <TableHead className="text-xs font-medium">Key Person</TableHead>
-                <TableHead className="text-xs font-medium">Role</TableHead>
-                <TableHead className="text-xs font-medium">Phone</TableHead>
-                <TableHead className="text-xs font-medium">Email</TableHead>
-                <TableHead className="text-xs font-medium">Type</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContacts.map((contact) => (
-                <TableRow 
-                  key={contact.id} 
-                  className={`hover-elevate cursor-pointer ${selectedIds.has(contact.id) ? "bg-muted/50" : ""}`}
-                  data-testid={`row-contact-${contact.id}`}
-                  onDoubleClick={() => handleEdit(contact)}
-                >
-                  <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.has(contact.id)}
-                      onCheckedChange={() => toggleSelection(contact.id)}
-                      data-testid={`checkbox-contact-${contact.id}`}
-                    />
-                  </TableCell>
-                  <TableCell className="py-2">
-                    <Avatar 
-                      className="h-7 w-7" 
-                      style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
-                    >
-                      {contact.avatarUrl && (
-                        <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
-                      )}
-                      <AvatarFallback className="text-white text-xs" style={{ backgroundColor: "transparent" }}>
-                        {getInitials(contact)}
-                      </AvatarFallback>
-                    </Avatar>
-                  </TableCell>
-                  <TableCell className="text-sm font-medium py-2">
-                    {contact.name || contact.company || "-"}
-                    {contact.isArchived && (
-                      <Badge variant="outline" className="ml-2 text-xs">Archived</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm py-2">
-                    {contact.firstName || contact.lastName 
-                      ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") 
-                      : <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2">
-                    {contact.contactType === "team" 
-                      ? contact.role 
-                      : contact.position || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-sm py-2">
-                    {(() => {
-                      const displayPhone = contact.mobile || contact.phone;
-                      return displayPhone ? (
-                        <a href={`tel:${displayPhone}`} className="text-[#A890D4] hover:underline">
-                          {displayPhone}
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell className="text-sm py-2">
-                    {contact.email ? (
-                      <a href={`mailto:${contact.email}`} className="text-[#A890D4] hover:underline">
-                        {contact.email}
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2">
-                    <Badge 
-                      variant="secondary" 
-                      className={`text-xs capitalize ${
-                        contact.contactType === "team" 
-                          ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                          : contact.contactType === "trade"
-                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-                          : contact.contactType === "supplier"
-                          ? "bg-[#A890D4]/20 text-[#A890D4]"
-                          : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                      }`}
-                    >
-                      {contact.contactType}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="py-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7"
-                          data-testid={`button-actions-${contact.id}`}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleEdit(contact)}
-                          data-testid={`menu-edit-${contact.id}`}
-                        >
-                          <Pencil className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        {!contact.isArchived && (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setMergeSourceId(contact.id);
-                              setIsMergeDialogOpen(true);
-                            }}
-                            data-testid={`menu-merge-${contact.id}`}
-                          >
-                            <Merge className="h-4 w-4 mr-2" />
-                            Merge Into...
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        {contact.isArchived ? (
-                          <DropdownMenuItem
-                            onClick={() => handleRestore(contact.id)}
-                            data-testid={`menu-restore-${contact.id}`}
-                          >
-                            <ArchiveRestore className="h-4 w-4 mr-2" />
-                            Restore
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={() => handleArchive(contact.id)}
-                            data-testid={`menu-archive-${contact.id}`}
-                          >
-                            <Archive className="h-4 w-4 mr-2" />
-                            Archive
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            data={filteredContacts}
+            columns={contactColumns}
+            storageKey="contacts"
+            legacyConfigKey="contacts-column-config-v1"
+            rowKey={(c) => c.id}
+            onRowClick={(c) => handleEdit(c)}
+            rowClassName={(c) => (selectedIds.has(c.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : "")}
+          />
         )}
 
         {/* Archived Contacts Section - Hidden by default */}

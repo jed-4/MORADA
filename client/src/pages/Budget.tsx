@@ -1,26 +1,28 @@
 import { useParams } from "wouter";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, EyeOff, Eye, ChevronDown, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 const PHASE_LABELS: Record<string, string> = {
   lead: "Lead",
@@ -168,6 +170,109 @@ export default function BudgetPage() {
         return budgeted !== 0 || pending !== 0 || approved !== 0;
       })
     : labourHours;
+
+  const labourHoursColumns = useMemo<ColumnDef<LabourHoursBudget, unknown>[]>(() => [
+    {
+      id: "costCode",
+      header: "Cost Code",
+      accessorFn: (item) => item.costCodeTitle || "Uncategorized",
+      cell: ({ row }) => (
+        <span className="font-medium text-xs">{row.original.costCodeTitle || "Uncategorized"}</span>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Cost Code" },
+    },
+    {
+      id: "budgeted",
+      header: "Budgeted",
+      accessorFn: (item) => parseFloat(item.budgetedHours || "0"),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums" data-testid={`text-budgeted-${row.original.id}`}>
+          {formatHours(parseFloat(row.original.budgetedHours || "0"))}
+        </span>
+      ),
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Budgeted" },
+    },
+    {
+      id: "pending",
+      header: "Pending",
+      accessorFn: (item) => parseFloat(item.pendingHours || "0"),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums text-amber-600 dark:text-amber-400" data-testid={`text-pending-${row.original.id}`}>
+          {formatHours(parseFloat(row.original.pendingHours || "0"))}
+        </span>
+      ),
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Pending" },
+    },
+    {
+      id: "approved",
+      header: "Approved",
+      accessorFn: (item) => parseFloat(item.approvedHours || "0"),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums" data-testid={`text-approved-${row.original.id}`}>
+          {formatHours(parseFloat(row.original.approvedHours || "0"))}
+        </span>
+      ),
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Approved" },
+    },
+    {
+      id: "total",
+      header: "Total",
+      accessorFn: (item) => parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0"),
+      cell: ({ row }) => {
+        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
+        return (
+          <span className="text-xs tabular-nums font-medium" data-testid={`text-total-${row.original.id}`}>
+            {formatHours(total)}
+          </span>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Total" },
+    },
+    {
+      id: "variance",
+      header: "Variance",
+      accessorFn: (item) => parseFloat(item.budgetedHours || "0") - (parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0")),
+      cell: ({ row }) => {
+        const budgeted = parseFloat(row.original.budgetedHours || "0");
+        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
+        const variance = budgeted - total;
+        return (
+          <span className={cn("text-xs tabular-nums", getVarianceColor(variance))} data-testid={`text-variance-${row.original.id}`}>
+            {formatHours(variance)}
+          </span>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Variance" },
+    },
+    {
+      id: "percentUsed",
+      header: "% Used",
+      accessorFn: (item) => {
+        const budgeted = parseFloat(item.budgetedHours || "0");
+        const total = parseFloat(item.pendingHours || "0") + parseFloat(item.approvedHours || "0");
+        return budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
+      },
+      cell: ({ row }) => {
+        const budgeted = parseFloat(row.original.budgetedHours || "0");
+        const total = parseFloat(row.original.pendingHours || "0") + parseFloat(row.original.approvedHours || "0");
+        const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <span className="text-xs tabular-nums">{percentUsed}%</span>
+            <Progress value={percentUsed} className="w-12 h-1.5" />
+          </div>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "% Used" },
+    } satisfies ColumnDef<LabourHoursBudget, unknown> & { meta: DataTableColumnMeta },
+  ], []);
 
   const handleToggleEmpty = (checked: boolean) => {
     setHideEmptyCostCodes(checked);
@@ -602,66 +707,15 @@ export default function BudgetPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="h-8">
-                          <TableHead className="text-xs py-1.5">Cost Code</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">Budgeted</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">Pending</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">Approved</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">Total</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">Variance</TableHead>
-                          <TableHead className="text-xs text-right py-1.5">% Used</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredLabourHours.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
-                              {hideEmptyCostCodes ? "All cost codes have zero hours. Turn off \"Hide empty\" to see all." : "No labour hours data available."}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {filteredLabourHours.map((item) => {
-                          const budgeted = parseFloat(item.budgetedHours || "0");
-                          const pending = parseFloat(item.pendingHours || "0");
-                          const approved = parseFloat(item.approvedHours || "0");
-                          const total = pending + approved;
-                          const variance = budgeted - total;
-                          const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
-
-                          return (
-                            <TableRow key={item.id} data-testid={`row-labour-hours-${item.id}`} className="h-8">
-                              <TableCell className="text-sm py-1.5">
-                                <span className="font-medium">{item.costCodeTitle || "Uncategorized"}</span>
-                              </TableCell>
-                              <TableCell className="text-sm text-right py-1.5" data-testid={`text-budgeted-${item.id}`}>
-                                {formatHours(budgeted)}
-                              </TableCell>
-                              <TableCell className="text-sm text-right py-1.5 text-amber-600 dark:text-amber-400" data-testid={`text-pending-${item.id}`}>
-                                {formatHours(pending)}
-                              </TableCell>
-                              <TableCell className="text-sm text-right py-1.5" data-testid={`text-approved-${item.id}`}>
-                                {formatHours(approved)}
-                              </TableCell>
-                              <TableCell className="text-sm text-right py-1.5 font-medium" data-testid={`text-total-${item.id}`}>
-                                {formatHours(total)}
-                              </TableCell>
-                              <TableCell className={`text-sm text-right py-1.5 ${getVarianceColor(variance)}`} data-testid={`text-variance-${item.id}`}>
-                                {formatHours(variance)}
-                              </TableCell>
-                              <TableCell className="text-right py-1.5">
-                                <div className="flex items-center justify-end gap-1">
-                                  <span className="text-sm">{percentUsed}%</span>
-                                  <Progress value={percentUsed} className="w-12 h-1.5" />
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                  <div className="h-[480px]">
+                    <DataTable
+                      data={filteredLabourHours}
+                      columns={labourHoursColumns}
+                      storageKey="budget"
+                      legacyConfigKey="budget-column-config-v1"
+                      rowKey={(row) => row.id}
+                      emptyState={hideEmptyCostCodes ? "All cost codes have zero hours. Turn off \"Hide empty\" to see all." : "No labour hours data available."}
+                    />
                   </div>
                 )}
               </CardContent>

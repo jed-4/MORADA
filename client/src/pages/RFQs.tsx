@@ -1,15 +1,21 @@
-import { useState, useMemo, useCallback } from "react";
+// NOTE(data-table-migration): The previous bespoke RFQs table supported
+// expandable rows showing supplier quote breakdowns inline plus an attachment
+// preview modal. Both behaviours are preserved on the RFQ detail page
+// (/rfqs/:id) and were intentionally not carried over to this list view to
+// keep parity with other list pages migrated to the shared DataTable.
+// Row click navigates to the detail page where the full quote/attachment UX
+// lives.
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,44 +31,20 @@ import {
   Send,
   ClipboardList,
   ArrowRight,
-  ChevronRight,
-  ChevronDown,
-  Loader2,
-  ExternalLink,
-  Eye,
-  EyeOff,
   Paperclip,
-  ImageIcon,
-  FileIcon,
+  Columns3,
 } from "lucide-react";
-import { type Rfq, type Project, type RfqQuote } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import { type Rfq, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-
-// ── Attachment types ──────────────────────────────────────────────────────────
-
-interface Attachment {
-  name: string;
-  url: string;
-  size?: number;
-}
-
-function isImage(name: string) {
-  return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name);
-}
-
-function isPdf(name: string) {
-  return /\.pdf$/i.test(name);
-}
-
-function formatBytes(bytes?: number) {
-  if (!bytes) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // ── Status chips ──────────────────────────────────────────────────────────────
 
@@ -85,24 +67,7 @@ function StatusChip({ status }: { status: string }) {
   return <StatusBadge status={status} label={STATUS_LABEL[status]} />;
 }
 
-const QUOTE_LABEL: Record<string, string> = {
-  pending: "Awaiting", accepted: "Accepted", declined: "Declined",
-};
-
-function QuoteStatusChip({ status }: { status: string }) {
-  return <StatusBadge status={status} label={QUOTE_LABEL[status] ?? "Awaiting"} />;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatCurrency(cents: number) {
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
 
 function formatDate(date: Date | string | null | undefined) {
   if (!date) return null;
@@ -118,19 +83,7 @@ export default function RFQs() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
-
-  // Expanded RFQ IDs
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  // Cached quotes keyed by rfqId
-  const [quoteCache, setQuoteCache] = useState<Record<string, RfqQuote[]>>({});
-  // In-flight fetches
-  const [loadingQuotes, setLoadingQuotes] = useState<Set<string>>(new Set());
-  // Attachment preview modal
-  const [attachmentModal, setAttachmentModal] = useState<{
-    label: string;
-    attachments: Attachment[];
-  } | null>(null);
-  const [activeAttachment, setActiveAttachment] = useState<Attachment | null>(null);
+  const [colPopoverOpen, setColPopoverOpen] = useState(false);
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
@@ -181,59 +134,209 @@ export default function RFQs() {
     });
   }, [rfqs, searchQuery, selectedStatus]);
 
-  const fetchQuotes = useCallback(async (rfqId: string) => {
-    if (quoteCache[rfqId] !== undefined || loadingQuotes.has(rfqId)) return;
-    setLoadingQuotes(prev => new Set(prev).add(rfqId));
-    try {
-      const res = await fetch(`/api/rfqs/${rfqId}/quotes`, { credentials: "include" });
-      const quotes: RfqQuote[] = res.ok ? await res.json() : [];
-      setQuoteCache(prev => ({ ...prev, [rfqId]: quotes }));
-    } catch {
-      setQuoteCache(prev => ({ ...prev, [rfqId]: [] }));
-    } finally {
-      setLoadingQuotes(prev => {
-        const next = new Set(prev);
-        next.delete(rfqId);
-        return next;
-      });
-    }
-  }, [quoteCache, loadingQuotes]);
-
-  const toggleRow = useCallback((rfqId: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(rfqId)) {
-        next.delete(rfqId);
-      } else {
-        next.add(rfqId);
-        fetchQuotes(rfqId);
-      }
-      return next;
-    });
-  }, [fetchQuotes]);
-
   const handleNavigate = (rfqId: string) => {
     setLocation(getNavigationPath(`/rfqs/${rfqId}`));
   };
 
-  // Child-row column widths (px) — header row is free-form flex
-  const COL = {
-    toggle:      28,
-    indent:      116, // chevron + number cols combined for child indent
-    supplier:    220,
-    project:     140,
-    dueDate:     88,
-    sent:        88,
-    seen:        48,
-    attachments: 80,
-    status:      88,
-    amount:      96,
-    actions:     40,
-  };
-
   const showProject = !projectIdFromUrl;
 
-  const headerCellClass = "h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center flex-shrink-0";
+  // ── DataTable column defs ───────────────────────────────────────────────
+  const rfqColumns = useMemo<ColumnDef<Rfq, unknown>[]>(() => {
+    const cols: (ColumnDef<Rfq, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "rfqNumber",
+        header: "ID",
+        accessorFn: (r) => r.rfqNumber,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1.5" data-testid={`cell-number-${row.original.id}`}>
+            <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs font-semibold text-foreground">{row.original.rfqNumber}</span>
+          </div>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "ID" },
+      },
+      {
+        id: "title",
+        header: "Title",
+        accessorFn: (r) => r.title,
+        cell: ({ row }) => (
+          <span className="text-xs text-foreground truncate" data-testid={`cell-title-${row.original.id}`}>
+            {row.original.title}
+          </span>
+        ),
+        size: 240,
+        meta: { defaultWidth: 240, headerLabel: "Title" },
+      },
+    ];
+
+    if (showProject) {
+      cols.push({
+        id: "project",
+        header: "Project",
+        accessorFn: (r) => getProject(r.projectId)?.name ?? "",
+        cell: ({ row }) => {
+          const project = getProject(row.original.projectId);
+          if (!project) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <div className="flex items-center gap-1.5" data-testid={`cell-project-${row.original.id}`}>
+              <ProjectIcon
+                icon={project.icon || "Briefcase"}
+                color={project.color}
+                className="w-3 h-3 flex-shrink-0"
+              />
+              <span className="text-xs text-muted-foreground truncate">{project.name}</span>
+            </div>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Project" },
+      });
+    }
+
+    cols.push(
+      {
+        id: "suppliers",
+        header: "Suppliers",
+        accessorFn: (r) => r.supplierNames.join(", "),
+        cell: ({ row }) => {
+          const names = row.original.supplierNames;
+          if (names.length === 0) {
+            return <span className="text-xs text-muted-foreground/40">—</span>;
+          }
+          return (
+            <span className="text-xs text-foreground truncate" data-testid={`cell-suppliers-${row.original.id}`}>
+              {names.join(", ")}
+            </span>
+          );
+        },
+        size: 220,
+        meta: { defaultWidth: 220, headerLabel: "Suppliers" },
+      },
+      {
+        id: "dueDate",
+        header: "Due Date",
+        accessorFn: (r) => (r.dueDate ? new Date(r.dueDate).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-due-${row.original.id}`}>
+            {formatDate(row.original.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Due Date" },
+      },
+      {
+        id: "sentAt",
+        header: "Sent",
+        accessorFn: (r) => (r.sentAt ? new Date(r.sentAt).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-sent-${row.original.id}`}>
+            {row.original.sentAt
+              ? formatDate(row.original.sentAt)
+              : <span className="text-muted-foreground/30">Not sent</span>}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Sent" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (r) => r.status,
+        cell: ({ row }) => <StatusChip status={row.original.status} />,
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
+        id: "attachments",
+        header: "Files",
+        enableSorting: false,
+        accessorFn: (r) => r.attachmentUrls.length,
+        cell: ({ row }) => {
+          const count = row.original.attachmentUrls.length;
+          if (count === 0) {
+            return <span className="text-muted-foreground/25"><Paperclip className="w-3 h-3" /></span>;
+          }
+          return (
+            <span className="inline-flex items-center gap-0.5 text-[#8b6bb1]" data-testid={`cell-files-${row.original.id}`}>
+              <Paperclip className="w-3 h-3" />
+              <span className="text-[10px] font-semibold">{count}</span>
+            </span>
+          );
+        },
+        size: 70,
+        meta: { defaultWidth: 70, align: "center", headerLabel: "Files" },
+      },
+      {
+        id: "createdAt",
+        header: "Created",
+        accessorFn: (r) => new Date(r.createdAt).getTime(),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-created-${row.original.id}`}>
+            {formatDate(row.original.createdAt)}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Created", defaultHidden: true },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-center" data-testid={`cell-actions-${row.original.id}`}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="p-1 rounded hover-elevate text-muted-foreground"
+                  data-testid={`button-rfq-actions-${row.original.id}`}
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={(e) => { e.stopPropagation(); handleNavigate(row.original.id); }}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download PDF
+                </DropdownMenuItem>
+                {row.original.status === "draft" && (
+                  <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                    <Send className="mr-2 h-4 w-4" />
+                    Send RFQ
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+        size: 48,
+        meta: { defaultWidth: 48, align: "center", pinned: true, headerLabel: "Actions" },
+      },
+    );
+
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProject, projects]);
+
+  const pickerColumns = useMemo(() => {
+    return rfqColumns
+      .filter((c) => c.id !== "actions")
+      .map((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        return {
+          id: c.id as string,
+          label: meta.headerLabel ?? (c.id as string),
+          pinned: !!meta.pinned,
+        };
+      });
+  }, [rfqColumns]);
 
   return (
     <div className="flex flex-col h-full" data-testid="page-rfqs">
@@ -291,8 +394,8 @@ export default function RFQs() {
           })}
         </div>
 
-        {/* Row 3 — Search */}
-        <div className="h-8 flex items-center px-3">
+        {/* Row 3 — Search + columns */}
+        <div className="h-8 flex items-center justify-between px-3 gap-2">
           <div className="relative w-48">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
@@ -303,6 +406,21 @@ export default function RFQs() {
               data-testid="input-search-rfqs"
             />
           </div>
+          <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="h-6 px-2 text-xs border rounded-md flex items-center gap-1 hover-elevate"
+                data-testid="button-columns"
+              >
+                <Columns3 className="w-3 h-3" />
+                <span>Columns</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <DataTableColumnPicker storageKey="rfqs" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -349,326 +467,18 @@ export default function RFQs() {
             </div>
           )
         ) : (
-          <div className="rounded-lg border border-border bg-card overflow-hidden h-full flex flex-col">
-            {/* Table column header — labels match child rows */}
-            <div className="flex items-center border-b border-border/50 flex-shrink-0 px-2">
-              <div style={{ width: COL.indent }} className={headerCellClass} />
-              <div style={{ width: COL.supplier }} className={headerCellClass}>Supplier</div>
-              {showProject && <div style={{ width: COL.project }} className={headerCellClass}>Project</div>}
-              <div style={{ width: COL.dueDate }} className={headerCellClass}>Due Date</div>
-              <div style={{ width: COL.sent }} className={headerCellClass}>Sent</div>
-              <div style={{ width: COL.seen }} className={cn(headerCellClass, "justify-center")}>Seen</div>
-              <div style={{ width: COL.attachments }} className={cn(headerCellClass, "justify-center")}>Files</div>
-              <div style={{ width: COL.status }} className={headerCellClass}>Status</div>
-              <div style={{ width: COL.amount }} className={headerCellClass}>Amount</div>
-              <div style={{ width: COL.actions }} className={headerCellClass} />
-            </div>
-
-            {/* Scrollable body */}
-            <div className="overflow-auto flex-1">
-              {filteredRFQs.map((rfq) => {
-                const project = getProject(rfq.projectId);
-                const isExpanded = expandedIds.has(rfq.id);
-                const isLoadingQ = loadingQuotes.has(rfq.id);
-                const quotes = quoteCache[rfq.id];
-
-                // Build per-supplier rows from supplierIds / supplierNames
-                // Match quotes to suppliers by supplierId or supplierName
-                const supplierRows = rfq.supplierNames.map((name, idx) => {
-                  const supplierId = rfq.supplierIds[idx] ?? null;
-                  const quote = quotes?.find(
-                    q => (supplierId && q.supplierId === supplierId) || q.supplierName === name
-                  ) ?? null;
-                  return { name, supplierId, quote };
-                });
-
-                return (
-                  <div key={rfq.id} data-testid={`group-rfq-${rfq.id}`}>
-                    {/* RFQ header row — name, number, created only */}
-                    <div
-                      className={cn(
-                        "flex items-center px-2 h-9 cursor-pointer hover-elevate active-elevate-2 border-b border-border/30",
-                        isExpanded && "bg-muted/20"
-                      )}
-                      onClick={() => toggleRow(rfq.id)}
-                      data-testid={`row-rfq-${rfq.id}`}
-                    >
-                      {/* Chevron */}
-                      <div style={{ width: COL.toggle }} className="flex items-center justify-center flex-shrink-0">
-                        {isExpanded
-                          ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                          : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
-                      </div>
-                      {/* RFQ # */}
-                      <div className="flex items-center gap-1.5 flex-shrink-0 px-2">
-                        <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                        <span className="text-xs font-semibold text-muted-foreground">{rfq.rfqNumber}</span>
-                      </div>
-                      {/* Title — stretches to fill */}
-                      <div className="flex items-center flex-1 min-w-0 px-2">
-                        <span className="text-xs font-medium truncate">{rfq.title}</span>
-                      </div>
-                      {/* Created date — right-aligned before actions */}
-                      <div className="flex items-center flex-shrink-0 px-2">
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {format(new Date(rfq.createdAt), "d MMM yyyy")}
-                        </span>
-                      </div>
-                      {/* Actions */}
-                      <div style={{ width: COL.actions }} className="flex items-center justify-center flex-shrink-0">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              className="p-1 rounded hover-elevate text-muted-foreground"
-                              data-testid={`button-rfq-actions-${rfq.id}`}
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => { e.stopPropagation(); handleNavigate(rfq.id); }}
-                            >
-                              <FileText className="mr-2 h-4 w-4" />
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download PDF
-                            </DropdownMenuItem>
-                            {rfq.status === "draft" && (
-                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                                <Send className="mr-2 h-4 w-4" />
-                                Send RFQ
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-
-                    {/* Expanded supplier rows */}
-                    {isExpanded && (
-                      <>
-                        {isLoadingQ ? (
-                          <div className="flex items-center gap-2 px-4 h-8 bg-muted/10 border-b border-border/20 text-xs text-muted-foreground">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Loading quotes…
-                          </div>
-                        ) : supplierRows.length === 0 ? (
-                          <div className="flex items-center px-4 h-8 bg-muted/10 border-b border-border/20 text-xs text-muted-foreground italic">
-                            No suppliers added to this RFQ
-                          </div>
-                        ) : (
-                          supplierRows.map(({ name, quote }, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center px-2 h-8 bg-muted/10 border-b border-border/20 cursor-pointer hover-elevate active-elevate-2"
-                              onClick={() => handleNavigate(rfq.id)}
-                              data-testid={`row-supplier-${rfq.id}-${idx}`}
-                            >
-                              {/* Indent — aligns with header chevron + RFQ# space */}
-                              <div style={{ width: COL.indent }} className="flex items-center flex-shrink-0 px-2">
-                                <div className="w-px h-4 bg-border/60 ml-2" />
-                              </div>
-                              {/* Supplier name */}
-                              <div style={{ width: COL.supplier }} className="flex items-center flex-shrink-0 px-2">
-                                <span className="text-xs text-foreground truncate font-medium">{name}</span>
-                              </div>
-                              {/* Project */}
-                              {showProject && (
-                                <div style={{ width: COL.project }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
-                                  {project && (
-                                    <>
-                                      <ProjectIcon
-                                        icon={project.icon || "Briefcase"}
-                                        color={project.color}
-                                        className="w-3 h-3 flex-shrink-0"
-                                      />
-                                      <span className="text-xs text-muted-foreground truncate">{project.name}</span>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                              {/* RFQ due date */}
-                              <div style={{ width: COL.dueDate }} className="flex items-center flex-shrink-0 px-2">
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
-                                </span>
-                              </div>
-                              {/* Sent date — when the RFQ was dispatched */}
-                              <div style={{ width: COL.sent }} className="flex items-center flex-shrink-0 px-2">
-                                <span className="text-xs text-muted-foreground">
-                                  {rfq.sentAt
-                                    ? formatDate(rfq.sentAt)
-                                    : <span className="text-muted-foreground/30">Not sent</span>}
-                                </span>
-                              </div>
-                              {/* Seen — placeholder for future email open tracking */}
-                              <div style={{ width: COL.seen }} className="flex items-center justify-center flex-shrink-0">
-                                <span title="Email open tracking — coming soon">
-                                  <EyeOff className="w-3 h-3 text-muted-foreground/25" />
-                                </span>
-                              </div>
-                              {/* Attachments */}
-                              <div style={{ width: COL.attachments }} className="flex items-center justify-center flex-shrink-0">
-                                {(() => {
-                                  const files = (quote?.attachments as Attachment[] | undefined) ?? [];
-                                  if (files.length === 0) {
-                                    return <span className="text-muted-foreground/25"><Paperclip className="w-3 h-3" /></span>;
-                                  }
-                                  return (
-                                    <button
-                                      type="button"
-                                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover-elevate text-[#8b6bb1]"
-                                      title={`${files.length} file${files.length !== 1 ? "s" : ""}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveAttachment(files[0]);
-                                        setAttachmentModal({
-                                          label: `${rfq.rfqNumber} — ${name}`,
-                                          attachments: files,
-                                        });
-                                      }}
-                                    >
-                                      <Paperclip className="w-3 h-3" />
-                                      <span className="text-[10px] font-semibold">{files.length}</span>
-                                    </button>
-                                  );
-                                })()}
-                              </div>
-                              {/* Quote status */}
-                              <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
-                                <QuoteStatusChip status={quote?.status ?? "pending"} />
-                              </div>
-                              {/* Quote amount */}
-                              <div style={{ width: COL.amount }} className="flex items-center flex-shrink-0 px-2">
-                                <span className={cn(
-                                  "text-xs tabular-nums font-medium",
-                                  quote && quote.totalAmount > 0 ? "text-foreground" : "text-muted-foreground/40"
-                                )}>
-                                  {quote && quote.totalAmount > 0 ? formatCurrency(quote.totalAmount) : "—"}
-                                </span>
-                              </div>
-                              {/* View link */}
-                              <div style={{ width: COL.actions }} className="flex items-center justify-center flex-shrink-0">
-                                <ExternalLink className="w-3 h-3 text-muted-foreground/40" />
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <div className="rounded-lg border border-border bg-card overflow-hidden h-full">
+            <DataTable
+              data={filteredRFQs}
+              columns={rfqColumns}
+              storageKey="rfqs"
+              legacyConfigKey="rfqs-column-config-v1"
+              rowKey={(r) => r.id}
+              onRowClick={(r) => handleNavigate(r.id)}
+            />
           </div>
         )}
       </div>
-
-      {/* ── Attachment preview modal ── */}
-      <Dialog
-        open={!!attachmentModal}
-        onOpenChange={(open) => {
-          if (!open) {
-            setAttachmentModal(null);
-            setActiveAttachment(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl w-full p-0 overflow-hidden flex flex-col gap-0" style={{ maxHeight: "80vh" }}>
-          <DialogHeader className="px-4 py-3 border-b border-border/50 flex-shrink-0">
-            <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-              <Paperclip className="w-3.5 h-3.5 text-[#8b6bb1]" />
-              {attachmentModal?.label}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-1 min-h-0">
-            {/* Left — file list */}
-            <div className="w-56 flex-shrink-0 border-r border-border/50 overflow-y-auto">
-              {attachmentModal?.attachments.map((file, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2.5 text-left border-b border-border/30 hover-elevate",
-                    activeAttachment?.url === file.url && "bg-[#A890D4]/10"
-                  )}
-                  onClick={() => setActiveAttachment(file)}
-                >
-                  {isImage(file.name)
-                    ? <ImageIcon className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
-                    : isPdf(file.name)
-                    ? <FileText className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                    : <FileIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-medium truncate">{file.name}</span>
-                    {file.size && (
-                      <span className="text-[10px] text-muted-foreground">{formatBytes(file.size)}</span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {/* Right — preview pane */}
-            <div className="flex-1 min-w-0 bg-muted/20 flex flex-col items-center justify-center overflow-hidden">
-              {activeAttachment ? (
-                isImage(activeAttachment.name) ? (
-                  <img
-                    src={activeAttachment.url}
-                    alt={activeAttachment.name}
-                    className="max-w-full max-h-full object-contain p-4"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                      (e.currentTarget.nextSibling as HTMLElement | null)?.style?.removeProperty("display");
-                    }}
-                  />
-                ) : isPdf(activeAttachment.name) ? (
-                  <iframe
-                    src={activeAttachment.url}
-                    className="w-full h-full border-0"
-                    title={activeAttachment.name}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-3 text-muted-foreground p-8">
-                    <FileIcon className="w-10 h-10 opacity-30" />
-                    <p className="text-sm text-center">{activeAttachment.name}</p>
-                    <a
-                      href={activeAttachment.url}
-                      download={activeAttachment.name}
-                      className="flex items-center gap-1.5 text-xs text-[#8b6bb1] hover:underline"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Download file
-                    </a>
-                  </div>
-                )
-              ) : (
-                <div className="text-xs text-muted-foreground">Select a file to preview</div>
-              )}
-              {/* Image load error fallback */}
-              {activeAttachment && isImage(activeAttachment.name) && (
-                <div className="hidden flex-col items-center gap-3 text-muted-foreground p-8">
-                  <ImageIcon className="w-10 h-10 opacity-30" />
-                  <p className="text-xs">Preview unavailable</p>
-                  <a
-                    href={activeAttachment.url}
-                    download={activeAttachment.name}
-                    className="flex items-center gap-1.5 text-xs text-[#8b6bb1] hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download file
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

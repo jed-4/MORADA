@@ -1,20 +1,31 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
-import { 
-  type Selection, 
+import {
+  type Selection,
   type InsertSelection,
   type FieldCategoryWithOptions,
   type SelectionWithOptions,
-  type SelectionOption
 } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import { StatusBadge as SharedStatusBadge } from "@/components/StatusBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +51,7 @@ import {
   Pencil,
   MapPin,
   Boxes,
+  Columns3,
 } from "lucide-react";
 import {
   DndContext,
@@ -416,6 +428,7 @@ export default function Selections() {
   const [showDesign, setShowDesign] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -584,25 +597,174 @@ export default function Selections() {
     return sortedGroups;
   }, [filteredSelections, groupBy]);
 
-  // Status badge component
-  const StatusBadge = ({ status }: { status: string }) => {
-    const config = {
-      draft: { icon: Clock, color: "text-yellow-600 bg-yellow-50 border-yellow-200", label: "Draft" },
-      pending: { icon: AlertCircle, color: "text-blue-600 bg-blue-50 border-blue-200", label: "Open" },
-      approved: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200", label: "Approved" },
-      completed: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200", label: "Completed" },
-    };
-    
-    const statusInfo = config[status as keyof typeof config] || config.draft;
-    const { icon: Icon, color } = statusInfo;
-    
-    return (
-      <Badge variant="outline" className={`${color}`}>
-        <Icon className="w-3 h-3 mr-1" />
-        {statusInfo.label}
-      </Badge>
-    );
+  // Status label map for shared StatusBadge
+  const STATUS_LABELS: Record<string, string> = {
+    draft: "Draft",
+    pending: "Open",
+    approved: "Approved",
+    completed: "Completed",
   };
+
+  // ── DataTable column defs ─────────────────────────────────────────────────
+  const selectionColumns = useMemo<ColumnDef<Selection, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (s) => s.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Name" },
+    },
+    {
+      id: "type",
+      header: "Type",
+      accessorFn: (s) => (s as Selection & { selectionType?: string }).selectionType || "selection",
+      cell: ({ row }) => {
+        const type = (row.original as Selection & { selectionType?: string }).selectionType || "selection";
+        return type === "design" ? (
+          <span className="inline-flex items-center gap-1 text-xs text-purple-600">
+            <Palette className="w-3 h-3" />
+            Design
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Selection</span>
+        );
+      },
+      size: 90,
+      meta: { defaultWidth: 90, headerLabel: "Type" },
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (s) => s.category || "",
+      cell: ({ row }) => (
+        <span className="text-xs" data-testid={`cell-category-${row.original.id}`}>
+          {row.original.category || "—"}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Category" },
+    },
+    {
+      id: "room",
+      header: "Location",
+      accessorFn: (s) => s.room || "",
+      cell: ({ row }) => (
+        <span className="text-xs inline-flex items-center gap-1" data-testid={`cell-room-${row.original.id}`}>
+          {row.original.room ? (
+            <>
+              <MapPin className="w-3 h-3 text-muted-foreground" />
+              {row.original.room}
+            </>
+          ) : (
+            "—"
+          )}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Location" },
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (s) => s.status,
+      cell: ({ row }) => (
+        <SharedStatusBadge
+          status={row.original.status}
+          label={STATUS_LABELS[row.original.status] || row.original.status}
+        />
+      ),
+      size: 110,
+      meta: { defaultWidth: 110, headerLabel: "Status" },
+    },
+    {
+      id: "allowance",
+      header: "Allowance",
+      accessorFn: (s) => s.allowance ?? 0,
+      cell: ({ row }) =>
+        row.original.allowance ? (
+          <span className="text-xs tabular-nums" data-testid={`cell-allowance-${row.original.id}`}>
+            ${(row.original.allowance / 100).toFixed(0)}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Allowance" },
+    },
+    {
+      id: "deadline",
+      header: "Deadline",
+      accessorFn: (s) => (s.deadline ? new Date(s.deadline).getTime() : 0),
+      cell: ({ row }) =>
+        row.original.deadline ? (
+          <span className="text-xs inline-flex items-center gap-1" data-testid={`cell-deadline-${row.original.id}`}>
+            <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+            {format(new Date(row.original.deadline), "dd MMM yyyy")}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+      size: 130,
+      meta: { defaultWidth: 130, headerLabel: "Deadline" },
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-5 w-5 rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid={`button-actions-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setLocation(`/selections/${row.original.id}`)}>
+                <Eye className="w-4 h-4 mr-2" />
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEdit(row.original)}>
+                <Edit3 className="w-4 h-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => deleteSelectionMutation.mutate(row.original.id)}
+                className="text-destructive"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 48,
+      meta: { defaultWidth: 48, align: "center", headerLabel: "Actions" },
+    },
+  ], [setLocation, deleteSelectionMutation]);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "name", label: "Name" },
+      { id: "type", label: "Type" },
+      { id: "category", label: "Category" },
+      { id: "room", label: "Location" },
+      { id: "status", label: "Status" },
+      { id: "allowance", label: "Allowance" },
+      { id: "deadline", label: "Deadline" },
+      { id: "actions", label: "Actions" },
+    ],
+    [],
+  );
 
   // DnD sensors for Kanban board
   const sensors = useSensors(
@@ -854,7 +1016,23 @@ export default function Selections() {
           </div>
         </div>
 
-        {/* Right: Grouping Toggle (only in list view) */}
+        {/* Right: Column Picker (list view only) + Grouping Toggle */}
+        {viewMode === 'list' && (
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-column-picker"
+                title="Columns"
+              >
+                <Columns3 className="w-3 h-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0 w-auto">
+              <DataTableColumnPicker storageKey="selections" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
+        )}
         <DropdownMenu open={showGroupingMenu} onOpenChange={setShowGroupingMenu}>
           <DropdownMenuTrigger asChild>
             <button 
@@ -950,7 +1128,7 @@ export default function Selections() {
             </DragOverlay>
           </DndContext>
         ) : (
-          /* List View with Compact Cards */
+          /* List View with shared DataTable */
           <div className="space-y-6">
             {Object.entries(groupedSelections).map(([groupName, groupSelections]) => (
               <div key={groupName} className="space-y-2">
@@ -962,19 +1140,16 @@ export default function Selections() {
                     </Badge>
                   </div>
                 )}
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {groupSelections.map((selection) => (
-                    <SelectionCardCompact
-                      key={selection.id}
-                      selection={selection}
-                      onClick={() => setLocation(`/selections/${selection.id}`)}
-                      onEdit={handleEdit}
-                      onDelete={(id) => deleteSelectionMutation.mutate(id)}
-                      showCategory={groupBy !== 'category'}
-                      showRoom={groupBy !== 'room'}
-                    />
-                  ))}
+
+                <div className="border rounded-md overflow-hidden">
+                  <DataTable
+                    data={groupSelections}
+                    columns={selectionColumns}
+                    storageKey={groupBy === 'none' ? "selections" : `selections-group-${groupName}`}
+                    legacyConfigKey="selections-column-config-v1"
+                    rowKey={(s) => s.id}
+                    onRowClick={(s) => setLocation(`/selections/${s.id}`)}
+                  />
                 </div>
               </div>
             ))}
