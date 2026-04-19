@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -11,20 +11,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import {
   Plus,
   Columns3,
   Search,
-  ChevronUp,
-  ChevronDown,
   Eye,
   EyeOff,
   GripVertical,
@@ -77,38 +73,30 @@ function StatusChip({ status }: { status: string }) {
   return <StatusBadge status={status} label={STATUS_LABEL[status]} tone={tone} />;
 }
 
-const ALL_COLUMNS = [
-  { id: "number", label: "Number", required: true, defaultWidth: 80 },
-  { id: "name", label: "Name", required: true, defaultWidth: 200 },
-  { id: "project", label: "Project", required: false, defaultWidth: 150 },
-  { id: "status", label: "Status", required: false, defaultWidth: 110 },
-  { id: "total", label: "Total", required: false, defaultWidth: 90 },
-  { id: "paid", label: "Paid", required: false, defaultWidth: 90 },
-  { id: "balance", label: "Balance Due", required: false, defaultWidth: 100 },
-  { id: "seen", label: "Seen", required: false, defaultWidth: 60 },
-  { id: "deadline", label: "Approval Deadline", required: false, defaultWidth: 120 },
-  { id: "relatedItems", label: "Related", required: false, defaultWidth: 150 },
+const TABLE_STORAGE_KEY = "variations";
+const LEGACY_STORAGE_KEY = "variations-column-config-v2";
+const SELECT_COL_WIDTH = 32;
+
+interface ColumnSpec {
+  id: string;
+  label: string;
+  required?: boolean;
+  defaultWidth: number;
+  defaultVisible?: boolean;
+}
+
+const ALL_COLUMNS: ColumnSpec[] = [
+  { id: "number",       label: "Number",            required: true,  defaultWidth: 80,  defaultVisible: true  },
+  { id: "name",         label: "Name",              required: true,  defaultWidth: 200, defaultVisible: true  },
+  { id: "project",      label: "Project",                            defaultWidth: 150, defaultVisible: true  },
+  { id: "status",       label: "Status",                             defaultWidth: 110, defaultVisible: true  },
+  { id: "total",        label: "Total",                              defaultWidth: 90,  defaultVisible: true  },
+  { id: "paid",         label: "Paid",                               defaultWidth: 90,  defaultVisible: false },
+  { id: "balance",      label: "Balance Due",                        defaultWidth: 100, defaultVisible: false },
+  { id: "seen",         label: "Seen",                               defaultWidth: 60,  defaultVisible: false },
+  { id: "deadline",     label: "Approval Deadline",                  defaultWidth: 120, defaultVisible: false },
+  { id: "relatedItems", label: "Related",                            defaultWidth: 150, defaultVisible: false },
 ];
-
-const STORAGE_KEY = "variations-column-config-v2";
-
-function loadColumnConfig() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return ALL_COLUMNS.map((col, i) => ({
-    id: col.id,
-    visible: !["paid", "balance", "seen", "deadline", "relatedItems"].includes(col.id),
-    order: i,
-  }));
-}
-
-function saveColumnConfig(config: { id: string; visible: boolean; order: number }[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  } catch {}
-}
 
 // ─── Kanban DnD helper components ─────────────────────────────────────────────
 
@@ -214,53 +202,13 @@ export default function Variations() {
   const [currentView, setCurrentView] = useState<"table" | "kanban">("table");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [columnConfig, setColumnConfig] = useState<{ id: string; visible: boolean; order: number }[]>(loadColumnConfig);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
-  const [colWidths, setColWidths] = useState<Record<string, number>>(() =>
-    Object.fromEntries(ALL_COLUMNS.map(c => [c.id, c.defaultWidth]))
-  );
-  const colResizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
-  const [resizingCol, setResizingCol] = useState<string | null>(null);
-
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const bodyScrollRef = useRef<HTMLDivElement>(null);
 
   // Kanban DnD state
   const [activeKanbanId, setActiveKanbanId] = useState<string | null>(null);
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  const syncHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (headerScrollRef.current) {
-      headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-    }
-  };
-
-  const startColResize = (colId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = colWidths[colId] ?? 100;
-    colResizeRef.current = { col: colId, startX, startWidth };
-    setResizingCol(colId);
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!colResizeRef.current) return;
-      const delta = ev.clientX - colResizeRef.current.startX;
-      const newWidth = Math.max(60, colResizeRef.current.startWidth + delta);
-      setColWidths(prev => ({ ...prev, [colResizeRef.current!.col]: newWidth }));
-    };
-
-    const onMouseUp = () => {
-      colResizeRef.current = null;
-      setResizingCol(null);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  };
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
@@ -409,130 +357,213 @@ export default function Variations() {
     });
   }, [variations, searchTerm]);
 
-  const isColVisible = (id: string) => {
-    if (id === "project" && projectIdFromUrl) return false;
-    if (id === "relatedItems" && !projectIdFromUrl) return false;
-    const col = columnConfig.find((c) => c.id === id);
-    const def = ALL_COLUMNS.find((d) => d.id === id);
-    if (!col || !def) return false;
-    return def.required ? true : col.visible;
-  };
+  // ── DataTable column defs ───────────────────────────────────────────────
+  type VariationRow = Variation & { isSeen?: boolean };
 
-  const toggleColumn = (id: string) => {
-    const updated = columnConfig.map((c) =>
-      c.id === id ? { ...c, visible: !c.visible } : c
-    );
-    setColumnConfig(updated);
-    saveColumnConfig(updated);
-  };
-
-  const moveColumn = (id: string, direction: -1 | 1) => {
-    const sorted = [...columnConfig].sort((a, b) => a.order - b.order);
-    const idx = sorted.findIndex((c) => c.id === id);
-    const newIdx = idx + direction;
-    if (newIdx < 0 || newIdx >= sorted.length) return;
-    const reordered = [...sorted];
-    const [moved] = reordered.splice(idx, 1);
-    reordered.splice(newIdx, 0, moved);
-    const updated = reordered.map((c, i) => ({ ...c, order: i }));
-    setColumnConfig(updated);
-    saveColumnConfig(updated);
-  };
-
-  const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
-  const CHECKBOX_COL_WIDTH = 32;
-  const totalWidth = CHECKBOX_COL_WIDTH + orderedColumns.reduce((sum, col) => {
-    const def = ALL_COLUMNS.find(d => d.id === col.id);
-    return sum + (colWidths[col.id] ?? def?.defaultWidth ?? 100);
-  }, 0);
-
-  const renderCell = (col: { id: string }, variation: Variation & { isSeen?: boolean }) => {
-    switch (col.id) {
-      case "number":
-        return (
-          <TableCell key="number" style={{ width: colWidths["number"], minWidth: colWidths["number"] }} className="text-xs font-medium px-2 py-1" data-testid={`cell-number-${variation.id}`}>
-            {variation.variationNumber}
-          </TableCell>
-        );
-      case "name":
-        return (
-          <TableCell key="name" style={{ width: colWidths["name"], minWidth: colWidths["name"] }} className="text-xs px-2 py-1" data-testid={`cell-name-${variation.id}`}>
-            <span className="line-clamp-1">{variation.name}</span>
-          </TableCell>
-        );
-      case "project":
-        return (
-          <TableCell key="project" style={{ width: colWidths["project"], minWidth: colWidths["project"] }} className="text-xs px-2 py-1" data-testid={`cell-project-${variation.id}`}>
-            <div className="flex items-center gap-1.5">
-              <ProjectIcon
-                icon={getProject(variation.projectId)?.icon || "Briefcase"}
-                color={getProject(variation.projectId)?.color || "#3b82f6"}
-                className="w-3 h-3 flex-shrink-0"
+  const variationColumns = useMemo<ColumnDef<VariationRow, unknown>[]>(() => {
+    const cols: (ColumnDef<VariationRow, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "select",
+        header: () => (
+          <input
+            type="checkbox"
+            checked={filteredVariations.length > 0 && selectedIds.size === filteredVariations.length}
+            ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredVariations.length; }}
+            onChange={toggleSelectAll}
+            className="w-3 h-3 accent-[#A890D4] cursor-pointer"
+            aria-label="Select all"
+            data-testid="checkbox-select-all"
+          />
+        ),
+        cell: ({ row }) => {
+          const isSelected = selectedIds.has(row.original.id);
+          return (
+            <span onClick={(e) => toggleSelect(row.original.id, e)}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => {}}
+                className="w-3 h-3 accent-[#A890D4] cursor-pointer"
+                data-testid={`checkbox-${row.original.id}`}
               />
-              <span className="truncate">{getProjectName(variation.projectId)}</span>
-            </div>
-          </TableCell>
-        );
-      case "status":
-        return (
-          <TableCell key="status" style={{ width: colWidths["status"], minWidth: colWidths["status"] }} className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
-            <StatusChip status={variation.status} />
-          </TableCell>
-        );
-      case "total":
-        return (
-          <TableCell key="total" style={{ width: colWidths["total"], minWidth: colWidths["total"] }} className="text-xs font-medium text-right px-2 py-1" data-testid={`cell-total-${variation.id}`}>
-            {formatCurrency(variation.totalAmount)}
-          </TableCell>
-        );
-      case "paid":
-        return (
-          <TableCell key="paid" style={{ width: colWidths["paid"], minWidth: colWidths["paid"] }} className="text-xs text-right px-2 py-1 text-muted-foreground" data-testid={`cell-paid-${variation.id}`}>
-            {variation.paidAmount > 0 ? formatCurrency(variation.paidAmount) : "-"}
-          </TableCell>
-        );
-      case "balance":
-        return (
-          <TableCell key="balance" style={{ width: colWidths["balance"], minWidth: colWidths["balance"] }} className={cn("text-xs font-medium text-right px-2 py-1", variation.balanceAmount > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400")} data-testid={`cell-balance-${variation.id}`}>
-            {formatCurrency(variation.balanceAmount)}
-          </TableCell>
-        );
-      case "seen":
-        return (
-          <TableCell key="seen" style={{ width: colWidths["seen"], minWidth: colWidths["seen"] }} className="px-2 py-1 text-center" data-testid={`cell-seen-${variation.id}`}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleSeenMutation.mutate({ id: variation.id, isSeen: !(variation as any).isSeen });
-              }}
-              className={cn("p-0.5 rounded hover-elevate", (variation as any).isSeen ? "text-foreground" : "text-muted-foreground/40")}
-              data-testid={`button-seen-${variation.id}`}
-            >
-              {(variation as any).isSeen
-                ? <Eye className="w-3.5 h-3.5" />
-                : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
-          </TableCell>
-        );
-      case "deadline":
-        return (
-          <TableCell key="deadline" style={{ width: colWidths["deadline"], minWidth: colWidths["deadline"] }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-deadline-${variation.id}`}>
-            {formatDate(variation.approvalDeadline)}
-          </TableCell>
-        );
-      case "relatedItems": {
-        const links = invoiceLinkMap[variation.id] || [];
-        return (
-          <TableCell key="relatedItems" style={{ width: colWidths["relatedItems"], minWidth: colWidths["relatedItems"] }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-related-${variation.id}`}>
-            {links.length > 0 ? links.join(", ") : "-"}
-          </TableCell>
-        );
-      }
-      default:
-        return null;
+            </span>
+          );
+        },
+        enableSorting: false,
+        size: SELECT_COL_WIDTH,
+        meta: { defaultWidth: SELECT_COL_WIDTH, align: "center", pinned: true, headerLabel: "Select" },
+      },
+      {
+        id: "number",
+        header: "Number",
+        accessorFn: (v) => v.variationNumber || "",
+        cell: ({ row }) => (
+          <span className="text-xs font-medium" data-testid={`cell-number-${row.original.id}`}>
+            {row.original.variationNumber}
+          </span>
+        ),
+        size: 80,
+        meta: { defaultWidth: 80, headerLabel: "Number" },
+      },
+      {
+        id: "name",
+        header: "Name",
+        accessorFn: (v) => v.name || "",
+        cell: ({ row }) => (
+          <span className="text-xs line-clamp-1" data-testid={`cell-name-${row.original.id}`}>
+            {row.original.name}
+          </span>
+        ),
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Name" },
+      },
+    ];
+
+    if (!projectIdFromUrl) {
+      cols.push({
+        id: "project",
+        header: "Project",
+        accessorFn: (v) => getProjectName(v.projectId),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1.5" data-testid={`cell-project-${row.original.id}`}>
+            <ProjectIcon
+              icon={getProject(row.original.projectId)?.icon || "Briefcase"}
+              color={getProject(row.original.projectId)?.color || "#3b82f6"}
+              className="w-3 h-3 flex-shrink-0"
+            />
+            <span className="truncate">{getProjectName(row.original.projectId)}</span>
+          </div>
+        ),
+        size: 150,
+        meta: { defaultWidth: 150, headerLabel: "Project" },
+      });
     }
-  };
+
+    cols.push(
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (v) => v.status,
+        cell: ({ row }) => <StatusChip status={row.original.status} />,
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
+        id: "total",
+        header: "Total",
+        accessorFn: (v) => v.totalAmount,
+        cell: ({ row }) => (
+          <span className="text-xs font-medium tabular-nums" data-testid={`cell-total-${row.original.id}`}>
+            {formatCurrency(row.original.totalAmount)}
+          </span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Total" },
+      },
+      {
+        id: "paid",
+        header: "Paid",
+        accessorFn: (v) => v.paidAmount,
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground tabular-nums" data-testid={`cell-paid-${row.original.id}`}>
+            {row.original.paidAmount > 0 ? formatCurrency(row.original.paidAmount) : "-"}
+          </span>
+        ),
+        size: 90,
+        meta: { defaultWidth: 90, align: "right", headerLabel: "Paid" },
+      },
+      {
+        id: "balance",
+        header: "Balance Due",
+        accessorFn: (v) => v.balanceAmount,
+        cell: ({ row }) => (
+          <span
+            className={cn(
+              "text-xs font-medium tabular-nums",
+              row.original.balanceAmount > 0
+                ? "text-destructive"
+                : "text-emerald-600 dark:text-emerald-400",
+            )}
+            data-testid={`cell-balance-${row.original.id}`}
+          >
+            {formatCurrency(row.original.balanceAmount)}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, align: "right", headerLabel: "Balance Due" },
+      },
+      {
+        id: "seen",
+        header: "Seen",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSeenMutation.mutate({ id: row.original.id, isSeen: !row.original.isSeen });
+            }}
+            className={cn(
+              "p-0.5 rounded hover-elevate",
+              row.original.isSeen ? "text-foreground" : "text-muted-foreground/40",
+            )}
+            data-testid={`button-seen-${row.original.id}`}
+          >
+            {row.original.isSeen
+              ? <Eye className="w-3.5 h-3.5" />
+              : <EyeOff className="w-3.5 h-3.5" />}
+          </button>
+        ),
+        size: 60,
+        meta: { defaultWidth: 60, align: "center", headerLabel: "Seen" },
+      },
+      {
+        id: "deadline",
+        header: "Approval Deadline",
+        accessorFn: (v) => (v.approvalDeadline ? new Date(v.approvalDeadline).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground" data-testid={`cell-deadline-${row.original.id}`}>
+            {formatDate(row.original.approvalDeadline)}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Approval Deadline" },
+      },
+    );
+
+    if (projectIdFromUrl) {
+      cols.push({
+        id: "relatedItems",
+        header: "Related",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const links = invoiceLinkMap[row.original.id] || [];
+          return (
+            <span className="text-xs text-muted-foreground" data-testid={`cell-related-${row.original.id}`}>
+              {links.length > 0 ? links.join(", ") : "-"}
+            </span>
+          );
+        },
+        size: 150,
+        meta: { defaultWidth: 150, headerLabel: "Related" },
+      });
+    }
+
+    return cols;
+  }, [filteredVariations, selectedIds, projectIdFromUrl, projects, invoiceLinkMap, toggleSeenMutation]);
+
+  // Picker columns: respect default visibility for fresh installs.
+  const pickerColumns = useMemo(() => {
+    const visibleSpecs = ALL_COLUMNS.filter((c) => {
+      if (c.id === "project" && projectIdFromUrl) return false;
+      if (c.id === "relatedItems" && !projectIdFromUrl) return false;
+      return true;
+    });
+    return [
+      { id: "select", label: "Select", pinned: true },
+      ...visibleSpecs.map((c) => ({ id: c.id, label: c.label, pinned: c.required })),
+    ];
+  }, [projectIdFromUrl]);
 
   // ─── Kanban DnD sensors & handlers ──────────────────────────────────────────
   const kanbanSensors = useSensors(
@@ -744,49 +775,8 @@ export default function Variations() {
                     <Columns3 className="w-3.5 h-3.5" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-56 p-2" align="end">
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1 mb-2">Columns</p>
-                  <div className="space-y-0.5">
-                    {[...columnConfig].sort((a, b) => a.order - b.order).map((col) => {
-                      const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
-                      if (col.id === "project" && projectIdFromUrl) return null;
-                      if (col.id === "relatedItems" && !projectIdFromUrl) return null;
-                      const visibleCols = [...columnConfig]
-                        .sort((a, b) => a.order - b.order)
-                        .filter(c => !(c.id === "project" && projectIdFromUrl) && !(c.id === "relatedItems" && !projectIdFromUrl));
-                      const visibleIdx = visibleCols.findIndex(c => c.id === col.id);
-                      return (
-                        <div key={col.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group">
-                          <input
-                            type="checkbox"
-                            checked={def.required ? true : col.visible}
-                            disabled={def.required}
-                            onChange={() => !def.required && toggleColumn(col.id)}
-                            className="w-3.5 h-3.5 accent-[#A890D4] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          />
-                          <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
-                            {def.label}
-                          </span>
-                          <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
-                              onClick={() => moveColumn(col.id, -1)}
-                              disabled={visibleIdx === 0}
-                            >
-                              <ChevronUp className="w-2.5 h-2.5 text-muted-foreground" />
-                            </button>
-                            <button
-                              className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
-                              onClick={() => moveColumn(col.id, 1)}
-                              disabled={visibleIdx === visibleCols.length - 1}
-                            >
-                              <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <PopoverContent className="w-56 p-0" align="end">
+                  <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={pickerColumns} />
                 </PopoverContent>
               </Popover>
             )}
@@ -795,121 +785,39 @@ export default function Variations() {
 
           {currentView === "kanban" ? (
             <KanbanView />
+          ) : variationsLoading ? (
+            <div className="text-center py-8">
+              <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
+            </div>
+          ) : filteredVariations.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="flex flex-col items-center gap-3">
+                <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
+                  {variations.length === 0 ? "No variations found" : "No matching variations"}
+                </span>
+                {variations.length === 0 && (
+                  <button
+                    className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                    onClick={handleAddVariation}
+                    data-testid="button-add-first-variation"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add First Variation
+                  </button>
+                )}
+              </div>
+            </div>
           ) : (
-            <>
-
-            {/* Column header — sticky below search row, synced scroll */}
-            <div
-              ref={headerScrollRef}
-              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/30"
-            >
-              <Table style={{ tableLayout: "fixed", width: totalWidth, minWidth: totalWidth }}>
-                <TableHeader>
-                  <TableRow className="h-5 bg-muted/30 hover:bg-muted/30">
-                    {/* Select-all checkbox */}
-                    <TableHead style={{ width: CHECKBOX_COL_WIDTH, minWidth: CHECKBOX_COL_WIDTH }} className="px-2 py-0">
-                      <input
-                        type="checkbox"
-                        checked={filteredVariations.length > 0 && selectedIds.size === filteredVariations.length}
-                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredVariations.length; }}
-                        onChange={toggleSelectAll}
-                        className="w-3 h-3 accent-[#A890D4] cursor-pointer"
-                        data-testid="checkbox-select-all"
-                      />
-                    </TableHead>
-                    {orderedColumns.map((col) => {
-                      const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
-                      const isRight = ["total", "paid", "balance"].includes(col.id);
-                      const isCenter = col.id === "seen";
-                      return (
-                        <TableHead
-                          key={col.id}
-                          style={{ width: colWidths[col.id], minWidth: colWidths[col.id], position: "relative" }}
-                          className={cn(
-                            "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2",
-                            isRight && "text-right",
-                            isCenter && "text-center"
-                          )}
-                          data-testid={`header-${col.id}`}
-                        >
-                          {def.label}
-                          <div
-                            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize group/resize flex items-center justify-center z-10"
-                            onMouseDown={(e) => startColResize(col.id, e)}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className={`w-0.5 h-4 rounded-full transition-all ${resizingCol === col.id ? 'bg-primary' : 'bg-transparent group-hover/resize:bg-primary/60'}`} />
-                          </div>
-                        </TableHead>
-                      );
-                    })}
-                  </TableRow>
-                </TableHeader>
-              </Table>
-            </div>
-
-            {/* Table body — horizontal scroll synced with header */}
-            <div
-              ref={bodyScrollRef}
-              onScroll={syncHeaderScroll}
-              className="overflow-x-auto"
-            >
-              <Table style={{ tableLayout: "fixed", width: totalWidth, minWidth: totalWidth }}>
-                <TableBody>
-                  {variationsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={orderedColumns.length + 1} className="text-center py-8">
-                        <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredVariations.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={orderedColumns.length + 1} className="text-center py-8">
-                        <div className="flex flex-col items-center gap-3">
-                          <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
-                            {variations.length === 0 ? "No variations found" : "No matching variations"}
-                          </span>
-                          {variations.length === 0 && (
-                            <button
-                              className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
-                              onClick={handleAddVariation}
-                              data-testid="button-add-first-variation"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              Add First Variation
-                            </button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredVariations.map((variation) => {
-                      const isSelected = selectedIds.has(variation.id);
-                      return (
-                        <TableRow
-                          key={variation.id}
-                          className={cn("cursor-pointer hover-elevate h-9", isSelected && "bg-[#A890D4]/8 dark:bg-[#A890D4]/10")}
-                          onClick={() => handleRowClick(variation.id)}
-                          data-testid={`row-variation-${variation.id}`}
-                        >
-                          <TableCell style={{ width: CHECKBOX_COL_WIDTH, minWidth: CHECKBOX_COL_WIDTH }} className="px-2 py-1" onClick={e => toggleSelect(variation.id, e)}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}}
-                              className="w-3 h-3 accent-[#A890D4] cursor-pointer"
-                              data-testid={`checkbox-${variation.id}`}
-                            />
-                          </TableCell>
-                          {orderedColumns.map((col) => renderCell(col, variation as any))}
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            </>
+            <DataTable
+              storageKey={TABLE_STORAGE_KEY}
+              legacyConfigKey={LEGACY_STORAGE_KEY}
+              data={filteredVariations as VariationRow[]}
+              columns={variationColumns}
+              rowKey={(v) => v.id}
+              onRowClick={(v) => handleRowClick(v.id)}
+              rowClassName={(v) => selectedIds.has(v.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : ""}
+              className="max-h-[calc(100vh-260px)]"
+            />
           )}
         </div>
 

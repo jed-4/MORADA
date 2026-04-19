@@ -52,7 +52,7 @@ export interface DataTableColumnMeta {
 
 export interface DataTableProps<TData> {
   data: TData[];
-  columns: ColumnDef<TData, any>[];
+  columns: ColumnDef<TData, unknown>[];
   /** Stable storage scope, e.g. "bills". Becomes `buildpro_table_<scope>_*`. */
   storageKey: string;
   rowKey: (row: TData) => string;
@@ -64,6 +64,36 @@ export interface DataTableProps<TData> {
   className?: string;
   /** Row min-height in px (default 36). */
   rowHeight?: number;
+  /**
+   * Legacy local-storage key whose value is `[{id,visible,order}]`. If found
+   * and the new keys aren't populated yet, the layout is imported once and
+   * the legacy key is removed. Use to carry over saved layouts after migrating
+   * a page from a bespoke table to this shared component.
+   */
+  legacyConfigKey?: string;
+}
+
+interface LegacyColumnConfigEntry { id: string; visible: boolean; order: number }
+
+function migrateLegacyConfig(scope: string, legacyKey: string | undefined) {
+  if (!legacyKey || typeof window === "undefined") return;
+  const orderKey = lsKey(scope, "order");
+  const hiddenKey = lsKey(scope, "hidden");
+  if (localStorage.getItem(orderKey) || localStorage.getItem(hiddenKey)) return;
+  try {
+    const raw = localStorage.getItem(legacyKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    const entries = parsed as LegacyColumnConfigEntry[];
+    const sorted = [...entries].sort((a, b) => a.order - b.order);
+    const order = sorted.map((c) => c.id);
+    const hidden: VisibilityState = {};
+    entries.forEach((c) => { if (c.visible === false) hidden[c.id] = false; });
+    saveJSON(orderKey, order);
+    saveJSON(hiddenKey, hidden);
+    localStorage.removeItem(legacyKey);
+  } catch {}
 }
 
 const MIN_COL_WIDTH = 60;
@@ -145,7 +175,11 @@ export function DataTable<TData>({
   emptyState,
   className,
   rowHeight = 36,
+  legacyConfigKey,
 }: DataTableProps<TData>) {
+  // One-time migration of legacy `[{id,visible,order}]` storage into the new keys.
+  useMemo(() => migrateLegacyConfig(storageKey, legacyConfigKey), [storageKey, legacyConfigKey]);
+
   // ── Persistent state ───────────────────────────────────────────────────────
   const initialOrder = useMemo<ColumnOrderState>(
     () => loadJSON(lsKey(storageKey, "order"), columns.map((c) => c.id as string)),
@@ -305,7 +339,7 @@ export function DataTable<TData>({
                         >
                           <div
                             className={cn(
-                              "flex items-center gap-1 truncate",
+                              "group flex items-center gap-1 truncate",
                               meta.align === "right" && "justify-end",
                               meta.align === "center" && "justify-center",
                               canSort && !meta.pinned && "cursor-pointer",

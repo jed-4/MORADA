@@ -169,7 +169,7 @@ export default function ClientInvoices() {
       const q = searchQuery.toLowerCase();
       return (
         (inv.invoiceNumber || "").toLowerCase().includes(q) ||
-        ((inv as any).name || "").toLowerCase().includes(q) ||
+        (inv.name || "").toLowerCase().includes(q) ||
         (getProject(inv.projectId)?.name || "").toLowerCase().includes(q)
       );
     });
@@ -269,7 +269,7 @@ export default function ClientInvoices() {
       case "name":
         content = (
           <span className="text-xs text-foreground leading-snug" data-testid={`cell-name-${invoice.id}`}>
-            {(invoice as any).name || invoice.invoiceNumber || "—"}
+            {invoice.name || invoice.invoiceNumber || "—"}
           </span>
         );
         break;
@@ -342,7 +342,7 @@ export default function ClientInvoices() {
       accessorFn: (inv) => {
         switch (col.key) {
           case "invoice_number": return inv.invoiceNumber || "";
-          case "name":           return (inv as any).name || "";
+          case "name":           return inv.name || "";
           case "status":         return inv.status || "";
           case "invoice_date":   return inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0;
           case "due_date":       return inv.dueDate ? new Date(inv.dueDate).getTime() : 0;

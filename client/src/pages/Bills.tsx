@@ -508,7 +508,7 @@ export default function Bills() {
     const totals = { draft: 0, awaiting_approval: 0, awaiting_payment: 0, paid: 0 };
     bills.forEach((bill) => {
       const rawAmount = bill.total / 100;
-      const amount = (bill as any).billType === "credit" ? -rawAmount : rawAmount;
+      const amount = bill.billType === "credit" ? -rawAmount : rawAmount;
       if (bill.status === "draft") totals.draft += amount;
       else if (bill.status === "awaiting_approval") totals.awaiting_approval += amount;
       else if (bill.status === "awaiting_payment") totals.awaiting_payment += amount;
@@ -563,8 +563,8 @@ export default function Bills() {
   };
 
   // ── DataTable column defs ───────────────────────────────────────────────
-  const billColumns = useMemo<ColumnDef<Bill, any>[]>(() => {
-    const cols: (ColumnDef<Bill, any> & { meta?: DataTableColumnMeta })[] = [
+  const billColumns = useMemo<ColumnDef<Bill, unknown>[]>(() => {
+    const cols: (ColumnDef<Bill, unknown> & { meta?: DataTableColumnMeta })[] = [
       {
         id: "checkbox",
         header: () => (
@@ -594,7 +594,7 @@ export default function Bills() {
         cell: ({ row }) => (
           <div className="flex items-center gap-1 font-medium">
             {row.original.billNumber}
-            {(row.original as any).billType === "credit" && (
+            {row.original.billType === "credit" && (
               <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
             )}
           </div>
@@ -638,7 +638,7 @@ export default function Bills() {
         },
         size: 150,
         meta: { defaultWidth: 150, headerLabel: "Project" },
-      } as ColumnDef<Bill, any> & { meta: DataTableColumnMeta }]),
+      } as ColumnDef<Bill, unknown> & { meta: DataTableColumnMeta }]),
       {
         id: "reference",
         header: "Reference",
@@ -663,10 +663,10 @@ export default function Bills() {
       {
         id: "total",
         header: "Total",
-        accessorFn: (b) => ((b as any).billType === "credit" ? -b.total : b.total),
+        accessorFn: (b) => (b.billType === "credit" ? -b.total : b.total),
         cell: ({ row }) => (
-          <span className={cn("font-medium", (row.original as any).billType === "credit" && "text-green-600 dark:text-green-400")}>
-            {(row.original as any).billType === "credit"
+          <span className={cn("font-medium", row.original.billType === "credit" && "text-green-600 dark:text-green-400")}>
+            {row.original.billType === "credit"
               ? `-${formatCurrency(row.original.total)}`
               : formatCurrency(row.original.total)}
           </span>
@@ -1028,6 +1028,7 @@ export default function Bills() {
               ) : (
                 <DataTable
                   storageKey="bills"
+                  legacyConfigKey="bills-column-config-v1"
                   data={filteredBills}
                   columns={billColumns}
                   rowKey={(b) => b.id}
