@@ -80,10 +80,12 @@ import {
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
 import {
   Collapsible,
   CollapsibleContent,
@@ -203,6 +205,12 @@ export default function BillDetail() {
   const [supplierSearchText, setSupplierSearchText] = useState("");
   const [unmatchedPickerOpen, setUnmatchedPickerOpen] = useState(false);
   const [unmatchedSearchText, setUnmatchedSearchText] = useState("");
+  const [ocrSupplierSuggestion, setOcrSupplierSuggestion] = useState<
+    | { id: string; name: string; confidence: number }
+    | null
+  >(null);
+  const [accountPickerOpenIndex, setAccountPickerOpenIndex] = useState<number | null>(null);
+  const [accountPickerSearch, setAccountPickerSearch] = useState("");
   const [ocrFilePreviewUrl, setOcrFilePreviewUrl] = useState<string | null>(null);
   const [ocrFileIsImage, setOcrFileIsImage] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
@@ -1328,37 +1336,34 @@ export default function BillDetail() {
     }
 
     if (ocrResults.supplierName) {
-      const normalize = (s: string) =>
-        s.toLowerCase().trim().replace(/\b(pty|ltd|limited|inc|llc|the|co|company)\b/g, "").replace(/[^a-z0-9]/g, "");
-      const searchNorm = normalize(ocrResults.supplierName);
-      // Tightened: require normalized exact match OR strong substring (>=4 chars and one fully contains the other)
-      const matchedSupplier = searchNorm.length >= 2 ? suppliers.find((s: any) => {
-        const candidates = [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`]
-          .filter(Boolean)
-          .map((v: string) => normalize(v))
-          .filter((v: string) => v.length > 0);
-        return candidates.some(c => {
-          if (c === searchNorm) return true;
-          if (c.length >= 4 && searchNorm.length >= 4 && (c.includes(searchNorm) || searchNorm.includes(c))) {
-            // Require the shorter one to be at least 70% of the longer to avoid loose substring matches
-            const shorter = Math.min(c.length, searchNorm.length);
-            const longer = Math.max(c.length, searchNorm.length);
-            return shorter / longer >= 0.7;
-          }
-          return false;
-        });
-      }) : undefined;
-      if (matchedSupplier) {
-        form.setValue("supplierId", matchedSupplier.id);
+      const candidates = (suppliers as any[]).map((s) => ({
+        id: s.id,
+        names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
+        raw: s,
+      }));
+      const result = matchSupplier(ocrResults.supplierName, candidates);
+      if (result.match) {
+        form.setValue("supplierId", result.match.candidate.id);
       } else {
         // No confident match — open the unmatched-supplier dialog so the user
         // can pick an existing one or create a new one seeded with OCR data.
+        const top: SupplierMatch<typeof candidates[number]> | undefined = result.nearMatches[0];
         setOcrSupplierData({
           name: ocrResults.supplierName,
           email: ocrResults.supplierEmail,
           phone: ocrResults.supplierPhone,
         });
-        setUnmatchedSupplierSelection("");
+        if (top) {
+          setOcrSupplierSuggestion({
+            id: top.candidate.id,
+            name: (top.candidate as any).raw?.name || ocrResults.supplierName,
+            confidence: top.confidence,
+          });
+          setUnmatchedSupplierSelection(top.candidate.id);
+        } else {
+          setOcrSupplierSuggestion(null);
+          setUnmatchedSupplierSelection("");
+        }
         setUnmatchedSupplierDialogOpen(true);
       }
     }
@@ -1366,6 +1371,10 @@ export default function BillDetail() {
     if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
       const firstCostCode = costCodes[0]?.id;
       const defaultAccount = getSupplierDefaultAccount();
+      // OCR returns inc-GST line totals (see INVOICE_EXTRACTION_PROMPT). Force
+      // the form into Tax Inclusive mode so the calculator strips GST correctly
+      // instead of adding 10% on top.
+      setTaxMode("inclusive");
       const newLineItems = ocrResults.lineItems.map((item: any, index: number) => ({
         lineType: "custom" as const,
         description: item.description || "",
@@ -1377,6 +1386,8 @@ export default function BillDetail() {
         account: defaultAccount,
         total: item.totalAmount ? item.totalAmount / 100 : 0,
         order: index,
+        appliesToAllowances: false,
+        allowanceItemId: undefined,
       }));
       setLineItems(newLineItems);
     }
@@ -1630,7 +1641,7 @@ export default function BillDetail() {
                             </FormControl>
                           </PopoverTrigger>
                           <PopoverContent
-                            className="p-0 w-[--radix-popover-trigger-width] min-w-[240px]"
+                            className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]"
                             align="start"
                             data-testid="select-supplier-content"
                           >
@@ -1643,20 +1654,22 @@ export default function BillDetail() {
                               />
                               <CommandList className="max-h-[280px]">
                                 <CommandEmpty>No suppliers found.</CommandEmpty>
-                                {suppliers.map((supplier: any) => (
-                                  <CommandItem
-                                    key={supplier.id}
-                                    value={supplier.name}
-                                    onSelect={() => {
-                                      field.onChange(supplier.id);
-                                      setSupplierPickerOpen(false);
-                                      setSupplierSearchText("");
-                                    }}
-                                    data-testid={`option-supplier-${supplier.id}`}
-                                  >
-                                    {supplier.name}
-                                  </CommandItem>
-                                ))}
+                                <CommandGroup>
+                                  {suppliers.map((supplier: any) => (
+                                    <CommandItem
+                                      key={supplier.id}
+                                      value={supplier.name}
+                                      onSelect={() => {
+                                        field.onChange(supplier.id);
+                                        setSupplierPickerOpen(false);
+                                        setSupplierSearchText("");
+                                      }}
+                                      data-testid={`option-supplier-${supplier.id}`}
+                                    >
+                                      <span className="truncate">{supplier.name}</span>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
                               </CommandList>
                               <div className="border-t p-1 bg-popover sticky bottom-0">
                                 <button
@@ -2362,22 +2375,72 @@ export default function BillDetail() {
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("account") }}>
                           {xeroAccounts.length > 0 ? (
-                            <Select
-                              value={item.account || "__none__"}
-                              onValueChange={(val) => updateLineItem(index, "account", val === "__none__" ? "" : val)}
+                            <Popover
+                              open={accountPickerOpenIndex === index}
+                              onOpenChange={(open) => {
+                                setAccountPickerOpenIndex(open ? index : null);
+                                if (!open) setAccountPickerSearch("");
+                              }}
                             >
-                              <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-account-${index}`}>
-                                <SelectValue placeholder="Select account..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__">None</SelectItem>
-                                {xeroAccounts.map((acc) => (
-                                  <SelectItem key={acc.code} value={acc.code}>
-                                    {acc.code} - {acc.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm text-left truncate hover-elevate"
+                                  data-testid={`select-account-${index}`}
+                                >
+                                  {(() => {
+                                    const acc = xeroAccounts.find((a) => a.code === item.account);
+                                    if (acc) return `${acc.code} - ${acc.name}`;
+                                    return item.account || (
+                                      <span className="text-muted-foreground">Select account...</span>
+                                    );
+                                  })()}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]"
+                                align="start"
+                              >
+                                <Command shouldFilter={true}>
+                                  <CommandInput
+                                    placeholder="Search accounts..."
+                                    value={accountPickerSearch}
+                                    onValueChange={setAccountPickerSearch}
+                                    data-testid={`input-account-search-${index}`}
+                                  />
+                                  <CommandList className="max-h-[260px]">
+                                    <CommandEmpty>No accounts found.</CommandEmpty>
+                                    <CommandGroup>
+                                      <CommandItem
+                                        value="__none__ none clear"
+                                        onSelect={() => {
+                                          updateLineItem(index, "account", "");
+                                          setAccountPickerOpenIndex(null);
+                                          setAccountPickerSearch("");
+                                        }}
+                                        data-testid={`option-account-${index}-none`}
+                                      >
+                                        <span className="text-muted-foreground">None</span>
+                                      </CommandItem>
+                                      {xeroAccounts.map((acc) => (
+                                        <CommandItem
+                                          key={acc.code}
+                                          value={`${acc.code} ${acc.name}`}
+                                          onSelect={() => {
+                                            updateLineItem(index, "account", acc.code);
+                                            setAccountPickerOpenIndex(null);
+                                            setAccountPickerSearch("");
+                                          }}
+                                          data-testid={`option-account-${index}-${acc.code}`}
+                                        >
+                                          <span className="truncate">{acc.code} - {acc.name}</span>
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           ) : (
                             <input
                               value={item.account}
@@ -2983,6 +3046,7 @@ export default function BillDetail() {
             setUnmatchedSupplierSelection("");
             setUnmatchedSearchText("");
             setUnmatchedPickerOpen(false);
+            setOcrSupplierSuggestion(null);
           }
         }}
       >
@@ -3029,7 +3093,7 @@ export default function BillDetail() {
                     <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[240px]" align="start">
+                <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]" align="start">
                   <Command shouldFilter={true}>
                     <CommandInput
                       placeholder="Search suppliers..."
@@ -3039,20 +3103,40 @@ export default function BillDetail() {
                     />
                     <CommandList className="max-h-[260px]">
                       <CommandEmpty>No suppliers found.</CommandEmpty>
-                      {suppliers.map((s: any) => (
-                        <CommandItem
-                          key={s.id}
-                          value={s.name}
-                          onSelect={() => {
-                            setUnmatchedSupplierSelection(s.id);
-                            setUnmatchedPickerOpen(false);
-                            setUnmatchedSearchText("");
-                          }}
-                          data-testid={`option-unmatched-supplier-${s.id}`}
-                        >
-                          {s.name}
-                        </CommandItem>
-                      ))}
+                      {ocrSupplierSuggestion && !unmatchedSearchText.trim() && (
+                        <CommandGroup heading="Best guess">
+                          <CommandItem
+                            value={`__suggest__ ${ocrSupplierSuggestion.name}`}
+                            onSelect={() => {
+                              setUnmatchedSupplierSelection(ocrSupplierSuggestion.id);
+                              setUnmatchedPickerOpen(false);
+                              setUnmatchedSearchText("");
+                            }}
+                            data-testid="option-unmatched-supplier-suggestion"
+                          >
+                            <span className="truncate flex-1">{ocrSupplierSuggestion.name}</span>
+                            <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
+                              {Math.round(ocrSupplierSuggestion.confidence * 100)}%
+                            </span>
+                          </CommandItem>
+                        </CommandGroup>
+                      )}
+                      <CommandGroup heading="All suppliers">
+                        {suppliers.map((s: any) => (
+                          <CommandItem
+                            key={s.id}
+                            value={s.name}
+                            onSelect={() => {
+                              setUnmatchedSupplierSelection(s.id);
+                              setUnmatchedPickerOpen(false);
+                              setUnmatchedSearchText("");
+                            }}
+                            data-testid={`option-unmatched-supplier-${s.id}`}
+                          >
+                            <span className="truncate">{s.name}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
                     </CommandList>
                     <div className="border-t p-1 bg-popover sticky bottom-0">
                       <button

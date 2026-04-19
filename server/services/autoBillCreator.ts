@@ -2,6 +2,7 @@ import { processInvoiceWithAI } from "./aiBillReader";
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
 import type { InsertBill, InsertBillLineItem } from "@shared/schema";
+import { matchSupplier } from "@shared/supplierMatcher";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { randomUUID } from "crypto";
 
@@ -103,13 +104,18 @@ export class AutoBillCreatorService {
 
     if (options.autoMatch && invoiceData.supplierName) {
       const suppliers = await storage.getSuppliers();
-      const matchedSupplier = suppliers.find(s =>
-        s.name.toLowerCase() === invoiceData.supplierName!.toLowerCase()
+      const result = matchSupplier(
+        invoiceData.supplierName,
+        suppliers.map((s: any) => ({
+          id: s.id,
+          names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
+          raw: s,
+        })),
       );
 
-      if (matchedSupplier) {
-        supplierId = matchedSupplier.id;
-        supplierName = matchedSupplier.name;
+      if (result.match) {
+        supplierId = result.match.candidate.id;
+        supplierName = (result.match.candidate as any).raw?.name || invoiceData.supplierName;
       } else {
         const newSupplier = await storage.createSupplier({
           name: invoiceData.supplierName,

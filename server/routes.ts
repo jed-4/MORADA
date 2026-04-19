@@ -148,6 +148,7 @@ import {
   userRoles as userRolesTable,
   bills as billsTable
 } from "@shared/schema";
+import { matchSupplier } from "@shared/supplierMatcher";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -23923,10 +23924,32 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           let supplierId: string | undefined;
           const xeroContactId = xeroInvoice.Contact?.ContactID;
           const xeroContactName: string = xeroInvoice.Contact?.Name || "";
+          const contacts = await storage.getContacts(companyId).catch(() => [] as any[]);
           if (xeroContactId) {
-            const contacts = await storage.getContacts(companyId).catch(() => [] as any[]);
             const matched = (contacts as any[]).find((c) => c.xeroContactId === xeroContactId);
             if (matched) supplierId = matched.id;
+          }
+          // Fallback: fuzzy-match by name (handles suppliers that exist locally
+          // but were never linked to a Xero contact, or Xero contact ID renames).
+          if (!supplierId && xeroContactName) {
+            const result = matchSupplier(
+              xeroContactName,
+              (contacts as any[])
+                .filter((c) => c.contactType === "supplier" || !c.contactType)
+                .map((c) => ({
+                  id: c.id,
+                  names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()],
+                })),
+            );
+            if (result.match) {
+              supplierId = result.match.candidate.id;
+              // Backfill the Xero link so subsequent imports skip the fuzzy step.
+              if (xeroContactId) {
+                await storage
+                  .updateContact(supplierId, { xeroContactId } as any, companyId)
+                  .catch(() => undefined);
+              }
+            }
           }
           if (!supplierId) {
             if (unmappedAction === "skip") {
