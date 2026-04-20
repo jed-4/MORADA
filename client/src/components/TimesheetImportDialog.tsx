@@ -29,7 +29,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Project, User, CostCode } from "@shared/schema";
-import { fuzzyMatchTimesheetCostCode, readTimesheetBreakFromRow } from "@shared/import";
+import {
+  fuzzyMatchTimesheetCostCode,
+  fuzzyMatchTimesheetUser,
+  readTimesheetBreakFromRow,
+} from "@shared/import";
 
 interface ParsedRow {
   _rowNum: number;
@@ -45,6 +49,8 @@ interface ParsedRow {
   costCodeId: string | null;
   costCodeMatchType: "exact" | "fuzzy" | "none";
   costCodeMatchedLabel: string | null;
+  userMatchType: "exact" | "fuzzy" | "none";
+  userMatchedLabel: string | null;
   breakDuration: number;
   severity: "ok" | "warning" | "error";
   issues: string[];
@@ -58,17 +64,6 @@ interface TimesheetImportDialogProps {
   costCodes: CostCode[];
   defaultProjectId?: string;
   onImported: () => void;
-}
-
-function matchUser(name: string, users: User[]): User | null {
-  if (!name) return null;
-  const normalized = name.trim().toLowerCase();
-  return (
-    users.find((u) => {
-      const full = `${u.firstName || ""} ${u.lastName || ""}`.trim().toLowerCase();
-      return full === normalized;
-    }) ?? null
-  );
 }
 
 function formatCostCodeLabel(c: CostCode): string {
@@ -96,9 +91,24 @@ function parseRows(
 
     const userName = String(row["User"] || "").trim();
     if (!userName) issues.push("Missing user name");
-    const matchedUser = matchUser(userName, users);
-    if (userName && !matchedUser)
+    const userMatch = userName ? fuzzyMatchTimesheetUser(userName, users) : null;
+    const matchedUser =
+      userMatch && userMatch.matched
+        ? users.find((u) => u.id === userMatch.matched!.id) ?? null
+        : null;
+    let userMatchType: "exact" | "fuzzy" | "none" = "none";
+    let userMatchedLabel: string | null = null;
+    if (userMatch && userMatch.matched) {
+      userMatchType = userMatch.matchType;
+      userMatchedLabel = userMatch.label;
+      if (userMatch.matchType === "fuzzy") {
+        issues.push(
+          `User "${userName}" fuzzy matched to ${userMatch.label}`
+        );
+      }
+    } else if (userName) {
       issues.push(`User "${userName}" not found — will import under your account`);
+    }
 
     let startTime = "";
     let endTime = "";
@@ -175,6 +185,8 @@ function parseRows(
       costCodeId: matchedCode?.id ?? null,
       costCodeMatchType,
       costCodeMatchedLabel,
+      userMatchType,
+      userMatchedLabel,
       breakDuration,
       severity: isError ? "error" : isWarning ? "warning" : "ok",
       issues,
@@ -441,12 +453,24 @@ export function TimesheetImportDialog({
                         )}
                       </TableCell>
                       <TableCell className="text-xs">{row.date || "—"}</TableCell>
-                      <TableCell className="text-xs max-w-[120px] truncate">
+                      <TableCell className="text-xs max-w-[140px] truncate">
                         {row.userName ? (
-                          row.userId ? (
+                          row.userMatchType === "exact" ? (
                             row.userName
+                          ) : row.userMatchType === "fuzzy" ? (
+                            <span
+                              className="text-amber-600 dark:text-amber-400"
+                              title={`Fuzzy matched to ${row.userMatchedLabel}`}
+                            >
+                              {row.userName} → {row.userMatchedLabel}
+                            </span>
                           ) : (
-                            <span className="text-red-600 dark:text-red-400">{row.userName}</span>
+                            <span
+                              className="text-amber-600 dark:text-amber-400"
+                              title="Not matched — will import under your account"
+                            >
+                              {row.userName}
+                            </span>
                           )
                         ) : (
                           "—"
@@ -493,7 +517,7 @@ export function TimesheetImportDialog({
             {(errorRows.length > 0 || parsedRows.some((r) => r.severity === "warning")) && (
               <p className="text-xs text-muted-foreground">
                 <span className="text-red-600 dark:text-red-400">Red</span> = skipped (missing date or invalid duration).{" "}
-                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (unrecognised user imports under your account; cost code was fuzzy-matched to a similar one or imported without one if no close match was found).
+                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (user or cost code was fuzzy-matched to a similar one; unrecognised users import under your account; unrecognised cost codes import without one; unparseable break values import as 0).
               </p>
             )}
           </div>

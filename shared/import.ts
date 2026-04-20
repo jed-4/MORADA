@@ -596,6 +596,166 @@ export function fuzzyMatchTimesheetCostCode(
   return { rawValue: trimmed, matched: null, confidence: "low" };
 }
 
+// A user candidate for timesheet import matching. Structural so the
+// shared module doesn't need to import the full schema User type.
+export type TimesheetUserCandidate = {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export type TimesheetUserMatch =
+  | {
+      rawValue: string;
+      matched: TimesheetUserCandidate;
+      matchType: "exact" | "fuzzy";
+      label: string;
+      confidence: "high" | "medium";
+      score?: number;
+    }
+  | {
+      rawValue: string;
+      matched: null;
+      confidence: "low";
+    }
+  | null;
+
+function userFullName(u: TimesheetUserCandidate): string {
+  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+}
+
+/**
+ * Match a free-text user name from a timesheet import to a company user.
+ * Tries cheap exact strategies first (full name, "last, first" form,
+ * reversed "last first" form, and unique single-token first/last name)
+ * and then falls back to a Levenshtein-similarity search using a
+ * conservative threshold. Returns:
+ *   - high confidence "exact" match
+ *   - medium confidence "fuzzy" match (above threshold and not ambiguous)
+ *   - low confidence with `matched: null` if nothing is close enough or
+ *     two candidates are too close to be sure
+ *   - null if the input is empty
+ */
+export function fuzzyMatchTimesheetUser(
+  rawName: string | undefined | null,
+  users: TimesheetUserCandidate[]
+): TimesheetUserMatch {
+  if (!rawName) return null;
+  const trimmed = String(rawName).trim();
+  if (!trimmed) return null;
+
+  const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
+  const inputLower = collapse(trimmed.toLowerCase());
+
+  // 1. Exact full-name match (case-insensitive, whitespace-collapsed)
+  const exactFull = users.find(
+    (u) => collapse(userFullName(u).toLowerCase()) === inputLower
+  );
+  if (exactFull) {
+    return {
+      rawValue: trimmed,
+      matched: exactFull,
+      matchType: "exact",
+      label: userFullName(exactFull),
+      confidence: "high",
+    };
+  }
+
+  // 2. "Last, First" form
+  if (trimmed.includes(",")) {
+    const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 2) {
+      const swapped = collapse(`${parts[1]} ${parts[0]}`.toLowerCase());
+      const swappedMatch = users.find(
+        (u) => collapse(userFullName(u).toLowerCase()) === swapped
+      );
+      if (swappedMatch) {
+        return {
+          rawValue: trimmed,
+          matched: swappedMatch,
+          matchType: "exact",
+          label: userFullName(swappedMatch),
+          confidence: "high",
+        };
+      }
+    }
+  }
+
+  // 3. Reversed "Last First" form (no comma)
+  const reverseMatch = users.find((u) => {
+    const reverse = collapse(
+      `${u.lastName ?? ""} ${u.firstName ?? ""}`.toLowerCase()
+    );
+    return reverse !== "" && reverse === inputLower;
+  });
+  if (reverseMatch) {
+    return {
+      rawValue: trimmed,
+      matched: reverseMatch,
+      matchType: "exact",
+      label: userFullName(reverseMatch),
+      confidence: "high",
+    };
+  }
+
+  // 4. Single-token unique first or last name match → exact
+  if (!inputLower.includes(" ")) {
+    const tokenMatches = users.filter(
+      (u) =>
+        (u.firstName ?? "").toLowerCase() === inputLower ||
+        (u.lastName ?? "").toLowerCase() === inputLower
+    );
+    if (tokenMatches.length === 1) {
+      return {
+        rawValue: trimmed,
+        matched: tokenMatches[0],
+        matchType: "exact",
+        label: userFullName(tokenMatches[0]),
+        confidence: "high",
+      };
+    }
+    // multiple → ambiguous (e.g. two Smiths), fall through to fuzzy
+  }
+
+  // 5. Fuzzy similarity, max of forward and reversed name forms
+  const normInput = normaliseForFuzzy(trimmed);
+  if (!normInput) return null;
+
+  const scored: { user: TimesheetUserCandidate; score: number }[] = [];
+  for (const u of users) {
+    const a = normaliseForFuzzy(userFullName(u));
+    const b = normaliseForFuzzy(`${u.lastName ?? ""} ${u.firstName ?? ""}`);
+    const score = Math.max(
+      a ? similarity(normInput, a) : 0,
+      b ? similarity(normInput, b) : 0
+    );
+    scored.push({ user: u, score });
+  }
+  scored.sort((x, y) => y.score - x.score);
+
+  const threshold = 0.85;
+  const top = scored[0];
+  const second = scored[1];
+
+  if (top && top.score >= threshold) {
+    // Ambiguity guard: if two candidates are both above threshold and
+    // very close, attributing hours to either could be wrong — bail out.
+    if (second && second.score >= threshold && top.score - second.score < 0.05) {
+      return { rawValue: trimmed, matched: null, confidence: "low" };
+    }
+    return {
+      rawValue: trimmed,
+      matched: top.user,
+      matchType: "fuzzy",
+      label: userFullName(top.user),
+      confidence: "medium",
+      score: top.score,
+    };
+  }
+
+  return { rawValue: trimmed, matched: null, confidence: "low" };
+}
+
 // Result of parsing a free-text break value from a timesheet import row.
 export interface TimesheetBreakParseResult {
   /** Break in hours (always >= 0). 0 when input is empty/missing/unparseable. */

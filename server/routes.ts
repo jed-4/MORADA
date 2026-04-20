@@ -149,7 +149,11 @@ import {
   bills as billsTable
 } from "@shared/schema";
 import { matchSupplier } from "@shared/supplierMatcher";
-import { fuzzyMatchTimesheetCostCode, readTimesheetBreakFromRow } from "@shared/import";
+import {
+  fuzzyMatchTimesheetCostCode,
+  fuzzyMatchTimesheetUser,
+  readTimesheetBreakFromRow,
+} from "@shared/import";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -17151,14 +17155,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyUsers = await storage.getUsersByCompanyWithRoles(req.user.companyId);
       const companyCodes = await storage.getCostCodes(req.user.companyId);
 
-      const matchUserByName = (name: string): string | undefined => {
-        if (!name) return undefined;
-        const normalized = name.trim().toLowerCase();
-        const found = companyUsers.find((u) => {
-          const full = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim().toLowerCase();
-          return full === normalized;
-        });
-        return found?.id;
+      const matchUserByName = (
+        name: string
+      ): { id: string | null; matchType: "exact" | "fuzzy" | "none"; label: string | null } => {
+        if (!name) return { id: null, matchType: "none", label: null };
+        const result = fuzzyMatchTimesheetUser(name, companyUsers);
+        if (result && result.matched) {
+          return {
+            id: result.matched.id,
+            matchType: result.matchType,
+            label: result.label,
+          };
+        }
+        return { id: null, matchType: "none", label: null };
       };
 
       const matchCostCodeByStr = (
@@ -17223,10 +17232,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Resolve user — warn and fall back to importing admin if name doesn't match
         // (userId is NOT NULL in schema, so null is not permitted)
         const userName = String(row["User"] ?? "").trim();
-        const matchedUserId = matchUserByName(userName);
-        const resolvedUserId = matchedUserId ?? req.user.id;
-        if (userName && !matchedUserId) {
+        const userResult = matchUserByName(userName);
+        const resolvedUserId = userResult.id ?? req.user.id;
+        if (userName && !userResult.id) {
           errors.push(`${rowLabel} warning: user "${userName}" not found in company — imported under current account`);
+        } else if (userName && userResult.matchType === "fuzzy" && userResult.label) {
+          errors.push(`${rowLabel} info: user "${userName}" fuzzy matched to ${userResult.label}`);
         }
 
         // Parse start/end times
