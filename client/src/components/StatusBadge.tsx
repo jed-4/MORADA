@@ -80,6 +80,8 @@ const TONE_BUCKETS: Record<Exclude<StatusTone, "neutral">, string[]> = {
     "action-required",
     "needs_action",
     "needs-action",
+    "needs_review",
+    "needs-review",
     "requires_action",
     "requires-action",
     "needs_attention",

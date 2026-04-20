@@ -1445,7 +1445,7 @@ export type SelectionOptionWithAttachments = SelectionOption & {
 
 // Bill-related enums
 export const billTypeEnum = pgEnum("bill_type", ["bill", "credit"]);
-export const billStatusEnum = pgEnum("bill_status", ["draft", "awaiting_approval", "awaiting_payment", "paid"]);
+export const billStatusEnum = pgEnum("bill_status", ["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]);
 export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
 export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
 export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
@@ -1802,7 +1802,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   updatedAt: true,
 }).extend({
   billType: z.enum(["bill", "credit"]),
-  status: z.enum(["draft", "awaiting_approval", "awaiting_payment", "paid"]),
+  status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]),
   billDate: z.coerce.date(),
   dueDate: z.coerce.date().optional(),
   subtotal: z.number().default(0),

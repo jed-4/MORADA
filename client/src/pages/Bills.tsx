@@ -71,6 +71,7 @@ import { cn } from "@/lib/utils";
 const STATUS_OPTIONS = [
   { key: "all", label: "All" },
   { key: "draft", label: "Draft" },
+  { key: "needs_review", label: "Needs Review" },
   { key: "awaiting_approval", label: "Awaiting Approval" },
   { key: "awaiting_payment", label: "Awaiting Payment" },
   { key: "paid", label: "Paid" },
@@ -499,17 +500,19 @@ export default function Bills() {
   const statusCounts = useMemo(() => ({
     all: bills.length,
     draft: bills.filter((b) => b.status === "draft").length,
+    needs_review: bills.filter((b) => b.status === "needs_review").length,
     awaiting_approval: bills.filter((b) => b.status === "awaiting_approval").length,
     awaiting_payment: bills.filter((b) => b.status === "awaiting_payment").length,
     paid: bills.filter((b) => b.status === "paid").length,
   }), [bills]);
 
   const statusTotals = useMemo(() => {
-    const totals = { draft: 0, awaiting_approval: 0, awaiting_payment: 0, paid: 0 };
+    const totals = { draft: 0, needs_review: 0, awaiting_approval: 0, awaiting_payment: 0, paid: 0 };
     bills.forEach((bill) => {
       const rawAmount = bill.total / 100;
       const amount = bill.billType === "credit" ? -rawAmount : rawAmount;
       if (bill.status === "draft") totals.draft += amount;
+      else if (bill.status === "needs_review") totals.needs_review += amount;
       else if (bill.status === "awaiting_approval") totals.awaiting_approval += amount;
       else if (bill.status === "awaiting_payment") totals.awaiting_payment += amount;
       else if (bill.status === "paid") totals.paid += amount;
@@ -522,6 +525,7 @@ export default function Bills() {
     // legacy `size` parameter is intentionally ignored.
     const labelMap: Record<string, string> = {
       draft: "Draft",
+      needs_review: "Needs Review",
       awaiting_approval: "Awaiting Approval",
       awaiting_payment: "Awaiting Payment",
       paid: "Paid",

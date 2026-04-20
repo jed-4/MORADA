@@ -104,7 +104,7 @@ const billFormSchema = z.object({
   projectId: z.string().min(1, "Project is required"),
   supplierId: z.string().min(1, "Supplier is required"),
   billType: z.enum(["bill", "credit"]).default("bill"),
-  status: z.enum(["draft", "awaiting_approval", "awaiting_payment", "paid"]).default("draft"),
+  status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]).default("draft"),
   billDate: z.string().min(1, "Bill date is required"),
   dueDate: z.string().optional(),
   billReference: z.string().optional(),
@@ -369,7 +369,7 @@ export default function BillDetail() {
         // already use "" as their default).
         supplierId: bill.supplierId || "",
         billType: bill.billType as "bill" | "credit",
-        status: bill.status as "draft" | "awaiting_approval" | "awaiting_payment" | "paid",
+        status: bill.status as "draft" | "needs_review" | "awaiting_approval" | "awaiting_payment" | "paid",
         billDate: bill.billDate ? format(new Date(bill.billDate), "yyyy-MM-dd") : "",
         dueDate: bill.dueDate ? format(new Date(bill.dueDate), "yyyy-MM-dd") : "",
         billReference: bill.billReference || "",
@@ -1099,6 +1099,43 @@ export default function BillDetail() {
     },
   });
 
+  // Persist the attachment returned by the file-first OCR endpoint.
+  // The server uploads the file BEFORE running AI, so we always have an
+  // attachment record even if AI extraction fails. For unsaved bills we tuck
+  // it into pendingAttachments + attachmentUrls (the create payload picks it
+  // up); for existing bills we POST it through the dedicated endpoint.
+  const persistOcrAttachment = async (
+    attachment: { objectPath: string; filename?: string; mimeType?: string; size?: number },
+    file: File | null,
+  ): Promise<{ ok: boolean }> => {
+    const filename = attachment.filename || file?.name || "invoice";
+    const mimeType = attachment.mimeType || file?.type;
+    const size = attachment.size ?? file?.size;
+    if (isEditMode && id) {
+      try {
+        await apiRequest(`/api/bills/${id}/attachments`, "POST", {
+          objectPath: attachment.objectPath,
+          filename,
+          mimeType,
+          size,
+          source: "ai_reader",
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+        return { ok: true };
+      } catch (patchErr) {
+        console.error("Failed to persist attachment to bill:", patchErr);
+        return { ok: false };
+      }
+    }
+    setAttachmentUrls((prev) => (prev.includes(attachment.objectPath) ? prev : [...prev, attachment.objectPath]));
+    setPendingAttachments((prev) =>
+      prev.some((p) => p.objectPath === attachment.objectPath)
+        ? prev
+        : [...prev, { objectPath: attachment.objectPath, filename, mimeType, size, source: "ai_reader" }],
+    );
+    return { ok: true };
+  };
+
   const ocrMutation = useMutation({
     mutationFn: async (file: File) => {
       const reader = new FileReader();
@@ -1120,109 +1157,40 @@ export default function BillDetail() {
       });
       return response;
     },
-    onSuccess: async (data) => {
+    onSuccess: async (data: any) => {
       setOcrResults(data);
       setOcrPreviewOpen(true);
       let attachedOk = false;
-      let attachWarning = false;
-      let lastUploadedObjectPath: string | undefined;
-      const fileForRetry = uploadedFile;
-      if (uploadedFile) {
-        try {
-          const uploadResult = await uploadFile(uploadedFile);
-          if (uploadResult?.objectPath) {
-            lastUploadedObjectPath = uploadResult.objectPath;
-            // Track rich record for new (unsaved) bills so the create payload
-            // can persist the new object shape.
-            recordPendingAttachment(uploadResult.objectPath, uploadedFile, "ai_reader");
-            // For edit mode, persist the attachment immediately so refresh keeps it.
-            // For new bills, the path is already in `attachmentUrls` via the useUpload
-            // hook's onSuccess callback and will be sent with the create payload.
-            if (isEditMode && id) {
-              try {
-                await apiRequest(`/api/bills/${id}/attachments`, "POST", {
-                  objectPath: uploadResult.objectPath,
-                  filename: uploadedFile.name,
-                  mimeType: uploadedFile.type,
-                  size: uploadedFile.size,
-                  source: "ai_reader",
-                });
-                // useUpload.onSuccess already updated local state; just refresh server cache.
-                queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-                attachedOk = true;
-              } catch (patchErr) {
-                console.error("Failed to persist attachment to bill:", patchErr);
-                attachWarning = true;
-              }
-            } else {
-              attachedOk = true;
-            }
-          }
-        } catch (e) {
-          console.error("Failed to auto-save attachment:", e);
-          attachWarning = true;
-        }
+      if (data?.attachment?.objectPath) {
+        const result = await persistOcrAttachment(data.attachment, uploadedFile);
+        attachedOk = result.ok;
       }
       toast({
-        title: "Success",
+        title: "Invoice processed",
         description: attachedOk
-          ? "Invoice data extracted and saved as attachment"
-          : "Invoice data extracted",
+          ? "Extracted invoice data — review and confirm before approval."
+          : "Extracted invoice data, but the file couldn't be attached. Try uploading manually from the Attachments tab.",
+        variant: attachedOk ? undefined : "destructive",
       });
-      if (attachWarning) {
-        toast({
-          variant: "destructive",
-          title: "Attachment not saved",
-          description:
-            "We extracted the invoice data but couldn't attach the file.",
-          action: (
-            <ToastAction
-              altText="Retry attaching the invoice file"
-              onClick={async () => {
-                try {
-                  if (isEditMode && id) {
-                    if (lastUploadedObjectPath) {
-                      await apiRequest(`/api/bills/${id}/attachments`, "POST", {
-                        objectPath: lastUploadedObjectPath,
-                        filename: fileForRetry?.name,
-                        mimeType: fileForRetry?.type,
-                        size: fileForRetry?.size,
-                        source: "ai_reader",
-                      });
-                    } else if (fileForRetry) {
-                      const uploadResult = await uploadFile(fileForRetry);
-                      if (uploadResult?.objectPath) {
-                        await apiRequest(`/api/bills/${id}/attachments`, "POST", {
-                          objectPath: uploadResult.objectPath,
-                          filename: fileForRetry.name,
-                          mimeType: fileForRetry.type,
-                          size: fileForRetry.size,
-                          source: "ai_reader",
-                        });
-                      }
-                    }
-                    queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-                    toast({ title: "Attachment saved" });
-                  }
-                } catch (err: any) {
-                  toast({
-                    variant: "destructive",
-                    title: "Retry failed",
-                    description: err?.message || "Please try uploading from the Attachments tab.",
-                  });
-                }
-              }}
-            >
-              Retry
-            </ToastAction>
-          ),
-        });
-      }
     },
-    onError: (error: Error) => {
+    onError: async (error: any) => {
+      // The file-first endpoint may still return the saved attachment even
+      // when AI extraction fails (HTTP 502). Salvage it so the source isn't
+      // lost.
+      const attachment = error?.payload?.attachment || error?.attachment;
+      if (attachment?.objectPath) {
+        await persistOcrAttachment(attachment, uploadedFile);
+        toast({
+          title: "AI extraction failed",
+          description:
+            "We saved the file as an attachment, but couldn't extract the invoice details. Fill the bill in manually.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: "Error",
-        description: error.message || "Failed to process invoice with OCR",
+        description: error?.message || "Failed to process invoice with OCR",
         variant: "destructive",
       });
     },
@@ -1415,11 +1383,46 @@ export default function BillDetail() {
       setLineItems(newLineItems);
     }
 
+    // AI-extracted data must be reviewed by a human before reaching the
+    // approver's queue. Set the bill status to `needs_review` for both
+    // unsaved bills (form value picked up by the create payload) and
+    // existing bills (PATCH so refresh keeps it).
+    form.setValue("status", "needs_review");
+    if (isEditMode && id && bill?.status === "draft") {
+      apiRequest(`/api/bills/${id}`, "PATCH", { status: "needs_review" })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+          queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+        })
+        .catch((err) => console.error("Failed to set bill status to needs_review:", err));
+    }
+
     toast({
       title: "Success",
-      description: "OCR data applied to bill",
+      description: "OCR data applied — review and confirm before approval.",
     });
   };
+
+  const confirmExtractionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}/confirm-extraction`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      toast({
+        title: "Sent for approval",
+        description: "Bill has been confirmed and is now awaiting approval.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to confirm extraction",
+        variant: "destructive",
+      });
+    },
+  });
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + " B";
@@ -2706,20 +2709,31 @@ export default function BillDetail() {
                     >
                       Cancel
                     </Button>
-                    {isEditMode && bill?.status === "draft" && (() => {
+                    {isEditMode && (bill?.status === "draft" || bill?.status === "needs_review") && (() => {
                       const validation = getSubmitForApprovalValidation();
+                      const isNeedsReview = bill?.status === "needs_review";
+                      const handler = () =>
+                        isNeedsReview
+                          ? confirmExtractionMutation.mutate()
+                          : submitForApprovalMutation.mutate();
+                      const pending =
+                        isNeedsReview
+                          ? confirmExtractionMutation.isPending
+                          : submitForApprovalMutation.isPending;
                       return (
                         <Button
                           type="button"
                           variant="default"
                           size="sm"
-                          onClick={() => submitForApprovalMutation.mutate()}
-                          disabled={!validation.isValid || submitForApprovalMutation.isPending}
-                          data-testid="button-submit-for-approval"
+                          onClick={handler}
+                          disabled={!validation.isValid || pending}
+                          data-testid={isNeedsReview ? "button-confirm-extraction" : "button-submit-for-approval"}
                           className="gap-1"
                         >
                           <Send className="h-3.5 w-3.5" />
-                          {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                          {pending
+                            ? (isNeedsReview ? "Confirming..." : "Submitting...")
+                            : (isNeedsReview ? "Confirm & Send for Approval" : "Submit for Approval")}
                         </Button>
                       );
                     })()}

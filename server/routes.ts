@@ -13837,21 +13837,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // OCR Invoice Processing endpoint (using OpenAI Vision)
-  app.post("/api/ocr/process-invoice", async (req, res) => {
+  // File-first: persist the uploaded file to object storage BEFORE invoking the
+  // AI extractor so the source attachment is never lost on AI failure. The
+  // returned objectPath/filename/mimeType/size let the client save the
+  // attachment on the bill in a single round-trip.
+  app.post("/api/ocr/process-invoice", requireAuth, async (req, res) => {
+    let savedAttachment: {
+      objectPath: string;
+      filename: string;
+      mimeType: string;
+      size: number;
+    } | null = null;
     try {
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
+      const { ObjectStorageService } = await import(
+        "./replit_integrations/object_storage/objectStorage"
+      );
 
-      const { fileData, fileName } = req.body;
+      const { fileData, fileName } = req.body || {};
 
       if (!fileData || !fileName) {
         return res.status(400).json({ error: "File data and file name are required" });
       }
 
-      const result = await processInvoiceWithAI(fileData, fileName);
-      res.json(result);
+      const currentUser = (req as any).user;
+      const companyId = currentUser?.companyId;
+      if (!companyId && currentUser?.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      // Decode the data URL / base64 payload
+      let mimeType = "application/octet-stream";
+      let base64Body = fileData as string;
+      const dataUrlMatch = /^data:([^;]+);base64,(.+)$/.exec(fileData);
+      if (dataUrlMatch) {
+        mimeType = dataUrlMatch[1] || mimeType;
+        base64Body = dataUrlMatch[2];
+      }
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(base64Body, "base64");
+      } catch {
+        return res.status(400).json({ error: "Invalid file data" });
+      }
+      if (!buffer.length) {
+        return res.status(400).json({ error: "Empty file" });
+      }
+
+      // STEP 1 — upload first so the file survives any AI failure.
+      try {
+        const objectStorage = new ObjectStorageService();
+        const objectPath = await objectStorage.uploadObjectEntity(
+          buffer,
+          mimeType,
+          companyId || "admin",
+        );
+        savedAttachment = {
+          objectPath,
+          filename: fileName,
+          mimeType,
+          size: buffer.length,
+        };
+      } catch (uploadErr: any) {
+        console.error("OCR file upload failed:", uploadErr);
+        return res.status(500).json({
+          error: uploadErr?.message || "Failed to save the uploaded file",
+        });
+      }
+
+      // STEP 2 — run AI extraction. If this throws we still return the
+      // attachment so the client can keep it.
+      try {
+        const result = await processInvoiceWithAI(fileData, fileName);
+        res.json({ ...result, attachment: savedAttachment });
+      } catch (aiErr: any) {
+        console.error("OCR processing error:", aiErr);
+        res.status(502).json({
+          error: aiErr?.message || "Failed to process invoice with OCR",
+          attachment: savedAttachment,
+        });
+      }
     } catch (error: any) {
-      console.error("OCR processing error:", error);
-      res.status(500).json({ error: error.message || "Failed to process invoice with OCR" });
+      console.error("OCR endpoint error:", error);
+      res.status(500).json({
+        error: error?.message || "Failed to process invoice with OCR",
+        attachment: savedAttachment,
+      });
+    }
+  });
+
+  // Promote a bill from `needs_review` (AI-extracted, awaiting human sign-off)
+  // to `awaiting_approval` (in the approver's queue).
+  app.post("/api/bills/:id/confirm-extraction", requireAuth, async (req, res) => {
+    try {
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+
+      const userCompanyId = (req as any).user?.companyId;
+      const userRole = (req as any).user?.role;
+      if (bill.projectId) {
+        const project = await storage.getProjectById(bill.projectId);
+        if (!project) return res.status(403).json({ error: "Forbidden" });
+        if (userRole !== "admin" && project.companyId !== userCompanyId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      } else if (userRole !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (bill.status !== "needs_review") {
+        return res.status(400).json({
+          error: `Bill is in '${bill.status}' status; only 'needs_review' bills can be confirmed.`,
+        });
+      }
+
+      const updated = await storage.updateBill(req.params.id, {
+        status: "awaiting_approval",
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[bills/confirm-extraction] failed:", error);
+      res.status(500).json({ error: error?.message || "Failed to confirm extraction" });
     }
   });
 

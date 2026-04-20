@@ -14,7 +14,32 @@ export function getApiBaseUrl(): string {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    // Attempt to parse the body as JSON so callers can read structured fields
+    // (e.g. error.payload.attachment) without re-fetching. Falls back to the
+    // raw string if the body wasn't JSON.
+    let payload: any = undefined;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = undefined;
+      }
+    }
+    const messageFromBody =
+      payload && typeof payload === "object" && typeof payload.error === "string"
+        ? payload.error
+        : (payload && typeof payload === "object" && typeof payload.message === "string"
+          ? payload.message
+          : text);
+    const err = new Error(`${res.status}: ${messageFromBody}`) as Error & {
+      status?: number;
+      payload?: any;
+      body?: string;
+    };
+    err.status = res.status;
+    err.payload = payload;
+    err.body = text;
+    throw err;
   }
 }
 

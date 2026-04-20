@@ -260,7 +260,7 @@ export function useProjectMetrics() {
     // Bills calculations
     const now = new Date();
     const paidBillsList = bills.filter(b => b.status === 'paid');
-    const pendingBillsList = bills.filter(b => b.status === 'pending' || b.status === 'draft');
+    const pendingBillsList = bills.filter(b => b.status === 'pending' || b.status === 'draft' || b.status === 'needs_review');
     const approvedBillsList = bills.filter(b => b.status === 'approved');
     const overdueBillsList = bills.filter(b => {
       if (b.status === 'paid') return false;
