@@ -462,7 +462,7 @@ export function RapidApprovalModal({
                   <SelectItem value="none" className="text-[11px] text-muted-foreground">None</SelectItem>
                   {costCodes.map((code) => (
                     <SelectItem key={code.id} value={code.id} className="text-[11px]">
-                      {code.code} - {code.name}
+                      {code.code} - {code.title}
                     </SelectItem>
                   ))}
                 </SelectContent>
