@@ -622,8 +622,14 @@ export function parseTimesheetBreak(value: unknown): TimesheetBreakParseResult {
 
   if (typeof value === "number") {
     if (!isFinite(value) || value < 0) return { hours: 0, invalid: true };
-    // Pure numeric cells from XLSX are interpreted as hours (e.g. 0.5).
-    return { hours: value, invalid: false };
+    if (value === 0) return { hours: 0, invalid: false };
+    // Apply the same heuristic as string inputs so a spreadsheet cell
+    // containing the number 30 is treated as 30 minutes (0.5h), not 30 hours.
+    const looksLikeMinutes = Number.isInteger(value) && value >= 5;
+    return {
+      hours: looksLikeMinutes ? value / 60 : value,
+      invalid: false,
+    };
   }
 
   const raw = String(value).trim();
