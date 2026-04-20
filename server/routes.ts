@@ -703,15 +703,35 @@ async function syncBillFromXeroInternal(
     const totalCents = Math.round((invoice.Total || 0) * 100);
     const xeroStatus = invoice.Status as string;
 
+    // Map the Xero invoice status back onto the BuildPro lifecycle so the
+    // two systems stay in lock-step regardless of which side is the source
+    // of truth for a given change. Mapping:
+    //   PAID                         → paid
+    //   VOIDED / DELETED             → draft (with a note)
+    //   any partial payment          → awaiting_payment
+    //   AUTHORISED (no payment)      → awaiting_payment   ("Awaiting Payment" in Xero UI)
+    //   SUBMITTED  (no payment)      → awaiting_approval  ("Awaiting Approval" in Xero UI)
+    //   DRAFT                        → leave BuildPro status untouched (we never push DRAFT)
+    // Guard: never *reverse* progress past `paid` — once paid locally and the
+    // Xero side reports anything other than PAID/VOIDED/DELETED, keep the
+    // local status as `paid` to avoid demoting a settled bill.
     let newStatus: string = bill.status;
     let extraNotes: string | undefined;
-    if (xeroStatus === "PAID") newStatus = "paid";
-    else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
+    if (xeroStatus === "PAID") {
+      newStatus = "paid";
+    } else if (xeroStatus === "VOIDED" || xeroStatus === "DELETED") {
       newStatus = "draft";
       extraNotes = `Voided/Deleted in Xero on ${new Date().toISOString().slice(0, 10)}`;
+    } else if (bill.status === "paid") {
+      // Don't demote a locally-paid bill on a non-PAID Xero update.
+      newStatus = "paid";
+    } else if (amountPaidCents > 0 && amountPaidCents < totalCents) {
+      newStatus = "awaiting_payment";
+    } else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") {
+      newStatus = "awaiting_payment";
+    } else if (amountPaidCents === 0 && xeroStatus === "SUBMITTED") {
+      newStatus = "awaiting_approval";
     }
-    else if (amountPaidCents > 0 && amountPaidCents < totalCents) newStatus = "awaiting_payment";
-    else if (amountPaidCents === 0 && xeroStatus === "AUTHORISED") newStatus = "awaiting_payment";
 
     const billDate = parseXeroDate(invoice.Date);
     const dueDate = parseXeroDate(invoice.DueDate);
