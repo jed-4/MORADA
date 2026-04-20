@@ -9451,7 +9451,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const contact = await storage.createContact({ ...validationResult.data, companyId });
+      // Belt-and-braces: ensure `name` is always populated. Falls back to
+      // firstName + lastName, then `company` (legacy), so any caller
+      // (mobile, Xero import, OCR) can't create a nameless row.
+      const data = { ...validationResult.data };
+      const trimmedName = (data.name || "").trim();
+      if (!trimmedName) {
+        const personName = `${data.firstName || ""} ${data.lastName || ""}`.trim();
+        const fallback = personName || (data.company || "").trim();
+        if (!fallback) {
+          return res.status(400).json({ error: "Contact name is required" });
+        }
+        data.name = fallback;
+      } else {
+        data.name = trimmedName;
+      }
+
+      const contact = await storage.createContact({ ...data, companyId });
       res.status(201).json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to create contact" });
@@ -9530,6 +9546,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData = { ...validationResult.data };
       if (updateData.avatarColor !== undefined) {
         updateData.scheduleColor = updateData.avatarColor || null;
+      }
+
+      // If the caller is updating `name`, normalise + reject empty values
+      // so the canonical display name can never be wiped out.
+      if (updateData.name !== undefined) {
+        const trimmed = (updateData.name || "").trim();
+        if (!trimmed) {
+          return res.status(400).json({ error: "Contact name is required" });
+        }
+        updateData.name = trimmed;
       }
 
       const contact = await storage.updateContact(req.params.id, updateData, companyId);

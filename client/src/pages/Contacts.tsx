@@ -706,9 +706,6 @@ export default function Contacts() {
                               <div className="font-medium text-sm">
                                 {contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Unnamed'}
                               </div>
-                              {contact.company && contact.name !== contact.company && (
-                                <div className="text-xs text-muted-foreground">{contact.company}</div>
-                              )}
                             </div>
                           </div>
                         </TableCell>

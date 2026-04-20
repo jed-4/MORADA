@@ -184,14 +184,11 @@ export default function AddContactDialog({
       // Convert "__none__" to undefined for defaultCostCodeId (no cost code selected)
       if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = undefined;
       
-      // For trade/supplier contacts, company name is the primary identity.
-      // For client/team contacts, person name takes priority.
+      // `name` is the canonical business / person name. For business
+      // contacts the user typed it directly; for team/client contacts we
+      // fall back to firstName + lastName so the row always has a name.
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
-      const contactType = cleanData.contactType;
-      const isBusinessContact = contactType === "trade" || contactType === "supplier";
-      const fullName = isBusinessContact
-        ? cleanData.company || personName || cleanData.name || "Unnamed Contact"
-        : personName || cleanData.company || cleanData.name || "Unnamed Contact";
+      const fullName = (cleanData.name || "").trim() || personName || "Unnamed Contact";
       const payload = { ...cleanData, name: fullName };
       return await apiRequest("/api/contacts", "POST", payload);
     },
@@ -262,12 +259,17 @@ export default function AddContactDialog({
                 <div className="flex items-end gap-3">
                   <FormField
                     control={form.control}
-                    name="company"
+                    name="name"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>Company Name *</FormLabel>
+                        <FormLabel>Business Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-company" />
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="Business name"
+                            data-testid="input-business-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -283,7 +285,7 @@ export default function AddContactDialog({
                       className="text-white text-xs font-medium" 
                       style={{ backgroundColor: "transparent" }}
                     >
-                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("company"))}
+                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("name"))}
                     </AvatarFallback>
                   </Avatar>
                 </div>
@@ -454,7 +456,7 @@ export default function AddContactDialog({
                       className="text-white text-xs font-medium" 
                       style={{ backgroundColor: "transparent" }}
                     >
-                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("company"))}
+                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("name"))}
                     </AvatarFallback>
                   </Avatar>
                 </div>
@@ -517,21 +519,7 @@ export default function AddContactDialog({
                       </FormItem>
                     )}
                   />
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name="company"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Company</FormLabel>
-                        <FormControl>
-                          <Input {...field} data-testid="input-company" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                ) : null}
 
                 {selectedType === "team" ? (
                   <FormField

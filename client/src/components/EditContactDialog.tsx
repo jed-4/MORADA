@@ -263,8 +263,22 @@ export default function EditContactDialog({
   });
 
   const onSubmit = (data: InsertContact) => {
+    // Derive the canonical `name` so the contact list always matches what
+    // the user just typed. Business types (trade/supplier) edit `name`
+    // directly via the Business Name field; team/client types only edit
+    // firstName + lastName, so we re-compose `name` from those.
+    const isBusiness = data.contactType === "trade" || data.contactType === "supplier";
+    const personName = `${data.firstName || ""} ${data.lastName || ""}`.trim();
+    const resolvedName = isBusiness
+      ? (data.name || "").trim() || personName
+      : personName || (data.name || "").trim();
+
     // Contact colour drives schedule colour — keep them in sync
-    const syncedData = { ...data, scheduleColor: data.avatarColor || null };
+    const syncedData = {
+      ...data,
+      name: resolvedName || data.name || "",
+      scheduleColor: data.avatarColor || null,
+    };
     updateMutation.mutate(syncedData);
   };
 
@@ -330,12 +344,17 @@ export default function EditContactDialog({
                 <div className="flex items-end gap-3">
                   <FormField
                     control={form.control}
-                    name="company"
+                    name="name"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>Company Name *</FormLabel>
+                        <FormLabel>Business Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} data-testid="input-company" />
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="Business name"
+                            data-testid="input-business-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -663,21 +682,7 @@ export default function EditContactDialog({
                         </FormItem>
                       )}
                     />
-                  ) : (
-                    <FormField
-                      control={form.control}
-                      name="company"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Company</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} data-testid="input-company" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
+                  ) : null}
 
                   {isTeam ? (
                     <FormField
