@@ -207,7 +207,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
 
         {/* Bottom row: Status, Due date & Assignee */}
         <div className="flex items-center justify-between mt-1 gap-1">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
             {/* Status chip - bottom left */}
             {statusOption && (displaySettings?.showStatus !== false) && (
               <Badge className={`text-[10px] px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
@@ -256,7 +256,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
               
               if (hasMultiple) {
                 return (
-                  <div className="flex -space-x-1.5">
+                  <div className="flex -space-x-1.5 shrink-0">
                     {assigneeNames.slice(0, 3).map((name, idx) => (
                       <Avatar key={idx} className="h-5 w-5 border-2 border-background">
                         <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
