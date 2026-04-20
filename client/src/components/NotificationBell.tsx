@@ -260,9 +260,16 @@ export function NotificationBell() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="flex items-center justify-between px-3 py-2 border-b">
+      <PopoverContent
+        align="end"
+        className="w-80 p-0 flex flex-col overflow-hidden max-h-[min(32rem,calc(100vh-5rem))]"
+      >
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="w-full flex-1 min-h-0 flex flex-col"
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
             <TabsList className="h-7 p-0.5">
               <TabsTrigger value="notifications" className="h-6 text-xs px-2">
                 Notifications {unreadCount.count > 0 && `(${unreadCount.count})`}
@@ -285,8 +292,11 @@ export function NotificationBell() {
             )}
           </div>
           
-          <TabsContent value="notifications" className="m-0">
-            <ScrollArea className="max-h-96">
+          <TabsContent
+            value="notifications"
+            className="m-0 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col"
+          >
+            <ScrollArea className="flex-1 min-h-0">
               {notificationsLoading ? (
                 <div className="space-y-1 p-2">
                   {[1, 2].map((i) => (
@@ -382,8 +392,11 @@ export function NotificationBell() {
             </ScrollArea>
           </TabsContent>
           
-          <TabsContent value="reminders" className="m-0">
-            <ScrollArea className="max-h-80">
+          <TabsContent
+            value="reminders"
+            className="m-0 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col"
+          >
+            <ScrollArea className="flex-1 min-h-0">
           {activeReminders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Bell className="h-8 w-8 text-muted-foreground/40 mb-2" />
@@ -392,7 +405,7 @@ export function NotificationBell() {
             </div>
           ) : (
             <div className="divide-y">
-              {activeReminders.slice(0, 5).map((reminder) => {
+              {activeReminders.map((reminder) => {
                 const TypeIcon = REMINDER_TYPE_ICONS[reminder.reminderType || "custom"] || Bell;
                 const timeStatus = getReminderTimeStatus(reminder);
                 
