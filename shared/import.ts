@@ -596,6 +596,98 @@ export function fuzzyMatchTimesheetCostCode(
   return { rawValue: trimmed, matched: null, confidence: "low" };
 }
 
+// Result of parsing a free-text break value from a timesheet import row.
+export interface TimesheetBreakParseResult {
+  /** Break in hours (always >= 0). 0 when input is empty/missing/unparseable. */
+  hours: number;
+  /** True when the input was non-empty but couldn't be parsed. */
+  invalid: boolean;
+}
+
+/**
+ * Parse a break value from a timesheet import row into hours.
+ *
+ * Accepted formats:
+ *   - empty / null / undefined / "-"           -> 0
+ *   - number 0                                 -> 0
+ *   - integer >= 5 (no decimal, no colon)      -> minutes ("30" -> 0.5h)
+ *   - decimal / number < 5                     -> hours ("0.5" -> 0.5h, "1.25" -> 1.25h)
+ *   - "H:MM" / "HH:MM"                         -> hours + minutes ("1:15" -> 1.25h)
+ *
+ * Returns { hours: 0, invalid: true } for non-empty unparseable values so
+ * the caller can surface a row-level warning without skipping the row.
+ */
+export function parseTimesheetBreak(value: unknown): TimesheetBreakParseResult {
+  if (value === null || value === undefined) return { hours: 0, invalid: false };
+
+  if (typeof value === "number") {
+    if (!isFinite(value) || value < 0) return { hours: 0, invalid: true };
+    // Pure numeric cells from XLSX are interpreted as hours (e.g. 0.5).
+    return { hours: value, invalid: false };
+  }
+
+  const raw = String(value).trim();
+  if (!raw || raw === "-") return { hours: 0, invalid: false };
+
+  // H:MM style
+  if (raw.includes(":")) {
+    const parts = raw.split(":");
+    if (parts.length !== 2) return { hours: 0, invalid: true };
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (
+      !Number.isFinite(h) ||
+      !Number.isFinite(m) ||
+      h < 0 ||
+      m < 0 ||
+      m >= 60
+    ) {
+      return { hours: 0, invalid: true };
+    }
+    return { hours: h + m / 60, invalid: false };
+  }
+
+  const num = parseFloat(raw);
+  if (!Number.isFinite(num) || num < 0) return { hours: 0, invalid: true };
+  if (num === 0) return { hours: 0, invalid: false };
+
+  // Integer >= 5 with no decimal point is treated as minutes (e.g. "30" -> 0.5h).
+  // Decimals or small integers (< 5) are treated as hours (e.g. "0.5", "2").
+  const looksLikeMinutes =
+    !raw.includes(".") && Number.isInteger(num) && num >= 5;
+  return {
+    hours: looksLikeMinutes ? num / 60 : num,
+    invalid: false,
+  };
+}
+
+/**
+ * Read the break column from a timesheet import row, trying both Buildern
+ * and BuildPro header variants. Returns the parsed hours plus the raw value
+ * (so callers can include it in warning messages).
+ */
+export function readTimesheetBreakFromRow(
+  row: Record<string, unknown>
+): { rawValue: string; result: TimesheetBreakParseResult } {
+  const candidates = [
+    "Break",
+    "Break (hrs)",
+    "Break (Hrs)",
+    "Break Time",
+    "Break time",
+    "break",
+  ];
+  for (const key of candidates) {
+    if (key in row) {
+      const v = row[key];
+      const rawValue =
+        v === null || v === undefined ? "" : String(v).trim();
+      return { rawValue, result: parseTimesheetBreak(v) };
+    }
+  }
+  return { rawValue: "", result: { hours: 0, invalid: false } };
+}
+
 // Utility: Auto-detect column mappings from headers
 export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};

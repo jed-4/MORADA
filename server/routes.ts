@@ -149,7 +149,7 @@ import {
   bills as billsTable
 } from "@shared/schema";
 import { matchSupplier } from "@shared/supplierMatcher";
-import { fuzzyMatchTimesheetCostCode } from "@shared/import";
+import { fuzzyMatchTimesheetCostCode, readTimesheetBreakFromRow } from "@shared/import";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -17256,6 +17256,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors.push(`${rowLabel} info: cost code "${costCodeStr}" fuzzy matched to ${ccResult.label}`);
         }
 
+        // Parse break (optional column, falls back to 0 when missing/blank)
+        const breakParse = readTimesheetBreakFromRow(row);
+        const breakDuration = breakParse.result.hours;
+        if (breakParse.result.invalid && breakParse.rawValue) {
+          errors.push(`${rowLabel} warning: break "${breakParse.rawValue}" not understood — imported as 0`);
+        }
+
         // Parse status — only submitted/approved are valid for import; everything else becomes draft
         const rawStatus = String(row["Status"] ?? "").trim().toLowerCase();
         const validStatus = (["submitted", "approved"].includes(rawStatus) ? rawStatus : "draft") as
@@ -17271,7 +17278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             startTime,
             endTime,
             duration,
-            breakDuration: 0,
+            breakDuration,
             description,
             status: validStatus,
             hourlyRate: 0,

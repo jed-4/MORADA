@@ -29,7 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Project, User, CostCode } from "@shared/schema";
-import { fuzzyMatchTimesheetCostCode } from "@shared/import";
+import { fuzzyMatchTimesheetCostCode, readTimesheetBreakFromRow } from "@shared/import";
 
 interface ParsedRow {
   _rowNum: number;
@@ -45,6 +45,7 @@ interface ParsedRow {
   costCodeId: string | null;
   costCodeMatchType: "exact" | "fuzzy" | "none";
   costCodeMatchedLabel: string | null;
+  breakDuration: number;
   severity: "ok" | "warning" | "error";
   issues: string[];
 }
@@ -120,6 +121,12 @@ function parseRows(
         : parseFloat(String(durationRaw || "0"));
     if (isNaN(duration) || duration <= 0) issues.push("Invalid or missing duration");
 
+    const breakParse = readTimesheetBreakFromRow(row);
+    const breakDuration = breakParse.result.hours;
+    if (breakParse.result.invalid && breakParse.rawValue) {
+      issues.push(`Break "${breakParse.rawValue}" not understood — imported as 0`);
+    }
+
     const costCodeStr = isBuildern
       ? String(row["Cost code"] || "").trim()
       : String(row["Cost Code"] || row["cost code"] || "").trim();
@@ -168,6 +175,7 @@ function parseRows(
       costCodeId: matchedCode?.id ?? null,
       costCodeMatchType,
       costCodeMatchedLabel,
+      breakDuration,
       severity: isError ? "error" : isWarning ? "warning" : "ok",
       issues,
     };
@@ -408,6 +416,7 @@ export function TimesheetImportDialog({
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
                     <TableHead>Hrs</TableHead>
+                    <TableHead>Break</TableHead>
                     <TableHead>Cost Code</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Description</TableHead>
@@ -447,6 +456,9 @@ export function TimesheetImportDialog({
                       <TableCell className="text-xs">{row.endTime || "—"}</TableCell>
                       <TableCell className="text-xs">
                         {row.duration > 0 ? row.duration.toFixed(1) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.breakDuration > 0 ? row.breakDuration.toFixed(1) : "—"}
                       </TableCell>
                       <TableCell className="text-xs max-w-[160px] truncate">
                         {row.costCodeStr ? (
