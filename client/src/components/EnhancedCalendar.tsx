@@ -21,6 +21,8 @@ import {
   useDroppable,
 } from "@dnd-kit/core";
 
+const HOUR_HEIGHT = 40; // pixels per hour in week/day view
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -52,6 +54,26 @@ export interface CalendarDisplayOptions {
   showStatus?: boolean;
 }
 
+interface FocusBlockTask {
+  id: string;
+  title: string;
+  priority?: string | null;
+}
+
+interface FocusBlockData {
+  id: string;
+  title: string;
+  color: string;
+  startTime: string;
+  endTime: string;
+  isRecurring: boolean;
+  daysOfWeek?: number[] | null;
+  specificDate?: string | null;
+  categoryType?: string | null;
+  categoryId?: string | null;
+  tasks?: FocusBlockTask[];
+}
+
 interface EnhancedCalendarProps {
   events: CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
@@ -67,6 +89,9 @@ interface EnhancedCalendarProps {
   onViewChange?: (view: "month" | "week" | "day" | "roster") => void;
   hideInternalHeader?: boolean;
   displayOptions?: CalendarDisplayOptions;
+  focusBlocks?: FocusBlockData[];
+  onFocusBlockClick?: (block: FocusBlockData) => void;
+  onFocusBlockUpdate?: (blockId: string, startTime: string, endTime: string) => void;
 }
 
 interface DraggableEventProps {
@@ -310,7 +335,10 @@ export function EnhancedCalendar({
   view: externalView,
   onViewChange,
   hideInternalHeader = false,
-  displayOptions
+  displayOptions,
+  focusBlocks = [],
+  onFocusBlockClick,
+  onFocusBlockUpdate,
 }: EnhancedCalendarProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
@@ -325,6 +353,18 @@ export function EnhancedCalendar({
     previewEndTime: string;
   } | null>(null);
   
+  // Focus block drag state (native mouse events, separate from dnd-kit)
+  const fbDragRef = useRef<{
+    blockId: string;
+    dragType: 'move' | 'resize-end';
+    startY: number;
+    origStartTime: string;
+    origEndTime: string;
+    columnEl: HTMLElement | null;
+  } | null>(null);
+  const fbDragMovedRef = useRef(false); // true when mouse moved beyond click threshold
+  const [fbDragPreview, setFbDragPreview] = useState<{ blockId: string; startTime: string; endTime: string } | null>(null);
+
   // Use controlled currentDate if provided, otherwise use internal state
   const isDateControlled = externalCurrentDate !== undefined;
   const currentDate = isDateControlled ? externalCurrentDate : internalCurrentDate;
@@ -552,7 +592,6 @@ export function EnhancedCalendar({
   useEffect(() => {
     if (view === "week" || view === "day") {
       // Vertical scroll to 5am for time grid and hour labels
-      const HOUR_HEIGHT = 40;
       const scrollTo5am = 5 * HOUR_HEIGHT;
       
       if (timeGridScrollRef.current) {
@@ -786,6 +825,75 @@ export function EnhancedCalendar({
     }
   };
 
+  // Focus block mouse drag handlers
+  const handleFbMouseDown = useCallback((e: React.MouseEvent, fb: FocusBlockData, dragType: 'move' | 'resize-end') => {
+    e.preventDefault();
+    e.stopPropagation();
+    fbDragMovedRef.current = false;
+    const columnEl = (e.currentTarget as HTMLElement).closest('[data-fb-column]') as HTMLElement | null;
+    fbDragRef.current = {
+      blockId: fb.id,
+      dragType,
+      startY: e.clientY,
+      origStartTime: fb.startTime,
+      origEndTime: fb.endTime,
+      columnEl,
+    };
+    setFbDragPreview({ blockId: fb.id, startTime: fb.startTime, endTime: fb.endTime });
+
+    const DRAG_THRESHOLD_PX = 4;
+    const onMouseMove = (me: MouseEvent) => {
+      const drag = fbDragRef.current;
+      if (!drag) return;
+      const deltaY = me.clientY - drag.startY;
+      if (Math.abs(deltaY) > DRAG_THRESHOLD_PX) fbDragMovedRef.current = true;
+      const deltaMinutes = Math.round((deltaY / HOUR_HEIGHT) * 60 / 15) * 15;
+
+      const timeToMinutes = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+      };
+      const minutesToTime = (mins: number) => {
+        const clamped = Math.max(0, Math.min(23 * 60 + 45, mins));
+        return `${Math.floor(clamped / 60).toString().padStart(2, '0')}:${(clamped % 60).toString().padStart(2, '0')}`;
+      };
+
+      const origStart = timeToMinutes(drag.origStartTime);
+      const origEnd = timeToMinutes(drag.origEndTime);
+      const duration = origEnd - origStart;
+
+      if (drag.dragType === 'move') {
+        const newStart = origStart + deltaMinutes;
+        const newEnd = newStart + duration;
+        if (newStart >= 0 && newEnd <= 24 * 60) {
+          setFbDragPreview({ blockId: drag.blockId, startTime: minutesToTime(newStart), endTime: minutesToTime(newEnd) });
+        }
+      } else {
+        const newEnd = Math.max(origStart + 15, origEnd + deltaMinutes);
+        if (newEnd <= 24 * 60) {
+          setFbDragPreview({ blockId: drag.blockId, startTime: drag.origStartTime, endTime: minutesToTime(newEnd) });
+        }
+      }
+    };
+
+    const onMouseUp = () => {
+      const drag = fbDragRef.current;
+      if (!drag) { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); return; }
+      setFbDragPreview(prev => {
+        if (prev && onFocusBlockUpdate && (prev.startTime !== drag.origStartTime || prev.endTime !== drag.origEndTime)) {
+          onFocusBlockUpdate(drag.blockId, prev.startTime, prev.endTime);
+        }
+        return null;
+      });
+      fbDragRef.current = null;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [onFocusBlockUpdate]);
+
   // Render month view
   const renderMonthView = () => {
     // Group dates into weeks for each month
@@ -918,7 +1026,6 @@ export function EnhancedCalendar({
   // Render week view
   const renderWeekView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
-    const HOUR_HEIGHT = 40; // Reduced from 64px to 40px
     // Day view: full width. Week view: expand to fill (handled by flex-1 on columns)
     // Roster view: use fixed 140px width for horizontal scroll
     const DAY_WIDTH = (view === "day" || view === "week") ? undefined : 140;
@@ -1077,6 +1184,7 @@ export function EnhancedCalendar({
                   
                   <div 
                     data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}
+                    data-fb-column="true"
                     className={cn(
                       "border-r border-border/50",
                       isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50"
@@ -1096,6 +1204,101 @@ export function EnhancedCalendar({
                         ))}
                       </div>
                     ))}
+                    {/* Focus block overlays */}
+                    {focusBlocks.filter(fb => {
+                      if (fb.isRecurring) {
+                        const dow = getDay(date);
+                        return (fb.daysOfWeek as number[] || []).includes(dow);
+                      } else {
+                        return fb.specificDate === format(date, "yyyy-MM-dd");
+                      }
+                    }).map(fb => {
+                      const preview = fbDragPreview?.blockId === fb.id ? fbDragPreview : null;
+                      const startTime = preview ? preview.startTime : fb.startTime;
+                      const endTime = preview ? preview.endTime : fb.endTime;
+                      const [sh, sm] = startTime.split(':').map(Number);
+                      const [eh, em] = endTime.split(':').map(Number);
+                      const topPx = (sh * 60 + sm) / 60 * HOUR_HEIGHT;
+                      const heightPx = Math.max(((eh * 60 + em) - (sh * 60 + sm)) / 60 * HOUR_HEIGHT, 20);
+                      const fbTasks = fb.tasks || [];
+                      const isDragging = !!preview;
+                      return (
+                        // Focus block overlay: pointer-events-none so underlying events remain clickable/draggable
+                        <div
+                          key={fb.id}
+                          className="absolute left-0 right-0 z-[0] overflow-hidden select-none pointer-events-none"
+                          style={{
+                            top: `${topPx}px`,
+                            height: `${heightPx}px`,
+                            backgroundColor: fb.color + (isDragging ? "40" : "1A"),
+                            borderLeft: `3px solid ${fb.color}`,
+                            opacity: isDragging ? 0.9 : 1,
+                          }}
+                          title={fb.title}
+                        >
+                          {/* Draggable header strip: pointer-events-auto so drag + click-to-open works */}
+                          <div
+                            className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                            onMouseDown={(e) => handleFbMouseDown(e, { ...fb, startTime, endTime }, 'move')}
+                            onClick={(e) => {
+                              // Suppress panel open when the mouse actually moved (drag vs click)
+                              if (!fbDragMovedRef.current) onFocusBlockClick?.(fb);
+                              fbDragMovedRef.current = false;
+                            }}
+                          >
+                            <div
+                              className="text-[9px] font-semibold px-1 pt-0.5 truncate leading-tight"
+                              style={{ color: fb.color }}
+                            >
+                              {fb.title}
+                            </div>
+                            <div
+                              className="text-[8px] px-1 truncate leading-tight opacity-80"
+                              style={{ color: fb.color }}
+                            >
+                              {startTime} – {endTime}
+                            </div>
+                          </div>
+                          {fbTasks.length > 0 && heightPx > 60 && (
+                            <div className="px-1 pt-0.5 space-y-0.5 pointer-events-none">
+                              {fbTasks.slice(0, 4).map((t) => (
+                                <div
+                                  key={t.id}
+                                  className="flex items-center gap-1 text-[8px] leading-tight rounded-sm px-1 py-0.5"
+                                  style={{ backgroundColor: fb.color + "30", color: fb.color }}
+                                >
+                                  <span
+                                    className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
+                                    style={{
+                                      backgroundColor:
+                                        t.priority === "high" ? "#ef4444"
+                                        : t.priority === "medium" ? "#f97316"
+                                        : t.priority === "low" ? "#22c55e"
+                                        : fb.color,
+                                    }}
+                                  />
+                                  <span className="truncate">{t.title}</span>
+                                </div>
+                              ))}
+                              {fbTasks.length > 4 && (
+                                <div className="text-[7px] leading-tight opacity-70" style={{ color: fb.color }}>
+                                  +{fbTasks.length - 4} more
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* Resize handle at bottom - pointer-events-auto for resize interaction */}
+                          <div
+                            className="absolute bottom-0 left-0 right-0 h-2.5 pointer-events-auto cursor-ns-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                            style={{ backgroundColor: fb.color + "20" }}
+                            onMouseDown={(e) => handleFbMouseDown(e, { ...fb, startTime, endTime }, 'resize-end')}
+                          >
+                            <div className="h-0.5 w-6 rounded-full" style={{ backgroundColor: fb.color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
                     <div className="absolute inset-0 pointer-events-none">
                       <div className="relative h-full">
                         {(() => {

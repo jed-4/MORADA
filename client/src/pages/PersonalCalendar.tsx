@@ -23,11 +23,15 @@ import {
   History,
   Clock,
   BookOpen,
+  Timer,
 } from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
-import type { Task, CompanySettings, ScheduleItem, Schedule } from "@shared/schema";
+import { FocusBlockCreator } from "@/components/FocusBlockCreator";
+import { FocusBlockPanel } from "@/components/FocusBlockPanel";
+import { useQueries } from "@tanstack/react-query";
+import type { Task, CompanySettings, ScheduleItem, Schedule, FocusBlock } from "@shared/schema";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -104,6 +108,8 @@ export default function PersonalCalendar() {
   const [showChildItems, setShowChildItems] = useState(true);
   const [showLookback, setShowLookback] = useState(false);
   const [lookbackEvent, setLookbackEvent] = useState<CalendarEvent | null>(null);
+  const [showFocusBlockCreator, setShowFocusBlockCreator] = useState(false);
+  const [selectedFocusBlock, setSelectedFocusBlock] = useState<FocusBlock | null>(null);
 
   const dateRange = useMemo(() => {
     const bufferMonths = 1;
@@ -199,6 +205,28 @@ export default function PersonalCalendar() {
   const taskStatusCategory = fieldCategories.find((cat: any) => cat.key === "task.status");
   const statusOptions = taskStatusCategory?.options || [];
   const completedOption = statusOptions.find((opt: any) => opt.key === "done");
+
+  // Fetch focus blocks for current user
+  const { data: focusBlocks = [] } = useQuery<FocusBlock[]>({
+    queryKey: ["/api/focus-blocks"],
+    enabled: !!user?.id,
+    staleTime: 60 * 1000,
+  });
+
+  // Fetch tasks for each focus block (for overlay chips)
+  const focusBlockTaskQueries = useQueries({
+    queries: focusBlocks.map(fb => ({
+      queryKey: ["/api/focus-blocks", fb.id, "tasks"],
+      queryFn: () => apiRequest(`/api/focus-blocks/${fb.id}/tasks`, "GET") as Promise<Task[]>,
+      staleTime: 60 * 1000,
+      enabled: !!user?.id,
+    })),
+  });
+
+  const focusBlocksWithTasks = focusBlocks.map((fb, idx) => ({
+    ...fb,
+    tasks: (focusBlockTaskQueries[idx]?.data as Task[] | undefined) || [],
+  }));
 
   // Lookback: timesheets for current user
   const { data: lookbackTimesheets = [] } = useQuery({
@@ -1211,11 +1239,20 @@ export default function PersonalCalendar() {
             ))}
           </div>
 
+          {/* Focus Block Button */}
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+            onClick={() => setShowFocusBlockCreator(true)}
+            data-testid="button-add-focus-block"
+          >
+            <Timer className="w-3 h-3" />
+            <span>Focus Block</span>
+          </button>
+
           {/* Add Event Button */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
             onClick={() => {
-              // TODO: Open event creation dialog
               toast({ title: "Add Event", description: "Event creation coming soon!" });
             }}
             data-testid="button-add-event"
@@ -1227,20 +1264,36 @@ export default function PersonalCalendar() {
       </div>
 
       {/* Calendar Content - bordered bottom, rounded bottom like Tasks */}
-      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden">
-        <EnhancedCalendar
-          events={filteredEvents}
-          onEventClick={handleEventClick}
-          onEventComplete={handleEventComplete}
-          onEventReschedule={handleEventReschedule}
-          onEventResize={handleEventResize}
-          showCompletionCheckbox={true}
-          currentDate={currentDate}
-          onCurrentDateChange={setCurrentDate}
-          view={calendarMode as any}
-          onViewChange={(newView) => setCalendarMode(newView)}
-          hideInternalHeader={true}
-        />
+      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden flex">
+        <div className={`flex-1 min-w-0 transition-all duration-200 ${selectedFocusBlock ? 'mr-0' : ''}`}>
+          <EnhancedCalendar
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onEventComplete={handleEventComplete}
+            onEventReschedule={handleEventReschedule}
+            onEventResize={handleEventResize}
+            showCompletionCheckbox={true}
+            currentDate={currentDate}
+            onCurrentDateChange={setCurrentDate}
+            view={calendarMode as any}
+            onViewChange={(newView) => setCalendarMode(newView)}
+            hideInternalHeader={true}
+            focusBlocks={focusBlocksWithTasks}
+            onFocusBlockClick={(fb) => setSelectedFocusBlock(fb as FocusBlock)}
+            onFocusBlockUpdate={async (blockId, startTime, endTime) => {
+              await apiRequest(`/api/focus-blocks/${blockId}`, "PATCH", { startTime, endTime });
+              queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+            }}
+          />
+        </div>
+        {selectedFocusBlock && (
+          <div className="w-72 flex-shrink-0 border-l border-border overflow-y-auto">
+            <FocusBlockPanel
+              block={selectedFocusBlock}
+              onClose={() => setSelectedFocusBlock(null)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Task Detail Modal */}
@@ -1407,6 +1460,12 @@ export default function PersonalCalendar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Focus Block Creator Modal */}
+      <FocusBlockCreator
+        open={showFocusBlockCreator}
+        onClose={() => setShowFocusBlockCreator(false)}
+      />
     </div>
   );
 }

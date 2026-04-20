@@ -25148,6 +25148,192 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // ── Focus Blocks API ────────────────────────────────────────────────────────
+
+  app.get("/api/focus-blocks", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const requesterId = user?.dbUser?.id || user?.id;
+      if (!companyId || !requesterId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Optional ?userId= param allows admins to view another company member's blocks
+      const targetUserId = (req.query.userId as string) || requesterId;
+      if (targetUserId !== requesterId) {
+        const roleName = (user.dbUser?.roleName || user.roleName || "").toLowerCase();
+        const isAdmin =
+          roleName.includes("admin") ||
+          roleName.includes("owner") ||
+          roleName.includes("general manager");
+        if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const blocks = await storage.getFocusBlocks(targetUserId, companyId);
+      res.json(blocks);
+    } catch (error) {
+      console.error("Error fetching focus blocks:", error);
+      res.status(500).json({ error: "Failed to fetch focus blocks" });
+    }
+  });
+
+  app.get("/api/focus-blocks/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const requesterId = user?.dbUser?.id || user?.id;
+      if (!companyId || !requesterId) return res.status(401).json({ error: "Unauthorized" });
+
+      const block = await storage.getFocusBlock(req.params.id, companyId);
+      if (!block) return res.status(404).json({ error: "Focus block not found" });
+
+      if (block.userId !== requesterId) {
+        const roleName = (user.dbUser?.roleName || user.roleName || "").toLowerCase();
+        const isAdmin =
+          roleName.includes("admin") ||
+          roleName.includes("owner") ||
+          roleName.includes("general manager");
+        if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
+      }
+      res.json(block);
+    } catch (error) {
+      console.error("Error fetching focus block:", error);
+      res.status(500).json({ error: "Failed to fetch focus block" });
+    }
+  });
+
+  app.get("/api/focus-blocks/:id/tasks", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const requesterId = user?.dbUser?.id || user?.id;
+      if (!companyId || !requesterId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Verify block access before returning tasks
+      const block = await storage.getFocusBlock(req.params.id, companyId);
+      if (!block) return res.status(404).json({ error: "Focus block not found" });
+      if (block.userId !== requesterId) {
+        const roleName = (user.dbUser?.roleName || user.roleName || "").toLowerCase();
+        const isAdmin =
+          roleName.includes("admin") ||
+          roleName.includes("owner") ||
+          roleName.includes("general manager");
+        if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 4;
+      const tasks = await storage.getFocusBlockTasks(req.params.id, companyId, limit, block.userId);
+      res.json(tasks);
+    } catch (error) {
+      console.error("Error fetching focus block tasks:", error);
+      res.status(500).json({ error: "Failed to fetch focus block tasks" });
+    }
+  });
+
+  app.post("/api/focus-blocks", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const userId = user?.dbUser?.id || user?.id;
+      if (!companyId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { insertFocusBlockSchema } = await import("@shared/schema");
+      const validationResult = insertFocusBlockSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: validationResult.error.message });
+      }
+
+      // Validate that endTime is strictly after startTime
+      const [sh, sm] = (validationResult.data.startTime || "").split(":").map(Number);
+      const [eh, em] = (validationResult.data.endTime || "").split(":").map(Number);
+      if (isNaN(sh) || isNaN(eh) || eh * 60 + em <= sh * 60 + sm) {
+        return res.status(400).json({ error: "endTime must be after startTime" });
+      }
+
+      const block = await storage.createFocusBlock({
+        ...validationResult.data,
+        userId,
+        companyId,
+      });
+      res.status(201).json(block);
+    } catch (error) {
+      console.error("Error creating focus block:", error);
+      res.status(500).json({ error: "Failed to create focus block" });
+    }
+  });
+
+  app.patch("/api/focus-blocks/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const userId = user?.dbUser?.id || user?.id;
+      if (!companyId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Verify block ownership before update
+      const existing = await storage.getFocusBlock(req.params.id, companyId);
+      if (!existing) return res.status(404).json({ error: "Focus block not found" });
+      if (existing.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+
+      const { z } = await import("zod");
+      // Allowlist mutable fields; explicitly exclude userId and companyId
+      const patchSchema = z.object({
+        title: z.string().optional(),
+        color: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        isRecurring: z.boolean().optional(),
+        daysOfWeek: z.array(z.number()).nullable().optional(),
+        specificDate: z.string().nullable().optional(),
+        categoryType: z.enum(["general", "project", "business", "tag"]).optional(),
+        categoryId: z.string().nullable().optional(),
+        pinnedTaskIds: z.array(z.string()).nullable().optional(),
+      });
+      const validationResult = patchSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: validationResult.error.message });
+      }
+
+      // Validate time range when both times are supplied
+      const { startTime: newStart, endTime: newEnd } = validationResult.data;
+      const effectiveStart = newStart ?? existing.startTime;
+      const effectiveEnd = newEnd ?? existing.endTime;
+      if (effectiveStart && effectiveEnd) {
+        const [sh2, sm2] = effectiveStart.split(":").map(Number);
+        const [eh2, em2] = effectiveEnd.split(":").map(Number);
+        if (eh2 * 60 + em2 <= sh2 * 60 + sm2) {
+          return res.status(400).json({ error: "endTime must be after startTime" });
+        }
+      }
+
+      const block = await storage.updateFocusBlock(req.params.id, validationResult.data, companyId);
+      if (!block) return res.status(404).json({ error: "Focus block not found" });
+      res.json(block);
+    } catch (error) {
+      console.error("Error updating focus block:", error);
+      res.status(500).json({ error: "Failed to update focus block" });
+    }
+  });
+
+  app.delete("/api/focus-blocks/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const userId = user?.dbUser?.id || user?.id;
+      if (!companyId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Verify block ownership before delete
+      const existing = await storage.getFocusBlock(req.params.id, companyId);
+      if (!existing) return res.status(404).json({ error: "Focus block not found" });
+      if (existing.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+
+      const success = await storage.deleteFocusBlock(req.params.id, companyId);
+      if (!success) return res.status(404).json({ error: "Focus block not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting focus block:", error);
+      res.status(500).json({ error: "Failed to delete focus block" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication

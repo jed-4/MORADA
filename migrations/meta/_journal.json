@@ -64,6 +64,13 @@
       "when": 1744416000000,
       "tag": "0008_xero_invoice_number",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775732647109,
+      "tag": "0009_focus_blocks",
+      "breakpoints": true
     }
   ]
 }

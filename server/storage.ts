@@ -960,6 +960,14 @@ export interface IStorage {
   updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined>;
   deleteCalendarView(id: string, companyId: string): Promise<boolean>;
 
+  // Focus Blocks CRUD
+  getFocusBlocks(userId: string, companyId: string): Promise<schema.FocusBlock[]>;
+  getFocusBlock(id: string, companyId: string): Promise<schema.FocusBlock | undefined>;
+  createFocusBlock(block: schema.InsertFocusBlockWithOwner): Promise<schema.FocusBlock>;
+  updateFocusBlock(id: string, block: Partial<schema.InsertFocusBlock>, companyId: string): Promise<schema.FocusBlock | undefined>;
+  deleteFocusBlock(id: string, companyId: string): Promise<boolean>;
+  getFocusBlockTasks(blockId: string, companyId: string, limit?: number, userId?: string): Promise<schema.Task[]>;
+
   // Activity Notes CRUD
   getActivityNotes(scheduleItemId: string, limit?: number, offset?: number): Promise<ActivityNote[]>;
   getActivityNoteCount(scheduleItemId: string): Promise<number>;
@@ -1240,6 +1248,7 @@ export class MemStorage implements IStorage {
   private siteDiaryEntries: Map<string, SiteDiaryEntry>;
   private calendarViews: Map<string, CalendarView>;
   private activityNotes: Map<string, ActivityNote>;
+  private focusBlocks: Map<string, schema.FocusBlock>;
 
   constructor() {
     this.users = new Map();
@@ -1274,6 +1283,7 @@ export class MemStorage implements IStorage {
     this.siteDiaryEntries = new Map();
     this.calendarViews = new Map();
     this.activityNotes = new Map();
+    this.focusBlocks = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultFieldCategories();
@@ -5408,6 +5418,71 @@ export class MemStorage implements IStorage {
     const existing = this.calendarViews.get(id);
     if (!existing || existing.companyId !== companyId) return false;
     return this.calendarViews.delete(id);
+  }
+
+  // Focus Blocks CRUD (in-memory implementation)
+  async getFocusBlocks(userId: string, companyId: string): Promise<schema.FocusBlock[]> {
+    return Array.from(this.focusBlocks.values()).filter(
+      fb => fb.companyId === companyId && fb.userId === userId,
+    );
+  }
+  async getFocusBlock(id: string, companyId: string): Promise<schema.FocusBlock | undefined> {
+    const fb = this.focusBlocks.get(id);
+    return fb && fb.companyId === companyId ? fb : undefined;
+  }
+  async createFocusBlock(block: schema.InsertFocusBlockWithOwner): Promise<schema.FocusBlock> {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    const newBlock: schema.FocusBlock = {
+      ...block,
+      id,
+      daysOfWeek: block.daysOfWeek ?? [],
+      specificDate: block.specificDate ?? null,
+      categoryId: block.categoryId ?? null,
+      pinnedTaskIds: block.pinnedTaskIds ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.focusBlocks.set(id, newBlock);
+    return newBlock;
+  }
+  async updateFocusBlock(id: string, block: Partial<schema.InsertFocusBlock>, companyId: string): Promise<schema.FocusBlock | undefined> {
+    const existing = this.focusBlocks.get(id);
+    if (!existing || existing.companyId !== companyId) return undefined;
+    const updated: schema.FocusBlock = { ...existing, ...block, updatedAt: new Date() };
+    this.focusBlocks.set(id, updated);
+    return updated;
+  }
+  async deleteFocusBlock(id: string, companyId: string): Promise<boolean> {
+    const existing = this.focusBlocks.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
+    this.focusBlocks.delete(id);
+    return true;
+  }
+  async getFocusBlockTasks(blockId: string, companyId: string, limit: number = 4, userId?: string): Promise<schema.Task[]> {
+    // MemStorage: return pinned tasks from block + unscheduled tasks for the user
+    const block = this.focusBlocks.get(blockId);
+    if (!block || block.companyId !== companyId) return [];
+    const pinnedIds = new Set(block.pinnedTaskIds ?? []);
+    const priorityOrder: Record<string, number> = { high: 1, medium: 2, low: 3 };
+    const allNotes = Array.from(this.notes.values()) as schema.Task[];
+    const candidates = allNotes.filter(n =>
+      n.companyId === companyId &&
+      n.type === 'task' &&
+      !n.startTime && !n.endTime && !n.archivedAt &&
+      !['done', 'complete', 'completed'].includes(n.status ?? '') &&
+      (!userId || n.assigneeId === userId),
+    );
+    const pinned = candidates.filter(t => pinnedIds.has(t.id));
+    const autoFill = candidates
+      .filter(t => !pinnedIds.has(t.id))
+      .sort((a, b) => {
+        const pa = priorityOrder[a.priority ?? ''] ?? 4;
+        const pb = priorityOrder[b.priority ?? ''] ?? 4;
+        return pa - pb;
+      })
+      .slice(0, Math.max(0, limit - pinned.length));
+    return [...pinned, ...autoFill];
   }
 
   // Activity Notes CRUD
@@ -16956,6 +17031,157 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteCalendarView:", error);
+      throw error;
+    }
+  }
+
+  // Focus Blocks CRUD
+  async getFocusBlocks(userId: string, companyId: string): Promise<schema.FocusBlock[]> {
+    try {
+      return await db.select().from(schema.focusBlocks)
+        .where(and(
+          eq(schema.focusBlocks.userId, userId),
+          eq(schema.focusBlocks.companyId, companyId)
+        ))
+        .orderBy(asc(schema.focusBlocks.createdAt));
+    } catch (error) {
+      console.error("Database error in getFocusBlocks:", error);
+      throw error;
+    }
+  }
+
+  async getFocusBlock(id: string, companyId: string): Promise<schema.FocusBlock | undefined> {
+    try {
+      const result = await db.select().from(schema.focusBlocks)
+        .where(and(
+          eq(schema.focusBlocks.id, id),
+          eq(schema.focusBlocks.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getFocusBlock:", error);
+      throw error;
+    }
+  }
+
+  async createFocusBlock(block: schema.InsertFocusBlockWithOwner): Promise<schema.FocusBlock> {
+    try {
+      const [result] = await db.insert(schema.focusBlocks).values(block).returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in createFocusBlock:", error);
+      throw error;
+    }
+  }
+
+  async updateFocusBlock(id: string, block: Partial<schema.InsertFocusBlock>, companyId: string): Promise<schema.FocusBlock | undefined> {
+    try {
+      const [result] = await db.update(schema.focusBlocks)
+        .set({ ...block, updatedAt: new Date() })
+        .where(and(
+          eq(schema.focusBlocks.id, id),
+          eq(schema.focusBlocks.companyId, companyId)
+        ))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in updateFocusBlock:", error);
+      throw error;
+    }
+  }
+
+  async deleteFocusBlock(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.focusBlocks)
+        .where(and(
+          eq(schema.focusBlocks.id, id),
+          eq(schema.focusBlocks.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteFocusBlock:", error);
+      throw error;
+    }
+  }
+
+  async getFocusBlockTasks(blockId: string, companyId: string, limit: number = 4, userId?: string): Promise<schema.Task[]> {
+    try {
+      // Scoped block lookup: companyId guards ownership
+      const block = await db.select().from(schema.focusBlocks)
+        .where(and(
+          eq(schema.focusBlocks.id, blockId),
+          eq(schema.focusBlocks.companyId, companyId),
+        ))
+        .limit(1);
+      if (!block[0]) return [];
+      
+      const fb = block[0];
+      // Use the block owner's userId if no userId supplied (e.g. viewing another permitted user's calendar)
+      const ownerUserId = userId || fb.userId;
+      const pinnedIds = (fb.pinnedTaskIds as string[]) || [];
+      
+      // Always include pinned tasks first (fetch them explicitly)
+      let pinnedTasks: schema.Task[] = [];
+      if (pinnedIds.length > 0) {
+        const pinnedRows = await db.select().from(schema.notes)
+          .where(and(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.notes.type, 'task'),
+            inArray(schema.notes.id, pinnedIds),
+          ));
+        pinnedTasks = pinnedRows as schema.Task[];
+      }
+
+      // Auto-fill: unscheduled, non-completed tasks for the block owner, sorted by priority then soonest due
+      const extraNeeded = Math.max(0, limit - pinnedTasks.length);
+      let autoFill: schema.Task[] = [];
+      if (extraNeeded > 0) {
+        const whereConditions = [
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, 'task'),
+          isNull(schema.notes.startTime),
+          isNull(schema.notes.endTime),
+          isNull(schema.notes.archivedAt),
+          // Scope to block owner's assigned tasks (either single or multi-assignee)
+          ...(ownerUserId ? [
+            sql`(${schema.notes.assigneeId} = ${ownerUserId} OR ${ownerUserId} = ANY(${schema.notes.assigneeIds}::text[]))`
+          ] : []),
+          // Exclude completed tasks (all terminal statuses used by this app)
+          sql`COALESCE(${schema.notes.status}, '') NOT IN ('done', 'complete', 'completed')`,
+        ];
+
+        // Category-based filtering
+        if (fb.categoryType === 'project' && fb.categoryId) {
+          // Project-linked: only tasks in that project
+          whereConditions.push(eq(schema.notes.projectId, fb.categoryId));
+        } else if (fb.categoryType === 'business') {
+          // Business tasks: tasks with no project
+          whereConditions.push(isNull(schema.notes.projectId));
+        } else if (fb.categoryType === 'tag' && fb.categoryId) {
+          // Tag-linked: tasks whose JSON tags array contains the given tag string.
+          // Cast JSON → JSONB to use the @> containment operator safely.
+          whereConditions.push(
+            sql`${schema.notes.tags}::jsonb @> jsonb_build_array(${fb.categoryId}::text)`
+          );
+        }
+
+        const autoRows = await db.select().from(schema.notes)
+          .where(and(...whereConditions))
+          .orderBy(
+            sql`CASE ${schema.notes.priority} WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
+            sql`${schema.notes.dueDate} ASC NULLS LAST`,
+          )
+          .limit(extraNeeded + pinnedIds.length);
+
+        const pinnedSet = new Set(pinnedIds);
+        autoFill = (autoRows as schema.Task[]).filter(t => !pinnedSet.has(t.id)).slice(0, extraNeeded);
+      }
+
+      return [...pinnedTasks, ...autoFill];
+    } catch (error) {
+      console.error("Database error in getFocusBlockTasks:", error);
       throw error;
     }
   }

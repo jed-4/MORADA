@@ -6129,3 +6129,41 @@ export const overheadForecastOverrides = pgTable("overhead_forecast_overrides", 
 export const insertOverheadForecastOverrideSchema = createInsertSchema(overheadForecastOverrides).omit({ id: true, updatedAt: true });
 export type InsertOverheadForecastOverride = z.infer<typeof insertOverheadForecastOverrideSchema>;
 export type OverheadForecastOverride = typeof overheadForecastOverrides.$inferSelect;
+
+// ── Focus Blocks (Motion-style time-blocking) ─────────────────────────────────
+
+export const focusBlocks = pgTable("focus_blocks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  color: text("color").notNull().default("#6366f1"),
+  startTime: text("start_time").notNull(), // "HH:MM" format
+  endTime: text("end_time").notNull(), // "HH:MM" format
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  daysOfWeek: integer("days_of_week").array().default([]), // [0-6] for Sun-Sat when recurring
+  specificDate: date("specific_date"), // For one-off blocks
+  categoryType: text("category_type").notNull().default("general"), // "project" | "business" | "tag" | "general"
+  categoryId: varchar("category_id"), // nullable: projectId for project-linked blocks, tag for tag-linked blocks
+  pinnedTaskIds: text("pinned_task_ids").array().default([]), // manually pinned task IDs
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFocusBlockSchema = createInsertSchema(focusBlocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  userId: true,
+  companyId: true,
+}).extend({
+  daysOfWeek: z.array(z.number()).default([]),
+  pinnedTaskIds: z.array(z.string()).default([]),
+  specificDate: z.string().nullable().optional(),
+  categoryId: z.string().nullable().optional(),
+  categoryType: z.enum(["general", "project", "business", "tag"]).default("general"),
+});
+
+export type FocusBlock = typeof focusBlocks.$inferSelect;
+export type InsertFocusBlock = z.infer<typeof insertFocusBlockSchema>;
+export type InsertFocusBlockWithOwner = InsertFocusBlock & { userId: string; companyId: string };

@@ -1,15 +1,18 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useTimezone, formatInTimezone, getDayOfWeekInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
+import { useTimezone, getDayOfWeekInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CalendarDays, Clock, Repeat, User, ListTodo } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CalendarDays, User, ListTodo, Timer, Plus } from "lucide-react";
 import { generateNotionColors } from "@/lib/taskColors";
-import type { TaskTemplate } from "@shared/schema";
+import type { TaskTemplate, FocusBlock } from "@shared/schema";
+import { FocusBlockCreator } from "@/components/FocusBlockCreator";
+import { FocusBlockPanel } from "@/components/FocusBlockPanel";
+import { queryClient } from "@/lib/queryClient";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -84,6 +87,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     const { user: currentUser } = useAuth();
     const { effectiveTimezone } = useTimezone();
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+    const [showFocusCreator, setShowFocusCreator] = useState(false);
+    const [selectedFocusBlock, setSelectedFocusBlock] = useState<FocusBlock | null>(null);
 
     const { data: users = [], isLoading: usersLoading } = useQuery<UserType[]>({
       queryKey: ["/api/users/assignable"],
@@ -93,6 +98,22 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     const { data: taskTemplates = [], isLoading: templatesLoading, refetch } = useQuery<TaskTemplate[]>({
       queryKey: ["/api/systems/task-templates"],
     });
+
+    // Fetch focus blocks for the selected user
+    const focusBlocksUrl = selectedUserId && selectedUserId !== currentUser?.id
+      ? `/api/focus-blocks?userId=${selectedUserId}`
+      : `/api/focus-blocks`;
+    const { data: allFocusBlocks = [] } = useQuery<FocusBlock[]>({
+      queryKey: ["/api/focus-blocks", selectedUserId || currentUser?.id],
+      queryFn: () => fetch(focusBlocksUrl, { credentials: "include" }).then(r => r.json()),
+      enabled: !!currentUser?.id,
+    });
+
+    // Only show recurring focus blocks in the default diary
+    const recurringFocusBlocks = useMemo(
+      () => allFocusBlocks.filter(fb => fb.isRecurring),
+      [allFocusBlocks]
+    );
 
     const { data: userRoles = [] } = useQuery<any[]>({
       queryKey: ["/api/roles/assignable"],
@@ -214,9 +235,26 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
             <Badge variant="secondary" className="text-xs">
               {recurringTemplates.length} recurring {recurringTemplates.length === 1 ? 'template' : 'templates'}
             </Badge>
+            {recurringFocusBlocks.length > 0 && (
+              <Badge variant="outline" className="text-xs gap-1">
+                <Timer className="h-3 w-3" />
+                {recurringFocusBlocks.length} focus {recurringFocusBlocks.length === 1 ? 'block' : 'blocks'}
+              </Badge>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              onClick={() => setShowFocusCreator(true)}
+              data-testid="button-diary-add-focus-block"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <Timer className="h-3.5 w-3.5" />
+              Focus Block
+            </Button>
             <User className="h-4 w-4 text-muted-foreground" />
             <Select 
               value={effectiveUserId || ""} 
@@ -384,6 +422,52 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                         </div>
                       )}
 
+                      {/* Focus block overlays for this day */}
+                      {recurringFocusBlocks
+                        .filter(fb => (fb.daysOfWeek as number[] || []).includes(dayIndex))
+                        .map(fb => {
+                          const [sh, sm] = fb.startTime.split(":").map(Number);
+                          const [eh, em] = fb.endTime.split(":").map(Number);
+                          const topPx = (sh + sm / 60) * HOUR_HEIGHT;
+                          const heightPx = Math.max(((eh * 60 + em) - (sh * 60 + sm)) / 60 * HOUR_HEIGHT, 20);
+                          return (
+                            <div
+                              key={fb.id}
+                              className="absolute left-0 right-0 z-[2] overflow-hidden cursor-pointer"
+                              style={{
+                                top: `${topPx}px`,
+                                height: `${heightPx}px`,
+                                backgroundColor: fb.color + "1A",
+                                borderLeft: `3px solid ${fb.color}`,
+                              }}
+                              title={`${fb.title} (${fb.startTime}–${fb.endTime})`}
+                              onClick={() => setSelectedFocusBlock(fb)}
+                              data-testid={`diary-focus-${fb.id}`}
+                            >
+                              <div className="flex items-start gap-0.5 px-1 pt-0.5">
+                                <Timer
+                                  className="h-2 w-2 flex-shrink-0 mt-0.5"
+                                  style={{ color: fb.color }}
+                                />
+                                <div
+                                  className="text-[8px] font-medium truncate leading-tight"
+                                  style={{ color: fb.color }}
+                                >
+                                  {fb.title}
+                                </div>
+                              </div>
+                              {heightPx >= 32 && (
+                                <div
+                                  className="text-[7px] px-1 opacity-80 leading-tight"
+                                  style={{ color: fb.color }}
+                                >
+                                  {fb.startTime}–{fb.endTime}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
                       {/* Positioned templates with collision handling */}
                       {(() => {
                         // Minimum height supports 15-minute blocks (HOUR_HEIGHT/4 = 12px)
@@ -511,7 +595,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
           </div>
         )}
 
-        {!isLoading && recurringTemplates.length === 0 && (
+        {!isLoading && recurringTemplates.length === 0 && recurringFocusBlocks.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center bg-background/80 p-6 rounded-lg">
               <CalendarDays className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
@@ -522,6 +606,26 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                   : "No recurring templates have been set up yet. Create operational tasks and mark them as recurring to see them here."}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Focus Block Creator */}
+        <FocusBlockCreator
+          open={showFocusCreator}
+          onOpenChange={setShowFocusCreator}
+          onCreated={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks", selectedUserId || currentUser?.id] });
+          }}
+        />
+
+        {/* Focus Block Detail Panel */}
+        {selectedFocusBlock && (
+          <div className="fixed inset-y-0 right-0 w-80 bg-background border-l shadow-lg z-50 overflow-y-auto">
+            <FocusBlockPanel
+              block={selectedFocusBlock}
+              onClose={() => setSelectedFocusBlock(null)}
+            />
           </div>
         )}
       </div>

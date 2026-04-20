@@ -21,18 +21,21 @@ import {
   Cloud,
   CloudRain,
   ChevronsUpDown,
-  ChevronsDownUp
+  ChevronsDownUp,
+  Timer,
+  Clock,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
-import { type Task, type Project } from "@shared/schema";
+import { type Task, type Project, type FocusBlock } from "@shared/schema";
 import { generateNotionColors } from "@/lib/taskColors";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
+import { FocusBlockCreator } from "@/components/FocusBlockCreator";
 import {
   DndContext,
   closestCenter,
@@ -77,13 +80,58 @@ const DEFAULT_SECTIONS: SectionConfig[] = [
   { id: "overdue", visible: true, collapsed: false },
   { id: "today", visible: true, collapsed: false },
   { id: "schedule", visible: true, collapsed: false },
+  { id: "focus", visible: true, collapsed: false },
 ];
 
 const SECTION_LABELS: Record<string, { label: string; icon: typeof AlertTriangle }> = {
   overdue: { label: "Overdue", icon: AlertTriangle },
   today: { label: "Today's Tasks", icon: CheckSquare },
   schedule: { label: "Today's Schedule", icon: CalendarDays },
+  focus: { label: "Focus Blocks", icon: Timer },
 };
+
+function FocusBlockItem({ block }: { block: FocusBlock }) {
+  const { data: blockTasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/focus-blocks", block.id, "tasks"],
+    queryFn: () => apiRequest(`/api/focus-blocks/${block.id}/tasks`, "GET"),
+    staleTime: 60 * 1000,
+  });
+
+  const PRIORITY_COLORS: Record<string, string> = {
+    high: "#ef4444",
+    medium: "#f97316",
+    low: "#22c55e",
+  };
+
+  return (
+    <div
+      className="ml-4 rounded-md border overflow-hidden"
+      style={{ borderLeft: `3px solid ${block.color}` }}
+      data-testid={`myday-focus-${block.id}`}
+    >
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: block.color }} />
+        <span className="text-xs font-medium truncate flex-1">{block.title}</span>
+        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+          {block.startTime} – {block.endTime}
+        </span>
+      </div>
+      {blockTasks.length > 0 && (
+        <div className="px-2 pb-1.5 space-y-0.5">
+          {blockTasks.map((task) => (
+            <div key={task.id} className="flex items-center gap-1.5 pl-1">
+              <div
+                className="w-1 h-1 rounded-full flex-shrink-0"
+                style={{ backgroundColor: PRIORITY_COLORS[task.priority || ""] || "#6b7280" }}
+              />
+              <span className="text-[10px] text-muted-foreground truncate">{task.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SortableSectionItem({ 
   section, 
@@ -147,6 +195,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [editingSections, setEditingSections] = useState<SectionConfig[]>(DEFAULT_SECTIONS);
   const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({});
   const [initialized, setInitialized] = useState(false);
+  const [showFocusCreator, setShowFocusCreator] = useState(false);
 
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -199,6 +248,24 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     },
     enabled: !!userId && sections.some(s => s.id === 'schedule' && s.visible),
   });
+
+  const { data: allFocusBlocks = [] } = useQuery<FocusBlock[]>({
+    queryKey: ["/api/focus-blocks"],
+    enabled: !!userId && sections.some(s => s.id === 'focus' && s.visible),
+    staleTime: 60 * 1000,
+  });
+
+  const todayFocusBlocks = useMemo(() => {
+    const todayDow = today.getDay();
+    const todayStr = format(today, 'yyyy-MM-dd');
+    return allFocusBlocks.filter(fb => {
+      if (fb.isRecurring) {
+        return (fb.daysOfWeek as number[] || []).includes(todayDow);
+      } else {
+        return fb.specificDate === todayStr;
+      }
+    });
+  }, [allFocusBlocks, today]);
 
   const todaysTasks = useMemo(() => tasks.filter(t => {
     if (t.status === 'done' || t.status === 'complete') return false;
@@ -359,6 +426,11 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         emptyMessage = "No schedule items today";
         itemColor = "text-blue-600 dark:text-blue-400";
         break;
+      case "focus":
+        items = todayFocusBlocks;
+        emptyMessage = "No focus blocks today";
+        itemColor = "text-violet-600 dark:text-violet-400";
+        break;
     }
 
     const count = items.length;
@@ -374,6 +446,8 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
             ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' 
             : sectionConfig.id === 'schedule'
             ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+            : sectionConfig.id === 'focus'
+            ? 'border-l-violet-500 bg-violet-50/50 dark:bg-violet-950/20'
             : 'border-l-primary bg-primary/5'
         }`}>
           {isCollapsed ? (
@@ -386,6 +460,8 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
               ? 'text-red-700 dark:text-red-400' 
               : sectionConfig.id === 'schedule'
               ? 'text-blue-700 dark:text-blue-400'
+              : sectionConfig.id === 'focus'
+              ? 'text-violet-700 dark:text-violet-400'
               : 'text-foreground/80'
           }`}>
             {sectionDef.label}
@@ -419,7 +495,10 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   )}
                 </div>
               ))}
-              {sectionConfig.id !== "schedule" && (items as Task[]).map((task) => {
+              {sectionConfig.id === "focus" && (items as FocusBlock[]).map((fb) => (
+                <FocusBlockItem key={fb.id} block={fb} />
+              ))}
+              {sectionConfig.id !== "schedule" && sectionConfig.id !== "focus" && (items as Task[]).map((task) => {
                 const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
                 return (
                   <div 
@@ -486,9 +565,18 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-1">
         <span className="text-xs text-muted-foreground">{formatInTimezone(new Date(), effectiveTimezone, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <div className="flex items-center gap-1.5">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-5 w-5"
+            onClick={() => setShowFocusCreator(true)}
+            title="New Focus Block"
+          >
+            <Clock className="h-3 w-3" />
+          </Button>
           {visibleSections.length > 0 && (
             <Button
               size="icon"
@@ -544,6 +632,14 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
         onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
+      />
+
+      <FocusBlockCreator
+        open={showFocusCreator}
+        onOpenChange={setShowFocusCreator}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/focus-blocks"] });
+        }}
       />
     </div>
   );
