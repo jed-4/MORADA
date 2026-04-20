@@ -34,6 +34,11 @@ export interface XeroBillData {
   invoiceNumber?: string;
   taxMode?: "inclusive" | "exclusive";
   lineItems: XeroBillLineItem[];
+  // Xero invoice status: "DRAFT" | "SUBMITTED" | "AUTHORISED".
+  //   - SUBMITTED   → "Awaiting Approval" in the Xero UI
+  //   - AUTHORISED  → "Awaiting Payment" in the Xero UI (approved)
+  // Defaults to AUTHORISED for backward compatibility.
+  xeroStatus?: "DRAFT" | "SUBMITTED" | "AUTHORISED";
 }
 
 export interface XeroAttachmentSummary {
@@ -515,7 +520,7 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: "AUTHORISED",
+      Status: billData.xeroStatus || "AUTHORISED",
     };
 
     if (billData.dueDate) {
@@ -582,7 +587,7 @@ export class XeroService {
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: billData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
-      Status: "AUTHORISED",
+      Status: billData.xeroStatus || "AUTHORISED",
     };
 
     if (billData.dueDate) invoicePayload.DueDate = billData.dueDate;

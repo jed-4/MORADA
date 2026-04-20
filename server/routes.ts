@@ -541,6 +541,18 @@ async function pushBillToXeroInternal(
     //     "Invoice already exists" duplicate check on the Xero side).
     //   - BuildPro's internal bill number → Xero Reference (for cross-system
     //     traceability).
+    // Map BuildPro bill status to a Xero invoice status so the two systems
+    // stay in lock-step:
+    //   awaiting_approval → SUBMITTED   ("Awaiting Approval" in Xero UI)
+    //   awaiting_payment  → AUTHORISED  ("Awaiting Payment" in Xero UI)
+    //   paid              → AUTHORISED  (payment is posted separately via createPayment)
+    // draft / needs_review never reach this function — those bills are not
+    // pushed to Xero.
+    let xeroStatus: "SUBMITTED" | "AUTHORISED" = "AUTHORISED";
+    if (bill.status === "awaiting_approval") {
+      xeroStatus = "SUBMITTED";
+    }
+
     const billPayload = {
       supplierName,
       supplierXeroContactId,
@@ -552,6 +564,7 @@ async function pushBillToXeroInternal(
         | "inclusive"
         | "exclusive",
       lineItems: xeroLineItems,
+      xeroStatus,
     };
 
     let xeroBill: any;
@@ -631,8 +644,19 @@ function scheduleAutoPushBill(billId: string, companyId: string, delayMs = 2000)
       const bill = await storage.getBillById(billId);
       if (!bill) return;
       if (bill.status === "paid") return; // never overwrite paid bills
-      // Linked: always allowed. Unlinked: only when sendToXero and approved (awaiting_payment).
-      if (!bill.xeroInvoiceId && !(bill.sendToXero && bill.status === "awaiting_payment")) return;
+      // Linked: always allowed. Unlinked: only when sendToXero and the bill
+      // has reached the approval workflow (awaiting_approval or later). This
+      // mirrors the BuildPro lifecycle into Xero so the two systems stay in
+      // step (SUBMITTED ↔ awaiting_approval, AUTHORISED ↔ awaiting_payment).
+      if (
+        !bill.xeroInvoiceId &&
+        !(
+          bill.sendToXero &&
+          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment")
+        )
+      ) {
+        return;
+      }
       const result = await pushBillToXeroInternal(billId, companyId);
       if (!result.ok) {
         console.warn(`[auto-push bill ${billId}] failed:`, result.error, result.message);
@@ -10635,8 +10659,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (companyId && !onlySyncFields) {
         if (bill.xeroInvoiceId && bill.status !== "paid") {
           scheduleAutoPushBill(bill.id, companyId);
-        } else if (!bill.xeroInvoiceId && bill.status === "awaiting_payment" && previous?.status !== "awaiting_payment") {
-          // Create-first push: when an unlinked bill transitions to awaiting_payment, push to Xero
+        } else if (
+          !bill.xeroInvoiceId &&
+          (bill.status === "awaiting_approval" || bill.status === "awaiting_payment") &&
+          previous?.status !== bill.status
+        ) {
+          // Create-first push: when an unlinked bill enters the approval
+          // workflow (awaiting_approval) it lands in Xero as SUBMITTED
+          // ("Awaiting Approval"). When it later moves to awaiting_payment it
+          // is updated to AUTHORISED ("Awaiting Payment"). Either transition
+          // is allowed to be the very first push.
           scheduleAutoPushBill(bill.id, companyId);
         }
 
