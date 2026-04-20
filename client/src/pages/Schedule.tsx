@@ -106,6 +106,63 @@ interface ScheduleParams {
   projectId: string;
 }
 
+// ---------------------------------------------------------------------------
+// Schedule history guard (module-scoped)
+//
+// The Schedule page needs to intercept SPA navigations (programmatic and
+// link-click) while the schedule is unlocked, so it can prompt the user
+// to lock-and-leave. Previously this was implemented by replacing
+// `history.pushState` / `history.replaceState` inside a useEffect and
+// restoring them on cleanup. If the cleanup ever failed to run (error
+// boundary, hot-reload, fast unmount/remount race) the patched functions
+// would leak forever and silently swallow wouter route changes — that's
+// the cause of the "back button changes URL but page stays stale" bug.
+//
+// The fix: patch pushState/replaceState exactly once at module scope and
+// look up the active guard via a mutable variable. With no active guard
+// the patch is a transparent passthrough, so even a leaked install can't
+// break navigation app-wide.
+// ---------------------------------------------------------------------------
+type ScheduleHistoryGuard = {
+  isActive: () => boolean;
+  isAllowedUrl: (urlStr: string) => boolean;
+  onBlocked: (urlStr: string) => void;
+};
+
+let activeScheduleGuard: ScheduleHistoryGuard | null = null;
+let scheduleHistoryPatched = false;
+
+function patchHistoryOnce() {
+  if (scheduleHistoryPatched || typeof window === "undefined") return;
+  scheduleHistoryPatched = true;
+  const origPushState = window.history.pushState.bind(window.history);
+  const origReplaceState = window.history.replaceState.bind(window.history);
+  const wrap = (orig: typeof window.history.pushState) =>
+    function (this: History, data: any, unused: string, url?: string | URL | null) {
+      const guard = activeScheduleGuard;
+      if (guard && url && guard.isActive()) {
+        const urlStr = typeof url === "string" ? url : url.toString();
+        if (!guard.isAllowedUrl(urlStr)) {
+          guard.onBlocked(urlStr);
+          return;
+        }
+      }
+      return orig.call(this, data, unused, url);
+    };
+  window.history.pushState = wrap(origPushState) as typeof window.history.pushState;
+  window.history.replaceState = wrap(origReplaceState) as typeof window.history.replaceState;
+}
+
+function installScheduleHistoryGuard(guard: ScheduleHistoryGuard): () => void {
+  patchHistoryOnce();
+  activeScheduleGuard = guard;
+  return () => {
+    if (activeScheduleGuard === guard) {
+      activeScheduleGuard = null;
+    }
+  };
+}
+
 export default function Schedule() {
   const { currentProject } = useProject();
   const { user } = useAuth();
@@ -297,31 +354,28 @@ export default function Schedule() {
       }
     };
 
-    const origPushState = history.pushState.bind(history);
-    const origReplaceState = history.replaceState.bind(history);
-    const interceptNav = (orig: typeof history.pushState) =>
-      function (this: History, data: any, unused: string, url?: string | URL | null) {
-        if (url && isUnlockedRef.current) {
-          const urlStr = typeof url === 'string' ? url : url.toString();
-          const isScheduleLink = urlStr.includes("/schedule") && urlStr.includes(projectId || "");
-          if (!isScheduleLink) {
-            pendingNavigationRef.current = urlStr;
-            setShowLeaveGuardDialog(true);
-            return;
-          }
-        }
-        return orig.call(this, data, unused, url);
-      };
-    history.pushState = interceptNav(origPushState) as typeof history.pushState;
-    history.replaceState = interceptNav(origReplaceState) as typeof history.replaceState;
+    // Install the history guard via a module-shared installer (see bottom of
+    // file). It patches pushState/replaceState exactly once and consults a
+    // mutable guard object instead of replacing the originals on every mount.
+    // This means even if the cleanup below is skipped (error boundary, hot
+    // reload, unmount race) the guard simply turns into a passthrough — wouter
+    // never loses notifications about route changes.
+    const guard: ScheduleHistoryGuard = {
+      isActive: () => isUnlockedRef.current,
+      onBlocked: (urlStr) => {
+        pendingNavigationRef.current = urlStr;
+        setShowLeaveGuardDialog(true);
+      },
+      isAllowedUrl: (urlStr) => urlStr.includes("/schedule") && urlStr.includes(projectId || ""),
+    };
+    const releaseGuard = installScheduleHistoryGuard(guard);
 
     document.addEventListener("click", clickHandler, true);
     window.addEventListener("popstate", handlePopState);
     return () => {
       document.removeEventListener("click", clickHandler, true);
       window.removeEventListener("popstate", handlePopState);
-      history.pushState = origPushState;
-      history.replaceState = origReplaceState;
+      releaseGuard();
     };
   }, [isUnlocked, projectId]);
 

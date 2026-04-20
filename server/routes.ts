@@ -22763,9 +22763,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       }
 
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
       const unreadOnly = req.query.unreadOnly === 'true';
 
-      const notifications = await storage.getNotifications(user.id, user.companyId, { limit, unreadOnly });
+      const notifications = await storage.getNotifications(user.id, user.companyId, { limit, offset, unreadOnly });
       res.json(notifications);
     } catch (error: any) {
       console.error("Error fetching notifications:", error);

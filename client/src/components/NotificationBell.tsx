@@ -1,12 +1,12 @@
-import { useState, useCallback, lazy, Suspense } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useCallback, lazy, Suspense, useMemo } from "react";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { formatDistanceToNow, isPast } from "date-fns";
 import { useLocation } from "wouter";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { 
   Bell, Clock, Check, AlarmClock, AlarmClockOff, 
   CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal,
-  UserPlus, Trash2, CheckCheck, ExternalLink
+  UserPlus, Trash2, CheckCheck, ExternalLink, Loader2
 } from "lucide-react";
 
 const TaskEditModal = lazy(() => import("@/components/TaskEditModal"));
@@ -75,10 +75,37 @@ export function NotificationBell() {
     enabled: !!user,
   });
 
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery<Notification[]>({
-    queryKey: ["/api/notifications"],
+  const NOTIFICATIONS_PAGE_SIZE = 10;
+  const NOTIFICATIONS_INFINITE_KEY = ["/api/notifications", "infinite"] as const;
+
+  const {
+    data: notificationsPages,
+    isLoading: notificationsLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<Notification[]>({
+    queryKey: NOTIFICATIONS_INFINITE_KEY,
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(
+        `/api/notifications?limit=${NOTIFICATIONS_PAGE_SIZE}&offset=${pageParam}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed to load notifications");
+      return res.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < NOTIFICATIONS_PAGE_SIZE) return undefined;
+      return allPages.reduce((sum, p) => sum + p.length, 0);
+    },
     enabled: isOpen && !!user,
   });
+
+  const notifications = useMemo<Notification[]>(
+    () => notificationsPages?.pages.flat() ?? [],
+    [notificationsPages],
+  );
 
   const { data: reminders = [] } = useQuery<Reminder[]>({
     queryKey: ["/api/reminders/upcoming"],
@@ -86,7 +113,7 @@ export function NotificationBell() {
   });
 
   const handleNewNotification = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_KEY });
     queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
   }, []);
 
@@ -119,7 +146,7 @@ export function NotificationBell() {
       return apiRequest("/api/notifications/mark-all-read", "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_KEY });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
@@ -129,7 +156,7 @@ export function NotificationBell() {
       return apiRequest(`/api/notifications/${id}/read`, "PATCH");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_KEY });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
@@ -138,8 +165,24 @@ export function NotificationBell() {
     mutationFn: async (id: string) => {
       return apiRequest(`/api/notifications/${id}`, "DELETE");
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_INFINITE_KEY });
+      const previous = queryClient.getQueryData<{ pages: Notification[][]; pageParams: unknown[] }>(NOTIFICATIONS_INFINITE_KEY);
+      if (previous) {
+        queryClient.setQueryData(NOTIFICATIONS_INFINITE_KEY, {
+          ...previous,
+          pages: previous.pages.map((page) => page.filter((n) => n.id !== id)),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(NOTIFICATIONS_INFINITE_KEY, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_INFINITE_KEY });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
@@ -243,7 +286,7 @@ export function NotificationBell() {
           </div>
           
           <TabsContent value="notifications" className="m-0">
-            <ScrollArea className="max-h-80">
+            <ScrollArea className="max-h-96">
               {notificationsLoading ? (
                 <div className="space-y-1 p-2">
                   {[1, 2].map((i) => (
@@ -264,7 +307,7 @@ export function NotificationBell() {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {notifications.slice(0, 10).map((notification) => {
+                  {notifications.map((notification) => {
                     const TypeIcon = NOTIFICATION_TYPE_ICONS[notification.type] || Bell;
                     
                     return (
@@ -313,6 +356,27 @@ export function NotificationBell() {
                       </div>
                     );
                   })}
+                  {hasNextPage && (
+                    <div className="p-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full h-7 text-xs"
+                        onClick={() => fetchNextPage()}
+                        disabled={isFetchingNextPage}
+                        data-testid="button-notifications-load-more"
+                      >
+                        {isFetchingNextPage ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Loading…
+                          </>
+                        ) : (
+                          "Load more"
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </ScrollArea>

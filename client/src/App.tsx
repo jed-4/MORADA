@@ -489,9 +489,27 @@ function AuthWrapper() {
   );
 }
 
+function BfcacheRefresher() {
+  // When Chrome / Safari restore the page from bfcache, the React tree is
+  // re-attached but React Query data is stale and websocket subscriptions may
+  // not have re-fired. Invalidate everything so the UI matches the URL the
+  // user actually navigated to.
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        queryClient.invalidateQueries();
+      }
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <BfcacheRefresher />
       <AuthWrapper />
       <Toaster />
     </QueryClientProvider>

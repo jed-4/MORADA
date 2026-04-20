@@ -1181,7 +1181,7 @@ export interface IStorage {
   ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView>;
 
   // In-App Notifications
-  getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]>;
+  getNotifications(userId: string, companyId: string, options?: { limit?: number; offset?: number; unreadOnly?: boolean }): Promise<InAppNotification[]>;
   getNotification(id: string, userId: string): Promise<InAppNotification | undefined>;
   createNotification(notification: InsertNotification): Promise<InAppNotification>;
   markNotificationAsRead(id: string, userId: string): Promise<InAppNotification | undefined>;
@@ -5629,7 +5629,7 @@ export class MemStorage implements IStorage {
   }
 
   // In-App Notifications - MemStorage stubs
-  async getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
+  async getNotifications(userId: string, companyId: string, options?: { limit?: number; offset?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
     return [];
   }
   async getNotification(id: string, userId: string): Promise<InAppNotification | undefined> {
@@ -20803,9 +20803,9 @@ export class DbStorage implements IStorage {
   }
 
   // In-App Notifications
-  async getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
+  async getNotifications(userId: string, companyId: string, options?: { limit?: number; offset?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
     try {
-      let query = db.select()
+      let query: any = db.select()
         .from(schema.notifications)
         .where(and(
           eq(schema.notifications.userId, userId),
@@ -20814,11 +20814,14 @@ export class DbStorage implements IStorage {
           ...(options?.unreadOnly ? [eq(schema.notifications.isRead, false)] : [])
         ))
         .orderBy(desc(schema.notifications.createdAt));
-      
+
       if (options?.limit) {
-        query = query.limit(options.limit) as any;
+        query = query.limit(options.limit);
       }
-      
+      if (options?.offset) {
+        query = query.offset(options.offset);
+      }
+
       return await query;
     } catch (error) {
       console.error("Database error in getNotifications:", error);
