@@ -149,6 +149,7 @@ import {
   bills as billsTable
 } from "@shared/schema";
 import { matchSupplier } from "@shared/supplierMatcher";
+import { fuzzyMatchTimesheetCostCode } from "@shared/import";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -17160,19 +17161,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return found?.id;
       };
 
-      const matchCostCodeByStr = (str: string): string | null => {
-        if (!str) return null;
-        const normalized = str.trim().toLowerCase();
-        const found = companyCodes.find((c) => {
-          const codeTitle = `${c.code}-${c.title}`.toLowerCase();
-          return (
-            codeTitle === normalized ||
-            c.title.toLowerCase() === normalized ||
-            c.code.toLowerCase() === normalized ||
-            normalized.startsWith(c.code.toLowerCase() + "-")
-          );
-        });
-        return found?.id ?? null;
+      const matchCostCodeByStr = (
+        str: string
+      ): { id: string | null; matchType: "exact" | "fuzzy" | "none"; label: string | null } => {
+        if (!str) return { id: null, matchType: "none", label: null };
+        const result = fuzzyMatchTimesheetCostCode(str, companyCodes);
+        if (result && result.matched) {
+          return {
+            id: result.matched.id,
+            matchType: result.matchType,
+            label: `${result.matched.code} — ${result.matched.title}`,
+          };
+        }
+        return { id: null, matchType: "none", label: null };
       };
 
       let imported = 0;
@@ -17247,9 +17248,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const costCodeStr = isBuildern
           ? String(row["Cost code"] ?? "").trim()
           : String(row["Cost Code"] ?? row["cost code"] ?? "").trim();
-        const resolvedCostCodeId = matchCostCodeByStr(costCodeStr);
+        const ccResult = matchCostCodeByStr(costCodeStr);
+        const resolvedCostCodeId = ccResult.id;
         if (costCodeStr && !resolvedCostCodeId) {
           errors.push(`${rowLabel} warning: cost code "${costCodeStr}" not matched — imported without cost code`);
+        } else if (costCodeStr && ccResult.matchType === "fuzzy" && ccResult.label) {
+          errors.push(`${rowLabel} info: cost code "${costCodeStr}" fuzzy matched to ${ccResult.label}`);
         }
 
         // Parse status — only submitted/approved are valid for import; everything else becomes draft

@@ -464,6 +464,138 @@ export function matchCostCode(rawValue: string | undefined, costCodes: CostCode[
   };
 }
 
+// Levenshtein distance — small implementation used for fuzzy cost-code
+// matching during timesheet imports. Iterative two-row variant to keep
+// memory low; suitable for the short strings (<= ~80 chars) we compare.
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const m = a.length;
+  const n = b.length;
+  let prev = new Array<number>(n + 1);
+  let curr = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    const tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+  return prev[n];
+}
+
+function similarity(a: string, b: string): number {
+  if (!a && !b) return 1;
+  const max = Math.max(a.length, b.length);
+  if (!max) return 1;
+  return 1 - levenshtein(a, b) / max;
+}
+
+function normaliseForFuzzy(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Result returned by `fuzzyMatchTimesheetCostCode`.
+export type TimesheetCostCodeMatch =
+  | {
+      rawValue: string;
+      matched: CostCode;
+      matchType: "exact" | "fuzzy";
+      confidence: "high" | "medium";
+      score?: number;
+    }
+  | {
+      rawValue: string;
+      matched: null;
+      confidence: "low";
+    }
+  | null;
+
+/**
+ * Match a free-text cost-code string from a timesheet import to a company
+ * CostCode. Tries the cheap exact strategies first (code, title,
+ * code-title, code prefix) and falls back to a Levenshtein-similarity
+ * search so common typos like "Prelimnaries" or "100 - Prelims" still
+ * resolve. Returns:
+ *   - high confidence "exact" match
+ *   - medium confidence "fuzzy" match (above the threshold)
+ *   - low confidence with `matched: null` if no candidate is close enough
+ *   - null if the input is empty
+ */
+export function fuzzyMatchTimesheetCostCode(
+  rawValue: string | undefined | null,
+  costCodes: CostCode[]
+): TimesheetCostCodeMatch {
+  if (!rawValue) return null;
+  const trimmed = String(rawValue).trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.toLowerCase();
+
+  const exact = costCodes.find((c) => {
+    const codeTitle = `${c.code}-${c.title}`.toLowerCase();
+    const codeLower = c.code.toLowerCase();
+    return (
+      codeTitle === normalized ||
+      c.title.toLowerCase() === normalized ||
+      codeLower === normalized ||
+      normalized.startsWith(codeLower + "-") ||
+      normalized.startsWith(codeLower + " ")
+    );
+  });
+  if (exact) {
+    return {
+      rawValue: trimmed,
+      matched: exact,
+      matchType: "exact",
+      confidence: "high",
+    };
+  }
+
+  const normInput = normaliseForFuzzy(trimmed);
+  if (!normInput) return null;
+
+  let best: { code: CostCode; score: number } | null = null;
+  for (const c of costCodes) {
+    const candidates = [
+      normaliseForFuzzy(c.title),
+      normaliseForFuzzy(`${c.code} ${c.title}`),
+      normaliseForFuzzy(c.code),
+    ];
+    for (const cand of candidates) {
+      if (!cand) continue;
+      const score = similarity(normInput, cand);
+      if (!best || score > best.score) {
+        best = { code: c, score };
+      }
+    }
+  }
+
+  // Tighter threshold for very short strings to avoid spurious matches.
+  const threshold = normInput.length <= 4 ? 0.85 : 0.78;
+  if (best && best.score >= threshold) {
+    return {
+      rawValue: trimmed,
+      matched: best.code,
+      matchType: "fuzzy",
+      confidence: "medium",
+      score: best.score,
+    };
+  }
+
+  return { rawValue: trimmed, matched: null, confidence: "low" };
+}
+
 // Utility: Auto-detect column mappings from headers
 export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};

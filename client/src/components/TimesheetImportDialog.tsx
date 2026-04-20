@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Project, User, CostCode } from "@shared/schema";
+import { fuzzyMatchTimesheetCostCode } from "@shared/import";
 
 interface ParsedRow {
   _rowNum: number;
@@ -42,6 +43,8 @@ interface ParsedRow {
   description: string;
   userId: string | null;
   costCodeId: string | null;
+  costCodeMatchType: "exact" | "fuzzy" | "none";
+  costCodeMatchedLabel: string | null;
   severity: "ok" | "warning" | "error";
   issues: string[];
 }
@@ -67,22 +70,8 @@ function matchUser(name: string, users: User[]): User | null {
   );
 }
 
-function matchCostCode(str: string, codes: CostCode[]): CostCode | null {
-  if (!str) return null;
-  const normalized = str.trim().toLowerCase();
-  return (
-    codes.find((c) => {
-      const codeTitle = `${c.code}-${c.title}`.toLowerCase();
-      const titleOnly = c.title.toLowerCase();
-      const codeOnly = c.code.toLowerCase();
-      return (
-        codeTitle === normalized ||
-        titleOnly === normalized ||
-        codeOnly === normalized ||
-        normalized.startsWith(codeOnly + "-")
-      );
-    }) ?? null
-  );
+function formatCostCodeLabel(c: CostCode): string {
+  return `${c.code} — ${c.title}`;
 }
 
 function parseRows(
@@ -134,9 +123,23 @@ function parseRows(
     const costCodeStr = isBuildern
       ? String(row["Cost code"] || "").trim()
       : String(row["Cost Code"] || row["cost code"] || "").trim();
-    const matchedCode = costCodeStr ? matchCostCode(costCodeStr, costCodes) : null;
-    if (costCodeStr && !matchedCode)
+    const ccMatch = costCodeStr
+      ? fuzzyMatchTimesheetCostCode(costCodeStr, costCodes)
+      : null;
+    const matchedCode = ccMatch && ccMatch.matched ? ccMatch.matched : null;
+    let costCodeMatchType: "exact" | "fuzzy" | "none" = "none";
+    let costCodeMatchedLabel: string | null = null;
+    if (ccMatch && ccMatch.matched) {
+      costCodeMatchType = ccMatch.matchType;
+      costCodeMatchedLabel = formatCostCodeLabel(ccMatch.matched);
+      if (ccMatch.matchType === "fuzzy") {
+        issues.push(
+          `Cost code "${costCodeStr}" fuzzy matched to ${costCodeMatchedLabel}`
+        );
+      }
+    } else if (costCodeStr) {
       issues.push(`Cost code "${costCodeStr}" not matched — will import without`);
+    }
 
     const rawStatus = String(row["Status"] || "").trim().toLowerCase();
     const status =
@@ -163,6 +166,8 @@ function parseRows(
       description,
       userId: matchedUser?.id ?? null,
       costCodeId: matchedCode?.id ?? null,
+      costCodeMatchType,
+      costCodeMatchedLabel,
       severity: isError ? "error" : isWarning ? "warning" : "ok",
       issues,
     };
@@ -443,10 +448,17 @@ export function TimesheetImportDialog({
                       <TableCell className="text-xs">
                         {row.duration > 0 ? row.duration.toFixed(1) : "—"}
                       </TableCell>
-                      <TableCell className="text-xs max-w-[120px] truncate">
+                      <TableCell className="text-xs max-w-[160px] truncate">
                         {row.costCodeStr ? (
-                          row.costCodeId ? (
+                          row.costCodeMatchType === "exact" ? (
                             row.costCodeStr
+                          ) : row.costCodeMatchType === "fuzzy" ? (
+                            <span
+                              className="text-amber-600 dark:text-amber-400"
+                              title={`Fuzzy matched to ${row.costCodeMatchedLabel}`}
+                            >
+                              {row.costCodeStr} → {row.costCodeMatchedLabel}
+                            </span>
                           ) : (
                             <span className="text-amber-600 dark:text-amber-400">
                               {row.costCodeStr}
@@ -469,7 +481,7 @@ export function TimesheetImportDialog({
             {(errorRows.length > 0 || parsedRows.some((r) => r.severity === "warning")) && (
               <p className="text-xs text-muted-foreground">
                 <span className="text-red-600 dark:text-red-400">Red</span> = skipped (missing date or invalid duration).{" "}
-                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (unrecognised user imports under your account; unmatched cost code imports without one).
+                <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (unrecognised user imports under your account; cost code was fuzzy-matched to a similar one or imported without one if no close match was found).
               </p>
             )}
           </div>
