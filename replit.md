@@ -136,6 +136,13 @@ Preferred communication style: Simple, everyday language.
 - **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
 - **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
 
+## Shared Pro DataTable
+All list/table pages render through the shared `<DataTable>` (`client/src/components/data-table/DataTable.tsx`), built on TanStack Table + @dnd-kit. Features: column resize, drag-to-reorder, sort, show/hide via `<DataTableColumnPicker>`, sticky first column.
+
+**Storage convention**: each page passes `storageKey="<scope>"` and `legacyConfigKey="<scope>-column-config-v1"` (defensively, for old per-page localStorage layouts). Per-DataTable state is persisted under `buildpro_table_{hidden,order,widths}_<scope>` in localStorage. When a page renders multiple DataTables that should share column state (e.g. one per category in CostCodes / BusinessOverheads, or one per group in Tasks/BusinessTasks list view), all instances pass the same `storageKey`.
+
+Pages that intentionally do NOT use DataTable: kanban/board views, calendar views, Gantt timelines (HBCFTracker uses DataTable but pivots weeks as columns; CompanyWorkload remains a custom Gantt), and detail-screen inline editors (e.g. estimate template editor). Detail/inline-edit grids are out of scope for the pro table rollout.
+
 ## Messaging Features
 - **Scheduled Messages**: Messages can be scheduled for future delivery via a datetime picker (calendar popover). Background processor (`ScheduledMessageProcessor`) checks every minute and delivers due messages via the existing socket broadcast. Schema: `scheduledAt` column on `messages` table.
 - **Message File Attachments** (web only): Full upload/view flow for attachments on channel messages and thread replies. Schema: `messageAttachments` table (id, messageId, fileName, fileUrl, mimeType, fileSize). Storage object route: `POST /api/uploads/request-url` → PUT to presigned URL → `POST /api/messages/:id/attachments`. `GET /api/channels/:channelId/messages` joins attachments. Images render inline with a fullscreen lightbox; documents render as download cards. Attach button (Paperclip) in compose area. Thread reply bubbles also render attachments from the shared `attachmentsMap` state.
