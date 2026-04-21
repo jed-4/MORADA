@@ -110,23 +110,47 @@ interface WeekScheduleItem {
   name: string;
   startDate: string | null;
   endDate: string | null;
+  assignedToId: string | null;
+  assignedToName: string | null;
   assignedToColor: string | null;
+  assignedToContactType: string | null;
   parentItemId: string | null;
   type: string | null;
 }
 
-function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
+// Treat unassigned items and items assigned to a `team` contact as "company" work.
+// Trade/supplier/client contacts are external. Legacy `company:*` ids and
+// orphaned assignments (assignedToId set but the contact no longer exists, so
+// the joined contactType comes back null) are also counted as company so that
+// the row never silently appears empty when "Company only" is on.
+function isCompanyItem(item: WeekScheduleItem): boolean {
+  if (!item.assignedToId) return true;
+  if (item.assignedToId.startsWith('company:')) return true;
+  if (item.assignedToContactType === 'team') return true;
+  if (item.assignedToContactType === null) return true;
+  return false;
+}
+
+const WEEK_ITEM_H = 22;
+const WEEK_ITEM_GAP = 3;
+const WEEK_ROW_PAD = 6;
+
+function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor, onNavigate, dragHandleProps }: {
   project: BusinessProject;
   weekDays: Date[];
   todayStr: string;
+  companyOnly: boolean;
+  companyColor: string;
   onNavigate: (id: string) => void;
+  dragHandleProps?: { attributes: any; listeners: any };
 }) {
   const { data: items = [] } = useQuery<WeekScheduleItem[]>({
     queryKey: ['/api/business-schedule/projects', project.id, 'schedule-items'],
   });
 
   // Show all items except group/summary headers (which have no meaningful date span of their own)
-  const leafItems = items.filter(item => item.type !== 'group');
+  const baseItems = items.filter(item => item.type !== 'group');
+  const leafItems = companyOnly ? baseItems.filter(isCompanyItem) : baseItems;
 
   const maxPerDay = Math.max(1, ...weekDays.map(day => {
     return leafItems.filter(item => {
@@ -137,17 +161,29 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
       return d >= s && d <= e;
     }).length;
   }));
-  const ITEM_H = 16;
-  const rowH = Math.max(ROW_HEIGHT, maxPerDay * (ITEM_H + 2) + 8);
+  const rowH = Math.max(ROW_HEIGHT + 8, maxPerDay * (WEEK_ITEM_H + WEEK_ITEM_GAP) + WEEK_ROW_PAD * 2);
 
   return (
     <div className="flex flex-shrink-0" style={{ minHeight: rowH }}>
-      {/* Sticky left — project name */}
+      {/* Sticky left — project name with drag handle */}
       <div
-        className="w-52 flex-shrink-0 border-r border-b border-border/30 flex items-start pt-1.5 px-2 gap-2 cursor-pointer hover-elevate group/row"
+        className="w-52 flex-shrink-0 border-r border-b border-border/30 flex items-start pt-1.5 px-1 gap-1.5 cursor-pointer hover-elevate group/row"
         style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--background)', minHeight: rowH }}
         onClick={() => onNavigate(project.id)}
       >
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab active:cursor-grabbing text-muted-foreground/20 hover:text-muted-foreground/60 shrink-0 p-0.5 mt-0.5 touch-none"
+            tabIndex={-1}
+            aria-label="Drag to reorder"
+            data-testid={`drag-week-${project.id}`}
+          >
+            <GripVertical className="w-3 h-3" />
+          </button>
+        )}
         <div className="w-3 h-3 rounded-sm shrink-0 mt-0.5" style={{ backgroundColor: project.color || '#6b7280' }} />
         <span className="text-xs font-medium truncate flex-1">{project.name}</span>
         <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover/row:text-muted-foreground/60 shrink-0 mt-0.5 transition-colors" />
@@ -168,28 +204,64 @@ function ProjectWeekRow({ project, weekDays, todayStr, onNavigate }: {
           <div
             key={colIdx}
             className={cn(
-              "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col pt-1 px-0.5 gap-0.5",
+              "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col px-1 gap-[3px]",
               isWknd ? "bg-muted/20" : "",
               isToday ? "bg-[#A890D4]/5" : ""
             )}
-            style={{ minHeight: rowH }}
+            style={{ minHeight: rowH, paddingTop: WEEK_ROW_PAD, paddingBottom: WEEK_ROW_PAD }}
           >
-            {activeItems.map(item => (
-              <div
-                key={item.id}
-                className="w-full rounded-sm flex items-center px-1 overflow-hidden shrink-0"
-                style={{
-                  height: ITEM_H,
-                  backgroundColor: item.assignedToColor || project.color || '#3b82f6',
-                  opacity: 0.8,
-                }}
-              >
-                <span className="text-[9px] text-white font-medium truncate leading-none">{item.name}</span>
-              </div>
-            ))}
+            {activeItems.map(item => {
+              const isCompany = isCompanyItem(item);
+              const fill = isCompany
+                ? (companyColor || item.assignedToColor || project.color || '#3b82f6')
+                : (item.assignedToColor || project.color || '#3b82f6');
+              return (
+                <Tooltip key={item.id}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative"
+                      style={{
+                        height: WEEK_ITEM_H,
+                        backgroundColor: fill,
+                        opacity: isCompany ? 1 : 0.85,
+                        boxShadow: isCompany ? 'inset 3px 0 0 rgba(0,0,0,0.35)' : undefined,
+                        paddingLeft: isCompany ? 8 : 6,
+                        paddingRight: 6,
+                      }}
+                      data-testid={`week-item-${item.id}`}
+                    >
+                      <span className="text-[11px] text-white font-medium truncate leading-none">{item.name}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-muted-foreground">
+                      {isCompany ? 'Company' : (item.assignedToName || 'Assigned')}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function SortableProjectWeekRow(props: React.ComponentProps<typeof ProjectWeekRow> & { id: string }) {
+  const { id, ...rest } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      <ProjectWeekRow {...rest} dragHandleProps={{ attributes, listeners }} />
     </div>
   );
 }
@@ -249,6 +321,7 @@ export default function BusinessSchedule() {
   const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">("schedule");
   const [weekViewDate, setWeekViewDate] = useState(new Date());
   const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">("project");
+  const [weekCompanyOnly, setWeekCompanyOnly] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("week");
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -515,6 +588,18 @@ export default function BusinessSchedule() {
                 onClick={() => setWeekSwimlaneGroup('assignee')}
               >By Assignee</button>
             </div>
+            <button
+              data-testid="toggle-week-company-only"
+              aria-pressed={weekCompanyOnly}
+              className={cn(
+                "h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate",
+                weekCompanyOnly ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground"
+              )}
+              onClick={() => setWeekCompanyOnly(v => !v)}
+            >
+              <span className={cn("inline-block w-2.5 h-2.5 rounded-sm", weekCompanyOnly ? "bg-primary" : "bg-muted")} />
+              Company only
+            </button>
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
@@ -581,16 +666,23 @@ export default function BusinessSchedule() {
                 );
               })}
             </div>
-            {/* Project rows — each row fetches its own items */}
-            {orderedVisibleProjects.map(project => (
-              <ProjectWeekRow
-                key={project.id}
-                project={project}
-                weekDays={weekDays}
-                todayStr={todayStr}
-                onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
-              />
-            ))}
+            {/* Project rows — each row fetches its own items. Reorder shares sortOrder with the main Projects view. */}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={orderedVisibleProjects.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                {orderedVisibleProjects.map(project => (
+                  <SortableProjectWeekRow
+                    key={project.id}
+                    id={project.id}
+                    project={project}
+                    weekDays={weekDays}
+                    todayStr={todayStr}
+                    companyOnly={weekCompanyOnly}
+                    companyColor=""
+                    onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
             {orderedVisibleProjects.length === 0 && (
               <div className="p-4 text-xs text-muted-foreground text-center">No projects visible.</div>
             )}

@@ -3814,7 +3814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/projects/:projectId/team/:userId", requireAuth, requireTeamMember, async (req, res) => {
+  app.post("/api/projects/:projectId/team/:userId", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const { accessLevel = "view" } = req.body;
       const granter = req.user as any;
@@ -3857,7 +3857,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/projects/:projectId/team/:userId", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/projects/:projectId/team/:userId", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const success = await storage.revokeProjectAccess(
         req.params.userId,
@@ -8874,15 +8874,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
-      if (invitation.status !== "pending") {
-        return res.status(400).json({ error: "Can only cancel pending invitations" });
+      // Block deletion of accepted invitations (those produced a real user; manage that user instead)
+      if (invitation.status === "accepted") {
+        return res.status(400).json({ error: "Accepted invitations cannot be deleted; manage the user account instead" });
       }
 
-      await storage.updateUserInvitation(invitation.id, {
-        status: "cancelled",
-      } as any);
+      // For pending invitations, soft-cancel; for already-cancelled/expired/declined, hard-delete so the row leaves the list
+      if (invitation.status === "pending") {
+        await storage.updateUserInvitation(invitation.id, {
+          status: "cancelled",
+        } as any);
+      } else {
+        await storage.deleteUserInvitation(invitation.id);
+      }
 
-      res.json({ success: true, message: "Invitation cancelled" });
+      res.json({ success: true, message: "Invitation removed" });
     } catch (error) {
       console.error('Error cancelling invitation:', error);
       res.status(500).json({ error: "Failed to cancel invitation" });
@@ -23428,18 +23434,22 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const [schedule] = await db.select().from(schedules).where(eq(schedules.projectId, projectId));
       if (!schedule) return res.json([]);
 
-      // Fetch all schedule items ordered by startDate
+      // Fetch all schedule items ordered by startDate, joining contact type so the
+      // client can distinguish company-assigned items from external supplier items.
       const items = await db.select({
         id: scheduleItems.id,
         name: scheduleItems.name,
         startDate: scheduleItems.startDate,
         endDate: scheduleItems.endDate,
+        assignedToId: scheduleItems.assignedToId,
         assignedToName: scheduleItems.assignedToName,
         assignedToColor: scheduleItems.assignedToColor,
+        assignedToContactType: contacts.contactType,
         parentItemId: scheduleItems.parentItemId,
         sortOrder: scheduleItems.sortOrder,
         type: scheduleItems.type,
       }).from(scheduleItems)
+        .leftJoin(contacts, eq(scheduleItems.assignedToId, contacts.id))
         .where(eq(scheduleItems.scheduleId, schedule.id))
         .orderBy(scheduleItems.sortOrder);
 

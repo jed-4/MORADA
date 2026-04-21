@@ -39,15 +39,15 @@ export default function AssignUserDialog({
     queryKey: [`/api/projects/${projectId}/team`],
   });
 
-  // Filter out users already assigned to project
+  // Filter out users already assigned to project (don't hide users missing names — fall back to email)
   const assignedUserIds = new Set(projectTeam.map((user: any) => user.id));
   const availableUsers = allUsers.filter(
-    (user: any) => !assignedUserIds.has(user.id) && user.firstName && user.lastName
+    (user: any) => !assignedUserIds.has(user.id) && (user.isActive !== false)
   );
 
-  // Separate by category
-  const availableTeam = availableUsers.filter((user: any) => user.userCategory === "team");
+  // Separate by category — users with no category fall under Team so they're at least reachable
   const availableSuppliers = availableUsers.filter((user: any) => user.userCategory === "supplier");
+  const availableTeam = availableUsers.filter((user: any) => user.userCategory !== "supplier");
 
   // Assign user mutation
   const assignUserMutation = useMutation({
@@ -67,10 +67,14 @@ export default function AssignUserDialog({
         description: "User has been assigned to the project.",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      const message =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Failed to assign user to project.";
       toast({
         title: "Error",
-        description: "Failed to assign user to project.",
+        description: message,
         variant: "destructive",
       });
     },

@@ -60,16 +60,20 @@ interface BarLayout {
   widthPx: number;
 }
 
-const BAR_HEIGHT = 20;
-const BAR_GAP = 2;
+const BAR_HEIGHT = 13;
+const BAR_GAP = 1;
 const ROW_PADDING = 4;
 const DAY_WIDTH = 44;
 const WEEKEND_DAY_WIDTH = 22;
 const WEEKDAY_WEEKEND_RATIO = DAY_WIDTH / WEEKEND_DAY_WIDTH; // 2:1
 const PANEL_WIDTH = 200;
 const NAV_STEP_DAYS = 7;
-const MIN_ROW_HEIGHT = 36;
+const MIN_ROW_HEIGHT = 32;
 const OVERLOAD_THRESHOLD = 3;
+const HEADER_TOP_TIER = 18;
+const HEADER_MID_TIER = 18;
+const HEADER_BOTTOM_TIER = 44;
+const HEADER_HEIGHT = HEADER_TOP_TIER + HEADER_MID_TIER + HEADER_BOTTOM_TIER; // 80px
 
 function assignLanes(items: WorkloadItem[]): { layouts: BarLayout[]; laneCount: number } {
   const sorted = [...items].sort((a, b) => {
@@ -120,7 +124,7 @@ interface CompanyWorkloadProps {
 export default function CompanyWorkload({ onSwitchView, className }: CompanyWorkloadProps) {
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<WorkloadItem | null>(null);
-  const [weekStartDay] = useState(1);
+  const [weekStartDay] = useState<0 | 1 | 2 | 3 | 4 | 5 | 6>(1);
   const [rangeStart, setRangeStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
@@ -401,6 +405,48 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   }, [days, getColWidth]);
 
   const totalWidth = dayOffsets.totalWidth;
+
+  // Group consecutive visible days into week segments (week starts on Monday)
+  const weekSegments = useMemo(() => {
+    const segments: { start: Date; startIdx: number; widthPx: number }[] = [];
+    if (days.length === 0) return segments;
+    let segStart = 0;
+    let segStartDate = startOfWeek(days[0], { weekStartsOn: weekStartDay });
+    let widthAcc = getColWidth(days[0]);
+    for (let i = 1; i < days.length; i++) {
+      const wkStart = startOfWeek(days[i], { weekStartsOn: weekStartDay });
+      if (wkStart.getTime() !== segStartDate.getTime()) {
+        segments.push({ start: segStartDate, startIdx: segStart, widthPx: widthAcc });
+        segStart = i;
+        segStartDate = wkStart;
+        widthAcc = getColWidth(days[i]);
+      } else {
+        widthAcc += getColWidth(days[i]);
+      }
+    }
+    segments.push({ start: segStartDate, startIdx: segStart, widthPx: widthAcc });
+    return segments;
+  }, [days, getColWidth, weekStartDay]);
+
+  // Group consecutive visible days into month segments
+  const monthSegments = useMemo(() => {
+    const segments: { start: Date; widthPx: number }[] = [];
+    if (days.length === 0) return segments;
+    let segStartDate = days[0];
+    let widthAcc = getColWidth(days[0]);
+    for (let i = 1; i < days.length; i++) {
+      const sameMonth = days[i].getMonth() === segStartDate.getMonth() && days[i].getFullYear() === segStartDate.getFullYear();
+      if (!sameMonth) {
+        segments.push({ start: segStartDate, widthPx: widthAcc });
+        segStartDate = days[i];
+        widthAcc = getColWidth(days[i]);
+      } else {
+        widthAcc += getColWidth(days[i]);
+      }
+    }
+    segments.push({ start: segStartDate, widthPx: widthAcc });
+    return segments;
+  }, [days, getColWidth]);
 
   const rowBarLayouts = useMemo(() => {
     const result = new Map<string, { layouts: BarLayout[]; laneCount: number; rowHeight: number }>();
@@ -709,7 +755,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           className="flex-shrink-0 border-r border-border overflow-hidden"
           style={{ width: PANEL_WIDTH }}
         >
-          <div className="h-[56px] border-b border-border flex items-end px-2 pb-1">
+          <div style={{ height: HEADER_HEIGHT }} className="border-b border-border flex items-end px-2 pb-1">
             <div className="flex items-center gap-1.5">
               <BarChart3 className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-xs font-medium text-muted-foreground">Daily Load</span>
@@ -798,56 +844,94 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          <div ref={headerTimelineRef} className="h-[56px] border-b border-border flex-shrink-0 overflow-hidden">
+          <div ref={headerTimelineRef} style={{ height: HEADER_HEIGHT }} className="border-b border-border flex-shrink-0 overflow-hidden">
             <div
-              className="h-full flex"
+              className="h-full flex flex-col"
               style={{ minWidth: totalWidth, width: '100%' }}
             >
-              {days.map((day) => {
-                const key = format(day, "yyyy-MM-dd");
-                const count = dailyTotals.get(key) || 0;
-                const barHeight = maxDailyTotal > 0 ? Math.round((count / maxDailyTotal) * 20) : 0;
-                const isWkend = isWeekend(day);
-                const isToday = isSameDay(day, today);
-                const colWidth = getColWidth(day);
-                const barW = isWkend ? 10 : 20;
-
-                return (
+              {/* Top tier: month labels */}
+              <div className="flex border-b border-border/30" style={{ height: HEADER_TOP_TIER }}>
+                {monthSegments.map((seg, i) => (
                   <div
-                    key={key}
-                    className={cn(
-                      "flex flex-col items-center justify-end shrink-0 border-l border-border/20 pb-1",
-                      isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
-                      isToday && "bg-[#A890D4]/10"
-                    )}
-                    style={{ width: colWidth }}
+                    key={`m-${i}`}
+                    className="flex items-center px-1.5 border-l border-border/40 first:border-l-0 shrink-0"
+                    style={{ width: seg.widthPx, minWidth: seg.widthPx }}
                   >
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className="rounded-sm mb-0.5"
-                          style={{
-                            width: barW,
-                            height: Math.max(barHeight, count > 0 ? 3 : 0),
-                            backgroundColor: count > 0 ? (count > maxDailyTotal * 0.7 ? "#ef4444" : count > maxDailyTotal * 0.4 ? "#f59e0b" : "#22c55e") : "transparent",
-                            opacity: isWkend ? 0.5 : 1,
-                          }}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
-                        {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
-                      </TooltipContent>
-                    </Tooltip>
-                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
-                      {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
-                    </div>
-                    <div className={cn("text-[9px]", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
-                      {format(day, "d")}
-                    </div>
+                    <span className="text-[10px] font-semibold text-muted-foreground/80 uppercase tracking-wide truncate">
+                      {seg.widthPx > 50 ? format(seg.start, "MMM yyyy") : format(seg.start, "MMM")}
+                    </span>
                   </div>
-                );
-              })}
-              <div className="flex-1 border-l border-border/20" />
+                ))}
+                <div className="flex-1 border-l border-border/20" />
+              </div>
+
+              {/* Middle tier: week-start labels */}
+              <div className="flex border-b border-border/30" style={{ height: HEADER_MID_TIER }}>
+                {weekSegments.map((seg, i) => (
+                  <div
+                    key={`w-${i}`}
+                    className="flex items-center px-1.5 border-l border-border/60 first:border-l-0 shrink-0"
+                    style={{ width: seg.widthPx, minWidth: seg.widthPx }}
+                  >
+                    <span className="text-[10px] font-medium text-muted-foreground truncate">
+                      {seg.widthPx > 40 ? format(seg.start, "d MMM") : format(seg.start, "d")}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex-1 border-l border-border/20" />
+              </div>
+
+              {/* Bottom tier: per-day cells with mini-bar + EEE + d */}
+              <div className="flex" style={{ height: HEADER_BOTTOM_TIER }}>
+                {days.map((day, dayIdx) => {
+                  const key = format(day, "yyyy-MM-dd");
+                  const count = dailyTotals.get(key) || 0;
+                  const barHeight = maxDailyTotal > 0 ? Math.round((count / maxDailyTotal) * 16) : 0;
+                  const isWkend = isWeekend(day);
+                  const isToday = isSameDay(day, today);
+                  const colWidth = getColWidth(day);
+                  const barW = isWkend ? 8 : 16;
+                  const isWeekStart = day.getDay() === weekStartDay;
+
+                  return (
+                    <div
+                      key={key}
+                      className={cn(
+                        "flex flex-col items-center justify-end shrink-0 pb-0.5",
+                        isWeekStart ? "border-l border-border/60" : "border-l border-border/15",
+                        dayIdx === 0 && "border-l-0",
+                        isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
+                        isToday && "bg-[#A890D4]/10"
+                      )}
+                      style={{ width: colWidth }}
+                    >
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="rounded-sm mb-0.5"
+                            style={{
+                              width: barW,
+                              height: Math.max(barHeight, count > 0 ? 3 : 0),
+                              backgroundColor: count > 0 ? (count > maxDailyTotal * 0.7 ? "#ef4444" : count > maxDailyTotal * 0.4 ? "#f59e0b" : "#22c55e") : "transparent",
+                              opacity: isWkend ? 0.5 : 1,
+                            }}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
+                          {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
+                        </TooltipContent>
+                      </Tooltip>
+                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                        {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
+                      </div>
+                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                        {format(day, "d")}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="flex-1 border-l border-border/20" />
+              </div>
             </div>
           </div>
 
@@ -932,7 +1016,11 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const { item, lane, leftPx, widthPx } = barLayout;
                       const rowIdx = isExpanded ? (expandedItemIndexMap.get(item.id) ?? lane) : lane;
                       const topPx = ROW_PADDING + rowIdx * (BAR_HEIGHT + BAR_GAP);
-                      const barColor = row.color;
+                      // On company rows: prefer assignee colour, fall back to project colour, then row colour.
+                      // On supplier/team/individual rows: prefer project colour, fall back to assignee colour, then row colour.
+                      const barColor = isCompanyRow
+                        ? (item.assignedToColor || item.projectColor || row.color)
+                        : (item.projectColor || item.assignedToColor || row.color);
                       const showLabel = widthPx > 60;
 
                       return (
