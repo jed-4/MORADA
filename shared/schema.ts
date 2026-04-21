@@ -1693,7 +1693,10 @@ export const contacts = pgTable("contacts", {
   // Quick Review feature - track review progress for new contacts
   reviewStatus: contactReviewStatusEnum("review_status").default("pending"),
   lastReviewedAt: timestamp("last_reviewed_at"),
-  
+
+  // Suppress the in-bill "save as defaults" prompt for this supplier
+  suppressDefaultsPrompt: boolean("suppress_defaults_prompt").notNull().default(false),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

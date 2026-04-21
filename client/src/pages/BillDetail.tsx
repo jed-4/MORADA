@@ -24,6 +24,7 @@ import {
   RefreshCw,
   ChevronsUpDown,
   Send,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -228,6 +229,12 @@ export default function BillDetail() {
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
   const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
   const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
+  const [supplierDefaultsOpen, setSupplierDefaultsOpen] = useState(false);
+  const [supplierDefaultsCostCode, setSupplierDefaultsCostCode] = useState<string>("");
+  const [supplierDefaultsAccount, setSupplierDefaultsAccount] = useState<string>("");
+  const [defaultsAccountPickerOpen, setDefaultsAccountPickerOpen] = useState(false);
+  const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
+  const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -548,12 +555,20 @@ export default function BillDetail() {
     if (!watchedSupplierId || isEditMode) return;
     const supplier = suppliers.find(s => s.id === watchedSupplierId);
     const defaultAccount = supplier?.xeroDefaultAccountCode || supplier?.xeroDefaultAccount || "";
-    if (defaultAccount) {
-      setLineItems(prev => prev.map(item => 
-        !item.account ? { ...item, account: defaultAccount } : item
-      ));
+    const defaultCostCode = supplier?.defaultCostCodeId || "";
+    if (defaultAccount || defaultCostCode) {
+      setLineItems(prev => prev.map(item => ({
+        ...item,
+        account: !item.account && defaultAccount ? defaultAccount : item.account,
+        costCodeId: !item.costCodeId && defaultCostCode ? defaultCostCode : item.costCodeId,
+      })));
     }
   }, [watchedSupplierId, suppliers, isEditMode]);
+
+  // Reset the per-bill "Not now" dismissal whenever the supplier changes.
+  useEffect(() => {
+    setDefaultsPromptDismissed(false);
+  }, [watchedSupplierId]);
 
   const getSupplierDefaultAccount = () => {
     const supplierId = form.getValues("supplierId");
@@ -561,6 +576,59 @@ export default function BillDetail() {
     const supplier = suppliers.find(s => s.id === supplierId);
     return supplier?.xeroDefaultAccountCode || supplier?.xeroDefaultAccount || "";
   };
+
+  const getSupplierDefaultCostCode = () => {
+    const supplierId = form.getValues("supplierId");
+    if (!supplierId) return "";
+    const supplier = suppliers.find(s => s.id === supplierId);
+    return supplier?.defaultCostCodeId || "";
+  };
+
+  const updateSupplierDefaultsMutation = useMutation({
+    mutationFn: async (payload: {
+      supplierId: string;
+      defaultCostCodeId?: string | null;
+      xeroDefaultAccountCode?: string | null;
+      suppressDefaultsPrompt?: boolean;
+    }) => {
+      const { supplierId, ...patch } = payload;
+      return await apiRequest(`/api/contacts/${supplierId}`, "PATCH", patch);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", { contactTypes: "supplier,trade" }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save supplier defaults", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const currentSupplier = suppliers.find(s => s.id === watchedSupplierId);
+  const supplierDefaultCostCode = currentSupplier?.defaultCostCodeId || "";
+  const supplierDefaultAccountCode = currentSupplier?.xeroDefaultAccountCode || currentSupplier?.xeroDefaultAccount || "";
+
+  // Compute the "save as defaults" suggestion: most-used non-empty value
+  // across the current line items, ignoring values that already match the
+  // supplier's saved default.
+  const mostUsed = (vals: string[]): string => {
+    const counts: Record<string, number> = {};
+    for (const v of vals) {
+      if (!v) continue;
+      counts[v] = (counts[v] || 0) + 1;
+    }
+    let best = ""; let bestN = 0;
+    for (const [k, n] of Object.entries(counts)) {
+      if (n > bestN) { best = k; bestN = n; }
+    }
+    return best;
+  };
+  const suggestedCostCode = !supplierDefaultCostCode ? mostUsed(lineItems.map(li => li.costCodeId || "")) : "";
+  const suggestedAccount = !supplierDefaultAccountCode ? mostUsed(lineItems.map(li => li.account || "")) : "";
+  const showDefaultsPrompt = !!currentSupplier
+    && !defaultsPromptDismissed
+    && !currentSupplier.suppressDefaultsPrompt
+    && (!supplierDefaultCostCode || !supplierDefaultAccountCode)
+    && (!!suggestedCostCode || !!suggestedAccount);
 
   const addLineItem = () => {
     setLineItems([
@@ -573,6 +641,7 @@ export default function BillDetail() {
         unit: "",
         tax: "GST on expenses",
         account: getSupplierDefaultAccount(),
+        costCodeId: getSupplierDefaultCostCode() || undefined,
         total: 0,
         order: lineItems.length,
         appliesToAllowances: false,
@@ -1641,7 +1710,23 @@ export default function BillDetail() {
                       const selected = suppliers.find((s: any) => s.id === field.value);
                       return (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Pay to *</FormLabel>
+                        <div className="flex items-center justify-between">
+                          <FormLabel className="text-xs">Pay to *</FormLabel>
+                          {selected && (
+                            <button
+                              type="button"
+                              className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                              onClick={() => {
+                                setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
+                                setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
+                                setSupplierDefaultsOpen(true);
+                              }}
+                              data-testid="button-open-supplier-defaults"
+                            >
+                              <Settings className="h-3 w-3" /> Defaults
+                            </button>
+                          )}
+                        </div>
                         <Popover
                           open={supplierPickerOpen}
                           onOpenChange={(open) => {
@@ -2253,6 +2338,87 @@ export default function BillDetail() {
                 </div>
               </div>
 
+              {showDefaultsPrompt && (
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-[11px]" data-testid="prompt-save-supplier-defaults">
+                  <span className="text-muted-foreground">
+                    Save{" "}
+                    {suggestedCostCode && (
+                      <>
+                        cost code{" "}
+                        <span className="font-medium text-foreground">
+                          {(costCodes.find(c => c.id === suggestedCostCode)?.code) || ""} {(costCodes.find(c => c.id === suggestedCostCode)?.name) || ""}
+                        </span>
+                      </>
+                    )}
+                    {suggestedCostCode && suggestedAccount && " and "}
+                    {suggestedAccount && (
+                      <>
+                        Xero account{" "}
+                        <span className="font-medium text-foreground">
+                          {(() => {
+                            const a = xeroAccounts.find(x => x.code === suggestedAccount);
+                            return a ? `${a.code} - ${a.name}` : suggestedAccount;
+                          })()}
+                        </span>
+                      </>
+                    )}
+                    {" "}as defaults for {currentSupplier?.name || "this supplier"}?
+                  </span>
+                  <div className="flex items-center gap-1 ml-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      className="h-6 text-[11px] px-2"
+                      disabled={updateSupplierDefaultsMutation.isPending}
+                      onClick={() => {
+                        if (!currentSupplier) return;
+                        const payload: any = { supplierId: currentSupplier.id };
+                        if (suggestedCostCode && !supplierDefaultCostCode) payload.defaultCostCodeId = suggestedCostCode;
+                        if (suggestedAccount && !supplierDefaultAccountCode) payload.xeroDefaultAccountCode = suggestedAccount;
+                        updateSupplierDefaultsMutation.mutate(payload, {
+                          onSuccess: () => {
+                            toast({ title: "Defaults saved", description: `Future bills for ${currentSupplier.name} will use these.` });
+                          },
+                        });
+                      }}
+                      data-testid="button-save-supplier-defaults"
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[11px] px-2"
+                      onClick={() => setDefaultsPromptDismissed(true)}
+                      data-testid="button-defer-supplier-defaults"
+                    >
+                      Not now
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[11px] px-2 text-muted-foreground"
+                      disabled={updateSupplierDefaultsMutation.isPending}
+                      onClick={() => {
+                        if (!currentSupplier) return;
+                        updateSupplierDefaultsMutation.mutate({
+                          supplierId: currentSupplier.id,
+                          suppressDefaultsPrompt: true,
+                        }, {
+                          onSuccess: () => setDefaultsPromptDismissed(true),
+                        });
+                      }}
+                      data-testid="button-suppress-supplier-defaults"
+                    >
+                      Don't ask for this supplier
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {selectedLineIndices.size > 0 && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-[11px]">
                   <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
@@ -2347,15 +2513,22 @@ export default function BillDetail() {
                           />
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("costCode") }}>
-                          <CostCodeSelect
-                            value={item.costCodeId || ""}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "costCodeId", value)
-                            }
-                            placeholder="Select..."
-                            triggerClassName="border-0 shadow-none bg-transparent text-[11px]"
-                            data-testid={`select-cost-code-${index}`}
-                          />
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 min-w-0">
+                              <CostCodeSelect
+                                value={item.costCodeId || ""}
+                                onValueChange={(value) =>
+                                  updateLineItem(index, "costCodeId", value)
+                                }
+                                placeholder="Select..."
+                                triggerClassName="border-0 shadow-none bg-transparent text-[11px]"
+                                data-testid={`select-cost-code-${index}`}
+                              />
+                            </div>
+                            {supplierDefaultCostCode && item.costCodeId === supplierDefaultCostCode && (
+                              <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-cost-code-default-${index}`}>default</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("qty") }}>
                           <input
@@ -2400,6 +2573,8 @@ export default function BillDetail() {
                           </Select>
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("account") }}>
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 min-w-0">
                           {xeroAccounts.length > 0 ? (
                             <Popover
                               open={accountPickerOpenIndex === index}
@@ -2478,6 +2653,11 @@ export default function BillDetail() {
                               data-testid={`input-account-${index}`}
                             />
                           )}
+                            </div>
+                            {supplierDefaultAccountCode && item.account === supplierDefaultAccountCode && (
+                              <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-account-default-${index}`}>default</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("unitCost") }}>
                           <input
@@ -3005,6 +3185,94 @@ export default function BillDetail() {
               data-testid="button-apply-bulk-cost-code"
             >
               Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={supplierDefaultsOpen} onOpenChange={setSupplierDefaultsOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-supplier-defaults">
+          <DialogHeader>
+            <DialogTitle>Defaults for {currentSupplier?.name || "supplier"}</DialogTitle>
+            <DialogDescription>
+              These values will be auto-filled on new bill lines for this supplier. Existing values are never overwritten.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Default Cost Code</label>
+              <CostCodeSelect
+                value={supplierDefaultsCostCode}
+                onValueChange={(v) => setSupplierDefaultsCostCode(v || "")}
+                placeholder="Select cost code..."
+                allowNone={true}
+                data-testid="select-supplier-defaults-cost-code"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Default Xero Account</label>
+              {xeroAccounts.length > 0 ? (
+                <Popover open={defaultsAccountPickerOpen} onOpenChange={(o) => { setDefaultsAccountPickerOpen(o); if (!o) setDefaultsAccountSearch(""); }}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="w-full justify-between text-xs font-normal" data-testid="select-supplier-defaults-account">
+                      <span className={supplierDefaultsAccount ? "" : "text-muted-foreground"}>
+                        {(() => {
+                          const a = xeroAccounts.find(x => x.code === supplierDefaultsAccount);
+                          return a ? `${a.code} - ${a.name}` : (supplierDefaultsAccount || "Select account...");
+                        })()}
+                      </span>
+                      <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]" align="start">
+                    <Command shouldFilter={true}>
+                      <CommandInput placeholder="Search accounts..." value={defaultsAccountSearch} onValueChange={setDefaultsAccountSearch} />
+                      <CommandList className="max-h-[260px]">
+                        <CommandEmpty>No accounts found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="__none__ none clear" onSelect={() => { setSupplierDefaultsAccount(""); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
+                            <span className="text-muted-foreground">None</span>
+                          </CommandItem>
+                          {xeroAccounts.map((acc) => (
+                            <CommandItem key={acc.code} value={`${acc.code} ${acc.name}`} onSelect={() => { setSupplierDefaultsAccount(acc.code); setDefaultsAccountPickerOpen(false); setDefaultsAccountSearch(""); }}>
+                              <span className="truncate">{acc.code} - {acc.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <Input
+                  value={supplierDefaultsAccount}
+                  onChange={(e) => setSupplierDefaultsAccount(e.target.value)}
+                  placeholder="Account code"
+                  className="text-xs"
+                />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSupplierDefaultsOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!currentSupplier || updateSupplierDefaultsMutation.isPending}
+              onClick={() => {
+                if (!currentSupplier) return;
+                updateSupplierDefaultsMutation.mutate({
+                  supplierId: currentSupplier.id,
+                  defaultCostCodeId: supplierDefaultsCostCode || null,
+                  xeroDefaultAccountCode: supplierDefaultsAccount || null,
+                }, {
+                  onSuccess: () => {
+                    toast({ title: "Defaults saved" });
+                    setSupplierDefaultsOpen(false);
+                  },
+                });
+              }}
+              data-testid="button-save-defaults"
+            >
+              Save defaults
             </Button>
           </DialogFooter>
         </DialogContent>
