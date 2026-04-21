@@ -112,6 +112,36 @@ import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurr
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
+
+// --- Timezone helpers (used by clockIn/clockOut and backfill) ---
+export function formatHHmmInTz(d: Date, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d);
+  } catch {
+    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  }
+}
+
+export function calendarDateMidnightUtcInTz(d: Date, tz: string): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    const day = parts.find(p => p.type === 'day')?.value;
+    if (y && m && day) return new Date(`${y}-${m}-${day}T00:00:00.000Z`);
+  } catch {}
+  return d;
+}
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
 import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
@@ -16050,15 +16080,18 @@ export class DbStorage implements IStorage {
         await this.clockOut(activeTimesheet.id, userId);
       }
 
-      // Create new active timesheet
+      // Create new active timesheet — record HH:mm and date in the company timezone
       const now = new Date();
-      const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      
+      const cfg = await this.getSystemConfiguration();
+      const tz = cfg?.timezone || "Australia/Sydney";
+      const startTime = formatHHmmInTz(now, tz);
+      const dateInTz = calendarDateMidnightUtcInTz(now, tz);
+
       const newTimesheet = await db.insert(schema.timesheets)
         .values({
           projectId,
           userId,
-          date: now,
+          date: dateInTz,
           startTime,
           actualStartTime: startTime,
           isActive: true,
@@ -16097,8 +16130,10 @@ export class DbStorage implements IStorage {
       }
 
       const now = new Date();
-      const endTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      
+      const cfg = await this.getSystemConfiguration();
+      const tz = cfg?.timezone || "Australia/Sydney";
+      const endTime = formatHHmmInTz(now, tz);
+
       // Calculate duration in hours, subtract break
       let duration = 0;
       if (timesheet.clockInTime) {

@@ -17077,6 +17077,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let successCount = 0;
       const errors: string[] = [];
 
+      // Cache owners per request so we can derive the timesheet's company
+      // (the timesheets table has no companyId column — it's inferred via the user).
+      const ownerCompanyCache = new Map<string, string | null | undefined>();
+      const getOwnerCompanyId = async (ownerId: string) => {
+        if (!ownerCompanyCache.has(ownerId)) {
+          const owner = await storage.getUser(ownerId);
+          ownerCompanyCache.set(ownerId, owner?.companyId ?? null);
+        }
+        return ownerCompanyCache.get(ownerId);
+      };
+
       for (const id of ids) {
         try {
           const timesheet = await storage.getTimesheet(id);
@@ -17084,7 +17095,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             errors.push(`Timesheet ${id} not found`);
             continue;
           }
-          if (timesheet.companyId !== user.companyId) {
+          const ownerCompanyId = await getOwnerCompanyId(timesheet.userId);
+          if (!ownerCompanyId || ownerCompanyId !== user.companyId) {
             errors.push(`Not authorized for timesheet ${id}`);
             continue;
           }
@@ -17143,6 +17155,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error in bulk timesheet action:", error);
       res.status(500).json({ error: "Failed to perform bulk action" });
+    }
+  });
+
+  // One-off backfill: rebuild Start/End/Date for auto-recorded timesheets
+  // using the trustworthy clockInTime/updatedAt UTC stamps and the company timezone.
+  // Safe to re-run — only touches rows whose stored HH:mm differs from the recomputed value.
+  app.post("/api/admin/timesheets/backfill-timezone", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = (req.user as any)?.dbUser ?? (req.user as any);
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+
+      const cfg = await storage.getSystemConfiguration();
+      const tz = cfg?.timezone || "Australia/Sydney";
+
+      const schema = await import("@shared/schema");
+      const { db } = await import("./db");
+      const drizzleOrm = await import("drizzle-orm");
+      const { and, eq, isNull, not } = drizzleOrm;
+      const { formatHHmmInTz, calendarDateMidnightUtcInTz } = await import("./storage");
+
+      // Find candidate rows: auto-recorded (clockInTime present) and belonging
+      // to a user in this company.
+      const rows = await db
+        .select({
+          id: schema.timesheets.id,
+          userId: schema.timesheets.userId,
+          clockInTime: schema.timesheets.clockInTime,
+          updatedAt: schema.timesheets.updatedAt,
+          actualStartTime: schema.timesheets.actualStartTime,
+          actualEndTime: schema.timesheets.actualEndTime,
+          startTime: schema.timesheets.startTime,
+          endTime: schema.timesheets.endTime,
+          date: schema.timesheets.date,
+          isActive: schema.timesheets.isActive,
+        })
+        .from(schema.timesheets)
+        .innerJoin(schema.users, eq(schema.timesheets.userId, schema.users.id))
+        .where(and(
+          not(isNull(schema.timesheets.clockInTime)),
+          eq(schema.users.companyId, user.companyId),
+        ));
+
+      let scanned = 0;
+      let updated = 0;
+      const previewLimit = 20;
+      const preview: Array<Record<string, unknown>> = [];
+
+      for (const r of rows) {
+        if (!r.clockInTime) continue;
+        scanned++;
+        const expectedStart = formatHHmmInTz(new Date(r.clockInTime), tz);
+        const expectedDate = calendarDateMidnightUtcInTz(new Date(r.clockInTime), tz);
+        const updateData: Record<string, unknown> = {};
+
+        if (r.actualStartTime && r.actualStartTime !== expectedStart) {
+          updateData.actualStartTime = expectedStart;
+        }
+        if (r.startTime && r.startTime !== expectedStart) {
+          updateData.startTime = expectedStart;
+        }
+
+        // NOTE: We deliberately do NOT rebuild end-time here. The only
+        // immutable UTC stamp we have is `clockInTime`. `updatedAt` is
+        // bumped by later edits (approvals, manual updates, etc.) and is
+        // therefore unsafe to derive endTime from. End-time correction
+        // should be done via a future immutable `clockOutTime` field or
+        // by manual review of historic rows.
+
+        // Realign the date to the calendar date in company timezone
+        const currentDate = r.date ? new Date(r.date as unknown as string) : null;
+        if (!currentDate || currentDate.getTime() !== expectedDate.getTime()) {
+          updateData.date = expectedDate;
+        }
+
+        if (Object.keys(updateData).length === 0) continue;
+
+        if (preview.length < previewLimit) {
+          preview.push({ id: r.id, before: { startTime: r.startTime, endTime: r.endTime, date: r.date }, after: updateData });
+        }
+
+        if (req.body?.dryRun) continue;
+
+        await db.update(schema.timesheets)
+          .set(updateData)
+          .where(eq(schema.timesheets.id, r.id));
+        updated++;
+      }
+
+      res.json({
+        timezone: tz,
+        scanned,
+        updated,
+        dryRun: !!req.body?.dryRun,
+        preview,
+      });
+    } catch (error: any) {
+      console.error("Error backfilling timesheet timezone:", error);
+      res.status(500).json({ error: "Failed to backfill", details: error?.message });
     }
   });
 
