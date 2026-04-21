@@ -301,7 +301,7 @@ export default function BusinessSchedule() {
       }
       return true;
     });
-  }, [projects, scheduleTypeFilter, showOffline]);
+  }, [projects, scheduleTypeFilter, showOnline, showOffline, showProspective]);
 
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
