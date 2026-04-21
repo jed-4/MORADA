@@ -68,27 +68,43 @@ export function AssigneeSelect({
       });
     }
 
-    const trades = allContacts
-      .filter((c: any) => c.contactType === "subcontractor")
-      .map((c: any) => {
-        const company = (c.company || "").trim();
-        const name = (c.name || "").trim();
-        const label = company && name && company.toLowerCase() !== name.toLowerCase()
-          ? `${company} - ${name}`
-          : company || name || "Unnamed";
-        return { value: c.id, label, description: c.email || undefined };
-      });
+    const buildContactOption = (c: any): AssigneeOption => {
+      const company = (c.company || "").trim();
+      const name = (c.name || "").trim();
+      const label = company && name && company.toLowerCase() !== name.toLowerCase()
+        ? `${company} - ${name}`
+        : company || name || "Unnamed";
+      return { value: c.id, label, description: c.email || undefined };
+    };
 
-    const suppliers = allContacts
-      .filter((c: any) => c.contactType === "supplier")
-      .map((c: any) => {
-        const company = (c.company || "").trim();
-        const name = (c.name || "").trim();
-        const label = company && name && company.toLowerCase() !== name.toLowerCase()
-          ? `${company} - ${name}`
-          : company || name || "Unnamed";
-        return { value: c.id, label, description: c.email || undefined };
-      });
+    const dedupeOptions = (opts: AssigneeOption[]): AssigneeOption[] => {
+      const seenIds = new Set<string>();
+      const seenLabels = new Set<string>();
+      const result: AssigneeOption[] = [];
+      for (const opt of opts) {
+        if (seenIds.has(opt.value)) continue;
+        const labelKey = `${opt.label.trim().toLowerCase()}|${(opt.description || "").trim().toLowerCase()}`;
+        if (seenLabels.has(labelKey)) continue;
+        seenIds.add(opt.value);
+        seenLabels.add(labelKey);
+        result.push(opt);
+      }
+      return result;
+    };
+
+    const isActive = (c: any) => !c.isArchived && !c.archivedAt;
+
+    const trades = dedupeOptions(
+      allContacts
+        .filter((c: any) => c.contactType === "trade" && isActive(c))
+        .map(buildContactOption)
+    );
+
+    const suppliers = dedupeOptions(
+      allContacts
+        .filter((c: any) => c.contactType === "supplier" && isActive(c))
+        .map(buildContactOption)
+    );
 
     return [
       { key: "company", label: "Company", icon: <Building2 className="h-3.5 w-3.5" />, items: companyItems },
