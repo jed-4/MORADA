@@ -260,16 +260,9 @@ export function NotificationBell() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-80 p-0 flex flex-col overflow-hidden max-h-[min(32rem,calc(100vh-5rem))]"
-      >
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="w-full flex-1 min-h-0 flex flex-col"
-        >
-          <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
+      <PopoverContent align="end" className="w-80 p-0 overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex items-center justify-between px-3 py-2 border-b">
             <TabsList className="h-7 p-0.5">
               <TabsTrigger value="notifications" className="h-6 text-xs px-2">
                 Notifications {unreadCount.count > 0 && `(${unreadCount.count})`}
@@ -292,11 +285,8 @@ export function NotificationBell() {
             )}
           </div>
           
-          <TabsContent
-            value="notifications"
-            className="m-0 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col"
-          >
-            <ScrollArea className="flex-1 min-h-0">
+          <TabsContent value="notifications" className="m-0">
+            <ScrollArea className="h-[28rem] max-h-[calc(100vh-10rem)]">
               {notificationsLoading ? (
                 <div className="space-y-1 p-2">
                   {[1, 2].map((i) => (
@@ -394,7 +384,7 @@ export function NotificationBell() {
           
           <TabsContent
             value="reminders"
-            className="m-0 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col"
+            className="m-0 data-[state=active]:flex data-[state=active]:flex-col h-[28rem] max-h-[calc(100vh-10rem)]"
           >
             <ScrollArea className="flex-1 min-h-0">
           {activeReminders.length === 0 ? (
