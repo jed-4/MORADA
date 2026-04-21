@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -308,8 +308,52 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSyn
 
 type CellId = { itemId: string; field: string };
 
+function bridgeLegacyOverheadsColumnLayout() {
+  if (typeof window === "undefined") return;
+  const LEGACY_KEY = "overheads-register-col-visibility";
+  const NEW_HIDDEN_KEY = "buildpro_table_hidden_business-overheads";
+  const NEW_ORDER_KEY = "buildpro_table_order_business-overheads";
+  const NEW_WIDTHS_KEY = "buildpro_table_widths_business-overheads";
+  try {
+    const legacyRaw = localStorage.getItem(LEGACY_KEY);
+    if (!legacyRaw) return;
+    const alreadyBridged =
+      localStorage.getItem(NEW_HIDDEN_KEY) ||
+      localStorage.getItem(NEW_ORDER_KEY) ||
+      localStorage.getItem(NEW_WIDTHS_KEY);
+    if (alreadyBridged) {
+      localStorage.removeItem(LEGACY_KEY);
+      return;
+    }
+    const legacy = JSON.parse(legacyRaw) as Record<string, boolean>;
+    const LEGACY_TO_NEW: Record<string, string> = {
+      freq: "frequency",
+      budget: "budget",
+      xeroCode: "xeroCode",
+      xeroGroup: "xeroGroup",
+      buildproGroup: "buildproGroup",
+      monthly: "monthly",
+      annual: "annual",
+    };
+    const hidden: Record<string, boolean> = {};
+    for (const [legacyId, visible] of Object.entries(legacy)) {
+      const newId = LEGACY_TO_NEW[legacyId];
+      if (newId && visible === false) hidden[newId] = false;
+    }
+    localStorage.setItem(NEW_HIDDEN_KEY, JSON.stringify(hidden));
+    localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    try { localStorage.removeItem(LEGACY_KEY); } catch {}
+  }
+}
+
+if (typeof window !== "undefined") {
+  bridgeLegacyOverheadsColumnLayout();
+}
+
 function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnected: boolean }) {
   const { toast } = useToast();
+  useEffect(() => { bridgeLegacyOverheadsColumnLayout(); }, []);
   const [addCatOpen, setAddCatOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [editItem, setEditItem] = useState<OverheadItem | null>(null);
@@ -798,6 +842,19 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
               </Card>
             );
           })}
+
+          {data.items.length > 0 && (
+            <div
+              className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/60 backdrop-blur px-4 py-2 text-sm font-semibold"
+              data-testid="overheads-register-totals"
+            >
+              <span>Total</span>
+              <div className="flex items-center gap-6 tabular-nums">
+                <span>{fmtDollars(grandMonthly)}<span className="ml-1 text-xs font-normal text-muted-foreground">/mo</span></span>
+                <span className="text-muted-foreground">{fmtDollars(grandAnnual)}<span className="ml-1 text-xs font-normal">/yr</span></span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

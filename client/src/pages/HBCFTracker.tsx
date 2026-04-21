@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
+  DataTableColumnPicker,
   type DataTableColumnMeta,
 } from "@/components/data-table/DataTable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -17,8 +18,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X
+  Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X, Columns3
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -406,13 +408,25 @@ export default function HBCFTracker() {
           );
         },
         size: CELL_W,
-        meta: { defaultWidth: CELL_W, align: "center", headerLabel: `${monthLabel} ${dayLabel}`, pinned: true },
+        meta: { defaultWidth: CELL_W, align: "center", headerLabel: `${monthLabel} ${dayLabel}` },
       });
     });
 
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weeks, nowKey, rows, limit]);
+
+  // Picker columns — week columns only (pinned project column excluded).
+  const pickerColumns = useMemo(
+    () =>
+      weeks.map((w) => {
+        const key = toKey(w);
+        const dayLabel = w.toLocaleDateString("en-AU", { day: "numeric" });
+        const monthLabel = w.toLocaleDateString("en-AU", { month: "short" });
+        return { id: `w-${key}`, label: `${monthLabel} ${dayLabel}` };
+      }),
+    [weeks],
+  );
 
   // Append synthetic totals row at the end.
   const tableData = useMemo<TableRow[]>(() => {
@@ -481,6 +495,16 @@ export default function HBCFTracker() {
           <Button size="icon" variant="ghost" onClick={() => setYear(y => y + 1)}>
             <ChevronRight className="w-4 h-4" />
           </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="ghost" data-testid="button-column-picker">
+                <Columns3 className="w-4 h-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1 max-h-80 overflow-auto" align="end">
+              <DataTableColumnPicker storageKey="hbcf-tracker" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
