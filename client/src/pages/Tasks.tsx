@@ -63,6 +63,9 @@ import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskEditModal from "@/components/TaskEditModal";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { format } from "date-fns";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { type TaskView, type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
@@ -710,11 +713,6 @@ export default function Tasks() {
     };
     
     const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters, weekStartDay);
-    
-    // For list view without grouping, return all tasks
-    if (activeView === 'list') {
-      return { 'All Tasks': effectivelyFilteredTasks };
-    }
 
     const groups: Record<string, Task[]> = {};
     
@@ -723,10 +721,10 @@ export default function Tasks() {
       
       switch (groupBy) {
         case 'status':
-          groupKey = task.status?.charAt(0).toUpperCase() + task.status?.slice(1) || 'No Status';
+          groupKey = task.status || 'No Status';
           break;
         case 'priority':
-          groupKey = task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1) || 'No Priority';
+          groupKey = task.priority || 'No Priority';
           break;
         case 'assignee':
           groupKey = task.assignee || 'Unassigned';
@@ -865,6 +863,115 @@ export default function Tasks() {
   };
 
   const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters, weekStartDay);
+
+  // ── DataTable column defs for the list view ────────────────────────────
+  const taskColumns = useMemo<ColumnDef<Task, unknown>[]>(() => {
+    const statusColorFor = (key: string | null | undefined) =>
+      statusOptions.find((o) => o.key === key)?.color || null;
+    const priorityColorFor = (key: string | null | undefined) =>
+      priorityOptions.find((o) => o.key === key)?.color || null;
+
+    const cols: (ColumnDef<Task, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "title",
+        header: "Title",
+        accessorFn: (t) => t.title || "",
+        cell: ({ row }) => (
+          <span className="text-xs font-medium truncate" data-testid={`cell-title-${row.original.id}`}>
+            {row.original.title}
+          </span>
+        ),
+        size: 320,
+        meta: { defaultWidth: 320, headerLabel: "Title" },
+      },
+      {
+        id: "assignee",
+        header: "Assignee",
+        accessorFn: (t) => {
+          const names = (t.assigneeNames as string[] | null) || [];
+          if (names.length > 0) return names.join(", ");
+          return t.assigneeName || "";
+        },
+        cell: ({ row }) => {
+          const names = (row.original.assigneeNames as string[] | null) || [];
+          const display = names.length > 0 ? names.join(", ") : row.original.assigneeName;
+          return (
+            <span className="text-xs text-muted-foreground truncate" data-testid={`cell-assignee-${row.original.id}`}>
+              {display || "—"}
+            </span>
+          );
+        },
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Assignee" },
+      },
+      {
+        id: "dueDate",
+        header: "Due Date",
+        accessorFn: (t) => (t.dueDate ? new Date(t.dueDate).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground tabular-nums" data-testid={`cell-due-${row.original.id}`}>
+            {row.original.dueDate ? format(new Date(row.original.dueDate), "dd MMM yyyy") : "—"}
+          </span>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Due Date" },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (t) => t.status || "",
+        cell: ({ row }) => {
+          const color = statusColorFor(row.original.status);
+          return (
+            <Badge variant="outline" className="text-[10px]" data-testid={`cell-status-${row.original.id}`}>
+              {color && (
+                <span
+                  className="inline-block w-2 h-2 rounded-full mr-1"
+                  style={{ backgroundColor: color }}
+                />
+              )}
+              {row.original.status || "—"}
+            </Badge>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Status" },
+      },
+      {
+        id: "priority",
+        header: "Priority",
+        accessorFn: (t) => t.priority || "",
+        cell: ({ row }) => {
+          const color = priorityColorFor(row.original.priority);
+          return (
+            <Badge variant="outline" className="text-[10px]" data-testid={`cell-priority-${row.original.id}`}>
+              {color && (
+                <span
+                  className="inline-block w-2 h-2 rounded-full mr-1"
+                  style={{ backgroundColor: color }}
+                />
+              )}
+              {row.original.priority || "—"}
+            </Badge>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Priority" },
+      },
+    ];
+    return cols;
+  }, [statusOptions, priorityOptions]);
+
+  const taskPickerColumns = useMemo(
+    () => [
+      { id: "title", label: "Title", pinned: true },
+      { id: "assignee", label: "Assignee" },
+      { id: "dueDate", label: "Due Date" },
+      { id: "status", label: "Status" },
+      { id: "priority", label: "Priority" },
+    ],
+    [],
+  );
 
   // Convert tasks to calendar events
   const tasksToCalendarEvents = (tasks: Task[]): CalendarEvent[] => {
@@ -1315,8 +1422,8 @@ export default function Tasks() {
               </Popover>
             )}
 
-            {/* Group by - only show in kanban view */}
-            {activeView === "kanban" && (
+            {/* Group by - show in kanban and list views */}
+            {(activeView === "kanban" || activeView === "list") && (
               <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
                 <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
                   <span>Group by</span>
@@ -1347,69 +1454,8 @@ export default function Tasks() {
                     <span>Columns</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-64 p-3">
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold">Columns</div>
-                    
-                    <div className="space-y-2">
-                      {columnOrder.map((columnKey, index) => {
-                        const columnLabels = {
-                          assignee: 'Assignee',
-                          dueDate: 'Due Date',
-                          status: 'Status',
-                          priority: 'Priority'
-                        };
-                        
-                        return (
-                          <div key={columnKey} className="flex items-center gap-2 group">
-                            <button
-                              className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-                              onMouseDown={(e) => {
-                                const startY = e.clientY;
-                                const startIndex = index;
-                                
-                                const handleMouseMove = (moveEvent: MouseEvent) => {
-                                  const deltaY = moveEvent.clientY - startY;
-                                  const newIndex = Math.max(0, Math.min(columnOrder.length - 1, startIndex + Math.round(deltaY / 32)));
-                                  
-                                  if (newIndex !== startIndex) {
-                                    const newOrder = [...columnOrder];
-                                    const [removed] = newOrder.splice(startIndex, 1);
-                                    newOrder.splice(newIndex, 0, removed);
-                                    setColumnOrder(newOrder);
-                                  }
-                                };
-                                
-                                const handleMouseUp = () => {
-                                  document.removeEventListener('mousemove', handleMouseMove);
-                                  document.removeEventListener('mouseup', handleMouseUp);
-                                };
-                                
-                                document.addEventListener('mousemove', handleMouseMove);
-                                document.addEventListener('mouseup', handleMouseUp);
-                              }}
-                            >
-                              <GripVertical className="h-4 w-4 text-gray-400" />
-                            </button>
-                            
-                            <Checkbox
-                              checked={columnVisibility[columnKey as keyof typeof columnVisibility]}
-                              onCheckedChange={(checked) => {
-                                setColumnVisibility({
-                                  ...columnVisibility,
-                                  [columnKey]: checked
-                                });
-                              }}
-                            />
-                            
-                            <span className="text-sm flex-1">
-                              {columnLabels[columnKey as keyof typeof columnLabels]}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                <PopoverContent align="end" className="w-64 p-0">
+                  <DataTableColumnPicker storageKey="tasks" columns={taskPickerColumns} />
                 </PopoverContent>
               </Popover>
             )}
@@ -1437,21 +1483,57 @@ export default function Tasks() {
         )}
         
         {activeView === "list" && (
-          <div className="flex-1 overflow-auto p-2">
-            <TaskListCompact
-              tasks={effectivelyFilteredTasks}
-              isLoading={tasksLoading}
-              onTaskClick={(task: Task) => setEditingTask(task)}
-              projectId={effectiveProjectId}
-              columnConfig={{ order: columnOrder, sort: listSortConfig }}
-              onColumnConfigChange={(config) => {
-                setColumnOrder(config.order);
-                setListSortConfig(config.sort);
-              }}
-              onDelete={handleDeleteTask}
-              showActions={true}
-              onAddTask={(title) => createTaskMutation.mutate(title)}
-            />
+          <div className="flex-1 overflow-auto p-2 space-y-3">
+            {Object.entries(groupedTasks).map(([groupKey, groupTasks]) => {
+              const label = groupKey.charAt(0).toUpperCase() + groupKey.slice(1);
+              const handleAddInGroup = () => {
+                const initial: Partial<Task> = {};
+                if (groupBy === 'status') initial.status = groupKey;
+                else if (groupBy === 'priority') initial.priority = groupKey;
+                else if (groupBy === 'assignee' && groupKey !== 'Unassigned') initial.assignee = groupKey;
+                else if (groupBy === 'tags' && groupKey !== 'No Tags') initial.tags = [groupKey];
+                else if (groupBy === 'labels' && groupKey !== 'No Labels') initial.labels = [groupKey];
+                setDuplicateTaskData(initial);
+                setShowCreateTaskDialog(true);
+              };
+              return (
+                <div key={groupKey} className="border border-border rounded-md overflow-hidden">
+                  <div className="h-7 px-2 flex items-center justify-between bg-muted/30 border-b border-border/50">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+                      <span className="text-[10px] text-muted-foreground/70">({groupTasks.length})</span>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-5 w-5"
+                      onClick={handleAddInGroup}
+                      data-testid={`button-add-task-group-${groupKey}`}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <DataTable
+                    data={groupTasks}
+                    columns={taskColumns}
+                    storageKey="tasks"
+                    legacyConfigKey="tasks-column-config-v1"
+                    onRowClick={(task) => setEditingTask(task)}
+                    rowKey={(task) => task.id}
+                    emptyState={
+                      <div className="text-xs text-muted-foreground py-4 text-center">
+                        No tasks
+                      </div>
+                    }
+                  />
+                </div>
+              );
+            })}
+            {Object.keys(groupedTasks).length === 0 && (
+              <div className="text-xs text-muted-foreground py-8 text-center">
+                {tasksLoading ? "Loading tasks..." : "No tasks found"}
+              </div>
+            )}
           </div>
         )}
 

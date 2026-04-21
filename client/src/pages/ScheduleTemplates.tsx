@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,17 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type ScheduleTemplate } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +54,7 @@ import {
   Loader2,
   FileSpreadsheet,
   AlertCircle,
+  Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -468,6 +480,145 @@ export default function ScheduleTemplates() {
     }
   };
 
+  const columnDefs = useMemo<ColumnDef<ScheduleTemplate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 240,
+      meta: { defaultWidth: 240, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (t) => t.category || "",
+      cell: ({ row }) => row.original.category ? (
+        <Badge
+          variant="secondary"
+          className={`h-4 px-1.5 text-[10px] ${getCategoryColor(row.original.category)}`}
+          data-testid={`cell-category-${row.original.id}`}
+        >
+          {row.original.category}
+        </Badge>
+      ) : (
+        <span className="text-xs text-muted-foreground">—</span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Category" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "description",
+      header: "Description",
+      accessorFn: (t) => t.description || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-description-${row.original.id}`}>
+          {row.original.description || "—"}
+        </span>
+      ),
+      size: 320,
+      meta: { defaultWidth: 320, headerLabel: "Description" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "items",
+      header: "Items",
+      accessorFn: (t) => getItemCount(t),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums" data-testid={`cell-items-${row.original.id}`}>
+          {getItemCount(row.original)}
+        </span>
+      ),
+      size: 80,
+      meta: { defaultWidth: 80, align: "right", headerLabel: "Items" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "updatedAt",
+      header: "Updated",
+      accessorFn: (t) => (t.updatedAt ? new Date(t.updatedAt).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground" data-testid={`cell-updated-${row.original.id}`}>
+          {format(new Date(row.original.updatedAt), "MMM d, yyyy")}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Updated" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end" data-testid={`cell-actions-${row.original.id}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/schedule-templates/${row.original.id}`);
+                }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Edit3 className="h-4 w-4 mr-2" />
+                View / Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  duplicateMutation.mutate(row.original);
+                }}
+                data-testid={`button-duplicate-${row.original.id}`}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteMutation.mutate(row.original.id);
+                }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 56,
+      meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  ], [navigate, duplicateMutation, deleteMutation]);
+
+  const pickerColumns = useMemo(
+    () => columnDefs
+      .filter((c) => c.id !== "actions")
+      .map((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        return {
+          id: c.id as string,
+          label: meta.headerLabel ?? (c.id as string),
+          pinned: !!meta.pinned,
+        };
+      }),
+    [columnDefs],
+  );
+
   return (
     <div className="h-full flex flex-col">
       {/* Row 1 - Title & Actions (36px) */}
@@ -518,6 +669,22 @@ export default function ScheduleTemplates() {
             />
           </div>
         </div>
+        <div className="flex items-center gap-1.5">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-columns"
+              >
+                <Columns3 className="w-3 h-3" />
+                <span>Columns</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0 w-auto">
+              <DataTableColumnPicker storageKey="schedule-templates" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
       {/* Templates List */}
@@ -559,103 +726,14 @@ export default function ScheduleTemplates() {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => navigate(`/schedule-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  {/* Title and Description */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Metadata */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Category badge */}
-                    {template.category && (
-                      <Badge 
-                        variant="secondary" 
-                        className={`h-4 px-1.5 text-[10px] ${getCategoryColor(template.category)}`}
-                      >
-                        {template.category}
-                      </Badge>
-                    )}
-
-                    {/* Items count */}
-                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                      {getItemCount(template)} {getItemCount(template) === 1 ? 'item' : 'items'}
-                    </Badge>
-                    
-                    {/* Date */}
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                      </span>
-                    </div>
-                    
-                    {/* Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/schedule-templates/${template.id}`);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          View / Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            data={filteredTemplates}
+            columns={columnDefs}
+            storageKey="schedule-templates"
+            legacyConfigKey="schedule-templates-column-config-v1"
+            rowKey={(t) => t.id}
+            onRowClick={(t) => navigate(`/schedule-templates/${t.id}`)}
+          />
         )}
       </div>
 

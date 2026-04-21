@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type RfiTemplate, type TemplateCategory } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +27,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -47,6 +58,7 @@ import {
   Loader2,
   MessageSquare,
   Settings2,
+  Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -73,6 +85,7 @@ export default function RfiTemplates() {
   const [editingTemplate, setEditingTemplate] = useState<RfiTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -103,10 +116,10 @@ export default function RfiTemplates() {
     if (!categoryId) return "";
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return "";
-    
+
     const breadcrumbParts: string[] = [category.name];
     let currentCategory = category;
-    
+
     while (currentCategory.parentId) {
       const parent = categories.find((c) => c.id === currentCategory.parentId);
       if (parent) {
@@ -116,14 +129,14 @@ export default function RfiTemplates() {
         break;
       }
     }
-    
+
     return breadcrumbParts.join(" / ");
   };
 
   const buildCategoryTree = () => {
     const rootCategories = categories.filter((c) => !c.parentId);
     const tree: { id: string; name: string; depth: number }[] = [];
-    
+
     const addChildren = (parentId: string | null, depth: number) => {
       const children = categories.filter((c) => c.parentId === parentId);
       children.forEach((child) => {
@@ -131,19 +144,19 @@ export default function RfiTemplates() {
         addChildren(child.id, depth + 1);
       });
     };
-    
+
     rootCategories.forEach((root) => {
       tree.push({ id: root.id, name: root.name, depth: 0 });
       addChildren(root.id, 1);
     });
-    
+
     return tree;
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data: { 
-      name: string; 
-      description?: string; 
+    mutationFn: async (data: {
+      name: string;
+      description?: string;
       categoryId?: string;
       subjectTemplate?: string;
       questionTemplate?: string;
@@ -301,14 +314,14 @@ export default function RfiTemplates() {
   const filteredTemplates = templates
     .filter(template => {
       const categoryBreadcrumb = getCategoryBreadcrumb(template.categoryId);
-      const matchesSearch = 
+      const matchesSearch =
         template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         template.subjectTemplate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         categoryBreadcrumb.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesCategory = categoryFilter === "all" || template.categoryId === categoryFilter;
-      
+
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -333,6 +346,187 @@ export default function RfiTemplates() {
   };
 
   const uniqueCategoryIds = [...new Set(templates.map(t => t.categoryId).filter(Boolean))] as string[];
+
+  const handleRowClick = (template: RfiTemplate) => {
+    navigate(`/rfi-templates/${template.id}`);
+  };
+
+  const columns = useMemo<ColumnDef<RfiTemplate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "description",
+      header: "Description",
+      accessorFn: (t) => t.description || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-description-${row.original.id}`}>
+          {row.original.description || "—"}
+        </span>
+      ),
+      size: 240,
+      meta: { defaultWidth: 240, headerLabel: "Description" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "subject",
+      header: "Subject",
+      accessorFn: (t) => t.subjectTemplate || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-subject-${row.original.id}`}>
+          {row.original.subjectTemplate || "—"}
+        </span>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Subject" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (t) => getCategoryBreadcrumb(t.categoryId),
+      cell: ({ row }) => {
+        const label = getCategoryBreadcrumb(row.original.categoryId);
+        return label ? (
+          <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`cell-category-${row.original.id}`}>
+            {label}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
+      size: 160,
+      meta: { defaultWidth: 160, headerLabel: "Category" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "directedTo",
+      header: "Directed To",
+      accessorFn: (t) => getDirectedToLabel(t.defaultDirectedToType) || "",
+      cell: ({ row }) => {
+        const label = getDirectedToLabel(row.original.defaultDirectedToType);
+        return label ? (
+          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`cell-directed-${row.original.id}`}>
+            {label}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Directed To" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "priority",
+      header: "Priority",
+      accessorFn: (t) => t.defaultPriority || "",
+      cell: ({ row }) => {
+        const priority = row.original.defaultPriority;
+        if (!priority || priority === "normal") {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+        return (
+          <Badge
+            variant="outline"
+            className={`h-4 px-1.5 text-[10px] ${getPriorityColor(priority)}`}
+            data-testid={`cell-priority-${row.original.id}`}
+          >
+            {getPriorityLabel(priority)}
+          </Badge>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, headerLabel: "Priority" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "updatedAt",
+      header: "Updated",
+      accessorFn: (t) => (t.updatedAt ? new Date(t.updatedAt).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground" data-testid={`cell-updated-${row.original.id}`}>
+          {row.original.updatedAt ? format(new Date(row.original.updatedAt), "MMM d, yyyy") : "—"}
+        </span>
+      ),
+      size: 110,
+      meta: { defaultWidth: 110, headerLabel: "Updated" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenEdit(row.original);
+                }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Edit3 className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  duplicateMutation.mutate(row.original);
+                }}
+                data-testid={`button-duplicate-${row.original.id}`}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteMutation.mutate(row.original.id);
+                }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 56,
+      meta: { defaultWidth: 56, align: "right", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  ], [categories, duplicateMutation, deleteMutation]);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "name", label: "Name", pinned: true },
+      { id: "description", label: "Description" },
+      { id: "subject", label: "Subject" },
+      { id: "category", label: "Category" },
+      { id: "directedTo", label: "Directed To" },
+      { id: "priority", label: "Priority" },
+      { id: "updatedAt", label: "Updated" },
+      { id: "actions", label: "Actions", pinned: true },
+    ],
+    [],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -389,9 +583,25 @@ export default function RfiTemplates() {
             </Select>
           )}
         </div>
+
+        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              data-testid="button-column-picker"
+            >
+              <Columns3 className="h-3 w-3" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0 w-auto">
+            <DataTableColumnPicker storageKey="rfi-templates" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-hidden">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             Loading templates...
@@ -408,8 +618,8 @@ export default function RfiTemplates() {
                 : "Start by adding your first RFI template"}
             </p>
             {!searchTerm && categoryFilter === "all" && (
-              <button 
-                onClick={handleOpenAdd} 
+              <button
+                onClick={handleOpenAdd}
                 className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
@@ -419,115 +629,19 @@ export default function RfiTemplates() {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => navigate(`/rfi-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                    {template.subjectTemplate && (
-                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                        Subject: {template.subjectTemplate}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {getCategoryBreadcrumb(template.categoryId) && (
-                      <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                        {getCategoryBreadcrumb(template.categoryId)}
-                      </Badge>
-                    )}
-
-                    {template.defaultDirectedToType && (
-                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                        To: {getDirectedToLabel(template.defaultDirectedToType)}
-                      </Badge>
-                    )}
-
-                    {template.defaultPriority && template.defaultPriority !== "normal" && (
-                      <Badge 
-                        variant="outline" 
-                        className={`h-4 px-1.5 text-[10px] ${getPriorityColor(template.defaultPriority)}`}
-                      >
-                        {getPriorityLabel(template.defaultPriority)}
-                      </Badge>
-                    )}
-                    
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                      </span>
-                    </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEdit(template);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            data={filteredTemplates}
+            columns={columns}
+            storageKey="rfi-templates"
+            legacyConfigKey="rfi-templates-column-config-v1"
+            rowKey={(t) => t.id}
+            onRowClick={handleRowClick}
+          />
         )}
       </div>
 
-      <Dialog 
-        open={isAddingTemplate || !!editingTemplate} 
+      <Dialog
+        open={isAddingTemplate || !!editingTemplate}
         onOpenChange={(open) => {
           if (!open) {
             setIsAddingTemplate(false);
@@ -542,7 +656,7 @@ export default function RfiTemplates() {
               {editingTemplate ? "Edit RFI Template" : "New RFI Template"}
             </DialogTitle>
             <DialogDescription>
-              {editingTemplate 
+              {editingTemplate
                 ? "Update the template details below."
                 : "Create a new RFI template to speed up creating information requests."}
             </DialogDescription>
@@ -587,8 +701,8 @@ export default function RfiTemplates() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category</Label>
-                  <Select 
-                    value={formData.categoryId || "none"} 
+                  <Select
+                    value={formData.categoryId || "none"}
                     onValueChange={(value) => setFormData({ ...formData, categoryId: value === "none" ? undefined : value })}
                   >
                     <SelectTrigger data-testid="select-template-category">
@@ -609,8 +723,8 @@ export default function RfiTemplates() {
 
                 <div className="space-y-2">
                   <Label htmlFor="defaultPriority">Default Priority</Label>
-                  <Select 
-                    value={formData.defaultPriority} 
+                  <Select
+                    value={formData.defaultPriority}
                     onValueChange={(value) => setFormData({ ...formData, defaultPriority: value })}
                   >
                     <SelectTrigger data-testid="select-template-priority">
@@ -629,8 +743,8 @@ export default function RfiTemplates() {
 
               <div className="space-y-2">
                 <Label htmlFor="defaultDirectedToType">Default Directed To</Label>
-                <Select 
-                  value={formData.defaultDirectedToType} 
+                <Select
+                  value={formData.defaultDirectedToType}
                   onValueChange={(value) => setFormData({ ...formData, defaultDirectedToType: value })}
                 >
                   <SelectTrigger data-testid="select-template-directed-to">
@@ -694,9 +808,9 @@ Response Required By: [Date]"
                 <h4 className="text-xs font-medium mb-2">Available Placeholders</h4>
                 <div className="flex flex-wrap gap-1">
                   {["[Drawing Reference]", "[Area]", "[Trade]", "[Date]", "[Location]", "[Item]", "[Question]"].map((placeholder) => (
-                    <Badge 
-                      key={placeholder} 
-                      variant="secondary" 
+                    <Badge
+                      key={placeholder}
+                      variant="secondary"
                       className="text-[10px] cursor-pointer hover:bg-secondary/80"
                       onClick={() => {
                         setFormData({

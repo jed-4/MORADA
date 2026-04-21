@@ -1,11 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff } from "lucide-react";
 import { type Project } from "@shared/schema";
-import { ProjectBoard, type ViewPreferences, type GroupBy, type ColumnWidth } from "@/components/ProjectBoard";
-import { ProjectList } from "@/components/ProjectList";
+import { ProjectBoard, type ViewPreferences } from "@/components/ProjectBoard";
+import { ProjectIcon } from "@/components/ProjectIcon";
+import { Badge } from "@/components/ui/badge";
+import { useLocation } from "wouter";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import CreateProjectDialog from "@/components/CreateProjectDialog";
 import {
   DropdownMenu,
@@ -13,6 +21,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const DEFAULT_PREFERENCES: ViewPreferences = {
   groupBy: "phase",
@@ -28,12 +41,20 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
   hideEmptyColumns: false,
 };
 
+const STATUS_CONFIG = {
+  active: { label: "Active", variant: "default" as const, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+  on_hold: { label: "On Hold", variant: "secondary" as const, color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
+  completed: { label: "Completed", variant: "outline" as const, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+};
+
 export default function BusinessProjects() {
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("board");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [cardFieldsDialogOpen, setCardFieldsDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
   // Manage preferences state at parent level
   const [preferences, setPreferences] = useState<ViewPreferences>(DEFAULT_PREFERENCES);
@@ -42,29 +63,22 @@ export default function BusinessProjects() {
   const { data: userPreferences, isError: preferencesError } = useQuery({
     queryKey: ["/api/user-view-preferences", "business_projects"],
     queryFn: async () => {
-      console.log('[BusinessProjects] Fetching user view preferences...');
       const response = await fetch("/api/user-view-preferences/business_projects", {
         credentials: "include",
       });
-      console.log('[BusinessProjects] Preferences fetch response status:', response.status);
       if (!response.ok) {
         if (response.status === 404) {
-          console.log('[BusinessProjects] No preferences found (404)');
           return null;
         }
         throw new Error("Failed to fetch view preferences");
       }
-      const data = await response.json();
-      console.log('[BusinessProjects] Preferences fetched successfully:', data);
-      return data;
+      return response.json();
     },
   });
 
   // Apply loaded preferences
   useEffect(() => {
-    console.log('[BusinessProjects] userPreferences changed:', userPreferences);
     if (userPreferences?.preferences) {
-      console.log('[BusinessProjects] Applying loaded preferences');
       setPreferences({
         ...DEFAULT_PREFERENCES,
         ...userPreferences.preferences,
@@ -78,7 +92,6 @@ export default function BusinessProjects() {
       }
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
-      console.log('[BusinessProjects] No saved preferences, using defaults');
       setPreferencesLoaded(true);
     }
   }, [userPreferences, preferencesError]);
@@ -86,17 +99,10 @@ export default function BusinessProjects() {
   // Save view preferences mutation
   const savePreferencesMutation = useMutation({
     mutationFn: async (prefs: ViewPreferences & { activeTab: string }) => {
-      console.log('[BusinessProjects] Saving view preferences:', prefs);
       return await apiRequest("/api/user-view-preferences", "POST", {
         viewKey: "business_projects",
         preferences: prefs,
       });
-    },
-    onSuccess: () => {
-      console.log('[BusinessProjects] Preferences saved successfully');
-    },
-    onError: (error) => {
-      console.error('[BusinessProjects] Error saving preferences:', error);
     },
   });
 
@@ -104,7 +110,6 @@ export default function BusinessProjects() {
   useEffect(() => {
     if (preferencesLoaded) {
       const timer = setTimeout(() => {
-        console.log('[BusinessProjects] Debounced save triggered');
         savePreferencesMutation.mutate({ ...preferences, activeTab });
       }, 1000);
       return () => clearTimeout(timer);
@@ -127,23 +132,140 @@ export default function BusinessProjects() {
     handlePreferencesChange({ ...preferences, [key]: value });
   };
 
-  // Toggle individual visible field
-  const toggleField = (field: keyof ViewPreferences['visibleFields']) => {
-    handlePreferencesChange({
-      ...preferences,
-      visibleFields: {
-        ...preferences.visibleFields,
-        [field]: !preferences.visibleFields[field],
-      },
-    });
-  };
-
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
   // Filter out archived projects and business projects
   const activeProjects = projects.filter(p => !p.isArchived && !p.isBusiness);
+
+  const formatCurrency = (cents: number | null) => {
+    if (!cents) return "$0";
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: 0,
+    }).format(cents / 100);
+  };
+
+  const formatDate = (date: string | null) => {
+    if (!date) return "—";
+    return new Date(date).toLocaleDateString('en-AU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const projectColumns = useMemo<ColumnDef<Project, unknown>[]>(() => [
+    {
+      id: "project",
+      header: "Project",
+      accessorFn: (p) => p.name || "",
+      cell: ({ row }) => {
+        const project = row.original;
+        return (
+          <div className="flex items-center gap-3" data-testid={`cell-project-${project.id}`}>
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="w-6 h-6 flex-shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{project.name}</p>
+              {project.description && (
+                <p className="text-xs text-muted-foreground truncate">
+                  {project.description}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      },
+      size: 300,
+      meta: { defaultWidth: 300, headerLabel: "Project" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "location",
+      header: "Location",
+      accessorFn: (p) => p.location || "",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground" data-testid={`cell-location-${row.original.id}`}>
+          {row.original.location || "—"}
+        </span>
+      ),
+      size: 180,
+      meta: { defaultWidth: 180, headerLabel: "Location" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (p) => p.status || "active",
+      cell: ({ row }) => {
+        const projectStatus = (row.original.status || "active") as keyof typeof STATUS_CONFIG;
+        const statusConfig = STATUS_CONFIG[projectStatus] || STATUS_CONFIG.active;
+        return (
+          <Badge
+            variant={statusConfig.variant}
+            className={statusConfig.color}
+            data-testid={`badge-status-${row.original.id}`}
+          >
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Status" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "startDate",
+      header: "Start Date",
+      accessorFn: (p) => (p.startDate ? new Date(p.startDate).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-muted-foreground" data-testid={`cell-start-${row.original.id}`}>
+          {formatDate(row.original.startDate)}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Start Date" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "endDate",
+      header: "End Date",
+      accessorFn: (p) => (p.endDate ? new Date(p.endDate).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-muted-foreground" data-testid={`cell-end-${row.original.id}`}>
+          {formatDate(row.original.endDate)}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "End Date" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "budget",
+      header: "Budget",
+      accessorFn: (p) => p.budget ?? 0,
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums" data-testid={`cell-budget-${row.original.id}`}>
+          {formatCurrency(row.original.budget)}
+        </span>
+      ),
+      size: 140,
+      meta: { defaultWidth: 140, align: "right", headerLabel: "Budget" } satisfies DataTableColumnMeta,
+    },
+  ], []);
+
+  const pickerColumns = useMemo(
+    () => projectColumns.map((c) => {
+      const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+      return {
+        id: c.id as string,
+        label: meta.headerLabel ?? (c.id as string),
+        pinned: !!meta.pinned,
+      };
+    }),
+    [projectColumns],
+  );
 
   return (
     <div className="h-full flex flex-col" data-testid="business-projects">
@@ -179,86 +301,108 @@ export default function BusinessProjects() {
 
         {/* Right: Controls */}
         <div className="flex items-center gap-1.5">
-          {/* Card Display - Opens Edit Card Fields Popover */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setCardFieldsDialogOpen(!cardFieldsDialogOpen)}
-            className="h-6 w-6"
-            data-testid="button-card-display"
-          >
-            <Eye className="h-3 w-3" />
-          </Button>
-
-          {/* Group By - Toggle Button */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => updatePreference('groupBy', preferences.groupBy === 'phase' ? 'status' : 'phase')}
-            className={`h-6 w-6 ${preferences.groupBy === 'status' ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
-            data-testid="button-group-by"
-            title={preferences.groupBy === 'phase' ? 'Grouped by Phase' : 'Grouped by Status'}
-          >
-            <Layers className="h-3 w-3" />
-          </Button>
-
-          {/* Column Width - Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {activeTab === "board" && (
+            <>
+              {/* Card Display - Opens Edit Card Fields Popover */}
               <Button
                 size="icon"
                 variant="ghost"
+                onClick={() => setCardFieldsDialogOpen(!cardFieldsDialogOpen)}
                 className="h-6 w-6"
-                data-testid="button-column-width"
+                data-testid="button-card-display"
               >
-                <Columns3 className="h-3 w-3" />
+                <Eye className="h-3 w-3" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem 
-                onClick={() => updatePreference('columnWidth', 'small')}
-                data-testid="menu-item-column-small"
-              >
-                Small
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => updatePreference('columnWidth', 'medium')}
-                data-testid="menu-item-column-medium"
-              >
-                Medium
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => updatePreference('columnWidth', 'wide')}
-                data-testid="menu-item-column-wide"
-              >
-                Wide
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
-          {/* Hide Empty Columns Toggle */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => updatePreference('hideEmptyColumns', !preferences.hideEmptyColumns)}
-            className={`h-6 w-6 ${preferences.hideEmptyColumns ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
-            data-testid="button-hide-empty"
-            title={preferences.hideEmptyColumns ? 'Showing only columns with projects' : 'Showing all columns'}
-          >
-            <EyeOff className="h-3 w-3" />
-          </Button>
+              {/* Group By - Toggle Button */}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => updatePreference('groupBy', preferences.groupBy === 'phase' ? 'status' : 'phase')}
+                className={`h-6 w-6 ${preferences.groupBy === 'status' ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
+                data-testid="button-group-by"
+                title={preferences.groupBy === 'phase' ? 'Grouped by Phase' : 'Grouped by Status'}
+              >
+                <Layers className="h-3 w-3" />
+              </Button>
 
-          {/* Edit Mode Toggle - Highlights when active */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setEditMode(!editMode)}
-            className={`h-6 w-6 ${editMode ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
-            data-testid="button-edit-mode"
-            title={editMode ? 'Edit Mode: ON - Drag projects to move' : 'Edit Mode: OFF'}
-          >
-            <Edit3 className="h-3 w-3" />
-          </Button>
+              {/* Column Width - Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    data-testid="button-column-width"
+                  >
+                    <Columns3 className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    onClick={() => updatePreference('columnWidth', 'small')}
+                    data-testid="menu-item-column-small"
+                  >
+                    Small
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => updatePreference('columnWidth', 'medium')}
+                    data-testid="menu-item-column-medium"
+                  >
+                    Medium
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => updatePreference('columnWidth', 'wide')}
+                    data-testid="menu-item-column-wide"
+                  >
+                    Wide
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Hide Empty Columns Toggle */}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => updatePreference('hideEmptyColumns', !preferences.hideEmptyColumns)}
+                className={`h-6 w-6 ${preferences.hideEmptyColumns ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
+                data-testid="button-hide-empty"
+                title={preferences.hideEmptyColumns ? 'Showing only columns with projects' : 'Showing all columns'}
+              >
+                <EyeOff className="h-3 w-3" />
+              </Button>
+
+              {/* Edit Mode Toggle - Highlights when active */}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setEditMode(!editMode)}
+                className={`h-6 w-6 ${editMode ? 'bg-[#A890D4]/10 text-[#A890D4]' : ''}`}
+                data-testid="button-edit-mode"
+                title={editMode ? 'Edit Mode: ON - Drag projects to move' : 'Edit Mode: OFF'}
+              >
+                <Edit3 className="h-3 w-3" />
+              </Button>
+            </>
+          )}
+
+          {activeTab === "list" && (
+            <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  data-testid="button-columns"
+                >
+                  <Columns3 className="h-3 w-3" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="p-0">
+                <DataTableColumnPicker storageKey="business-projects" columns={pickerColumns} />
+              </PopoverContent>
+            </Popover>
+          )}
 
           {/* New Project Button */}
           <button
@@ -289,7 +433,23 @@ export default function BusinessProjects() {
         )}
         {activeTab === "list" && (
           <div className="h-full p-6">
-            <ProjectList projects={activeProjects} isLoading={isLoading} />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-muted-foreground">Loading projects...</p>
+              </div>
+            ) : (
+              <div className="h-full border rounded-lg overflow-hidden">
+                <DataTable
+                  data={activeProjects}
+                  columns={projectColumns}
+                  storageKey="business-projects"
+                  legacyConfigKey="business-projects-column-config-v1"
+                  rowKey={(p) => p.id}
+                  onRowClick={(p) => navigate(`/projects/${p.id}`)}
+                  emptyState="No projects found"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

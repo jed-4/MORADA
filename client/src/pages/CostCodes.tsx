@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -12,6 +18,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -35,6 +46,7 @@ import {
   Minimize2,
   X,
   FolderInput,
+  Columns3,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +60,11 @@ import EditCategoryDialog from "@/components/EditCategoryDialog";
 import MergeCategoryDialog from "@/components/MergeCategoryDialog";
 import EditCostCodeDialog from "@/components/EditCostCodeDialog";
 import BulkXeroMappingDialog from "@/components/BulkXeroMappingDialog";
+
+const TABLE_STORAGE_KEY = "cost-codes";
+const LEGACY_STORAGE_KEY = "cost-codes-column-config-v1";
+
+type CostCodeRow = CostCode & { xeroTrackingOptionName?: string };
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -68,6 +85,7 @@ export default function CostCodes() {
   const [selectedCostCodeForEdit, setSelectedCostCodeForEdit] = useState<CostCode | null>(null);
   const [isBulkXeroMappingOpen, setIsBulkXeroMappingOpen] = useState(false);
   const [selectedCodeIds, setSelectedCodeIds] = useState<Set<string>>(new Set());
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
@@ -77,7 +95,7 @@ export default function CostCodes() {
     queryKey: ["/api/cost-codes"],
   });
 
-  const { data: xeroStatus } = useQuery<any>({
+  const { data: xeroStatus } = useQuery<{ connected?: boolean; trackingCategory1Id?: string }>({
     queryKey: ["/api/xero/status"],
   });
   const xeroConnected = xeroStatus?.connected === true && !!xeroStatus?.trackingCategory1Id;
@@ -231,8 +249,8 @@ export default function CostCodes() {
     return true;
   });
 
-  const getCodesForCategory = (categoryId: string | null) => {
-    return codes.filter(code => {
+  const getCodesForCategory = (categoryId: string | null): CostCodeRow[] => {
+    return (codes as CostCodeRow[]).filter(code => {
       if (code.categoryId !== categoryId) return false;
       if (!showArchived && code.isArchived) return false;
       if (searchTerm) {
@@ -241,13 +259,11 @@ export default function CostCodes() {
       }
       return true;
     }).sort((a, b) => {
-      // Sort numerically by code
       const aNum = parseFloat(a.code);
       const bNum = parseFloat(b.code);
       if (!isNaN(aNum) && !isNaN(bNum)) {
         return aNum - bNum;
       }
-      // Fallback to string comparison if not numeric
       return a.code.localeCompare(b.code);
     });
   };
@@ -263,7 +279,7 @@ export default function CostCodes() {
     setExpandedCategories(new Set());
   };
 
-  const allExpanded = filteredCategories.length > 0 && 
+  const allExpanded = filteredCategories.length > 0 &&
                       filteredCategories.every(cat => expandedCategories.has(cat.id));
 
   const toggleCodeSelection = (codeId: string) => {
@@ -298,24 +314,207 @@ export default function CostCodes() {
 
   const selectedCodes = codes.filter(code => selectedCodeIds.has(code.id));
 
-  // Calculate visible codes for select all checkbox state
   const allVisibleCodeIds = new Set<string>();
   filteredCategories.forEach(category => {
     getCodesForCategory(category.id).forEach(code => allVisibleCodeIds.add(code.id));
   });
   uncategorizedCodes.forEach(code => allVisibleCodeIds.add(code.id));
-  
-  const allVisibleSelected = allVisibleCodeIds.size > 0 && 
+
+  const allVisibleSelected = allVisibleCodeIds.size > 0 &&
     Array.from(allVisibleCodeIds).every(id => selectedCodeIds.has(id));
   const someVisibleSelected = Array.from(allVisibleCodeIds).some(id => selectedCodeIds.has(id)) && !allVisibleSelected;
 
   const isLoading = categoriesLoading || codesLoading;
 
+  // Build columns once for all DataTables on this page (one per category + uncategorized).
+  const columns = useMemo<ColumnDef<CostCodeRow, unknown>[]>(() => {
+    return [
+      {
+        id: "select",
+        header: () => (
+          <Checkbox
+            checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}
+            onCheckedChange={toggleAllVisibleCodes}
+            className="h-3.5 w-3.5"
+            data-testid="checkbox-select-all-header"
+          />
+        ),
+        cell: ({ row }) => (
+          <span onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selectedCodeIds.has(row.original.id)}
+              onCheckedChange={() => toggleCodeSelection(row.original.id)}
+              className="h-3.5 w-3.5"
+              data-testid={`checkbox-code-${row.original.id}`}
+            />
+          </span>
+        ),
+        enableSorting: false,
+        size: 36,
+        meta: { defaultWidth: 36, align: "center", pinned: true, headerLabel: "Select" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "code",
+        header: "Code",
+        accessorFn: (c) => c.code,
+        cell: ({ row }) => (
+          <span className="text-xs font-medium" data-testid={`cell-code-${row.original.id}`}>
+            {row.original.code}
+          </span>
+        ),
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Code" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "title",
+        header: "Title",
+        accessorFn: (c) => c.title,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs truncate" data-testid={`cell-title-${row.original.id}`}>
+              {row.original.title}
+            </span>
+            {row.original.isArchived && (
+              <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+            )}
+            {row.original.isSynced && (
+              <Badge variant="outline" className="text-[10px]">Synced</Badge>
+            )}
+          </div>
+        ),
+        size: 280,
+        meta: { defaultWidth: 280, headerLabel: "Title" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "xero",
+        header: "Xero",
+        accessorFn: (c) => c.xeroTrackingOptionName ?? "",
+        cell: ({ row }) =>
+          row.original.xeroTrackingOptionName ? (
+            <Badge variant="outline" className="text-[10px]" data-testid={`cell-xero-${row.original.id}`}>
+              {row.original.xeroTrackingOptionName}
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground/40 text-xs">—</span>
+          ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Xero" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "timesheet",
+        header: "Timesheet",
+        accessorFn: (c) => (c.availableInTimesheets ? 1 : 0),
+        cell: ({ row }) =>
+          row.original.availableInTimesheets ? (
+            <Badge variant="outline" className="gap-1 text-[10px]" data-testid={`cell-timesheet-${row.original.id}`}>
+              <Clock className="h-3 w-3" /> Yes
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`cell-timesheet-${row.original.id}`}>
+              <Ban className="h-3 w-3" /> No
+            </Badge>
+          ),
+        size: 110,
+        meta: { defaultWidth: 110, align: "center", headerLabel: "Timesheet" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const code = row.original;
+          return (
+            <span onClick={(e) => e.stopPropagation()} className="flex justify-end">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    data-testid={`button-actions-${code.id}`}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedCostCodeForEdit(code);
+                      setIsEditCostCodeOpen(true);
+                    }}
+                    data-testid={`menu-edit-${code.id}`}
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      toggleTimesheetMutation.mutate({
+                        id: code.id,
+                        availableInTimesheets: !code.availableInTimesheets,
+                      })
+                    }
+                    data-testid={`menu-toggle-timesheet-${code.id}`}
+                  >
+                    {code.availableInTimesheets ? (
+                      <>
+                        <Ban className="h-4 w-4 mr-2" />
+                        Remove from Timesheets
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="h-4 w-4 mr-2" />
+                        Add to Timesheets
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedCodeForMerge(code);
+                      setIsMergeOpen(true);
+                    }}
+                    disabled={code.isArchived}
+                    data-testid={`menu-merge-${code.id}`}
+                  >
+                    <GitMerge className="h-4 w-4 mr-2" />
+                    Merge
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => archiveMutation.mutate(code.id)}
+                    disabled={code.isArchived}
+                    data-testid={`menu-archive-${code.id}`}
+                  >
+                    <Archive className="h-4 w-4 mr-2" />
+                    Archive
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
+          );
+        },
+        size: 56,
+        meta: { defaultWidth: 56, align: "right", headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
+    ];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCodeIds, allVisibleSelected, someVisibleSelected]);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "select", label: "Select", pinned: true },
+      { id: "code", label: "Code" },
+      { id: "title", label: "Title" },
+      { id: "xero", label: "Xero" },
+      { id: "timesheet", label: "Timesheet" },
+    ],
+    [],
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Row 1 - Title & Actions (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
-        {/* Left: Title + Count */}
         <div className="flex items-center gap-2">
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
             <span className="text-foreground font-medium">Cost Codes</span>
@@ -325,7 +524,6 @@ export default function CostCodes() {
           </Badge>
         </div>
 
-        {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
@@ -362,11 +560,9 @@ export default function CostCodes() {
         </div>
       </div>
 
-      {/* Row 2 - Search & Filters (36px) */}
+      {/* Row 2 - Search & Filters */}
       <div className="h-9 bg-background flex items-center justify-between px-3 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Search + Filters */}
         <div className="flex items-center gap-1.5 flex-1">
-          {/* Expand/Collapse Toggle */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             onClick={allExpanded ? collapseAll : expandAll}
@@ -380,10 +576,8 @@ export default function CostCodes() {
             )}
           </button>
 
-          {/* Separator */}
           <div className="w-px h-4 bg-border" />
 
-          {/* Search */}
           <div className="relative w-64">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
@@ -395,14 +589,12 @@ export default function CostCodes() {
             />
           </div>
 
-          {/* Separator */}
           <div className="w-px h-4 bg-border" />
 
-          {/* Show Archived Filter */}
           <button
             className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all ${
-              showArchived 
-                ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30 font-medium" 
+              showArchived
+                ? "bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/30 font-medium"
                 : "bg-background border hover-elevate"
             }`}
             onClick={() => setShowArchived(!showArchived)}
@@ -411,6 +603,23 @@ export default function CostCodes() {
             <Archive className="w-3 h-3" />
             <span>Archived</span>
           </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-column-picker"
+              >
+                <Columns3 className="w-3 h-3" />
+                <span>Columns</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0">
+              <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -428,9 +637,8 @@ export default function CostCodes() {
               {selectedCodeIds.size} {selectedCodeIds.size === 1 ? 'item' : 'items'} selected
             </span>
           </div>
-          
+
           <div className="flex items-center gap-1.5">
-            {/* Toggle Timesheets */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-bulk-timesheets">
@@ -440,20 +648,20 @@ export default function CostCodes() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem 
-                  onClick={() => bulkToggleTimesheetMutation.mutate({ 
-                    codeIds: Array.from(selectedCodeIds), 
-                    availableInTimesheets: true 
+                <DropdownMenuItem
+                  onClick={() => bulkToggleTimesheetMutation.mutate({
+                    codeIds: Array.from(selectedCodeIds),
+                    availableInTimesheets: true
                   })}
                   data-testid="menu-bulk-add-timesheets"
                 >
                   <Clock className="h-4 w-4 mr-2" />
                   Add to Timesheets
                 </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => bulkToggleTimesheetMutation.mutate({ 
-                    codeIds: Array.from(selectedCodeIds), 
-                    availableInTimesheets: false 
+                <DropdownMenuItem
+                  onClick={() => bulkToggleTimesheetMutation.mutate({
+                    codeIds: Array.from(selectedCodeIds),
+                    availableInTimesheets: false
                   })}
                   data-testid="menu-bulk-remove-timesheets"
                 >
@@ -463,13 +671,12 @@ export default function CostCodes() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Move to Category */}
             <Select
               onValueChange={(value) => {
                 const categoryId = value === "__none__" ? null : value;
-                bulkMoveCategoryMutation.mutate({ 
-                  codeIds: Array.from(selectedCodeIds), 
-                  categoryId 
+                bulkMoveCategoryMutation.mutate({
+                  codeIds: Array.from(selectedCodeIds),
+                  categoryId
                 });
               }}
             >
@@ -487,7 +694,6 @@ export default function CostCodes() {
               </SelectContent>
             </Select>
 
-            {/* Archive */}
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-50"
               onClick={() => bulkArchiveMutation.mutate(Array.from(selectedCodeIds))}
@@ -498,7 +704,6 @@ export default function CostCodes() {
               <span>Archive</span>
             </button>
 
-            {/* Clear Selection */}
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               onClick={clearSelection}
@@ -520,7 +725,6 @@ export default function CostCodes() {
           </Card>
         ) : (
           <>
-            {/* Categories */}
             {filteredCategories.map((category) => {
               const categoryCodes = getCodesForCategory(category.id);
               const isExpanded = expandedCategories.has(category.id);
@@ -567,7 +771,7 @@ export default function CostCodes() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => {
                                 setSelectedCategoryForEdit(category);
                                 setIsEditCategoryOpen(true);
@@ -578,7 +782,7 @@ export default function CostCodes() {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => {
                                 setSelectedCategoryForMerge(category);
                                 setIsMergeCategoryOpen(true);
@@ -589,7 +793,7 @@ export default function CostCodes() {
                               <GitMerge className="h-4 w-4 mr-2" />
                               Merge
                             </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => archiveCategoryMutation.mutate(category.id)}
                               disabled={!category.isActive}
                               data-testid={`menu-archive-category-${category.id}`}
@@ -604,120 +808,15 @@ export default function CostCodes() {
                   </CardHeader>
                   {isExpanded && categoryCodes.length > 0 && (
                     <CardContent className="p-0 pt-0 pb-2">
-                      <div className="space-y-1 px-4">
-                        {categoryCodes.map((code) => (
-                          <div
-                            key={code.id}
-                            className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate border-t border-border"
-                            data-testid={`row-cost-code-${code.id}`}
-                          >
-                            <Checkbox
-                              checked={selectedCodeIds.has(code.id)}
-                              onCheckedChange={() => toggleCodeSelection(code.id)}
-                              data-testid={`checkbox-code-${code.id}`}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{code.code}</span>
-                                <span className="text-muted-foreground">-</span>
-                                <span>{code.title}</span>
-                                {code.isArchived && (
-                                  <Badge variant="secondary" className="ml-2">
-                                    Archived
-                                  </Badge>
-                                )}
-                                {code.isSynced && (
-                                  <Badge variant="outline" className="ml-2">
-                                    Synced
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {(code as any).xeroTrackingOptionName && (
-                                <Badge variant="outline" className="gap-1">
-                                  Xero: {(code as any).xeroTrackingOptionName}
-                                </Badge>
-                              )}
-                              {code.availableInTimesheets ? (
-                                <Badge variant="outline" className="gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  Timesheet
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="gap-1">
-                                  <Ban className="h-3 w-3" />
-                                  No Timesheet
-                                </Badge>
-                              )}
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    data-testid={`button-actions-${code.id}`}
-                                  >
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem 
-                                    onClick={() => {
-                                      setSelectedCostCodeForEdit(code);
-                                      setIsEditCostCodeOpen(true);
-                                    }}
-                                    data-testid={`menu-edit-${code.id}`}
-                                  >
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      toggleTimesheetMutation.mutate({
-                                        id: code.id,
-                                        availableInTimesheets: !code.availableInTimesheets,
-                                      })
-                                    }
-                                    data-testid={`menu-toggle-timesheet-${code.id}`}
-                                  >
-                                    {code.availableInTimesheets ? (
-                                      <>
-                                        <Ban className="h-4 w-4 mr-2" />
-                                        Remove from Timesheets
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Clock className="h-4 w-4 mr-2" />
-                                        Add to Timesheets
-                                      </>
-                                    )}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem 
-                                    onClick={() => {
-                                      setSelectedCodeForMerge(code);
-                                      setIsMergeOpen(true);
-                                    }}
-                                    disabled={code.isArchived}
-                                    data-testid={`menu-merge-${code.id}`}
-                                  >
-                                    <GitMerge className="h-4 w-4 mr-2" />
-                                    Merge
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => archiveMutation.mutate(code.id)}
-                                    disabled={code.isArchived}
-                                    data-testid={`menu-archive-${code.id}`}
-                                  >
-                                    <Archive className="h-4 w-4 mr-2" />
-                                    Archive
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="px-2" style={{ height: Math.min(categoryCodes.length, 12) * 36 + 32 }}>
+                        <DataTable
+                          data={categoryCodes}
+                          columns={columns}
+                          storageKey={TABLE_STORAGE_KEY}
+                          legacyConfigKey={LEGACY_STORAGE_KEY}
+                          rowKey={(c) => c.id}
+                          rowClassName={(c) => selectedCodeIds.has(c.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : ""}
+                        />
                       </div>
                     </CardContent>
                   )}
@@ -740,126 +839,20 @@ export default function CostCodes() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0 pt-0 pb-2">
-                  <div className="space-y-1 px-4">
-                    {uncategorizedCodes.map((code) => (
-                      <div
-                        key={code.id}
-                        className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate border-t border-border"
-                        data-testid={`row-cost-code-${code.id}`}
-                      >
-                        <Checkbox
-                          checked={selectedCodeIds.has(code.id)}
-                          onCheckedChange={() => toggleCodeSelection(code.id)}
-                          data-testid={`checkbox-code-${code.id}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{code.code}</span>
-                            <span className="text-muted-foreground">-</span>
-                            <span>{code.title}</span>
-                            {code.isArchived && (
-                              <Badge variant="secondary" className="ml-2">
-                                Archived
-                              </Badge>
-                            )}
-                            {code.isSynced && (
-                              <Badge variant="outline" className="ml-2">
-                                Synced
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {(code as any).xeroTrackingOptionName && (
-                            <Badge variant="outline" className="gap-1">
-                              Xero: {(code as any).xeroTrackingOptionName}
-                            </Badge>
-                          )}
-                          {code.availableInTimesheets ? (
-                            <Badge variant="outline" className="gap-1">
-                              <Clock className="h-3 w-3" />
-                              Timesheet
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="gap-1">
-                              <Ban className="h-3 w-3" />
-                              No Timesheet
-                            </Badge>
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                data-testid={`button-actions-${code.id}`}
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  setSelectedCostCodeForEdit(code);
-                                  setIsEditCostCodeOpen(true);
-                                }}
-                                data-testid={`menu-edit-${code.id}`}
-                              >
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  toggleTimesheetMutation.mutate({
-                                    id: code.id,
-                                    availableInTimesheets: !code.availableInTimesheets,
-                                  })
-                                }
-                                data-testid={`menu-toggle-timesheet-${code.id}`}
-                              >
-                                {code.availableInTimesheets ? (
-                                  <>
-                                    <Ban className="h-4 w-4 mr-2" />
-                                    Remove from Timesheets
-                                  </>
-                                ) : (
-                                  <>
-                                    <Clock className="h-4 w-4 mr-2" />
-                                    Add to Timesheets
-                                  </>
-                                )}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  setSelectedCodeForMerge(code);
-                                  setIsMergeOpen(true);
-                                }}
-                                disabled={code.isArchived}
-                                data-testid={`menu-merge-${code.id}`}
-                              >
-                                <GitMerge className="h-4 w-4 mr-2" />
-                                Merge
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => archiveMutation.mutate(code.id)}
-                                disabled={code.isArchived}
-                                data-testid={`menu-archive-${code.id}`}
-                              >
-                                <Archive className="h-4 w-4 mr-2" />
-                                Archive
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="px-2" style={{ height: Math.min(uncategorizedCodes.length, 12) * 36 + 32 }}>
+                    <DataTable
+                      data={uncategorizedCodes}
+                      columns={columns}
+                      storageKey={TABLE_STORAGE_KEY}
+                      legacyConfigKey={LEGACY_STORAGE_KEY}
+                      rowKey={(c) => c.id}
+                      rowClassName={(c) => selectedCodeIds.has(c.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : ""}
+                    />
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Empty State */}
             {filteredCategories.length === 0 && uncategorizedCodes.length === 0 && (
               <Card>
                 <CardContent className="p-12 text-center">
@@ -878,19 +871,19 @@ export default function CostCodes() {
       <AddCategoryDialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen} />
       <AddCostCodeDialog open={isAddCostCodeOpen} onOpenChange={setIsAddCostCodeOpen} />
       <ImportCostCodesDialog open={isImportOpen} onOpenChange={setIsImportOpen} />
-      <MergeCostCodeDialog 
-        open={isMergeOpen} 
-        onOpenChange={setIsMergeOpen} 
+      <MergeCostCodeDialog
+        open={isMergeOpen}
+        onOpenChange={setIsMergeOpen}
         costCode={selectedCodeForMerge}
       />
-      <EditCategoryDialog 
-        open={isEditCategoryOpen} 
-        onOpenChange={setIsEditCategoryOpen} 
+      <EditCategoryDialog
+        open={isEditCategoryOpen}
+        onOpenChange={setIsEditCategoryOpen}
         category={selectedCategoryForEdit}
       />
-      <MergeCategoryDialog 
-        open={isMergeCategoryOpen} 
-        onOpenChange={setIsMergeCategoryOpen} 
+      <MergeCategoryDialog
+        open={isMergeCategoryOpen}
+        onOpenChange={setIsMergeCategoryOpen}
         category={selectedCategoryForMerge}
       />
       <EditCostCodeDialog

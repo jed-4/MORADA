@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type SelectionTemplate } from "@shared/schema";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +27,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -39,9 +50,11 @@ import {
   Trash2,
   Copy,
   Loader2,
+  Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 interface SelectionItem {
   categoryName: string;
@@ -52,11 +65,15 @@ interface SelectionItem {
   sortOrder: number;
 }
 
+const STORAGE_KEY = "selection-templates";
+const LEGACY_STORAGE_KEY = "selection-templates-column-config-v1";
+
 export default function SelectionTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SelectionTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -76,8 +93,8 @@ export default function SelectionTemplates() {
         ...data,
         templateData: data.templateData || [],
         createdBy: user?.id,
-        createdByName: user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}` 
+        createdByName: user?.firstName && user?.lastName
+          ? `${user.firstName} ${user.lastName}`
           : user?.email,
       });
     },
@@ -148,8 +165,8 @@ export default function SelectionTemplates() {
         ...rest,
         name: `${template.name} (Copy)`,
         createdBy: user?.id,
-        createdByName: user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}` 
+        createdByName: user?.firstName && user?.lastName
+          ? `${user.firstName} ${user.lastName}`
           : user?.email,
       });
     },
@@ -211,13 +228,17 @@ export default function SelectionTemplates() {
     }
   };
 
-  const filteredTemplates = templates
-    .filter(template =>
-      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.category?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const filteredTemplates = useMemo(
+    () =>
+      templates
+        .filter((template) =>
+          template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          template.category?.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [templates, searchTerm],
+  );
 
   const getItemCount = (template: SelectionTemplate) => {
     const data = template.templateData as SelectionItem[] | null;
@@ -232,6 +253,150 @@ export default function SelectionTemplates() {
       default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
     }
   };
+
+  const columns = useMemo<ColumnDef<SelectionTemplate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name,
+      cell: ({ row }) => (
+        <span className="text-xs font-semibold" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 240,
+      meta: { defaultWidth: 240, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (t) => t.category || "",
+      cell: ({ row }) => (
+        row.original.category ? (
+          <Badge
+            variant="secondary"
+            className={cn("h-4 px-1.5 text-[10px]", getCategoryColor(row.original.category))}
+            data-testid={`cell-category-${row.original.id}`}
+          >
+            {row.original.category}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground/50">—</span>
+        )
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Category" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "description",
+      header: "Description",
+      accessorFn: (t) => t.description || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-description-${row.original.id}`}>
+          {row.original.description || "—"}
+        </span>
+      ),
+      size: 320,
+      meta: { defaultWidth: 320, headerLabel: "Description" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "itemCount",
+      header: "Items",
+      accessorFn: (t) => getItemCount(t),
+      cell: ({ row }) => {
+        const count = getItemCount(row.original);
+        return (
+          <span className="text-xs tabular-nums" data-testid={`cell-items-${row.original.id}`}>
+            {count}
+          </span>
+        );
+      },
+      size: 80,
+      meta: { defaultWidth: 80, align: "right", headerLabel: "Items" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "updatedAt",
+      header: "Updated",
+      accessorFn: (t) => (t.updatedAt ? new Date(t.updatedAt).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground" data-testid={`cell-updated-${row.original.id}`}>
+          {row.original.updatedAt ? format(new Date(row.original.updatedAt), "MMM d, yyyy") : "—"}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Updated" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end" data-testid={`cell-actions-${row.original.id}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenEdit(row.original);
+                }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Edit3 className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  duplicateMutation.mutate(row.original);
+                }}
+                data-testid={`button-duplicate-${row.original.id}`}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteMutation.mutate(row.original.id);
+                }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 56,
+      meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  ], [duplicateMutation, deleteMutation]);
+
+  const pickerColumns = useMemo(
+    () => columns
+      .filter((c) => c.id !== "actions")
+      .map((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        return {
+          id: c.id as string,
+          label: meta.headerLabel ?? (c.id as string),
+          pinned: !!meta.pinned || c.id === "name",
+        };
+      }),
+    [columns],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -272,10 +437,22 @@ export default function SelectionTemplates() {
             />
           </div>
         </div>
+
+        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1" data-testid="button-column-picker">
+              <Columns3 className="w-3 h-3" />
+              Columns
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0 w-auto">
+            <DataTableColumnPicker storageKey={STORAGE_KEY} columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
-      {/* Templates List */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* Templates Table */}
+      <div className="flex-1 overflow-hidden">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             Loading templates...
@@ -292,8 +469,8 @@ export default function SelectionTemplates() {
                 : "Start by adding your first selection template"}
             </p>
             {!searchTerm && (
-              <button 
-                onClick={handleOpenAdd} 
+              <button
+                onClick={handleOpenAdd}
                 className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
@@ -303,103 +480,20 @@ export default function SelectionTemplates() {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => navigate(`/selection-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {template.category && (
-                      <Badge 
-                        variant="secondary" 
-                        className={`h-4 px-1.5 text-[10px] ${getCategoryColor(template.category)}`}
-                      >
-                        {template.category}
-                      </Badge>
-                    )}
-
-                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                      {getItemCount(template)} {getItemCount(template) === 1 ? 'item' : 'items'}
-                    </Badge>
-                    
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                      </span>
-                    </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEdit(template);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            data={filteredTemplates}
+            columns={columns}
+            storageKey={STORAGE_KEY}
+            legacyConfigKey={LEGACY_STORAGE_KEY}
+            rowKey={(t) => t.id}
+            onRowClick={(t) => navigate(`/selection-templates/${t.id}`)}
+          />
         )}
       </div>
 
       {/* Add/Edit Template Dialog */}
-      <Dialog 
-        open={isAddingTemplate || !!editingTemplate} 
+      <Dialog
+        open={isAddingTemplate || !!editingTemplate}
         onOpenChange={(open) => {
           if (!open) {
             setIsAddingTemplate(false);
@@ -414,7 +508,7 @@ export default function SelectionTemplates() {
               {editingTemplate ? "Edit Selection Template" : "New Selection Template"}
             </DialogTitle>
             <DialogDescription>
-              {editingTemplate 
+              {editingTemplate
                 ? "Update the template details below."
                 : "Create a new selection template to reuse across projects."}
             </DialogDescription>
@@ -434,8 +528,8 @@ export default function SelectionTemplates() {
 
             <div className="space-y-2">
               <Label htmlFor="category">Category</Label>
-              <Select 
-                value={formData.category} 
+              <Select
+                value={formData.category}
                 onValueChange={(value) => setFormData({ ...formData, category: value })}
               >
                 <SelectTrigger id="category" data-testid="select-template-category">

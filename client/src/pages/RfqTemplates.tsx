@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type RfqTemplate, type TemplateCategory } from "@shared/schema";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +58,7 @@ import {
   Loader2,
   GripVertical,
   X,
+  Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -365,6 +377,163 @@ export default function RfqTemplates() {
 
   const uniqueCategoryIds = [...new Set(templates.map(t => t.categoryId).filter(Boolean))] as string[];
 
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+
+  type RfqTemplateRow = RfqTemplate;
+
+  const columns = useMemo<ColumnDef<RfqTemplateRow, unknown>[]>(() => {
+    return [
+      {
+        id: "name",
+        header: "Name",
+        accessorFn: (t) => t.name || "",
+        cell: ({ row }) => (
+          <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
+            {row.original.name}
+          </span>
+        ),
+        size: 220,
+        meta: { defaultWidth: 220, headerLabel: "Name" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "description",
+        header: "Description",
+        accessorFn: (t) => t.description || "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-description-${row.original.id}`}>
+            {row.original.description || "—"}
+          </span>
+        ),
+        size: 280,
+        meta: { defaultWidth: 280, headerLabel: "Description" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "category",
+        header: "Category",
+        accessorFn: (t) => getCategoryBreadcrumb(t.categoryId),
+        cell: ({ row }) => {
+          const breadcrumb = getCategoryBreadcrumb(row.original.categoryId);
+          return breadcrumb ? (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px]">{breadcrumb}</Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Category" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "trade",
+        header: "Trade",
+        accessorFn: (t) => t.tradeName || "",
+        cell: ({ row }) => (
+          row.original.tradeName ? (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{row.original.tradeName}</Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Trade" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "items",
+        header: "Items",
+        accessorFn: (t) => getItemCount(t),
+        cell: ({ row }) => (
+          <span className="text-xs tabular-nums" data-testid={`cell-items-${row.original.id}`}>
+            {getItemCount(row.original)}
+          </span>
+        ),
+        size: 70,
+        meta: { defaultWidth: 70, align: "right", headerLabel: "Items" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "updatedAt",
+        header: "Updated",
+        accessorFn: (t) => (t.updatedAt ? new Date(t.updatedAt).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground tabular-nums" data-testid={`cell-updated-${row.original.id}`}>
+            {row.original.updatedAt ? format(new Date(row.original.updatedAt), "MMM d, yyyy") : "—"}
+          </span>
+        ),
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Updated" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1" data-testid={`cell-actions-${row.original.id}`}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  data-testid={`button-menu-${row.original.id}`}
+                >
+                  <MoreVertical className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenEdit(row.original);
+                  }}
+                  data-testid={`button-edit-${row.original.id}`}
+                >
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    duplicateMutation.mutate(row.original);
+                  }}
+                  data-testid={`button-duplicate-${row.original.id}`}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteMutation.mutate(row.original.id);
+                  }}
+                  className="text-destructive"
+                  data-testid={`button-delete-${row.original.id}`}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+        size: 56,
+        meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories, duplicateMutation, deleteMutation]);
+
+  const pickerColumns = useMemo(
+    () => columns
+      .filter((c) => c.id !== "actions")
+      .map((c) => {
+        const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+        return {
+          id: c.id as string,
+          label: meta.headerLabel ?? (c.id as string),
+          pinned: !!meta.pinned,
+        };
+      }),
+    [columns],
+  );
+
   return (
     <div className="h-full flex flex-col">
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
@@ -420,9 +589,20 @@ export default function RfqTemplates() {
             </Select>
           )}
         </div>
+
+        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6" data-testid="button-column-picker">
+              <Columns3 className="h-3 w-3" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0">
+            <DataTableColumnPicker storageKey="rfq-templates" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 min-h-0">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             Loading templates...
@@ -439,8 +619,8 @@ export default function RfqTemplates() {
                 : "Start by adding your first RFQ template"}
             </p>
             {!searchTerm && categoryFilter === "all" && (
-              <button 
-                onClick={handleOpenAdd} 
+              <button
+                onClick={handleOpenAdd}
                 className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
@@ -450,100 +630,14 @@ export default function RfqTemplates() {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => navigate(`/rfq-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {getCategoryBreadcrumb(template.categoryId) && (
-                      <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                        {getCategoryBreadcrumb(template.categoryId)}
-                      </Badge>
-                    )}
-
-                    {template.tradeName && (
-                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                        {template.tradeName}
-                      </Badge>
-                    )}
-
-                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                      {getItemCount(template)} {getItemCount(template) === 1 ? 'item' : 'items'}
-                    </Badge>
-                    
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                      </span>
-                    </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEdit(template);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            data={filteredTemplates}
+            columns={columns}
+            storageKey="rfq-templates"
+            legacyConfigKey="rfq-templates-column-config-v1"
+            rowKey={(t) => t.id}
+            onRowClick={(t) => navigate(`/rfq-templates/${t.id}`)}
+          />
         )}
       </div>
 

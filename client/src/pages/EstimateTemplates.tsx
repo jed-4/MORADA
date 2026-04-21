@@ -1,8 +1,15 @@
 import { useState, useRef, useMemo, type ReactNode } from "react";
 import { useLocation } from "wouter";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -47,6 +54,7 @@ import {
   GripVertical,
   StickyNote,
   Clock,
+  Columns3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -743,6 +751,127 @@ export default function EstimateTemplates() {
     return data?.length || 0;
   };
 
+  const templateColumns = useMemo<ColumnDef<EstimateTemplate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-semibold" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 240,
+      meta: { defaultWidth: 240, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "description",
+      header: "Description",
+      accessorFn: (t) => t.description || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-desc-${row.original.id}`}>
+          {row.original.description || "—"}
+        </span>
+      ),
+      size: 320,
+      meta: { defaultWidth: 320, headerLabel: "Description" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "category",
+      header: "Category",
+      accessorFn: (t) => t.category || "",
+      cell: ({ row }) => row.original.category ? (
+        <Badge
+          variant="secondary"
+          className={`h-4 px-1.5 text-[10px] ${getCategoryColor(row.original.category)}`}
+          data-testid={`cell-category-${row.original.id}`}
+        >
+          {row.original.category}
+        </Badge>
+      ) : <span className="text-xs text-muted-foreground">—</span>,
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Category" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "items",
+      header: "Items",
+      accessorFn: (t) => getItemCount(t),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums" data-testid={`cell-items-${row.original.id}`}>
+          {getItemCount(row.original)}
+        </span>
+      ),
+      size: 80,
+      meta: { defaultWidth: 80, align: "right", headerLabel: "Items" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "updated",
+      header: "Updated",
+      accessorFn: (t) => new Date(t.updatedAt).getTime(),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground" data-testid={`cell-updated-${row.original.id}`}>
+          {format(new Date(row.original.updatedAt), "MMM d, yyyy")}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Updated" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end" data-testid={`cell-actions-${row.original.id}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => { e.stopPropagation(); handleOpenEdit(row.original); }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Edit3 className="h-4 w-4 mr-2" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(row.original); }}
+                data-testid={`button-duplicate-${row.original.id}`}
+              >
+                <Copy className="h-4 w-4 mr-2" /> Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(row.original.id); }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 56,
+      meta: { defaultWidth: 56, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
+
+  const pickerColumns = useMemo(() => [
+    { id: "name", label: "Name" },
+    { id: "description", label: "Description" },
+    { id: "category", label: "Category" },
+    { id: "items", label: "Items" },
+    { id: "updated", label: "Updated" },
+  ], []);
+
   const getCategoryColor = (category: string | null) => {
     switch (category?.toLowerCase()) {
       case "residential": return "bg-green-500/10 text-green-700 dark:text-green-400";
@@ -792,6 +921,20 @@ export default function EstimateTemplates() {
                 data-testid="input-search-templates"
               />
             </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-columns-templates"
+                >
+                  <Columns3 className="w-3 h-3" />
+                  <span>Columns</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="p-0 w-auto">
+                <DataTableColumnPicker storageKey="estimate-templates" columns={pickerColumns} />
+              </PopoverContent>
+            </Popover>
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
               onClick={() => setIsImportDialogOpen(true)}
@@ -1232,138 +1375,61 @@ export default function EstimateTemplates() {
         </div>
       )}
 
-      {/* Estimate Items Tab (existing content) */}
-      {activeTab === 'items' && <div className="flex-1 overflow-auto p-4">
-        {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            Loading templates...
+      {/* Estimate Items Tab */}
+      {activeTab === 'items' && (
+        isLoading ? (
+          <div className="flex-1 overflow-auto p-4">
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              Loading templates...
+            </div>
           </div>
         ) : filteredTemplates.length === 0 ? (
-          <div className="text-center py-8">
-            <Calculator className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-sm font-medium mb-2">
-              {searchTerm ? "No templates found" : "No templates yet"}
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              {searchTerm
-                ? "Try adjusting your search terms"
-                : "Start by adding your first estimate template or import from Excel"}
-            </p>
-            {!searchTerm && (
-              <div className="flex items-center gap-2 justify-center">
-                <button 
-                  onClick={() => setIsImportDialogOpen(true)} 
-                  className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                  data-testid="button-import-first-template"
-                >
-                  <Upload className="h-3 w-3" />
-                  Import from Excel
-                </button>
-                <button 
-                  onClick={handleOpenAdd} 
-                  className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
-                  data-testid="button-create-first-template"
-                >
-                  <Plus className="h-3 w-3" />
-                  Create Manually
-                </button>
-              </div>
-            )}
+          <div className="flex-1 overflow-auto p-4">
+            <div className="text-center py-8">
+              <Calculator className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-sm font-medium mb-2">
+                {searchTerm ? "No templates found" : "No templates yet"}
+              </h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                {searchTerm
+                  ? "Try adjusting your search terms"
+                  : "Start by adding your first estimate template or import from Excel"}
+              </p>
+              {!searchTerm && (
+                <div className="flex items-center gap-2 justify-center">
+                  <button
+                    onClick={() => setIsImportDialogOpen(true)}
+                    className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-import-first-template"
+                  >
+                    <Upload className="h-3 w-3" />
+                    Import from Excel
+                  </button>
+                  <button
+                    onClick={handleOpenAdd}
+                    className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-create-first-template"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Create Manually
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => navigate(`/estimate-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {template.category && (
-                      <Badge 
-                        variant="secondary" 
-                        className={`h-4 px-1.5 text-[10px] ${getCategoryColor(template.category)}`}
-                      >
-                        {template.category}
-                      </Badge>
-                    )}
-
-                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                      {getItemCount(template)} {getItemCount(template) === 1 ? 'item' : 'items'}
-                    </Badge>
-                    
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                      </span>
-                    </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEdit(template);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="flex-1 min-h-0">
+            <DataTable
+              data={filteredTemplates}
+              columns={templateColumns}
+              storageKey="estimate-templates"
+              legacyConfigKey="estimate-templates-column-config-v1"
+              rowKey={(t) => t.id}
+              onRowClick={(t) => navigate(`/estimate-templates/${t.id}`)}
+            />
           </div>
-        )}
-      </div>}
+        )
+      )}
 
       {/* Add/Edit Template Dialog */}
       <Dialog 

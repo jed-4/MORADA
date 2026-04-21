@@ -4,23 +4,20 @@ import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Plus, 
-  FileText, 
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Plus,
+  FileText,
   Search,
-  DollarSign,
-  Calendar,
-  User,
   Send,
   CheckCircle,
   XCircle,
   FileCheck,
   ChevronDown,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  Columns3,
 } from "lucide-react";
 import {
   Select,
@@ -36,6 +33,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { type Proposal, type Project, type FieldCategoryWithOptions } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
@@ -51,9 +59,9 @@ export default function Proposals() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [activeTab, setActiveTab] = useState<"active" | "completed" | "archived">("active");
   const [sortBy, setSortBy] = useState<"status" | "alphabetical">("status");
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const { toast } = useToast();
 
-  // Auto-select project if accessed from project context
   useEffect(() => {
     if (params.projectId) {
       setSelectedProject(params.projectId);
@@ -70,7 +78,6 @@ export default function Proposals() {
     }
   };
 
-  // Mutation to update proposal status
   const updateStatusMutation = useMutation({
     mutationFn: async ({ proposalId, status }: { proposalId: string; status: string }) => {
       return await apiRequest(`/api/proposals/${proposalId}`, "PATCH", { status });
@@ -91,7 +98,6 @@ export default function Proposals() {
     },
   });
 
-  // Mutation to archive/unarchive proposal
   const toggleArchiveMutation = useMutation({
     mutationFn: async ({ proposalId, isArchived }: { proposalId: string; isArchived: boolean }) => {
       return await apiRequest(`/api/proposals/${proposalId}`, "PATCH", { isArchived });
@@ -100,7 +106,7 @@ export default function Proposals() {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
       toast({
         title: variables.isArchived ? "Proposal archived" : "Proposal restored",
-        description: variables.isArchived 
+        description: variables.isArchived
           ? "Proposal has been moved to archived proposals."
           : "Proposal has been restored to active proposals.",
       });
@@ -114,17 +120,14 @@ export default function Proposals() {
     },
   });
 
-  // Fetch all proposals
   const { data: proposals = [], isLoading: proposalsLoading } = useQuery<Proposal[]>({
     queryKey: ["/api/proposals"],
   });
 
-  // Fetch all projects for display
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  // Fetch proposal status options from field settings
   const { data: proposalStatusesData } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/proposal.status"],
   });
@@ -133,37 +136,32 @@ export default function Proposals() {
     return proposalStatusesData?.options || [];
   }, [proposalStatusesData]);
 
-  // Filter and sort proposals
   const filteredProposals = useMemo(() => {
     let filtered = proposals.filter(proposal => {
-      // In project context, show all proposals (no tab filtering)
-      // In global context, use tab-based filtering
       let matchesTab = true;
       if (!isProjectContext) {
         if (activeTab === "archived") {
           matchesTab = proposal.isArchived;
         } else if (activeTab === "completed") {
           matchesTab = !proposal.isArchived && (proposal.status === "accepted" || proposal.status === "rejected");
-        } else { // active
+        } else {
           matchesTab = !proposal.isArchived && proposal.status !== "accepted" && proposal.status !== "rejected";
         }
       }
-      
+
       const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (proposal.notes || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchesProject = selectedProject === "All" || proposal.projectId === selectedProject;
       const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
       return matchesTab && matchesSearch && matchesProject && matchesStatus;
     });
-    
-    // Apply sorting for project context
+
     if (isProjectContext) {
       if (sortBy === "alphabetical") {
-        filtered = [...filtered].sort((a, b) => 
+        filtered = [...filtered].sort((a, b) =>
           (a.name || "").localeCompare(b.name || "")
         );
       } else {
-        // Sort by status
         const statusOrder = { draft: 0, sent: 1, accepted: 2, rejected: 3 };
         filtered = [...filtered].sort((a, b) => {
           const statusA = statusOrder[a.status as keyof typeof statusOrder] ?? 999;
@@ -172,20 +170,10 @@ export default function Proposals() {
         });
       }
     }
-    
+
     return filtered;
   }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab, isProjectContext, sortBy]);
 
-  // Calculate status counts
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    proposals.forEach(proposal => {
-      counts[proposal.status] = (counts[proposal.status] || 0) + 1;
-    });
-    return counts;
-  }, [proposals]);
-
-  // Calculate tab counts
   const tabCounts = useMemo(() => {
     const active = proposals.filter(p => !p.isArchived && p.status !== "accepted" && p.status !== "rejected").length;
     const completed = proposals.filter(p => !p.isArchived && (p.status === "accepted" || p.status === "rejected")).length;
@@ -208,7 +196,7 @@ export default function Proposals() {
     if (statusOption?.color) {
       return "default";
     }
-    
+
     switch (status) {
       case 'draft': return "secondary";
       case 'sent': return "default";
@@ -230,6 +218,217 @@ export default function Proposals() {
     }).format(amount);
   };
 
+  const handleRowClick = (proposalId: string) => {
+    if (isProjectContext) {
+      setLocation(`/projects/${params.projectId}/proposals/${proposalId}`);
+    } else {
+      setLocation(`/proposals/${proposalId}`);
+    }
+  };
+
+  const proposalColumns = useMemo<ColumnDef<Proposal, unknown>[]>(() => {
+    const cols: ColumnDef<Proposal, unknown>[] = [
+      {
+        id: "name",
+        header: "Name",
+        accessorFn: (p) => p.name || "",
+        cell: ({ row }) => {
+          const proposal = row.original;
+          const project = projects.find(p => p.id === proposal.projectId);
+          return (
+            <div className="flex items-center gap-2 min-w-0">
+              {project && (
+                <ProjectIcon
+                  icon={project.icon}
+                  color={project.color}
+                  className="w-4 h-4 shrink-0"
+                />
+              )}
+              <span className="text-xs font-medium truncate" data-testid={`text-proposal-title-${proposal.id}`}>
+                {proposal.name}
+              </span>
+            </div>
+          );
+        },
+        size: 240,
+        meta: { defaultWidth: 240, headerLabel: "Name" } satisfies DataTableColumnMeta,
+      },
+    ];
+
+    if (!isProjectContext) {
+      cols.push({
+        id: "project",
+        header: "Project",
+        accessorFn: (p) => projects.find(pr => pr.id === p.projectId)?.name || "",
+        cell: ({ row }) => {
+          const project = projects.find(p => p.id === row.original.projectId);
+          if (!project) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <span className="text-xs text-muted-foreground truncate">{project.name}</span>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Project" } satisfies DataTableColumnMeta,
+      });
+    }
+
+    cols.push(
+      {
+        id: "notes",
+        header: "Notes",
+        accessorFn: (p) => p.notes || "",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground truncate">
+            {row.original.notes || "—"}
+          </span>
+        ),
+        size: 200,
+        meta: { defaultWidth: 200, headerLabel: "Notes", defaultHidden: true } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "expiryDate",
+        header: "Valid Until",
+        accessorFn: (p) => (p.expiryDate ? new Date(p.expiryDate).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {row.original.expiryDate ? format(new Date(row.original.expiryDate), 'MMM d, yyyy') : "—"}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Valid Until" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "sentDate",
+        header: "Sent",
+        accessorFn: (p) => (p.sentDate ? new Date(p.sentDate).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {row.original.sentDate ? format(new Date(row.original.sentDate), 'MMM d, yyyy') : "—"}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Sent" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "acceptedDate",
+        header: "Accepted",
+        accessorFn: (p) => (p.acceptedDate ? new Date(p.acceptedDate).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {row.original.acceptedDate ? format(new Date(row.original.acceptedDate), 'MMM d, yyyy') : "—"}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, headerLabel: "Accepted", defaultHidden: true } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (p) => p.status,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const proposal = row.original;
+          const statusColor = getStatusColor(proposal.status);
+          const statusOption = proposalStatuses.find(s => s.key === proposal.status);
+          return (
+            <span onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex"
+                    data-testid={`badge-proposal-status-${proposal.id}`}
+                  >
+                    <Badge
+                      variant={getStatusBadgeVariant(proposal.status)}
+                      className="gap-1 px-2 py-0.5 hover-elevate cursor-pointer"
+                      style={statusColor ? {
+                        backgroundColor: `${statusColor}15`,
+                        color: statusColor,
+                        borderColor: `${statusColor}30`
+                      } : undefined}
+                    >
+                      {getStatusIcon(proposal.status)}
+                      <span className="font-medium">{statusOption?.name || proposal.status}</span>
+                      <ChevronDown className="w-3 h-3 ml-0.5" />
+                    </Badge>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  {proposalStatuses.map((status) => (
+                    <DropdownMenuItem
+                      key={status.key}
+                      onClick={() => updateStatusMutation.mutate({
+                        proposalId: proposal.id,
+                        status: status.key
+                      })}
+                      className="gap-2"
+                      data-testid={`menu-item-status-${status.key}`}
+                    >
+                      {getStatusIcon(status.key)}
+                      <span className="flex-1">{status.name}</span>
+                      {proposal.status === status.key && (
+                        <CheckCircle className="w-4 h-4" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => toggleArchiveMutation.mutate({
+                      proposalId: proposal.id,
+                      isArchived: !proposal.isArchived
+                    })}
+                    className="gap-2"
+                    data-testid={`menu-item-archive-${proposal.id}`}
+                  >
+                    {proposal.isArchived ? (
+                      <>
+                        <ArchiveRestore className="w-4 h-4" />
+                        <span>Restore</span>
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="w-4 h-4" />
+                        <span>Archive</span>
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
+          );
+        },
+        size: 160,
+        meta: { defaultWidth: 160, headerLabel: "Status" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "totalAmount",
+        header: "Total",
+        accessorFn: (p) => p.totalAmount,
+        cell: ({ row }) => (
+          <span className="text-xs font-semibold tabular-nums" data-testid={`text-proposal-amount-${row.original.id}`}>
+            {formatCurrency(row.original.totalAmount)}
+          </span>
+        ),
+        size: 120,
+        meta: { defaultWidth: 120, align: "right", headerLabel: "Total" } satisfies DataTableColumnMeta,
+      },
+    );
+
+    return cols;
+  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation]);
+
+  const pickerColumns = useMemo(() => {
+    return proposalColumns.map((c) => {
+      const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+      return {
+        id: c.id as string,
+        label: meta.headerLabel ?? (c.id as string),
+        pinned: !!meta.pinned,
+      };
+    });
+  }, [proposalColumns]);
+
   if (proposalsLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -250,17 +449,29 @@ export default function Proposals() {
                 Create and manage project proposals
               </p>
             </div>
-            <Button 
-              onClick={handleNewProposal} 
-              data-testid="button-new-proposal"
-              className="gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              New Proposal
-            </Button>
+            <div className="flex items-center gap-2">
+              <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-column-picker">
+                    <Columns3 className="w-4 h-4" />
+                    Columns
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="p-0">
+                  <DataTableColumnPicker storageKey="proposals" columns={pickerColumns} />
+                </PopoverContent>
+              </Popover>
+              <Button
+                onClick={handleNewProposal}
+                data-testid="button-new-proposal"
+                className="gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                New Proposal
+              </Button>
+            </div>
           </div>
 
-          {/* Tabs - only show in global context */}
           {!isProjectContext && (
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "completed" | "archived")} className="mt-6">
               <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
@@ -295,7 +506,6 @@ export default function Proposals() {
             </Tabs>
           )}
 
-          {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3 mt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -351,8 +561,7 @@ export default function Proposals() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="p-4 sm:p-6 min-w-[800px]">
+      <div className="flex-1 overflow-hidden">
         {filteredProposals.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <FileText className="w-12 h-12 text-muted-foreground mb-4" />
@@ -370,162 +579,15 @@ export default function Proposals() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {filteredProposals.map((proposal) => {
-              const project = projects.find(p => p.id === proposal.projectId);
-              const statusColor = getStatusColor(proposal.status);
-              const statusOption = proposalStatuses.find(s => s.key === proposal.status);
-              
-              return (
-                <Card 
-                  key={proposal.id}
-                  className="hover-elevate cursor-pointer transition-all"
-                  onClick={() => {
-                    if (isProjectContext) {
-                      setLocation(`/projects/${params.projectId}/proposals/${proposal.id}`);
-                    } else {
-                      setLocation(`/proposals/${proposal.id}`);
-                    }
-                  }}
-                  data-testid={`card-proposal-${proposal.id}`}
-                >
-                  <div className="flex items-center gap-6 p-6">
-                    {/* Left: Title and Project */}
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {project && (
-                        <ProjectIcon 
-                          icon={project.icon} 
-                          color={project.color} 
-                          className="w-6 h-6 shrink-0" 
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-base" data-testid={`text-proposal-title-${proposal.id}`}>
-                          {proposal.name}
-                        </h3>
-                        {project && (
-                          <p className="text-sm text-muted-foreground">
-                            {project.name}
-                          </p>
-                        )}
-                        {proposal.notes && (
-                          <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
-                            {proposal.notes}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Middle: Additional Info */}
-                    <div className="flex items-center gap-6 text-sm shrink-0">
-                      {proposal.expiryDate && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Calendar className="w-4 h-4" />
-                          <span className="text-sm">
-                            Valid until {format(new Date(proposal.expiryDate), 'MMM d, yyyy')}
-                          </span>
-                        </div>
-                      )}
-
-                      {proposal.sentDate && !proposal.acceptedDate && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Send className="w-4 h-4" />
-                          <span className="text-sm">
-                            Sent {format(new Date(proposal.sentDate), 'MMM d, yyyy')}
-                          </span>
-                        </div>
-                      )}
-
-                      {proposal.acceptedDate && (
-                        <div className="flex items-center gap-2 text-green-600">
-                          <CheckCircle className="w-4 h-4" />
-                          <span className="text-sm font-medium">
-                            Accepted {format(new Date(proposal.acceptedDate), 'MMM d, yyyy')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Status Column */}
-                    <div className="shrink-0 min-w-[140px]" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <div className="cursor-pointer">
-                            <Badge 
-                              variant={getStatusBadgeVariant(proposal.status)}
-                              className="gap-1.5 px-3 py-1.5 w-full justify-center hover-elevate"
-                              style={statusColor ? {
-                                backgroundColor: `${statusColor}15`,
-                                color: statusColor,
-                                borderColor: `${statusColor}30`
-                              } : undefined}
-                              data-testid={`badge-proposal-status-${proposal.id}`}
-                            >
-                              {getStatusIcon(proposal.status)}
-                              <span className="font-medium">{statusOption?.name || proposal.status}</span>
-                              <ChevronDown className="w-3 h-3 ml-1" />
-                            </Badge>
-                          </div>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="w-48">
-                          {proposalStatuses.map((status) => {
-                            const statusColor = status.color;
-                            return (
-                              <DropdownMenuItem
-                                key={status.key}
-                                onClick={() => updateStatusMutation.mutate({ 
-                                  proposalId: proposal.id, 
-                                  status: status.key 
-                                })}
-                                className="gap-2"
-                                data-testid={`menu-item-status-${status.key}`}
-                              >
-                                {getStatusIcon(status.key)}
-                                <span className="flex-1">{status.name}</span>
-                                {proposal.status === status.key && (
-                                  <CheckCircle className="w-4 h-4" />
-                                )}
-                              </DropdownMenuItem>
-                            );
-                          })}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => toggleArchiveMutation.mutate({ 
-                              proposalId: proposal.id, 
-                              isArchived: !proposal.isArchived 
-                            })}
-                            className="gap-2"
-                            data-testid={`menu-item-archive-${proposal.id}`}
-                          >
-                            {proposal.isArchived ? (
-                              <>
-                                <ArchiveRestore className="w-4 h-4" />
-                                <span>Restore</span>
-                              </>
-                            ) : (
-                              <>
-                                <Archive className="w-4 h-4" />
-                                <span>Archive</span>
-                              </>
-                            )}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    {/* Price Column */}
-                    <div className="shrink-0 min-w-[140px] text-right">
-                      <div className="text-lg font-semibold" data-testid={`text-proposal-amount-${proposal.id}`}>
-                        {formatCurrency(proposal.totalAmount)}
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+          <DataTable
+            data={filteredProposals}
+            columns={proposalColumns}
+            storageKey="proposals"
+            legacyConfigKey="proposals-column-config-v1"
+            rowKey={(p) => p.id}
+            onRowClick={(p) => handleRowClick(p.id)}
+          />
         )}
-        </div>
       </div>
     </div>
   );

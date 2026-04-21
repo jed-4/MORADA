@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { 
+import {
   type ChecklistTemplate,
   type UserRole,
 } from "@shared/schema";
@@ -16,6 +16,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   CheckSquare,
   Plus,
@@ -27,8 +32,15 @@ import {
   Download,
   Edit3,
   Lock,
+  Columns3,
 } from "lucide-react";
 import { format } from "date-fns";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
 import { ImportChecklistDialog } from "@/components/checklist/ImportChecklistDialog";
 
@@ -38,6 +50,7 @@ export default function ChecklistTemplates() {
   const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const { toast } = useToast();
 
   const handleTemplateCreated = (templateId: string) => {
@@ -98,13 +111,13 @@ export default function ChecklistTemplates() {
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to export");
-      
+
       const data = await response.json();
-      
+
       const headers = ["Checklist Group", "Checklist", "Checklist Item", "Type", "Description"];
       const csvRows = [
         headers.join(","),
-        ...data.map((row: any) => [
+        ...data.map((row: { templateName?: string; groupName?: string; itemDescription?: string; type?: string; templateDescription?: string }) => [
           `"${row.templateName || ""}"`,
           `"${row.groupName || ""}"`,
           `"${row.itemDescription || ""}"`,
@@ -112,7 +125,7 @@ export default function ChecklistTemplates() {
           `"${row.templateDescription || ""}"`
         ].join(","))
       ];
-      
+
       const csvContent = csvRows.join("\n");
       const blob = new Blob([csvContent], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
@@ -121,7 +134,7 @@ export default function ChecklistTemplates() {
       a.download = `checklist-groups-${new Date().toISOString().split("T")[0]}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-      
+
       toast({
         title: "Export successful",
         description: "Checklist groups have been exported to CSV.",
@@ -135,13 +148,17 @@ export default function ChecklistTemplates() {
     }
   };
 
-  const filteredTemplates = templates
-    .filter(template =>
-      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.type.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const filteredTemplates = useMemo(
+    () =>
+      templates
+        .filter((template) =>
+          template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          template.type.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [templates, searchTerm],
+  );
 
   const getRoleNames = (roleIds: string[] | null | unknown) => {
     const ids = Array.isArray(roleIds) ? roleIds as string[] : [];
@@ -158,6 +175,165 @@ export default function ChecklistTemplates() {
       default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
     }
   };
+
+  const columns = useMemo<ColumnDef<ChecklistTemplate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (t) => t.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "description",
+      header: "Description",
+      accessorFn: (t) => t.description || "",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground line-clamp-1" data-testid={`cell-description-${row.original.id}`}>
+          {row.original.description || "—"}
+        </span>
+      ),
+      size: 280,
+      meta: { defaultWidth: 280, headerLabel: "Description" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "type",
+      header: "Type",
+      accessorFn: (t) => t.type || "",
+      cell: ({ row }) => (
+        <Badge
+          variant="secondary"
+          className={`h-4 px-1.5 text-[10px] ${getTypeColor(row.original.type)}`}
+          data-testid={`badge-type-${row.original.id}`}
+        >
+          {row.original.type}
+        </Badge>
+      ),
+      size: 100,
+      meta: { defaultWidth: 100, headerLabel: "Type" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "roles",
+      header: "Roles",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const roles = Array.isArray(row.original.visibleToRoles)
+          ? (row.original.visibleToRoles as string[])
+          : [];
+        if (roles.length === 0) {
+          return <span className="text-xs text-muted-foreground/40">—</span>;
+        }
+        return (
+          <div
+            className="flex items-center gap-1 text-[10px] text-muted-foreground"
+            title={`Visible to: ${getRoleNames(roles).join(', ')}`}
+            data-testid={`badge-roles-${row.original.id}`}
+          >
+            <Lock className="w-3 h-3" />
+            <span>{roles.length} role{roles.length !== 1 ? 's' : ''}</span>
+          </div>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, headerLabel: "Roles" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "createdAt",
+      header: "Created",
+      accessorFn: (t) => (t.createdAt ? new Date(t.createdAt).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground" data-testid={`cell-created-${row.original.id}`}>
+          {row.original.createdAt ? format(new Date(row.original.createdAt), "MMM d, yyyy") : "—"}
+        </span>
+      ),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Created" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end" data-testid={`cell-actions-${row.original.id}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`button-menu-${row.original.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLocation(`/checklist-templates/${row.original.id}`);
+                }}
+                data-testid={`button-open-${row.original.id}`}
+              >
+                <Edit3 className="h-4 w-4 mr-2" />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingTemplate(row.original);
+                }}
+                data-testid={`button-edit-${row.original.id}`}
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                Edit / Set Roles
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  duplicateMutation.mutate(row.original.id);
+                }}
+                data-testid={`button-duplicate-${row.original.id}`}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteMutation.mutate(row.original.id);
+                }}
+                className="text-destructive"
+                data-testid={`button-delete-${row.original.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 60,
+      meta: { defaultWidth: 60, align: "right", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  ], [allRoles, deleteMutation, duplicateMutation, setLocation]);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "name", label: "Name" },
+      { id: "description", label: "Description" },
+      { id: "type", label: "Type" },
+      { id: "roles", label: "Roles" },
+      { id: "createdAt", label: "Created" },
+      { id: "actions", label: "Actions", pinned: true },
+    ],
+    [],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -217,10 +393,26 @@ export default function ChecklistTemplates() {
             />
           </div>
         </div>
+
+        {/* Right: Column picker */}
+        <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              data-testid="button-column-picker"
+            >
+              <Columns3 className="w-3 h-3" />
+              <span>Columns</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="p-0 w-auto">
+            <DataTableColumnPicker storageKey="checklist-templates" columns={pickerColumns} />
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Templates List */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             Loading checklist groups...
@@ -237,8 +429,8 @@ export default function ChecklistTemplates() {
                 : "Start by adding your first checklist group"}
             </p>
             {!searchTerm && (
-              <button 
-                onClick={() => setIsAddingTemplate(true)} 
+              <button
+                onClick={() => setIsAddingTemplate(true)}
                 className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
@@ -248,119 +440,14 @@ export default function ChecklistTemplates() {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => setLocation(`/checklist-templates/${template.id}`)}
-                data-testid={`card-template-${template.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  {/* Title and Description */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                      {template.name}
-                    </h3>
-                    {template.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {template.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Metadata */}
-                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                    {/* Type badge */}
-                    <Badge 
-                      variant="secondary" 
-                      className={`h-4 px-1.5 text-[10px] ${getTypeColor(template.type)}`}
-                      data-testid={`badge-type-${template.id}`}
-                    >
-                      {template.type}
-                    </Badge>
-
-                    {/* Role restriction indicator */}
-                    {Array.isArray(template.visibleToRoles) && (template.visibleToRoles as string[]).length > 0 && (
-                      <div
-                        className="flex items-center gap-1 text-[10px] text-muted-foreground"
-                        title={`Visible to: ${getRoleNames(template.visibleToRoles).join(', ')}`}
-                        data-testid={`badge-roles-${template.id}`}
-                      >
-                        <Lock className="w-3 h-3" />
-                        <span>{(template.visibleToRoles as string[]).length} role{(template.visibleToRoles as string[]).length !== 1 ? 's' : ''}</span>
-                      </div>
-                    )}
-                    
-                    {/* Date */}
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {template.createdAt ? format(new Date(template.createdAt), "MMM d, yyyy") : "-"}
-                      </span>
-                    </div>
-                    
-                    {/* Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-${template.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLocation(`/checklist-templates/${template.id}`);
-                          }}
-                          data-testid={`button-open-${template.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Open
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingTemplate(template);
-                          }}
-                          data-testid={`button-edit-${template.id}`}
-                        >
-                          <Lock className="h-4 w-4 mr-2" />
-                          Edit / Set Roles
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            duplicateMutation.mutate(template.id);
-                          }}
-                          data-testid={`button-duplicate-${template.id}`}
-                        >
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate(template.id);
-                          }}
-                          className="text-destructive"
-                          data-testid={`button-delete-${template.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            data={filteredTemplates}
+            columns={columns}
+            storageKey="checklist-templates"
+            legacyConfigKey="checklist-templates-column-config-v1"
+            rowKey={(row) => row.id}
+            onRowClick={(row) => setLocation(`/checklist-templates/${row.id}`)}
+          />
         )}
       </div>
 
@@ -380,9 +467,9 @@ export default function ChecklistTemplates() {
       />
 
       {/* Import Dialog */}
-      <ImportChecklistDialog 
-        open={isImportOpen} 
-        onOpenChange={setIsImportOpen} 
+      <ImportChecklistDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
       />
     </div>
   );

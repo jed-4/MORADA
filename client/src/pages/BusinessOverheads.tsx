@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -312,22 +314,18 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [editItem, setEditItem] = useState<OverheadItem | null>(null);
   const [preselectedCatId, setPreselectedCatId] = useState("");
+  const [activeCell, setActiveCell] = useState<CellId | null>(null);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editingCatName, setEditingCatName] = useState("");
-  const [activeCell, setActiveCell] = useState<CellId | null>(null);
 
-  const STORED_COLS_KEY = "overheads-register-col-visibility";
-  const DEFAULT_COLS = { freq: true, budget: true, xeroCode: true, xeroGroup: true, buildproGroup: true, monthly: true, annual: true };
-  const [colVis, setColVis] = useState<typeof DEFAULT_COLS>(() => {
-    try { return { ...DEFAULT_COLS, ...JSON.parse(localStorage.getItem(STORED_COLS_KEY) || "{}") }; }
-    catch { return DEFAULT_COLS; }
-  });
-  const toggleCol = (col: keyof typeof DEFAULT_COLS) => setColVis(prev => {
-    const next = { ...prev, [col]: !prev[col] };
-    localStorage.setItem(STORED_COLS_KEY, JSON.stringify(next));
-    return next;
-  });
+  const toggleCollapse = (id: string) =>
+    setCollapsed(prev => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      return s;
+    });
 
   const createCatMut = useMutation({
     mutationFn: (name: string) => apiRequest("/api/overheads/categories", "POST", { name }),
@@ -335,8 +333,12 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     onError: () => toast({ title: "Failed to create category", variant: "destructive" }),
   });
   const updateCatMut = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => apiRequest(`/api/overheads/categories/${id}`, "PATCH", { name }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/overheads"] }); setEditingCatId(null); },
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiRequest(`/api/overheads/categories/${id}`, "PATCH", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
+      setEditingCatId(null);
+    },
     onError: () => toast({ title: "Failed to update category", variant: "destructive" }),
   });
   const deleteCatMut = useMutation({
@@ -369,12 +371,6 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     onError: () => toast({ title: "Xero sync failed", variant: "destructive" }),
   });
 
-  const itemsByCategory = useMemo(() => {
-    const m = new Map<string, OverheadItem[]>();
-    for (const cat of data.categories) m.set(cat.id, data.items.filter(i => i.categoryId === cat.id));
-    return m;
-  }, [data.categories, data.items]);
-
   const grandMonthly = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
   const grandAnnual = useMemo(() => data.items.reduce((s, i) => s + toAnnualCents(i), 0), [data.items]);
 
@@ -385,19 +381,6 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
     annual:    "bg-green-500/10 text-green-700 dark:text-green-400",
   };
 
-  // col layout: drag|name|freq?|budget?|xeroCode?|xeroGroup?|buildproGroup?|monthly?|annual?|action
-  const GRID = [
-    "28px", "1fr",
-    colVis.freq ? "78px" : null,
-    colVis.budget ? "88px" : null,
-    colVis.xeroCode ? "80px" : null,
-    colVis.xeroGroup ? "80px" : null,
-    colVis.buildproGroup ? "110px" : null,
-    colVis.monthly ? "95px" : null,
-    colVis.annual ? "95px" : null,
-    "30px",
-  ].filter(Boolean).join(" ");
-
   const commitField = (itemId: string, field: string, rawVal: string) => {
     setActiveCell(null);
     let val: unknown = rawVal;
@@ -406,6 +389,238 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   };
   const isActive = (itemId: string, field: string) => activeCell?.itemId === itemId && activeCell?.field === field;
   const activate = (itemId: string, field: string) => setActiveCell({ itemId, field });
+
+  const categoryById = useMemo(() => {
+    const m = new Map<string, OverheadCategory>();
+    data.categories.forEach(c => m.set(c.id, c));
+    return m;
+  }, [data.categories]);
+
+  type ItemRow = OverheadItem & { categoryName: string };
+  const rows = useMemo<ItemRow[]>(
+    () => data.items.map(i => ({ ...i, categoryName: categoryById.get(i.categoryId)?.name || "—" })),
+    [data.items, categoryById],
+  );
+
+  const columns = useMemo<ColumnDef<ItemRow, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Item",
+      accessorFn: (r) => r.name,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className={`h-full flex items-center gap-1.5 ${isActive(item.id, "name") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+            {isActive(item.id, "name") && !item.xeroSynced ? (
+              <input autoFocus defaultValue={item.name}
+                className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={e => commitField(item.id, "name", e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); if (!item.xeroSynced) activate(item.id, "name"); }}
+                className={`flex-1 h-full flex items-center text-xs px-1 border-b border-transparent transition-colors text-left ${item.xeroSynced ? "cursor-default" : "hover:border-primary/30"}`}>
+                {item.name}
+              </button>
+            )}
+            {item.xeroSynced && (
+              <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
+            )}
+          </div>
+        );
+      },
+      size: 220,
+      meta: { defaultWidth: 220, headerLabel: "Item" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "frequency",
+      header: "Freq.",
+      accessorFn: (r) => r.frequency,
+      cell: ({ row }) => {
+        const item = row.original;
+        return isActive(item.id, "frequency") ? (
+          <div className="ring-1 ring-inset ring-primary/60 rounded-[2px] h-full flex items-center" onClick={(e) => e.stopPropagation()}>
+            <Select defaultValue={item.frequency} onValueChange={v => commitField(item.id, "frequency", v)}>
+              <SelectTrigger className="h-full border-0 shadow-none text-xs focus:ring-0 bg-transparent"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+                <SelectItem value="quarterly">Quarterly</SelectItem>
+                <SelectItem value="annual">Annual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="flex justify-end h-full items-center">
+            <button onClick={(e) => { e.stopPropagation(); activate(item.id, "frequency"); }}>
+              <Badge className={`text-[10px] no-default-active-elevate ${FREQ_COLORS[item.frequency]}`}>{item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)}</Badge>
+            </button>
+          </div>
+        );
+      },
+      size: 90,
+      meta: { defaultWidth: 90, align: "right", headerLabel: "Freq." } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "budget",
+      header: "Budget",
+      accessorFn: (r) => r.budgetCents,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className={`h-full flex items-center ${isActive(item.id, "budgetCents") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+            {isActive(item.id, "budgetCents") ? (
+              <input autoFocus type="number" defaultValue={item.budgetCents > 0 ? (item.budgetCents / 100).toFixed(0) : ""}
+                className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1 tabular-nums"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={e => commitField(item.id, "budgetCents", e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); activate(item.id, "budgetCents"); }} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors tabular-nums">
+                {item.budgetCents > 0
+                  ? fmtDollars(item.budgetCents)
+                  : item.xeroSynced
+                    ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
+                    : <span className="text-muted-foreground/40">—</span>}
+              </button>
+            )}
+          </div>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Budget" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "xeroCode",
+      header: "Xero Code",
+      accessorFn: (r) => r.xeroAccountCode || "",
+      cell: ({ row }) => {
+        const item = row.original;
+        return item.xeroSynced ? (
+          <div className="h-full flex items-center justify-end gap-1 px-1">
+            <Lock className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" />
+            <span className="text-xs text-muted-foreground tabular-nums">{item.xeroAccountCode || <span className="opacity-40">—</span>}</span>
+          </div>
+        ) : (
+          <div className={`h-full flex items-center ${isActive(item.id, "xeroAccountCode") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+            {isActive(item.id, "xeroAccountCode") ? (
+              <input autoFocus defaultValue={item.xeroAccountCode || ""}
+                className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={e => commitField(item.id, "xeroAccountCode", e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); activate(item.id, "xeroAccountCode"); }} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors text-muted-foreground">
+                {item.xeroAccountCode || <span className="opacity-40">—</span>}
+              </button>
+            )}
+          </div>
+        );
+      },
+      size: 90,
+      meta: { defaultWidth: 90, align: "right", headerLabel: "Xero Code" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "xeroGroup",
+      header: "Xero Group",
+      accessorFn: (r) => r.xeroAccountType || "",
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className="h-full flex items-center justify-end px-1">
+            {item.xeroAccountType ? (
+              <Badge className={`text-[10px] no-default-active-elevate ${
+                item.xeroAccountType === "DIRECTCOSTS" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400" :
+                item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
+                "bg-muted text-muted-foreground"
+              }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
+            ) : <span className="text-muted-foreground/30 text-xs">—</span>}
+          </div>
+        );
+      },
+      size: 100,
+      meta: { defaultWidth: 100, align: "right", headerLabel: "Xero Group" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "buildproGroup",
+      header: "BuildPro Group",
+      accessorFn: (r) => r.buildproGroup || "",
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className={`h-full flex items-center ${isActive(item.id, "buildproGroup") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
+            {isActive(item.id, "buildproGroup") ? (
+              <input autoFocus defaultValue={item.buildproGroup || ""}
+                className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1 placeholder:text-muted-foreground/30"
+                placeholder="e.g. Admin"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={e => commitField(item.id, "buildproGroup", e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); activate(item.id, "buildproGroup"); }} className="w-full h-full text-left text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors">
+                {item.buildproGroup
+                  ? <span className="text-foreground">{item.buildproGroup}</span>
+                  : <span className="text-muted-foreground/30">—</span>}
+              </button>
+            )}
+          </div>
+        );
+      },
+      size: 130,
+      meta: { defaultWidth: 130, headerLabel: "BuildPro Group" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "monthly",
+      header: "Monthly Equiv.",
+      accessorFn: (r) => toMonthlyCents(r),
+      cell: ({ row }) => <span className="text-xs text-right tabular-nums px-1">{fmtDollars(toMonthlyCents(row.original))}</span>,
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Monthly Equiv." } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "annual",
+      header: "Annual Budget",
+      accessorFn: (r) => toAnnualCents(r),
+      cell: ({ row }) => <span className="text-xs text-right tabular-nums px-1 text-muted-foreground">{fmtDollars(toAnnualCents(row.original))}</span>,
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Annual Budget" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button size="icon" variant="ghost"><MoreVertical className="w-3 h-3" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setEditItem(item)}><Pencil className="w-3.5 h-3.5 mr-2" />Edit in dialog</DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteItemMut.mutate(item.id); }}><Trash2 className="w-3.5 h-3.5 mr-2" />Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+      size: 40,
+      meta: { defaultWidth: 40, align: "center", pinned: true, headerLabel: "Actions" } satisfies DataTableColumnMeta,
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [activeCell, deleteItemMut]);
+
+  const pickerColumns = useMemo(() => [
+    { id: "name", label: "Item" },
+    { id: "frequency", label: "Freq." },
+    { id: "budget", label: "Budget" },
+    { id: "xeroCode", label: "Xero Code" },
+    { id: "xeroGroup", label: "Xero Group" },
+    { id: "buildproGroup", label: "BuildPro Group" },
+    { id: "monthly", label: "Monthly Equiv." },
+    { id: "annual", label: "Annual Budget" },
+    { id: "actions", label: "Actions", pinned: true },
+  ], []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -421,29 +636,12 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Popover>
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <PopoverTrigger asChild>
               <Button size="sm" variant="outline"><SlidersHorizontal className="w-3.5 h-3.5 mr-1" />Columns</Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-48 p-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-2 pb-1">Toggle columns</p>
-              {([
-                ["freq", "Frequency"],
-                ["budget", "Budget"],
-                ["xeroCode", "Xero Code"],
-                ["xeroGroup", "Xero Group"],
-                ["buildproGroup", "BuildPro Group"],
-                ["monthly", "Monthly Equiv."],
-                ["annual", "Annual Budget"],
-              ] as [keyof typeof DEFAULT_COLS, string][]).map(([key, label]) => (
-                <button key={key} onClick={() => toggleCol(key)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded hover-elevate text-left">
-                  <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 ${colVis[key] ? "bg-primary border-primary" : "border-border"}`}>
-                    {colVis[key] && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
-                  </span>
-                  {label}
-                </button>
-              ))}
+            <PopoverContent align="end" className="w-56 p-0">
+              <DataTableColumnPicker storageKey="business-overheads" columns={pickerColumns} />
             </PopoverContent>
           </Popover>
           {xeroConnected && (
@@ -452,12 +650,12 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
               Sync from Xero
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setAddItemOpen(true)}><Plus className="w-3.5 h-3.5 mr-1" />Add Item</Button>
+          <Button size="sm" variant="outline" onClick={() => setAddItemOpen(true)} disabled={data.categories.length === 0}><Plus className="w-3.5 h-3.5 mr-1" />Add Item</Button>
           <Button size="sm" onClick={() => setAddCatOpen(true)}><FolderPlus className="w-3.5 h-3.5 mr-1" />Add Category</Button>
         </div>
       </div>
 
-      {data.categories.length === 0 && (
+      {data.categories.length === 0 ? (
         <Card><CardContent className="py-10 flex flex-col items-center gap-3 text-center">
           <Package className="w-8 h-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No overhead categories yet.</p>
@@ -471,222 +669,135 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
             <Button size="sm" onClick={() => setAddCatOpen(true)}><FolderPlus className="w-3.5 h-3.5 mr-1" />Add First Category</Button>
           </div>
         </CardContent></Card>
-      )}
+      ) : (
+        <div className="flex flex-col gap-3">
+          {data.categories.map(cat => {
+            const catItems = rows.filter(r => r.categoryId === cat.id);
+            const isCollapsed = collapsed.has(cat.id);
+            const catMonthly = catItems.reduce((s, i) => s + toMonthlyCents(i), 0);
+            const catAnnual = catItems.reduce((s, i) => s + toAnnualCents(i), 0);
+            const tableHeight = catItems.length === 0
+              ? 80
+              : Math.min(catItems.length, 12) * 36 + 32;
 
-      {data.categories.map(cat => {
-        const catItems = itemsByCategory.get(cat.id) || [];
-        const catMonthly = catItems.reduce((s, i) => s + toMonthlyCents(i), 0);
-        const catAnnual = catItems.reduce((s, i) => s + toAnnualCents(i), 0);
-        const isCollapsed = collapsed.has(cat.id);
-
-        return (
-          <Card key={cat.id}>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(cat.id) ? n.delete(cat.id) : n.add(cat.id); return n; })} className="text-muted-foreground hover:text-foreground transition-colors">
-                    {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </button>
-                  {editingCatId === cat.id ? (
-                    <div className="flex items-center gap-1">
-                      <Input autoFocus value={editingCatName} onChange={e => setEditingCatName(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") updateCatMut.mutate({ id: cat.id, name: editingCatName }); if (e.key === "Escape") setEditingCatId(null); }}
-                        className="h-6 text-sm py-0 w-48" />
-                      <Button size="icon" variant="ghost" onClick={() => updateCatMut.mutate({ id: cat.id, name: editingCatName })}><Check className="w-3 h-3 text-green-500" /></Button>
-                      <Button size="icon" variant="ghost" onClick={() => setEditingCatId(null)}><X className="w-3 h-3 text-muted-foreground" /></Button>
-                    </div>
-                  ) : (
-                    <CardTitle className="text-sm font-semibold">{cat.name}</CardTitle>
-                  )}
-                  <Badge variant="secondary" className="text-[10px] no-default-active-elevate">{catItems.length}</Badge>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-muted-foreground tabular-nums">{fmtDollars(catMonthly)}/mo · {fmtDollars(catAnnual)}/yr</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild><Button size="icon" variant="ghost"><MoreVertical className="w-3.5 h-3.5" /></Button></DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => { setPreselectedCatId(cat.id); setAddItemOpen(true); }}><Plus className="w-3.5 h-3.5 mr-2" />Add item</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => { setEditingCatId(cat.id); setEditingCatName(cat.name); }}><Pencil className="w-3.5 h-3.5 mr-2" />Rename</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm(`Delete "${cat.name}" and all its items?`)) deleteCatMut.mutate(cat.id); }}><Trash2 className="w-3.5 h-3.5 mr-2" />Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardHeader>
-
-            {!isCollapsed && (
-              <CardContent className="px-0 pb-0">
-                <div className="border-t border-border/50">
-                  {/* Column header */}
-                  <div className="grid px-4 py-1 text-[10px] text-muted-foreground uppercase tracking-wide" style={{ gridTemplateColumns: GRID }}>
-                    <span /><span>Item</span>
-                    {colVis.freq && <span className="text-right">Freq.</span>}
-                    {colVis.budget && <span className="text-right">Budget</span>}
-                    {colVis.xeroCode && <span className="text-right">Xero Code</span>}
-                    {colVis.xeroGroup && <span className="text-right">Xero Group</span>}
-                    {colVis.buildproGroup && <span>BuildPro Group</span>}
-                    {colVis.monthly && <span className="text-right">Monthly Equiv.</span>}
-                    {colVis.annual && <span className="text-right">Annual Budget</span>}
-                    <span />
-                  </div>
-
-                  {catItems.length === 0 ? (
-                    <div className="px-4 pb-3 border-t border-border/30 pt-2 text-xs text-muted-foreground/60 italic">
-                      No items — <button className="text-primary underline underline-offset-2" onClick={() => { setPreselectedCatId(cat.id); setAddItemOpen(true); }}>add one</button>
-                    </div>
-                  ) : catItems.map(item => (
-                    <div key={item.id} className="grid items-center px-4 border-t border-border/30 hover-elevate group" style={{ gridTemplateColumns: GRID, height: 34 }}>
-                      <span />
-
-                      {/* Name inline */}
-                      <div className={`h-full flex items-center gap-1.5 ${isActive(item.id, "name") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                        {isActive(item.id, "name") && !item.xeroSynced ? (
-                          <input autoFocus defaultValue={item.name} className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1"
-                            onBlur={e => commitField(item.id, "name", e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                        ) : (
-                          <button onClick={() => !item.xeroSynced && activate(item.id, "name")} className={`flex-1 h-full flex items-center text-xs px-1 border-b border-transparent transition-colors text-left ${item.xeroSynced ? "cursor-default" : "hover:border-primary/30"}`}>{item.name}</button>
-                        )}
-                        {item.xeroSynced && (
-                          <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
-                        )}
-                      </div>
-
-                      {/* Frequency badge */}
-                      {colVis.freq && (isActive(item.id, "frequency") ? (
-                        <div className="ring-1 ring-inset ring-primary/60 rounded-[2px] h-full flex items-center">
-                          <Select defaultValue={item.frequency} onValueChange={v => commitField(item.id, "frequency", v)}>
-                            <SelectTrigger className="h-full border-0 shadow-none text-xs focus:ring-0 bg-transparent"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="weekly">Weekly</SelectItem>
-                              <SelectItem value="monthly">Monthly</SelectItem>
-                              <SelectItem value="quarterly">Quarterly</SelectItem>
-                              <SelectItem value="annual">Annual</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <div className="flex justify-end h-full items-center">
-                          <button onClick={() => activate(item.id, "frequency")}>
-                            <Badge className={`text-[10px] no-default-active-elevate ${FREQ_COLORS[item.frequency]}`}>{item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)}</Badge>
-                          </button>
-                        </div>
-                      ))}
-
-                      {/* Budget inline */}
-                      {colVis.budget && (
-                        <div className={`h-full flex items-center ${isActive(item.id, "budgetCents") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                          {isActive(item.id, "budgetCents") ? (
-                            <input autoFocus type="number" defaultValue={item.budgetCents > 0 ? (item.budgetCents / 100).toFixed(0) : ""}
-                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1 tabular-nums"
-                              onBlur={e => commitField(item.id, "budgetCents", e.target.value)}
-                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                          ) : (
-                            <button onClick={() => activate(item.id, "budgetCents")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors tabular-nums">
-                              {item.budgetCents > 0
-                                ? fmtDollars(item.budgetCents)
-                                : item.xeroSynced
-                                  ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
-                                  : <span className="text-muted-foreground/40">—</span>
+            return (
+              <Card key={cat.id} data-testid={`card-overhead-category-${cat.id}`}>
+                <CardHeader className="p-3 hover-elevate cursor-pointer" onClick={() => toggleCollapse(cat.id)}>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      onClick={(e) => { e.stopPropagation(); toggleCollapse(cat.id); }}
+                      data-testid={`button-toggle-overhead-category-${cat.id}`}
+                    >
+                      {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      {editingCatId === cat.id ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Input
+                            autoFocus
+                            value={editingCatName}
+                            onChange={(e) => setEditingCatName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && editingCatName.trim()) {
+                                updateCatMut.mutate({ id: cat.id, name: editingCatName.trim() });
                               }
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Xero code inline — read-only for synced items */}
-                      {colVis.xeroCode && (item.xeroSynced ? (
-                        <div className="h-full flex items-center justify-end gap-1 px-1">
-                          <Lock className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" />
-                          <span className="text-xs text-muted-foreground tabular-nums">{item.xeroAccountCode || <span className="opacity-40">—</span>}</span>
+                              if (e.key === "Escape") setEditingCatId(null);
+                            }}
+                            className="h-7 text-sm w-48"
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() => editingCatName.trim() && updateCatMut.mutate({ id: cat.id, name: editingCatName.trim() })}
+                          >
+                            <Check className="w-3 h-3 text-green-500" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() => setEditingCatId(null)}
+                          >
+                            <X className="w-3 h-3 text-muted-foreground" />
+                          </Button>
                         </div>
                       ) : (
-                        <div className={`h-full flex items-center ${isActive(item.id, "xeroAccountCode") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                          {isActive(item.id, "xeroAccountCode") ? (
-                            <input autoFocus defaultValue={item.xeroAccountCode || ""}
-                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs text-right px-1"
-                              onBlur={e => commitField(item.id, "xeroAccountCode", e.target.value)}
-                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                          ) : (
-                            <button onClick={() => activate(item.id, "xeroAccountCode")} className="w-full h-full text-right text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors text-muted-foreground">
-                              {item.xeroAccountCode || <span className="opacity-40">—</span>}
-                            </button>
-                          )}
-                        </div>
-                      ))}
-
-                      {/* Xero Group — read-only badge from xeroAccountType */}
-                      {colVis.xeroGroup && (
-                        <div className="h-full flex items-center justify-end px-1">
-                          {item.xeroAccountType ? (
-                            <Badge className={`text-[10px] no-default-active-elevate ${
-                              item.xeroAccountType === "DIRECTCOSTS" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400" :
-                              item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
-                              "bg-muted text-muted-foreground"
-                            }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
-                          ) : <span className="text-muted-foreground/30 text-xs">—</span>}
-                        </div>
+                        <CardTitle className="text-sm font-semibold">{cat.name}</CardTitle>
                       )}
-
-                      {/* BuildPro Group — editable */}
-                      {colVis.buildproGroup && (
-                        <div className={`h-full flex items-center ${isActive(item.id, "buildproGroup") ? "ring-1 ring-inset ring-primary/60 rounded-[2px]" : ""}`}>
-                          {isActive(item.id, "buildproGroup") ? (
-                            <input autoFocus defaultValue={item.buildproGroup || ""}
-                              className="h-full w-full bg-transparent border-0 shadow-none focus:outline-none text-xs px-1 placeholder:text-muted-foreground/30"
-                              placeholder="e.g. Admin"
-                              onBlur={e => commitField(item.id, "buildproGroup", e.target.value)}
-                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setActiveCell(null); }} />
-                          ) : (
-                            <button onClick={() => activate(item.id, "buildproGroup")} className="w-full h-full text-left text-xs px-1 border-b border-transparent hover:border-primary/30 transition-colors">
-                              {item.buildproGroup
-                                ? <span className="text-foreground">{item.buildproGroup}</span>
-                                : <span className="text-muted-foreground/30">—</span>}
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Monthly equiv — read-only */}
-                      {colVis.monthly && <span className="text-xs text-right tabular-nums px-1">{fmtDollars(toMonthlyCents(item))}</span>}
-
-                      {/* Annual budget — read-only */}
-                      {colVis.annual && <span className="text-xs text-right tabular-nums px-1 text-muted-foreground">{fmtDollars(toAnnualCents(item))}</span>}
-
-                      {/* Action */}
+                      <Badge variant="secondary" className="text-[10px] no-default-active-elevate">{catItems.length}</Badge>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {fmtDollars(catMonthly)}/mo · {fmtDollars(catAnnual)}/yr
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={(e) => { e.stopPropagation(); setPreselectedCatId(cat.id); setAddItemOpen(true); }}
+                        title="Add item to this category"
+                        data-testid={`button-add-item-to-category-${cat.id}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </Button>
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity"><MoreVertical className="w-3 h-3" /></Button></DropdownMenuTrigger>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`button-overhead-category-actions-${cat.id}`}>
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setEditItem(item)}><Pencil className="w-3.5 h-3.5 mr-2" />Edit in dialog</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteItemMut.mutate(item.id); }}><Trash2 className="w-3.5 h-3.5 mr-2" />Delete</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setPreselectedCatId(cat.id); setAddItemOpen(true); }}>
+                            <Plus className="w-3.5 h-3.5 mr-2" />Add item
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setEditingCatId(cat.id); setEditingCatName(cat.name); }}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" />Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => {
+                              if (confirm(`Delete "${cat.name}" and all its items?`)) deleteCatMut.mutate(cat.id);
+                            }}
+                            data-testid={`menu-delete-overhead-category-${cat.id}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                  ))}
-
-                  <button className="w-full flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground/50 hover:text-muted-foreground border-t border-border/30 transition-colors"
-                    onClick={() => { setPreselectedCatId(cat.id); setAddItemOpen(true); }}>
-                    <Plus className="w-3 h-3" />Add item to {cat.name}
-                  </button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        );
-      })}
-
-      {/* Footer totals */}
-      {data.categories.length > 0 && (
-        <div className="grid px-4 py-3 rounded-md bg-muted/30 border border-border/50 font-semibold text-sm" style={{ gridTemplateColumns: GRID }}>
-          <span /><span>Total</span>
-          {colVis.freq && <span />}
-          {colVis.budget && <span />}
-          {colVis.xeroCode && <span />}
-          {colVis.xeroGroup && <span />}
-          {colVis.buildproGroup && <span />}
-          {colVis.monthly && <span className="text-right tabular-nums">{fmtDollars(grandMonthly)}/mo</span>}
-          {colVis.annual && <span className="text-right tabular-nums text-muted-foreground">{fmtDollars(grandAnnual)}/yr</span>}
-          <span />
+                  </div>
+                </CardHeader>
+                {!isCollapsed && (
+                  <CardContent className="p-0 pt-0 pb-2">
+                    <div className="px-2" style={{ height: tableHeight }}>
+                      <DataTable
+                        data={catItems}
+                        columns={columns}
+                        storageKey="business-overheads"
+                        legacyConfigKey="business-overheads-column-config-v1"
+                        rowKey={(r) => r.id}
+                        emptyState={
+                          <span>
+                            No items —{" "}
+                            <button
+                              className="text-primary underline underline-offset-2"
+                              onClick={() => { setPreselectedCatId(cat.id); setAddItemOpen(true); }}
+                            >
+                              add one
+                            </button>
+                          </span>
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 

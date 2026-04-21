@@ -1,5 +1,10 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -14,6 +19,7 @@ import {
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Info, Pencil, Check, X
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +47,8 @@ interface SystemProject {
 interface CompanySettings {
   hwiExposureLimit?: string | null;
 }
+
+type TableRow = HbcfRow & { __isTotal?: boolean };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -148,17 +156,14 @@ function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) =>
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-const LEFT_COL_W = 176; // px - sticky left column width
-const CELL_W = 56;       // px - each date cell
+const LEFT_COL_W = 176;
+const CELL_W = 56;
 
 export default function HBCFTracker() {
   const { toast } = useToast();
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedProjectId, setSelectedProjectId] = useState("__none__");
   const [newAmount, setNewAmount] = useState("");
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-  const nowColRef = useRef<HTMLTableCellElement>(null);
-  const didScroll = useRef(false);
 
   const { data: settings = {} as CompanySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
@@ -176,32 +181,6 @@ export default function HBCFTracker() {
   const limit = settings.hwiExposureLimit ? parseFloat(settings.hwiExposureLimit) : null;
   const weeks = useMemo(() => getWeeksForYear(year), [year]);
   const nowKey = currentMondayKey();
-
-  // Auto-scroll to current week
-  useEffect(() => {
-    if (!didScroll.current && nowColRef.current && tableContainerRef.current) {
-      const container = tableContainerRef.current;
-      const cell = nowColRef.current;
-      const scrollLeft = cell.offsetLeft - LEFT_COL_W - container.clientWidth / 2 + CELL_W / 2;
-      container.scrollLeft = Math.max(0, scrollLeft);
-      didScroll.current = true;
-    }
-  }, [rows, weeks]);
-
-  // When year changes, reset scroll flag
-  useEffect(() => { didScroll.current = false; }, [year]);
-
-  // Month groups for header
-  const monthGroups = useMemo(() => {
-    const groups: { label: string; count: number }[] = [];
-    weeks.forEach(w => {
-      const label = w.toLocaleDateString("en-AU", { month: "short" });
-      const last = groups[groups.length - 1];
-      if (last?.label === label) last.count++;
-      else groups.push({ label, count: 1 });
-    });
-    return groups;
-  }, [weeks]);
 
   // Toggle a cell
   const toggleMutation = useMutation({
@@ -286,7 +265,6 @@ export default function HBCFTracker() {
   const handleAdd = () => {
     if (!selectedSysProject) return;
     const val = parseFloat(newAmount.replace(/[^0-9.]/g, ""));
-    // Pre-fill from contract cost (stored in cents) if no amount given
     const maxValue = !isNaN(val) && val > 0
       ? val
       : selectedSysProject.contractCost
@@ -320,7 +298,136 @@ export default function HBCFTracker() {
     let peak = 0;
     weeks.forEach(w => { const t = colTotal(toKey(w)); if (t > peak) peak = t; });
     return peak;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, weeks]);
+
+  // ── DataTable column defs ───────────────────────────────────────────────
+  const tableColumns = useMemo<ColumnDef<TableRow, unknown>[]>(() => {
+    const cols: (ColumnDef<TableRow, unknown> & { meta?: DataTableColumnMeta })[] = [
+      {
+        id: "project",
+        header: "Project / HBCF Amount",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.__isTotal) {
+            return (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                HBCF Exposure
+              </span>
+            );
+          }
+          const maxVal = parseFloat(r.maxValue) || 0;
+          return (
+            <div className="flex items-start gap-1.5 min-w-0 group/row">
+              <div
+                className="w-2 h-full min-h-[28px] rounded-sm flex-shrink-0 mt-0.5"
+                style={{ background: r.color ?? "#bba7db" }}
+              />
+              <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                <InlineName
+                  value={r.name}
+                  onSave={v => updateMutation.mutate({ id: r.id, data: { name: v } })}
+                />
+                <InlineAmount
+                  value={maxVal}
+                  onSave={v => updateMutation.mutate({ id: r.id, data: { maxValue: String(v) } })}
+                />
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Remove "${r.name}" from tracker?`)) deleteMutation.mutate(r.id);
+                }}
+                className="text-muted-foreground/20 hover:text-destructive transition-colors flex-shrink-0 opacity-0 group-hover/row:opacity-100 mt-0.5"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          );
+        },
+        size: LEFT_COL_W,
+        meta: { defaultWidth: LEFT_COL_W, headerLabel: "Project / HBCF Amount", pinned: true },
+      },
+    ];
+
+    weeks.forEach((w) => {
+      const key = toKey(w);
+      const isNow = key === nowKey;
+      const dayLabel = w.toLocaleDateString("en-AU", { day: "numeric" });
+      const monthLabel = w.toLocaleDateString("en-AU", { month: "short" });
+      cols.push({
+        id: `w-${key}`,
+        header: () => (
+          <div className={cn("flex flex-col items-center leading-none gap-0.5", isNow && "text-[#7c5cbf]")}>
+            <span className="text-[9px] uppercase">{monthLabel}</span>
+            <span className="text-[9px]">{dayLabel}</span>
+            {isNow && <span className="w-1 h-1 rounded-full bg-[#bba7db]" />}
+          </div>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.__isTotal) {
+            const total = colTotal(key);
+            const { bg, text } = totalStyle(total);
+            return (
+              <div
+                className={cn(
+                  "w-full h-full flex items-center justify-center text-[9px] font-bold tabular-nums",
+                  isNow && "ring-1 ring-inset ring-[#bba7db]/40",
+                )}
+                style={{ background: bg, color: text }}
+              >
+                {total > 0 ? fmt(total) : <span className="text-muted-foreground/20">—</span>}
+              </div>
+            );
+          }
+          const isActive = !!r.statuses[key];
+          return (
+            <div className={cn("w-full", isNow && "bg-[#bba7db]/5")}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMutation.mutate({ row: r, dateKey: key, active: !isActive });
+                }}
+                title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
+                className={cn(
+                  "w-full rounded-sm text-[9px] font-bold py-0.5 leading-4 transition-all",
+                  isActive
+                    ? "text-white"
+                    : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50",
+                )}
+                style={isActive ? { background: r.color ?? "#bba7db" } : undefined}
+              >
+                {isActive ? "ON" : "·"}
+              </button>
+            </div>
+          );
+        },
+        size: CELL_W,
+        meta: { defaultWidth: CELL_W, align: "center", headerLabel: `${monthLabel} ${dayLabel}`, pinned: true },
+      });
+    });
+
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weeks, nowKey, rows, limit]);
+
+  // Append synthetic totals row at the end.
+  const tableData = useMemo<TableRow[]>(() => {
+    const totalRow: TableRow = {
+      id: "__total__",
+      companyId: "",
+      name: "HBCF Exposure",
+      maxValue: "0",
+      statuses: {},
+      color: null,
+      sortOrder: 9999,
+      __isTotal: true,
+    };
+    return [...(rows as TableRow[]), totalRow];
+  }, [rows]);
 
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading HBCF tracker…</div>;
@@ -378,173 +485,18 @@ export default function HBCFTracker() {
       </div>
 
       {/* ── Spreadsheet grid ── */}
-      <div className="flex-1 overflow-auto min-h-0" ref={tableContainerRef}>
-        <table
-          className="border-collapse text-xs"
-          style={{ tableLayout: "fixed", minWidth: `${LEFT_COL_W + weeks.length * CELL_W}px` }}
-        >
-          {/* Column widths */}
-          <colgroup>
-            <col style={{ width: `${LEFT_COL_W}px`, minWidth: `${LEFT_COL_W}px` }} />
-            {weeks.map(w => <col key={toKey(w)} style={{ width: `${CELL_W}px`, minWidth: `${CELL_W}px` }} />)}
-          </colgroup>
-
-          <thead className="sticky top-0 z-20">
-            {/* Month labels row */}
-            <tr className="border-b border-border/30">
-              <th
-                className="bg-muted/40 border-r border-border/30"
-                style={{ position: "sticky", left: 0, zIndex: 31, width: LEFT_COL_W }}
-              />
-              {monthGroups.map((mg, i) => (
-                <th
-                  key={i}
-                  colSpan={mg.count}
-                  className="text-left px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/40 border-r border-border/20"
-                >
-                  {mg.label}
-                </th>
-              ))}
-            </tr>
-
-            {/* Date labels row */}
-            <tr className="border-b border-border">
-              <th
-                className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-muted/30 border-r border-border/30"
-                style={{ position: "sticky", left: 0, zIndex: 31 }}
-              >
-                Project / HBCF Amount
-              </th>
-              {weeks.map(w => {
-                const key = toKey(w);
-                const isNow = key === nowKey;
-                const isFirstOfMonth = w.getDate() <= 7;
-                return (
-                  <th
-                    key={key}
-                    ref={isNow ? nowColRef : undefined}
-                    className={`py-1.5 text-center font-medium border-r border-border/10 ${
-                      isNow
-                        ? "bg-[#bba7db]/15 text-[#7c5cbf]"
-                        : "bg-muted/30 text-muted-foreground"
-                    }`}
-                  >
-                    <div className="flex flex-col items-center leading-none gap-0.5">
-                      <span className="text-[9px]">{w.toLocaleDateString("en-AU", { day: "numeric" })}</span>
-                      {isNow && <span className="w-1 h-1 rounded-full bg-[#bba7db]" />}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={1 + weeks.length} className="py-16 text-center text-muted-foreground text-sm">
-                  No projects yet — add one below
-                </td>
-              </tr>
-            ) : (
-              rows.map((row, rowIdx) => {
-                const maxVal = parseFloat(row.maxValue) || 0;
-                const isEven = rowIdx % 2 === 0;
-                return (
-                  <tr
-                    key={row.id}
-                    className={`group/row border-b border-border/10 ${isEven ? "bg-background" : "bg-muted/5"}`}
-                  >
-                    {/* Sticky project cell */}
-                    <td
-                      className={`border-r border-border/20 py-1.5 px-2 ${isEven ? "bg-background" : "bg-muted/5"}`}
-                      style={{ position: "sticky", left: 0, zIndex: 10 }}
-                    >
-                      <div className="flex items-start gap-1.5 min-w-0">
-                        {/* Color swatch */}
-                        <div
-                          className="w-2 h-full min-h-[28px] rounded-sm flex-shrink-0 mt-0.5"
-                          style={{ background: row.color ?? "#bba7db" }}
-                        />
-                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                          <InlineName
-                            value={row.name}
-                            onSave={v => updateMutation.mutate({ id: row.id, data: { name: v } })}
-                          />
-                          <InlineAmount
-                            value={maxVal}
-                            onSave={v => updateMutation.mutate({ id: row.id, data: { maxValue: String(v) } })}
-                          />
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Remove "${row.name}" from tracker?`)) deleteMutation.mutate(row.id);
-                          }}
-                          className="text-muted-foreground/20 hover:text-destructive transition-colors flex-shrink-0 opacity-0 group-hover/row:opacity-100 mt-0.5"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* Date cells */}
-                    {weeks.map(w => {
-                      const key = toKey(w);
-                      const isActive = !!row.statuses[key];
-                      const isNow = key === nowKey;
-                      return (
-                        <td
-                          key={key}
-                          className={`px-0.5 py-0.5 text-center border-r border-border/10 ${isNow ? "bg-[#bba7db]/5" : ""}`}
-                        >
-                          <button
-                            onClick={() => toggleMutation.mutate({ row, dateKey: key, active: !isActive })}
-                            title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
-                            className={`w-full rounded-sm text-[9px] font-bold py-0.5 leading-4 transition-all ${
-                              isActive
-                                ? "text-white"
-                                : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50"
-                            }`}
-                            style={isActive ? { background: row.color ?? "#bba7db" } : undefined}
-                          >
-                            {isActive ? "ON" : "·"}
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-
-          {/* ── Totals row ── */}
-          <tfoot className="sticky bottom-0 z-20">
-            <tr className="border-t border-border">
-              <td
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/40 border-r border-border/30"
-                style={{ position: "sticky", left: 0, zIndex: 31 }}
-              >
-                HBCF Exposure
-              </td>
-              {weeks.map(w => {
-                const key = toKey(w);
-                const total = colTotal(key);
-                const isNow = key === nowKey;
-                const { bg, text } = totalStyle(total);
-                return (
-                  <td
-                    key={key}
-                    className={`text-center py-1.5 text-[9px] font-bold tabular-nums border-r border-border/10 transition-colors ${isNow ? "ring-1 ring-inset ring-[#bba7db]/40" : ""}`}
-                    style={{ background: bg, color: text }}
-                  >
-                    {total > 0 ? fmt(total) : <span className="text-muted-foreground/20">—</span>}
-                  </td>
-                );
-              })}
-            </tr>
-          </tfoot>
-        </table>
+      <div className="flex-1 min-h-0">
+        <DataTable
+          key={year}
+          data={tableData}
+          columns={tableColumns}
+          storageKey="hbcf-tracker"
+          legacyConfigKey="hbcf-tracker-column-config-v1"
+          rowKey={(r) => r.id}
+          rowClassName={(r) => r.__isTotal ? "border-t border-border bg-muted/40 font-bold" : ""}
+          emptyState="No projects yet — add one below"
+          rowHeight={32}
+        />
       </div>
 
       {/* ── Add project bar ── */}

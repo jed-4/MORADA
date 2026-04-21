@@ -31,6 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DataTable,
+  DataTableColumnPicker,
+  type DataTableColumnMeta,
+} from "@/components/data-table/DataTable";
 import {
   DndContext,
   DragOverlay,
@@ -284,50 +290,85 @@ export default function Estimates() {
     });
   }, [estimates, searchTerm, selectedProject, selectedStatus, projects]);
 
-  const EstimateCard = ({ estimate }: { estimate: Estimate }) => {
-    // Fetch summary for this estimate
+  const EstimateTotalCell = ({ estimateId }: { estimateId: string }) => {
     const { data: summary } = useQuery<EstimateSummary>({
-      queryKey: ["/api/estimates", estimate.id, "summary"],
-      enabled: !!estimate.id,
+      queryKey: ["/api/estimates", estimateId, "summary"],
+      enabled: !!estimateId,
       staleTime: 0,
     });
-
-    const handleEstimateClick = () => {
-      setLocation(`/estimates/project/${estimate.projectId}`);
-    };
-
     return (
-      <Card 
-        key={estimate.id} 
-        className="hover-elevate p-3 cursor-pointer border rounded-xl"
-        data-testid={`estimate-card-${estimate.id}`}
-        onClick={handleEstimateClick}
-      >
-        <div className="flex items-center gap-3">
-          {/* Left: Estimate Name and Project */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-sm line-clamp-1">
-              {estimate.name}
-            </h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {getProjectName(estimate.projectId)}
-            </p>
-          </div>
-          
-          {/* Right: Status Badge (fixed width for alignment) */}
-          <div className="flex-shrink-0 w-24 flex justify-end">
-            {getStatusBadge(estimate)}
-          </div>
-          
-          {/* Right: Total Value */}
-          <div className="flex-shrink-0 text-right w-28">
-            <p className="font-semibold text-sm" data-testid={`text-estimate-total-${estimate.id}`}>
-              {summary ? formatCurrency(summary.total) : 'Loading...'}
-            </p>
-          </div>
-        </div>
-      </Card>
+      <span className="text-xs font-semibold tabular-nums" data-testid={`text-estimate-total-${estimateId}`}>
+        {summary ? formatCurrency(summary.total) : "Loading..."}
+      </span>
     );
+  };
+
+  const estimateColumns = useMemo<ColumnDef<Estimate, unknown>[]>(() => [
+    {
+      id: "name",
+      header: "Name",
+      accessorFn: (e) => e.name || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium line-clamp-1" data-testid={`cell-name-${row.original.id}`}>
+          {row.original.name}
+        </span>
+      ),
+      size: 240,
+      meta: { defaultWidth: 240, headerLabel: "Name" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "project",
+      header: "Project",
+      accessorFn: (e) => getProjectName(e.projectId),
+      cell: ({ row }) => {
+        const project = projects.find((p) => p.id === row.original.projectId);
+        return (
+          <div className="flex items-center gap-1.5" data-testid={`cell-project-${row.original.id}`}>
+            <ProjectIcon
+              icon={project?.icon || "Briefcase"}
+              color={project?.color || "#3b82f6"}
+              className="w-3 h-3 flex-shrink-0"
+            />
+            <span className="text-xs text-muted-foreground truncate">
+              {getProjectName(row.original.projectId)}
+            </span>
+          </div>
+        );
+      },
+      size: 200,
+      meta: { defaultWidth: 200, headerLabel: "Project" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (e) => e.status || "",
+      cell: ({ row }) => getStatusBadge(row.original),
+      size: 120,
+      meta: { defaultWidth: 120, headerLabel: "Status" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "total",
+      header: "Total",
+      enableSorting: false,
+      cell: ({ row }) => <EstimateTotalCell estimateId={row.original.id} />,
+      size: 120,
+      meta: { defaultWidth: 120, align: "right", headerLabel: "Total" } satisfies DataTableColumnMeta,
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [projects, estimateStatuses]);
+
+  const pickerColumns = useMemo(
+    () => [
+      { id: "name", label: "Name" },
+      { id: "project", label: "Project" },
+      { id: "status", label: "Status" },
+      { id: "total", label: "Total" },
+    ],
+    [],
+  );
+
+  const handleRowClick = (estimate: Estimate) => {
+    setLocation(`/estimates/project/${estimate.projectId}`);
   };
 
 
@@ -496,6 +537,24 @@ export default function Estimates() {
             </PopoverContent>
           </Popover>
         </div>
+
+        {/* Right: Column picker (grid view only) */}
+        {currentView === 'grid' && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-columns"
+              >
+                <Columns3 className="w-3 h-3" />
+                <span>Columns</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0">
+              <DataTableColumnPicker storageKey="estimates" columns={pickerColumns} />
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       {/* Content */}
@@ -528,10 +587,15 @@ export default function Estimates() {
           <>
             {/* Grid View */}
             {currentView === 'grid' && (
-              <div className="w-full space-y-2">
-                {filteredEstimates.map((estimate) => (
-                  <EstimateCard key={estimate.id} estimate={estimate} />
-                ))}
+              <div className="w-full h-full">
+                <DataTable
+                  data={filteredEstimates}
+                  columns={estimateColumns}
+                  storageKey="estimates"
+                  legacyConfigKey="estimates-column-config-v1"
+                  rowKey={(e) => e.id}
+                  onRowClick={handleRowClick}
+                />
               </div>
             )}
 

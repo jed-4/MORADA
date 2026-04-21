@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
+import { type ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar } from "lucide-react";
 import {
@@ -51,6 +53,12 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -526,13 +534,16 @@ export default function BusinessTasks() {
       
       switch (groupBy) {
         case 'status':
-          groupKey = task.status?.charAt(0).toUpperCase() + task.status?.slice(1) || 'No Status';
+          groupKey = task.status || 'No Status';
           break;
         case 'priority':
-          groupKey = task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1) || 'No Priority';
+          groupKey = task.priority || 'No Priority';
           break;
         case 'assignee':
           groupKey = task.assignee || 'Unassigned';
+          break;
+        case 'labels':
+          groupKey = task.labels && task.labels.length > 0 ? task.labels[0] : 'No Labels';
           break;
       }
       
@@ -748,6 +759,110 @@ export default function BusinessTasks() {
       setShowCreateTaskDialog(true);
     }
   };
+
+  const getProjectName = (projectId: string | null | undefined) => {
+    if (!projectId) return "";
+    return projects.find((p) => p.id === projectId)?.name || "";
+  };
+
+  const formatDueDate = (date: Date | string | null | undefined) => {
+    if (!date) return "";
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const taskColumns = useMemo<ColumnDef<Task, unknown>[]>(() => [
+    {
+      id: "title",
+      header: "Title",
+      accessorFn: (t) => t.title || "",
+      cell: ({ row }) => (
+        <span className="text-xs font-medium" data-testid={`cell-title-${row.original.id}`}>
+          {row.original.title}
+        </span>
+      ),
+      size: 280,
+      meta: { defaultWidth: 280, headerLabel: "Title" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (t) => t.status || "",
+      cell: ({ row }) => (
+        <span className="text-xs capitalize" data-testid={`cell-status-${row.original.id}`}>
+          {row.original.status || "—"}
+        </span>
+      ),
+      size: 110,
+      meta: { defaultWidth: 110, headerLabel: "Status" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "priority",
+      header: "Priority",
+      accessorFn: (t) => t.priority || "",
+      cell: ({ row }) => (
+        <span className="text-xs capitalize" data-testid={`cell-priority-${row.original.id}`}>
+          {row.original.priority || "—"}
+        </span>
+      ),
+      size: 100,
+      meta: { defaultWidth: 100, headerLabel: "Priority" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "assignee",
+      header: "Assignee",
+      accessorFn: (t) => {
+        const names = (t.assigneeNames as string[] | null | undefined) ?? [];
+        if (names.length > 0) return names.join(", ");
+        return t.assigneeName || "";
+      },
+      cell: ({ row }) => {
+        const names = (row.original.assigneeNames as string[] | null | undefined) ?? [];
+        const display = names.length > 0 ? names.join(", ") : (row.original.assigneeName || "—");
+        return (
+          <span className="text-xs truncate" data-testid={`cell-assignee-${row.original.id}`}>
+            {display}
+          </span>
+        );
+      },
+      size: 140,
+      meta: { defaultWidth: 140, headerLabel: "Assignee" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "dueDate",
+      header: "Due Date",
+      accessorFn: (t) => (t.dueDate ? new Date(t.dueDate).getTime() : 0),
+      cell: ({ row }) => (
+        <span className="text-xs tabular-nums" data-testid={`cell-due-${row.original.id}`}>
+          {formatDueDate(row.original.dueDate) || "—"}
+        </span>
+      ),
+      size: 110,
+      meta: { defaultWidth: 110, headerLabel: "Due Date" } satisfies DataTableColumnMeta,
+    },
+    {
+      id: "project",
+      header: "Project",
+      accessorFn: (t) => getProjectName(t.projectId),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground truncate" data-testid={`cell-project-${row.original.id}`}>
+          {getProjectName(row.original.projectId) || "—"}
+        </span>
+      ),
+      size: 160,
+      meta: { defaultWidth: 160, headerLabel: "Project", defaultHidden: true } satisfies DataTableColumnMeta,
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [projects]);
+
+  const taskPickerColumns = useMemo(
+    () => taskColumns.map((c) => {
+      const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
+      return { id: c.id as string, label: meta.headerLabel ?? (c.id as string), pinned: !!meta.pinned };
+    }),
+    [taskColumns],
+  );
 
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
@@ -1164,23 +1279,105 @@ export default function BusinessTasks() {
         )}
 
         {activeTab === "list" && (
-          <div className="h-full p-4" data-testid="content-list">
-            <TaskListCompact
-              groupedTasks={groupedTasks}
-              isLoading={tasksLoading}
-              onTaskClick={(task) => {
-                setEditingTask(task);
-                setShowCreateTaskDialog(true);
-              }}
-              columnConfig={{ order: listColumnOrder, sort: listSortConfig }}
-              onColumnConfigChange={(config) => {
-                setListColumnOrder(config.order);
-                setListSortConfig(config.sort);
-              }}
-              onDelete={handleDeleteTask}
-              showActions={true}
-              onAddTask={(title) => createTaskMutation.mutate(title)}
-            />
+          <div className="h-full p-4 flex flex-col gap-2" data-testid="content-list">
+            <div className="flex items-center justify-end gap-1.5">
+              <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+                <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
+                  <span>Group by</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="status">By Status</SelectItem>
+                  <SelectItem value="priority">By Priority</SelectItem>
+                  <SelectItem value="assignee">By Assignee</SelectItem>
+                  <SelectItem value="labels">By Labels</SelectItem>
+                </SelectContent>
+              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-task-columns"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Columns</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="p-0">
+                  <DataTableColumnPicker storageKey="business-tasks" columns={taskPickerColumns} />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
+              {tasksLoading ? (
+                <div className="p-4 text-xs text-muted-foreground">Loading tasks...</div>
+              ) : groupBy === 'none' ? (
+                <div className="border rounded-md overflow-hidden">
+                  <DataTable
+                    data={filteredTasks}
+                    columns={taskColumns}
+                    storageKey="business-tasks"
+                    legacyConfigKey="business-tasks-column-config-v1"
+                    rowKey={(t) => t.id}
+                    onRowClick={(task) => {
+                      setEditingTask(task);
+                      setShowCreateTaskDialog(true);
+                    }}
+                    emptyState="No tasks found"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(groupedTasks).map(([groupKey, groupTasks]) => {
+                    const label = groupKey.charAt(0).toUpperCase() + groupKey.slice(1);
+                    const handleAddInGroup = () => {
+                      const initial: Partial<Task> = {};
+                      if (groupBy === 'status') initial.status = groupKey;
+                      else if (groupBy === 'priority') initial.priority = groupKey;
+                      else if (groupBy === 'assignee' && groupKey !== 'Unassigned') initial.assignee = groupKey;
+                      else if (groupBy === 'labels' && groupKey !== 'No Labels') initial.labels = [groupKey];
+                      setDuplicateTaskData(initial);
+                      setEditingTask(null);
+                      if (groupBy === 'status') setInitialTaskStatus(groupKey);
+                      setShowCreateTaskDialog(true);
+                    };
+                    return (
+                      <div key={groupKey} className="border border-border rounded-md overflow-hidden">
+                        <div className="h-7 px-2 flex items-center justify-between bg-muted/30 border-b border-border/50">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-muted-foreground">{label}</span>
+                            <span className="text-[10px] text-muted-foreground/70">({groupTasks.length})</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddInGroup}
+                            className="h-5 w-5 flex items-center justify-center rounded hover-elevate active-elevate-2"
+                            data-testid={`button-add-task-group-${groupKey}`}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <DataTable
+                          data={groupTasks}
+                          columns={taskColumns}
+                          storageKey="business-tasks"
+                          legacyConfigKey="business-tasks-column-config-v1"
+                          rowKey={(t) => t.id}
+                          onRowClick={(task) => {
+                            setEditingTask(task);
+                            setShowCreateTaskDialog(true);
+                          }}
+                          emptyState="No tasks"
+                        />
+                      </div>
+                    );
+                  })}
+                  {Object.keys(groupedTasks).length === 0 && (
+                    <div className="text-xs text-muted-foreground py-8 text-center">No tasks found</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
