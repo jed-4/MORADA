@@ -290,26 +290,46 @@ export class XeroService {
     return response.json() as Promise<XeroTenant[]>;
   }
 
-  async getContacts(connectionId: string): Promise<any[]> {
+  async getContacts(connectionId: string, opts?: { includeArchived?: boolean }): Promise<any[]> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/Contacts?page=1&pageSize=500`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Xero-Tenant-Id": connection.tenantId,
-        Accept: "application/json",
-      },
-    });
+    const includeArchived = !!opts?.includeArchived;
+    const pageSize = 500;
+    const all: any[] = [];
+    const maxPages = 50;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get Xero contacts: ${response.status} ${errorText}`);
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      params.set("summaryOnly", "true");
+      if (includeArchived) {
+        params.set("includeArchived", "true");
+      }
+
+      const response = await fetch(`${XERO_API_BASE}/Contacts?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get Xero contacts: ${response.status} ${errorText}`);
+      }
+
+      const data = (await response.json()) as any;
+      const batch: any[] = data.Contacts || [];
+      all.push(...batch);
+      if (batch.length < pageSize) break;
     }
 
-    const data = (await response.json()) as any;
-    return data.Contacts || [];
+    all.sort((a, b) => String(a?.Name || "").localeCompare(String(b?.Name || ""), undefined, { sensitivity: "base" }));
+    return all;
   }
 
   async getTrackingCategories(connectionId: string): Promise<any[]> {

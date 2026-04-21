@@ -24383,13 +24383,16 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
 
-      const contacts = await xeroService.getContacts(connection.id);
+      const includeArchived = req.query.includeArchived === "true" || req.query.includeArchived === "1";
+      const contacts = await xeroService.getContacts(connection.id, { includeArchived });
       res.json(contacts.map((c: any) => ({
         contactId: c.ContactID,
         name: c.Name,
         emailAddress: c.EmailAddress,
         isSupplier: c.IsSupplier,
         isCustomer: c.IsCustomer,
+        status: c.ContactStatus,
+        isArchived: c.ContactStatus === "ARCHIVED",
       })));
     } catch (error: any) {
       console.error("Error fetching Xero contacts:", error);

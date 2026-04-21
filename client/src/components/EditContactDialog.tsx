@@ -30,6 +30,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type Contact } from "@shared/schema";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
 const PAYMENT_TERMS_OPTIONS = [
   { value: "on_receipt",        label: "On Receipt" },
@@ -989,30 +990,35 @@ export default function EditContactDialog({
                   <FormField
                     control={form.control}
                     name="xeroContactId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Xero Contact</FormLabel>
-                        <Select
-                          onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
-                          value={field.value || "__none__"}
-                        >
+                    render={({ field }) => {
+                      const xeroOptions: SearchableSelectOption[] = [
+                        { value: "__none__", label: "None" },
+                        ...[...xeroContacts]
+                          .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+                          .map((xc) => ({
+                            value: xc.contactId,
+                            label: xc.name,
+                            description: xc.emailAddress || undefined,
+                          })),
+                      ];
+                      return (
+                        <FormItem>
+                          <FormLabel>Xero Contact</FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-xero-contact">
-                              <SelectValue placeholder="Select Xero contact" />
-                            </SelectTrigger>
+                            <SearchableSelect
+                              options={xeroOptions}
+                              value={field.value || "__none__"}
+                              onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
+                              placeholder="Select Xero contact"
+                              searchPlaceholder="Search Xero contacts…"
+                              emptyMessage="No matching contacts"
+                              data-testid="select-xero-contact"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {xeroContacts.map((xc) => (
-                              <SelectItem key={xc.contactId} value={xc.contactId}>
-                                {xc.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
 
                   <FormField

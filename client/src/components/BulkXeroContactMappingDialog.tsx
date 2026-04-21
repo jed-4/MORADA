@@ -73,8 +73,11 @@ export default function BulkXeroContactMappingDialog({
   );
 
   const xeroOptions: SearchableSelectOption[] = useMemo(() => {
+    const sorted = [...xeroContacts].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
     const opts: SearchableSelectOption[] = [{ value: "__none__", label: "None" }];
-    xeroContacts.forEach((xc) => {
+    sorted.forEach((xc) => {
       opts.push({
         value: xc.contactId,
         label: xc.name,

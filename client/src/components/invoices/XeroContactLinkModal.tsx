@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 interface XeroContact {
   contactId: string;
   name: string;
+  emailAddress?: string;
   isCustomer?: boolean;
   isSupplier?: boolean;
+  isArchived?: boolean;
+  status?: string;
 }
 
 interface Props {
@@ -22,40 +25,53 @@ interface Props {
   onClose: () => void;
   clientId: string | null;
   clientName: string;
-  onLinked: () => void;
+  onLinked: (xeroContactId: string) => void;
+  title?: string;
+  description?: ReactNode;
+  successMessage?: string;
 }
 
 const CREATE_NEW_ID = "__CREATE_NEW__";
 
-export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLinked }: Props) {
+export function XeroContactLinkModal({
+  open,
+  onClose,
+  clientId,
+  clientName,
+  onLinked,
+  title = "Link to Xero Contact",
+  description,
+  successMessage = "Xero contact linked successfully.",
+}: Props) {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   const { data: xeroContacts = [], isLoading } = useQuery<XeroContact[]>({
-    queryKey: ["/api/xero/contacts"],
+    queryKey: ["/api/xero/contacts", { includeArchived }],
+    queryFn: async () => {
+      const url = includeArchived
+        ? "/api/xero/contacts?includeArchived=true"
+        : "/api/xero/contacts";
+      return apiRequest(url, "GET");
+    },
     enabled: open,
     staleTime: 30_000,
   });
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return [...xeroContacts]
-      .filter((c) => !q || c.name.toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return xeroContacts.filter((c) => !q || c.name.toLowerCase().includes(q));
   }, [xeroContacts, search]);
 
   const showCreateNew = !search || !xeroContacts.some(
     (c) => c.name.toLowerCase() === search.toLowerCase()
   );
 
-  const selectedContact = selectedId === CREATE_NEW_ID
-    ? { contactId: CREATE_NEW_ID, name: search || clientName }
-    : xeroContacts.find((c) => c.contactId === selectedId);
-
   const linkMutation = useMutation({
     mutationFn: async () => {
-      if (!clientId) throw new Error("No client linked to this project");
+      if (!clientId) throw new Error("No BuildPro contact provided");
       if (!selectedId) throw new Error("Please select a Xero contact");
 
       let xeroContactId: string;
@@ -73,13 +89,15 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
       }
 
       queryClient.invalidateQueries({ queryKey: [`/api/contacts/${clientId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
       return xeroContactId;
     },
-    onSuccess: () => {
-      toast({ title: "Contact linked", description: "Xero contact linked successfully. Retrying push…" });
+    onSuccess: (xeroContactId) => {
+      toast({ title: "Contact linked", description: successMessage });
       setSearch("");
       setSelectedId(null);
-      onLinked();
+      onLinked(xeroContactId);
     },
     onError: (error: Error) => {
       toast({ title: "Failed to link contact", description: error.message, variant: "destructive" });
@@ -89,6 +107,7 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
   function handleClose() {
     setSearch("");
     setSelectedId(null);
+    setIncludeArchived(false);
     onClose();
   }
 
@@ -96,10 +115,16 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Link to Xero Contact</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            <span className="font-medium text-foreground">{clientName}</span> has no linked Xero contact.
-            Search to link an existing one or create a new contact in Xero.
+            {description ? (
+              description
+            ) : (
+              <>
+                <span className="font-medium text-foreground">{clientName}</span> has no linked Xero contact.
+                Search to link an existing one or create a new contact in Xero.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,10 +137,25 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
               onChange={(e) => { setSearch(e.target.value); setSelectedId(null); }}
               className="pl-9"
               autoFocus
+              data-testid="input-xero-contact-search"
             />
           </div>
 
-          <ScrollArea className="h-60 rounded-md border">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{isLoading ? "Loading…" : `${filtered.length} of ${xeroContacts.length} contact${xeroContacts.length === 1 ? "" : "s"}`}</span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(e) => setIncludeArchived(e.target.checked)}
+                className="h-3.5 w-3.5"
+                data-testid="checkbox-include-archived"
+              />
+              Show archived
+            </label>
+          </div>
+
+          <ScrollArea className="h-72 rounded-md border">
             {isLoading ? (
               <div className="flex items-center justify-center h-full text-muted-foreground gap-2 text-sm py-8">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -154,15 +194,23 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
                     type="button"
                     onClick={() => setSelectedId(c.contactId)}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left w-full hover-elevate",
+                      "flex items-start gap-2 rounded-md px-3 py-2 text-sm text-left w-full hover-elevate",
                       selectedId === c.contactId && "bg-primary/10 font-medium"
                     )}
+                    data-testid={`xero-contact-option-${c.contactId}`}
                   >
-                    <span className="flex-1 truncate">{c.name}</span>
-                    <div className="flex gap-1 shrink-0">
-                      {c.isCustomer && <Badge variant="secondary" className="text-xs no-default-active-elevate">Customer</Badge>}
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{c.name}</div>
+                      {c.emailAddress && (
+                        <div className="text-xs text-muted-foreground truncate font-normal">{c.emailAddress}</div>
+                      )}
                     </div>
-                    {selectedId === c.contactId && <Check className="h-4 w-4 text-primary shrink-0" />}
+                    <div className="flex gap-1 shrink-0 items-center">
+                      {c.isArchived && <Badge variant="outline" className="text-xs no-default-active-elevate">Archived</Badge>}
+                      {c.isCustomer && <Badge variant="secondary" className="text-xs no-default-active-elevate">Customer</Badge>}
+                      {c.isSupplier && <Badge variant="secondary" className="text-xs no-default-active-elevate">Supplier</Badge>}
+                      {selectedId === c.contactId && <Check className="h-4 w-4 text-primary" />}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -171,7 +219,7 @@ export function XeroContactLinkModal({ open, onClose, clientId, clientName, onLi
 
           {!clientId && (
             <p className="text-sm text-destructive">
-              This project has no client assigned. Please assign a client to the project first.
+              No BuildPro contact selected. Please assign a contact first.
             </p>
           )}
         </div>
