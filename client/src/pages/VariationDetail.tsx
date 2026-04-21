@@ -692,8 +692,9 @@ export default function VariationDetail() {
       return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "action" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       toast({ title: "Success", description: "Variation moved to Action" });
     },
     onError: (error: Error) => {
@@ -706,8 +707,9 @@ export default function VariationDetail() {
       return await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "pending" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       toast({ title: "Success", description: "Variation sent for approval" });
     },
     onError: (error: Error) => {
@@ -724,8 +726,9 @@ export default function VariationDetail() {
       });
     },
     onSuccess: (approvedVariation) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       setApproveDialogOpen(false);
       toast({ title: "Variation approved", description: "Variation approved successfully" });
       // T005: Show EOT toast if project end date was extended
@@ -760,8 +763,9 @@ export default function VariationDetail() {
       });
     },
     onSuccess: (rejectedVariation) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       setRejectDialogOpen(false);
       setRejectReason("");
       toast({ title: "Success", description: "Variation rejected" });
