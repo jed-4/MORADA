@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -63,9 +63,8 @@ interface BarLayout {
 const BAR_HEIGHT = 13;
 const BAR_GAP = 1;
 const ROW_PADDING = 4;
-const DAY_WIDTH = 44;
-const WEEKEND_DAY_WIDTH = 22;
-const WEEKDAY_WEEKEND_RATIO = DAY_WIDTH / WEEKEND_DAY_WIDTH; // 2:1
+const DAY_WIDTH = 44; // fallback only; runtime uses container/totalDays
+const MIN_PIXELS_PER_DAY = 8;
 const PANEL_WIDTH = 200;
 const NAV_STEP_DAYS = 7;
 const MIN_ROW_HEIGHT = 32;
@@ -137,20 +136,8 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
 
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
 
-  // Dynamic column widths that expand to fill available timeline width
+  // Dynamic timeline area width (the area to the right of the left panel)
   const [timelineAreaWidth, setTimelineAreaWidth] = useState(0);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const updateWidth = () => {
-      setTimelineAreaWidth(Math.max(0, container.clientWidth - PANEL_WIDTH));
-    };
-    updateWidth();
-    const ro = new ResizeObserver(updateWidth);
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, []);
 
   const toggleRowExpanded = useCallback((id: string) => {
     setExpandedRows((prev) => {
@@ -164,6 +151,18 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const headerTimelineRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const timelineAreaRef = useRef<HTMLDivElement>(null);
+
+  // Measure the timeline area's actual width (the right-hand area, after the left panel)
+  useLayoutEffect(() => {
+    const el = timelineAreaRef.current;
+    if (!el) return;
+    const update = () => setTimelineAreaWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const visibleDays = windowWeeks * 7;
 
@@ -174,19 +173,12 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     [rangeStart, rangeEnd]
   );
 
-  // Scale weekday/weekend widths so they fill the available timeline area
-  const { scaledDayWidth, scaledWeekendWidth } = useMemo(() => {
-    if (timelineAreaWidth <= 0 || days.length === 0) {
-      return { scaledDayWidth: DAY_WIDTH, scaledWeekendWidth: WEEKEND_DAY_WIDTH };
-    }
-    const weekdayCount = days.filter(d => !isWeekend(d)).length;
-    const weekendCount = days.length - weekdayCount;
-    // totalWidth = weekdayCount * W + weekendCount * (W / RATIO)
-    const divisor = weekdayCount + weekendCount / WEEKDAY_WEEKEND_RATIO;
-    const w = divisor > 0 ? timelineAreaWidth / divisor : DAY_WIDTH;
-    // No floor: timeline must always fit within the available width regardless of zoom (2/4/6 weeks).
-    return { scaledDayWidth: w, scaledWeekendWidth: w / WEEKDAY_WEEKEND_RATIO };
-  }, [timelineAreaWidth, days]);
+  // Uniform pixels-per-day so the visible window always spans the full timeline area
+  // (matches MasterScheduleGantt: containerWidth / totalDays).
+  const pixelsPerDay = useMemo(() => {
+    if (timelineAreaWidth <= 0 || visibleDays === 0) return DAY_WIDTH;
+    return Math.max(timelineAreaWidth / visibleDays, MIN_PIXELS_PER_DAY);
+  }, [timelineAreaWidth, visibleDays]);
 
   const intersectsRange = useCallback((item: WorkloadItem) => {
     const itemStart = startOfDay(new Date(item.startDate)).getTime();
@@ -196,10 +188,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     return itemEnd >= rs && itemStart < re;
   }, [rangeStart, rangeEnd]);
 
-  const getColWidth = useCallback((day: Date) =>
-    isWeekend(day) ? scaledWeekendWidth : scaledDayWidth,
-    [scaledDayWidth, scaledWeekendWidth]
-  );
+  const getColWidth = useCallback((_day: Date) => pixelsPerDay, [pixelsPerDay]);
 
   const workloadUrl = useMemo(() => {
     // Fetch a wide window (1 year back, 2 years forward) so all assigned items are included
@@ -854,7 +843,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           )}
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div ref={timelineAreaRef} className="flex-1 min-w-0 overflow-hidden flex flex-col">
           <div ref={headerTimelineRef} style={{ height: HEADER_HEIGHT }} className="border-b border-border flex-shrink-0 overflow-hidden">
             <div
               className="h-full flex flex-col"
