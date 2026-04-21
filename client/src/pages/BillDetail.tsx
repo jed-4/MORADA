@@ -2373,7 +2373,11 @@ export default function BillDetail() {
                       disabled={updateSupplierDefaultsMutation.isPending}
                       onClick={() => {
                         if (!currentSupplier) return;
-                        const payload: any = { supplierId: currentSupplier.id };
+                        const payload: {
+                          supplierId: string;
+                          defaultCostCodeId?: string | null;
+                          xeroDefaultAccountCode?: string | null;
+                        } = { supplierId: currentSupplier.id };
                         if (suggestedCostCode && !supplierDefaultCostCode) payload.defaultCostCodeId = suggestedCostCode;
                         if (suggestedAccount && !supplierDefaultAccountCode) payload.xeroDefaultAccountCode = suggestedAccount;
                         updateSupplierDefaultsMutation.mutate(payload, {
