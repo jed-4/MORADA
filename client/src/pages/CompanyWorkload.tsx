@@ -173,12 +173,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     [rangeStart, rangeEnd]
   );
 
-  // Uniform pixels-per-day so the visible window always spans the full timeline area
-  // (matches MasterScheduleGantt: containerWidth / totalDays).
-  const pixelsPerDay = useMemo(() => {
-    if (timelineAreaWidth <= 0 || visibleDays === 0) return DAY_WIDTH;
-    return Math.max(timelineAreaWidth / visibleDays, MIN_PIXELS_PER_DAY);
-  }, [timelineAreaWidth, visibleDays]);
+  // We use 1 "unit" per day in all geometry calcs and let CSS flex evenly
+  // distribute the actual pixel width. This guarantees the timeline always
+  // spans the parent width regardless of zoom (2/4/6 weeks).
+  const pixelsPerDay = 1;
 
   const intersectsRange = useCallback((item: WorkloadItem) => {
     const itemStart = startOfDay(new Date(item.startDate)).getTime();
@@ -188,7 +186,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     return itemEnd >= rs && itemStart < re;
   }, [rangeStart, rangeEnd]);
 
-  const getColWidth = useCallback((_day: Date) => pixelsPerDay, [pixelsPerDay]);
+  const getColWidth = useCallback((_day: Date) => pixelsPerDay, []);
+
+  // Convert a "day units" value to a percentage of the timeline width
+  const pct = useCallback((units: number) => `${(units / Math.max(visibleDays, 1)) * 100}%`, [visibleDays]);
 
   const workloadUrl = useMemo(() => {
     // Fetch a wide window (1 year back, 2 years forward) so all assigned items are included
@@ -845,51 +846,45 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
 
         <div ref={timelineAreaRef} className="flex-1 min-w-0 overflow-hidden flex flex-col">
           <div ref={headerTimelineRef} style={{ height: HEADER_HEIGHT }} className="border-b border-border flex-shrink-0 overflow-hidden">
-            <div
-              className="h-full flex flex-col"
-              style={{ minWidth: totalWidth, width: '100%' }}
-            >
+            <div className="h-full w-full flex flex-col">
               {/* Top tier: month labels */}
-              <div className="flex border-b border-border/30" style={{ height: HEADER_TOP_TIER }}>
+              <div className="flex border-b border-border/30 w-full" style={{ height: HEADER_TOP_TIER }}>
                 {monthSegments.map((seg, i) => (
                   <div
                     key={`m-${i}`}
-                    className="flex items-center px-1.5 border-l border-border/40 first:border-l-0 shrink-0"
-                    style={{ width: seg.widthPx, minWidth: seg.widthPx }}
+                    className="flex items-center px-1.5 border-l border-border/40 first:border-l-0 min-w-0"
+                    style={{ flex: `${seg.widthPx} 1 0` }}
                   >
                     <span className="text-[10px] font-semibold text-muted-foreground/80 uppercase tracking-wide truncate">
-                      {seg.widthPx > 50 ? format(seg.start, "MMM yyyy") : format(seg.start, "MMM")}
+                      {format(seg.start, "MMM yyyy")}
                     </span>
                   </div>
                 ))}
-                <div className="flex-1 border-l border-border/20" />
               </div>
 
               {/* Middle tier: week-start labels */}
-              <div className="flex border-b border-border/30" style={{ height: HEADER_MID_TIER }}>
+              <div className="flex border-b border-border/30 w-full" style={{ height: HEADER_MID_TIER }}>
                 {weekSegments.map((seg, i) => (
                   <div
                     key={`w-${i}`}
-                    className="flex items-center px-1.5 border-l border-border/60 first:border-l-0 shrink-0"
-                    style={{ width: seg.widthPx, minWidth: seg.widthPx }}
+                    className="flex items-center px-1.5 border-l border-border/60 first:border-l-0 min-w-0"
+                    style={{ flex: `${seg.widthPx} 1 0` }}
                   >
                     <span className="text-[10px] font-medium text-muted-foreground truncate">
-                      {seg.widthPx > 40 ? format(seg.start, "d MMM") : format(seg.start, "d")}
+                      {format(seg.start, "d MMM")}
                     </span>
                   </div>
                 ))}
-                <div className="flex-1 border-l border-border/20" />
               </div>
 
               {/* Bottom tier: per-day cells with mini-bar + EEE + d */}
-              <div className="flex" style={{ height: HEADER_BOTTOM_TIER }}>
+              <div className="flex w-full" style={{ height: HEADER_BOTTOM_TIER }}>
                 {days.map((day, dayIdx) => {
                   const key = format(day, "yyyy-MM-dd");
                   const count = dailyTotals.get(key) || 0;
                   const barHeight = maxDailyTotal > 0 ? Math.round((count / maxDailyTotal) * 16) : 0;
                   const isWkend = isWeekend(day);
                   const isToday = isSameDay(day, today);
-                  const colWidth = getColWidth(day);
                   const barW = isWkend ? 8 : 16;
                   const isWeekStart = day.getDay() === weekStartDay;
 
@@ -897,13 +892,13 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     <div
                       key={key}
                       className={cn(
-                        "flex flex-col items-center justify-end shrink-0 pb-0.5",
+                        "flex flex-col items-center justify-end pb-0.5 min-w-0",
                         isWeekStart ? "border-l border-border/60" : "border-l border-border/15",
                         dayIdx === 0 && "border-l-0",
                         isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
                         isToday && "bg-[#A890D4]/10"
                       )}
-                      style={{ width: colWidth }}
+                      style={{ flex: '1 1 0' }}
                     >
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -930,26 +925,25 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     </div>
                   );
                 })}
-                <div className="flex-1 border-l border-border/20" />
               </div>
             </div>
           </div>
 
           <div
             ref={timelineRef}
-            className="flex-1 overflow-y-auto overflow-x-auto"
+            className="flex-1 overflow-y-auto overflow-x-hidden"
             onScroll={(e) => {
               handleSyncScroll(e);
             }}
           >
-            <div className="relative" style={{ minWidth: totalWidth, width: '100%' }}>
+            <div className="relative w-full">
               {(() => {
                 const todayIdx = days.findIndex((d) => isSameDay(d, today));
                 if (todayIdx === -1) return null;
                 return (
                   <div
                     className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-10"
-                    style={{ left: dayOffsets.offsets[todayIdx] + getColWidth(days[todayIdx]) / 2 }}
+                    style={{ left: pct(todayIdx + 0.5) }}
                   />
                 );
               })()}
@@ -983,7 +977,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const key = format(day, "yyyy-MM-dd");
                       const isWkend = isWeekend(day);
                       const isToday = isSameDay(day, today);
-                      const colWidth = getColWidth(day);
                       const isOverloadedDay = assigneeOverloads.get(row.id)?.overloadedDays.has(key) ?? false;
 
                       return (
@@ -995,7 +988,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                             isToday && "bg-[#A890D4]/5",
                             isOverloadedDay && "bg-red-500/8"
                           )}
-                          style={{ left: dayOffsets.offsets[dayIdx], width: colWidth }}
+                          style={{ left: pct(dayIdx), width: pct(1) }}
                         />
                       );
                     })}
@@ -1027,8 +1020,8 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                             <div
                               className="absolute rounded-sm cursor-pointer flex items-center overflow-hidden z-[5] transition-opacity hover:opacity-100"
                               style={{
-                                left: leftPx,
-                                width: widthPx,
+                                left: pct(leftPx),
+                                width: pct(widthPx),
                                 top: topPx,
                                 height: BAR_HEIGHT,
                                 backgroundColor: barColor,
