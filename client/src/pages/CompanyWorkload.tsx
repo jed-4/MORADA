@@ -184,8 +184,17 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     // totalWidth = weekdayCount * W + weekendCount * (W / RATIO)
     const divisor = weekdayCount + weekendCount / WEEKDAY_WEEKEND_RATIO;
     const w = divisor > 0 ? timelineAreaWidth / divisor : DAY_WIDTH;
-    return { scaledDayWidth: Math.max(w, 14), scaledWeekendWidth: Math.max(w / WEEKDAY_WEEKEND_RATIO, 7) };
+    // No floor: timeline must always fit within the available width regardless of zoom (2/4/6 weeks).
+    return { scaledDayWidth: w, scaledWeekendWidth: w / WEEKDAY_WEEKEND_RATIO };
   }, [timelineAreaWidth, days]);
+
+  const intersectsRange = useCallback((item: WorkloadItem) => {
+    const itemStart = startOfDay(new Date(item.startDate)).getTime();
+    const itemEnd = startOfDay(new Date(item.endDate)).getTime();
+    const rs = startOfDay(rangeStart).getTime();
+    const re = startOfDay(rangeEnd).getTime();
+    return itemEnd >= rs && itemStart < re;
+  }, [rangeStart, rangeEnd]);
 
   const getColWidth = useCallback((day: Date) =>
     isWeekend(day) ? scaledWeekendWidth : scaledDayWidth,
@@ -290,6 +299,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       if (item.status === "completed" || item.status === "cancelled") continue;
       if (hiddenProjects.has(item.projectId)) continue;
       if (hidePreconstructionSchedule && item.scheduleCategory === "preconstruction") continue;
+      if (!intersectsRange(item)) continue;
 
       // Only skip parent items when they are unassigned (assigned parent items are valid workload)
       if (item.type === "parent" && !item.assignedToId && !item.assignedToName) continue;
@@ -372,6 +382,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       if (hiddenProjects.has(item.projectId)) continue;
       if (hidePreconstructionSchedule && item.scheduleCategory === "preconstruction") continue;
       if (hiddenTeams.has(item.teamId)) continue;
+      if (!intersectsRange(item)) continue;
       let row = teamMap.get(item.teamId);
       if (!row) {
         const team = teams.find((t) => t.id === item.teamId);
@@ -1021,8 +1032,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const barColor = isCompanyRow
                         ? (item.assignedToColor || item.projectColor || row.color)
                         : (item.projectColor || item.assignedToColor || row.color);
-                      const showLabel = widthPx > 60;
-
                       return (
                         <Tooltip key={item.id}>
                           <TooltipTrigger asChild>
@@ -1038,14 +1047,12 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                               }}
                               onClick={() => setSelectedItem(item)}
                             >
-                              {showLabel && (
-                                <span
-                                  className="text-[10px] font-medium truncate px-1.5 leading-none"
-                                  style={{ color: "#fff" }}
-                                >
-                                  {item.name}
-                                </span>
-                              )}
+                              <span
+                                className="text-[10px] font-medium truncate px-1 leading-none"
+                                style={{ color: "#fff" }}
+                              >
+                                {item.name}
+                              </span>
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="bg-gray-900 text-gray-100 border-0 max-w-[240px]">
