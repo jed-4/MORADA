@@ -255,7 +255,9 @@ export default function BusinessSchedule() {
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
+  const [showOnline, setShowOnline] = useState(true);
   const [showOffline, setShowOffline] = useState(false);
+  const [showProspective, setShowProspective] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -288,7 +290,9 @@ export default function BusinessSchedule() {
   const visibleProjects = useMemo(() => {
     return projects.filter(p => {
       if (!p.isVisible) return false;
-      if (!showOffline && p.category === 'offline') return false;
+      if (p.category === 'online' && !showOnline) return false;
+      if (p.category === 'offline' && !showOffline) return false;
+      if (p.category === 'prospective' && !showProspective) return false;
       if (scheduleTypeFilter === 'construction') {
         return p.currentSystemPhase === 'construction' || p.currentSystemPhase === 'post_construction';
       }
@@ -619,13 +623,33 @@ export default function BusinessSchedule() {
             >Pre-con</button>
           </div>
 
-          {/* Offline toggle */}
+          {/* Category visibility toggles */}
           <button
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
+            data-testid="toggle-online"
+            aria-pressed={showOnline}
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-blue-700 dark:text-blue-300 bg-blue-500/10' : 'border-border text-muted-foreground'}`}
+            onClick={() => setShowOnline(v => !v)}
+          >
+            <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
+            Online
+          </button>
+          <button
+            data-testid="toggle-offline"
+            aria-pressed={showOffline}
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOffline ? 'border-amber-600 text-amber-700 dark:text-amber-300 bg-amber-500/10' : 'border-border text-muted-foreground'}`}
             onClick={() => setShowOffline(v => !v)}
           >
-            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
+            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed ${showOffline ? 'border-amber-600' : 'border-muted-foreground/40'}`} />
             Offline
+          </button>
+          <button
+            data-testid="toggle-prospective"
+            aria-pressed={showProspective}
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-gray-400 text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
+            onClick={() => setShowProspective(v => !v)}
+          >
+            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-gray-400' : 'border-muted-foreground/40'}`} />
+            Prospective
           </button>
 
           {/* Project visibility filter — moved to left */}
