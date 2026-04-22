@@ -475,7 +475,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           : (clampedEndIdx < offsets.length ? offsets[clampedEndIdx] + getColWidth(days[clampedEndIdx]) : tw);
 
         layout.leftPx = leftPx;
-        layout.widthPx = Math.max(rightPx - leftPx, 4);
+        layout.widthPx = Math.max(rightPx - leftPx, 1);
       }
 
       const isExpanded = expandedRows.has(row.id);
