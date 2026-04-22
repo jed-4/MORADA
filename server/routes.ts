@@ -3803,7 +3803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Project Team API Routes
-  app.get("/api/projects/:projectId/team", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/projects/:projectId/team", requireAuth, async (req, res) => {
     try {
       const teamMembers = await storage.getProjectTeamMembers(req.params.projectId);
       // Sanitize user data to remove sensitive fields
@@ -7447,7 +7447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Management Routes
-  app.get("/api/users", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/users", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
@@ -7467,8 +7467,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Lightweight endpoint for user assignment dropdowns (task templates, etc.)
-  // Only requires team membership, no admin permissions needed
-  app.get("/api/users/assignable", requireAuth, requireTeamMember, async (req, res) => {
+  // Available to any authenticated user in the company
+  app.get("/api/users/assignable", requireAuth, async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
@@ -7525,7 +7525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:id", requireAuth, requireTeamMember, async (req, res) => {
+  app.get("/api/users/:id", requireAuth, async (req, res) => {
     try {
       const currentUser = req.user as any;
       const requestedUserId = req.params.id;
@@ -7562,7 +7562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/users", requireTeamMember, requirePermission("admin.users", "add"), async (req, res) => {
+  app.post("/api/users", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
     try {
       // Validate password strength first
       if (req.body.password) {
@@ -7617,7 +7617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/users/:id", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.patch("/api/users/:id", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       // Validate password strength if password is being updated
       if (req.body.password) {
@@ -7651,7 +7651,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Change password endpoint with strong validation
-  app.post("/api/users/:id/change-password", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/users/:id/change-password", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const { newPassword } = req.body;
       if (!newPassword) {
@@ -7672,7 +7672,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send password reset link to user (manager-initiated)
-  app.post("/api/users/:id/send-password-reset", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/users/:id/send-password-reset", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const targetUser = await storage.getUser(req.params.id);
       if (!targetUser || !targetUser.email) {
@@ -8620,7 +8620,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Invitation Routes
-  app.get("/api/invitations", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/invitations", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
@@ -8637,7 +8637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/invitations/:id", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const invitation = await storage.getUserInvitation(req.params.id);
       if (!invitation) {
@@ -8649,7 +8649,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/invitations", requireTeamMember, requirePermission("admin.users", "add"), async (req, res) => {
+  app.post("/api/invitations", requireAuth, requirePermission("admin.users", "add"), async (req, res) => {
     try {
       const validationResult = insertUserInvitationSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -8794,7 +8794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Resend invitation email
-  app.post("/api/invitations/:id/resend", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.post("/api/invitations/:id/resend", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
@@ -8857,7 +8857,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cancel invitation (uses "edit" permission since it just changes status, not actual deletion)
-  app.delete("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+  app.delete("/api/invitations/:id", requireAuth, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
