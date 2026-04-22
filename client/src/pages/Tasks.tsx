@@ -764,18 +764,6 @@ export default function Tasks() {
     return sortedGroups;
   }, [currentProject, taskViews, allTasks, filters, groupBy, activeView, selectedViewId, fieldCategories]);
 
-  // CONDITIONAL RENDERING - MUST BE AFTER ALL HOOKS
-  if (!currentProject) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
-          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
-        </div>
-      </div>
-    );
-  }
-
   // Helper functions and logic (after hooks, after early return)
   const isCustomView = (view: any): view is TaskView => {
     return view.id !== "kanban" && view.id !== "list" && view.id !== "calendar";
@@ -972,6 +960,18 @@ export default function Tasks() {
     ],
     [],
   );
+
+  // CONDITIONAL RENDERING - MUST BE AFTER ALL HOOKS
+  if (!currentProject) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
+          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Convert tasks to calendar events
   const tasksToCalendarEvents = (tasks: Task[]): CalendarEvent[] => {
