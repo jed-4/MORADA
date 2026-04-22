@@ -63,7 +63,7 @@ import {
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
-import { format } from "date-fns";
+import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -177,18 +177,16 @@ function ImportFromXeroDialog({
     onSelectedIdsChange(next);
   };
 
-  const formatDate = (d?: string) => {
+  // Xero ships dates as either "/Date(1234567890)/" or ISO. Normalise the
+  // legacy form, then defer to the shared formatter.
+  const formatXeroDate = (d?: string) => {
     if (!d) return "—";
     const match = d.match(/\/Date\((\d+)/);
-    const date = match ? new Date(parseInt(match[1])) : new Date(d);
-    if (isNaN(date.getTime())) return "—";
-    return format(date, "dd MMM yyyy");
+    return formatDate(match ? new Date(parseInt(match[1])) : d, "dd MMM yyyy");
   };
 
-  const formatMoney = (n?: number) => {
-    if (n === undefined || n === null) return "—";
-    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
-  };
+  // Xero amounts are already in dollars (not cents).
+  const formatMoney = (n?: number) => formatCurrency(n, { fromDollars: true });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -460,22 +458,6 @@ export default function Bills() {
     if (bill?.supplierName) return bill.supplierName;
     const supplier = suppliers.find((s) => s.id === supplierId);
     return supplier?.name || "—";
-  };
-
-  const formatCurrency = (amount: number) => {
-    const dollars = amount / 100;
-    const isWholeNumber = dollars % 1 === 0;
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      minimumFractionDigits: isWholeNumber ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(dollars);
-  };
-
-  const formatDate = (date: Date | string | null | undefined) => {
-    if (!date) return "-";
-    return format(new Date(date), "dd MMM yyyy");
   };
 
   const filteredBills = useMemo(() => {

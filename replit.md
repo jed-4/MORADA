@@ -144,6 +144,18 @@ All list/table pages render through the shared `<DataTable>` (`client/src/compon
 
 Pages that intentionally do NOT use DataTable: kanban/board views, calendar views, Gantt timelines (HBCFTracker uses DataTable but pivots weeks as columns; CompanyWorkload remains a custom Gantt), and detail-screen inline editors (e.g. estimate template editor). Detail/inline-edit grids are out of scope for the pro table rollout.
 
+## Shared UI Primitives
+Use these instead of redefining the same helpers per page:
+
+- **Formatters** (`client/src/lib/formatters.ts`):
+  - `formatCurrency(cents, opts?)` — AUD by default; pass `{ fromDollars: true }` if the value is already in dollars. Whole numbers render without cents.
+  - `formatDate(date, fmt?)` — defaults to `"d MMM yyyy"`; returns `"—"` for null.
+  - `formatTime`, `formatDateTime`, `formatRelativeDistance`, `formatNumber`, `formatPercent`.
+  - `getRelativeDate(date, { completed? })` — bucket + label (Today / Tomorrow / Yesterday / overdue).
+- **Status pills** (`client/src/components/StatusBadge.tsx`): single source of truth for status colours. Pass any status string — it auto-maps to the success / warning / info / danger / action / neutral palette and humanises the label. Override with `tone` or `label` when needed.
+- **Empty states** (`client/src/components/EmptyState.tsx`): `<EmptyState icon={Icon} title="…" description="…" action={{ label, onClick }} />`. Use `variant="card"` (default) for the body of a list page or `variant="inline"` when nesting inside another surface.
+- **List page header** (`client/src/components/ListPageToolbar.tsx`): replaces the per-page header card. Renders the standard two-row pattern (title + count + lilac primary CTA on row 1; search + filters + columns slot on row 2). The right-hand `rightSlot` is the natural home for `<DataTableColumnPicker>`.
+
 ## Messaging Features
 - **Scheduled Messages**: Messages can be scheduled for future delivery via a datetime picker (calendar popover). Background processor (`ScheduledMessageProcessor`) checks every minute and delivers due messages via the existing socket broadcast. Schema: `scheduledAt` column on `messages` table.
 - **Message File Attachments** (web only): Full upload/view flow for attachments on channel messages and thread replies. Schema: `messageAttachments` table (id, messageId, fileName, fileUrl, mimeType, fileSize). Storage object route: `POST /api/uploads/request-url` → PUT to presigned URL → `POST /api/messages/:id/attachments`. `GET /api/channels/:channelId/messages` joins attachments. Images render inline with a fullscreen lightbox; documents render as download cards. Attach button (Paperclip) in compose area. Thread reply bubbles also render attachments from the shared `attachmentsMap` state.
