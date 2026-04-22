@@ -3,11 +3,13 @@ import {
   ColumnDef,
   ColumnOrderState,
   ColumnSizingState,
+  ExpandedState,
   Row,
   SortingState,
   VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
@@ -35,7 +37,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { ArrowUp, ArrowDown, EyeOff, ArrowUpDown } from "lucide-react";
+import { ArrowUp, ArrowDown, EyeOff, ArrowUpDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Per-column metadata stored in ColumnDef.meta
@@ -73,6 +75,24 @@ export interface DataTableProps<TData> {
    * a page from a bespoke table to this shared component.
    */
   legacyConfigKey?: string;
+  /**
+   * Return the child rows for a given row, or `undefined` if the row has no
+   * children. Enables the expander column. Mutually exclusive with
+   * `renderExpandedPanel` (panel mode).
+   */
+  getSubRows?: (row: TData) => TData[] | undefined;
+  /**
+   * Render a custom panel below the row when expanded. Enables the expander
+   * column. Mutually exclusive with `getSubRows` (nested-rows mode).
+   */
+  renderExpandedPanel?: (row: TData) => React.ReactNode;
+  /**
+   * Optionally hide the expander chevron for rows that should not be
+   * expandable (e.g. rows with no children). Defaults to `true` for any row
+   * if not provided; in nested-row mode the chevron is auto-hidden when the
+   * row has no sub-rows regardless.
+   */
+  isRowExpandable?: (row: TData) => boolean;
 }
 
 interface LegacyColumnConfigEntry { id: string; visible: boolean; order: number }
@@ -101,7 +121,7 @@ function migrateLegacyConfig(scope: string, legacyKey: string | undefined) {
 const MIN_COL_WIDTH = 60;
 const STICKY_SHADOW = "2px 0 4px rgba(0,0,0,0.06)";
 
-function lsKey(scope: string, kind: "widths" | "order" | "hidden" | "sort") {
+function lsKey(scope: string, kind: "widths" | "order" | "hidden" | "sort" | "expanded") {
   return `buildpro_table_${kind}_${scope}`;
 }
 
@@ -194,13 +214,43 @@ export function DataTable<TData>({
   className,
   rowHeight = 36,
   legacyConfigKey,
+  getSubRows,
+  renderExpandedPanel,
+  isRowExpandable,
 }: DataTableProps<TData>) {
   // One-time migration of legacy `[{id,visible,order}]` storage into the new keys.
   useMemo(() => migrateLegacyConfig(storageKey, legacyConfigKey), [storageKey, legacyConfigKey]);
 
+  const expansionEnabled = !!getSubRows || !!renderExpandedPanel;
+  const expanderColId = "__expander";
+
+  // Build the effective column list: auto-inject the expander as the first
+  // pinned column when expansion is enabled. The user-provided `columns` is
+  // never mutated.
+  const effectiveColumns = useMemo<ColumnDef<TData, unknown>[]>(() => {
+    if (!expansionEnabled) return columns;
+    const expanderCol: ColumnDef<TData, unknown> = {
+      id: expanderColId,
+      header: "",
+      enableSorting: false,
+      enableResizing: false,
+      cell: () => null, // rendered specially in the row
+      size: 28,
+      meta: { defaultWidth: 28, pinned: true, align: "center", headerLabel: "" },
+    };
+    return [expanderCol, ...columns];
+  }, [columns, expansionEnabled]);
+
   // ── Persistent state ───────────────────────────────────────────────────────
   const initialOrder = useMemo<ColumnOrderState>(
-    () => loadJSON(lsKey(storageKey, "order"), columns.map((c) => c.id as string)),
+    () => {
+      const saved = loadJSON<string[] | null>(lsKey(storageKey, "order"), null);
+      // Always force the auto-injected expander column to be the very first
+      // entry so it cannot be reordered out of position by stale persisted state.
+      const base = saved ?? effectiveColumns.map((c) => c.id as string);
+      const filtered = base.filter((id) => id !== expanderColId);
+      return expansionEnabled ? [expanderColId, ...filtered] : filtered;
+    },
     [storageKey], // intentionally only on mount per scope
     // eslint-disable-next-line react-hooks/exhaustive-deps
   );
@@ -210,7 +260,7 @@ export function DataTable<TData>({
       if (stored && Object.keys(stored).length > 0) return stored;
       // No persisted state — seed from column meta `defaultHidden`.
       const seeded: VisibilityState = {};
-      columns.forEach((c) => {
+      effectiveColumns.forEach((c) => {
         const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
         if (meta.defaultHidden && c.id) seeded[c.id as string] = false;
       });
@@ -227,33 +277,50 @@ export function DataTable<TData>({
   const initialSizing = useMemo<ColumnSizingState>(() => {
     const saved = loadJSON<ColumnSizingState>(lsKey(storageKey, "widths"), {});
     const sizing: ColumnSizingState = {};
-    columns.forEach((c) => {
+    effectiveColumns.forEach((c) => {
       const id = c.id as string;
       const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
       sizing[id] = saved[id] ?? meta.defaultWidth ?? 120;
     });
     return sizing;
-  }, [storageKey, columns]);
+  }, [storageKey, effectiveColumns]);
+  const initialExpanded = useMemo<ExpandedState>(
+    () => (expansionEnabled ? loadJSON(lsKey(storageKey, "expanded"), {}) : {}),
+    [storageKey, expansionEnabled],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  );
 
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
     // Reconcile saved order against current column ids (add new, drop removed).
-    const known = new Set(columns.map((c) => c.id as string));
+    const known = new Set(effectiveColumns.map((c) => c.id as string));
     const ordered = initialOrder.filter((id) => known.has(id));
-    columns.forEach((c) => {
+    effectiveColumns.forEach((c) => {
       const id = c.id as string;
       if (!ordered.includes(id)) ordered.push(id);
     });
+    // Pinned expander always stays at index 0.
+    if (expansionEnabled) {
+      const idx = ordered.indexOf(expanderColId);
+      if (idx > 0) {
+        ordered.splice(idx, 1);
+        ordered.unshift(expanderColId);
+      }
+    }
     return ordered;
   });
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(initialHidden);
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(initialSizing);
+  const [expanded, setExpanded] = useState<ExpandedState>(initialExpanded);
 
   // Persist on change
   useEffect(() => saveJSON(lsKey(storageKey, "order"), columnOrder), [columnOrder, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "hidden"), columnVisibility), [columnVisibility, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "sort"), sorting), [sorting, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "widths"), columnSizing), [columnSizing, storageKey]);
+  useEffect(() => {
+    if (expansionEnabled) saveJSON(lsKey(storageKey, "expanded"), expanded);
+  }, [expanded, storageKey, expansionEnabled]);
 
   // Listen for picker-driven visibility updates from the same tab.
   useEffect(() => {
@@ -269,18 +336,24 @@ export function DataTable<TData>({
   // ── TanStack table ────────────────────────────────────────────────────────
   const table = useReactTable({
     data,
-    columns,
-    state: { columnOrder, columnVisibility, sorting, columnSizing },
+    columns: effectiveColumns,
+    state: { columnOrder, columnVisibility, sorting, columnSizing, expanded },
     onColumnOrderChange: setColumnOrder,
     onColumnVisibilityChange: setColumnVisibility,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    onExpandedChange: setExpanded,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getExpandedRowModel: expansionEnabled ? getExpandedRowModel() : undefined,
+    getSubRows: getSubRows
+      ? (row) => getSubRows(row as TData) ?? undefined
+      : undefined,
     enableColumnResizing: true,
     columnResizeMode: "onChange",
     defaultColumn: { minSize: MIN_COL_WIDTH, size: 120 },
-    getRowId: rowKey,
+    getRowId: (row, index, parent) =>
+      parent ? `${parent.id}.${rowKey(row)}` : rowKey(row),
   });
 
   // ── Custom 3-state sort cycle (asc → desc → cleared) ──────────────────────
@@ -302,12 +375,14 @@ export function DataTable<TData>({
 
   const pinnedIds = useMemo(() => {
     const set = new Set<string>();
-    columns.forEach((c) => {
+    effectiveColumns.forEach((c) => {
       const meta = (c.meta as DataTableColumnMeta | undefined) ?? {};
       if (meta.pinned) set.add(c.id as string);
     });
+    // Expander is always treated as pinned even if a caller forgets to set it.
+    if (expansionEnabled) set.add(expanderColId);
     return set;
-  }, [columns]);
+  }, [effectiveColumns, expansionEnabled]);
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -328,6 +403,9 @@ export function DataTable<TData>({
   const visibleLeafColumns = table.getVisibleLeafColumns();
   const totalWidth = visibleLeafColumns.reduce((s, c) => s + c.getSize(), 0);
   const firstVisibleId = visibleLeafColumns[0]?.id;
+  // The first user-defined (non-expander) column is the one that should carry
+  // depth-based indentation for nested child rows.
+  const firstNonExpanderId = visibleLeafColumns.find((c) => c.id !== expanderColId)?.id;
 
   return (
     <div className={cn("relative w-full h-full overflow-auto", className)} data-testid={`datatable-${storageKey}`}>
@@ -450,16 +528,34 @@ export function DataTable<TData>({
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <DataTableRow
-                  key={row.id}
-                  row={row}
-                  rowHeight={rowHeight}
-                  firstVisibleId={firstVisibleId}
-                  onRowClick={onRowClick}
-                  className={rowClassName?.(row.original)}
-                />
-              ))
+              table.getRowModel().rows.flatMap((row) => {
+                const nodes: React.ReactNode[] = [
+                  <DataTableRow
+                    key={row.id}
+                    row={row}
+                    rowHeight={rowHeight}
+                    firstVisibleId={firstVisibleId}
+                    firstNonExpanderId={firstNonExpanderId}
+                    expanderColId={expanderColId}
+                    expansionEnabled={expansionEnabled}
+                    nestedMode={!!getSubRows}
+                    isRowExpandable={isRowExpandable}
+                    onRowClick={onRowClick}
+                    className={rowClassName?.(row.original)}
+                  />,
+                ];
+                // Panel mode: render the custom panel beneath an expanded row.
+                if (renderExpandedPanel && row.depth === 0 && row.getIsExpanded()) {
+                  nodes.push(
+                    <tr key={`${row.id}__panel`} data-testid={`row-${row.id}-panel`}>
+                      <td colSpan={visibleLeafColumns.length} className="p-0 border-b border-border/40 bg-muted/30">
+                        {renderExpandedPanel(row.original)}
+                      </td>
+                    </tr>,
+                  );
+                }
+                return nodes;
+              })
             )}
           </tbody>
         </table>
@@ -472,25 +568,52 @@ function DataTableRow<TData>({
   row,
   rowHeight,
   firstVisibleId,
+  firstNonExpanderId,
+  expanderColId,
+  expansionEnabled,
+  nestedMode,
+  isRowExpandable,
   onRowClick,
   className,
 }: {
   row: Row<TData>;
   rowHeight: number;
   firstVisibleId: string | undefined;
+  firstNonExpanderId?: string;
+  expanderColId?: string;
+  expansionEnabled?: boolean;
+  nestedMode?: boolean;
+  isRowExpandable?: (row: TData) => boolean;
   onRowClick?: (row: TData) => void;
   className?: string;
 }) {
+  // Determine if this row can be expanded (chevron visible).
+  let canExpand = false;
+  if (expansionEnabled) {
+    if (nestedMode) {
+      canExpand = row.subRows.length > 0;
+    } else {
+      // Panel mode: parent rows only (depth 0). Defer to caller predicate.
+      canExpand = row.depth === 0 && (isRowExpandable ? isRowExpandable(row.original) : true);
+    }
+  }
+  const isExpanded = expansionEnabled && row.getIsExpanded();
+
   return (
     <tr
       className={cn("border-b border-border/40 hover-elevate", onRowClick && "cursor-pointer", className)}
       style={{ height: rowHeight }}
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
       data-testid={`row-${row.id}`}
+      data-depth={row.depth}
     >
       {row.getVisibleCells().map((cell) => {
         const meta = (cell.column.columnDef.meta as DataTableColumnMeta | undefined) ?? {};
         const isSticky = cell.column.id === firstVisibleId;
+        const isExpanderCell = expansionEnabled && cell.column.id === expanderColId;
+        const isFirstNonExpander = cell.column.id === firstNonExpanderId;
+        // 16px indent per nesting level for the leftmost user column.
+        const indentPx = isFirstNonExpander && row.depth > 0 ? row.depth * 16 : 0;
         return (
           <td
             key={cell.id}
@@ -508,9 +631,30 @@ function DataTableRow<TData>({
               zIndex: isSticky ? 1 : undefined,
               background: isSticky ? "hsl(var(--background))" : undefined,
               boxShadow: isSticky ? STICKY_SHADOW : undefined,
+              paddingLeft: indentPx ? `calc(0.5rem + ${indentPx}px)` : undefined,
             }}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {isExpanderCell ? (
+              canExpand ? (
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center justify-center h-5 w-5 rounded hover-elevate active-elevate-2 transition-transform",
+                    isExpanded && "rotate-90",
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    row.toggleExpanded();
+                  }}
+                  aria-label={isExpanded ? "Collapse row" : "Expand row"}
+                  data-testid={`expander-${row.id}`}
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              ) : null
+            ) : (
+              flexRender(cell.column.columnDef.cell, cell.getContext())
+            )}
           </td>
         );
       })}
