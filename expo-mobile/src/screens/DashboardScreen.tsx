@@ -223,6 +223,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleDetail, setScheduleDetail] = useState<ScheduleItem | null>(null);
   const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
+  const [phaseLabels, setPhaseLabels] = useState<Record<string, string>>({});
+  const [subStatusLabels, setSubStatusLabels] = useState<Record<string, string>>({});
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449', topBar: '#1a1410', topBarText: '#f5e9d8', sectionLabel: '#94a3b8' }
@@ -230,7 +232,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
-      const [data, statusData] = await Promise.all([
+      const [data, statusData, phaseData, subStatusData] = await Promise.all([
         apiFetch<{
           projects: Project[];
           tasks: Task[];
@@ -245,6 +247,12 @@ export default function DashboardScreen({ navigation }: Props) {
         }>('/api/mobile/dashboard'),
         apiFetch<{ options: { key: string; name: string; color: string | null; sortOrder: number }[] }>(
           '/api/field-categories/by-key/schedule_item.status'
+        ).catch(() => ({ options: [] })),
+        apiFetch<{ options: { key: string; name: string }[] }>(
+          '/api/field-categories/by-key/project.system_phase'
+        ).catch(() => ({ options: [] })),
+        apiFetch<{ options: { key: string; name: string }[] }>(
+          '/api/field-categories/by-key/project.sub_status'
         ).catch(() => ({ options: [] })),
       ]);
 
@@ -264,6 +272,12 @@ export default function DashboardScreen({ navigation }: Props) {
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map(o => ({ key: o.key, name: o.name, color: o.color || '#94a3b8' }))
         );
+      }
+      if (phaseData?.options?.length) {
+        setPhaseLabels(Object.fromEntries(phaseData.options.map(o => [o.key, o.name])));
+      }
+      if (subStatusData?.options?.length) {
+        setSubStatusLabels(Object.fromEntries(subStatusData.options.map(o => [o.key, o.name])));
       }
 
       // Seed cache so other screens don't need to re-fetch this data
@@ -552,47 +566,6 @@ export default function DashboardScreen({ navigation }: Props) {
     </View>
   );
 
-  const scheduleTiles: Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; color: string; onPress: () => void }> = [
-    {
-      key: 'scope',
-      icon: 'list-outline',
-      label: 'Scope',
-      color: '#A890D4',
-      onPress: () => {
-        const target = projects.find(p => p.isFavourite) || projects[0];
-        if (target) {
-          navigation.getParent()?.navigate('Projects', {
-            screen: 'Scope',
-            params: { projectId: target.id, projectName: target.name },
-          });
-        } else {
-          navigation.getParent()?.navigate('Projects');
-        }
-      },
-    },
-    {
-      key: 'kanban',
-      icon: 'grid-outline',
-      label: 'Kanban',
-      color: '#F59E0B',
-      onPress: () => navigation.getParent()?.navigate('More', { screen: 'Tasks' }),
-    },
-    {
-      key: 'calendar',
-      icon: 'calendar-outline',
-      label: 'Calendar',
-      color: '#10B981',
-      onPress: () => navigation.getParent()?.navigate('More', { screen: 'MyCalendar' }),
-    },
-    {
-      key: 'costs',
-      icon: 'cash-outline',
-      label: 'Costs',
-      color: '#EF4444',
-      onPress: () => navigation.navigate('BusinessDashboard'),
-    },
-  ];
-
   const initials = (name?: string) => {
     if (!name) return 'U';
     const parts = name.trim().split(/\s+/);
@@ -678,7 +651,8 @@ export default function DashboardScreen({ navigation }: Props) {
           >
             {projects.slice(0, 12).map(p => {
               const tint = p.color || getProjectColor(p.id);
-              const typeLabel = p.projectSubStatus || p.currentSystemPhase || '';
+              const prettify = (k?: string) => (k ? subStatusLabels[k] || phaseLabels[k] || k.replace(/_/g, ' ') : '');
+              const typeLabel = prettify(p.projectSubStatus) || prettify(p.currentSystemPhase) || '';
               return (
                 <TouchableOpacity
                   key={p.id}
@@ -859,22 +833,6 @@ export default function DashboardScreen({ navigation }: Props) {
 
         {/* SCHEDULE */}
         <SectionHeader label="SCHEDULE" />
-        <View style={styles.scheduleTilesRow}>
-          {scheduleTiles.map(tile => (
-            <TouchableOpacity
-              key={tile.key}
-              style={[styles.scheduleTile, { backgroundColor: tile.color + (isDark ? '22' : '15') }]}
-              onPress={tile.onPress}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.scheduleTileBar, { backgroundColor: tile.color }]} />
-              <View style={styles.scheduleTileBody}>
-                <Ionicons name={tile.icon} size={20} color={tile.color} />
-                <Text style={[styles.scheduleTileLabel, { color: colors.text }]}>{tile.label}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
         {(() => {
           const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
           const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
@@ -882,7 +840,14 @@ export default function DashboardScreen({ navigation }: Props) {
           const tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setHours(23, 59, 59, 999);
           const todayItems = scheduleItems.filter(i => new Date(i.startDate) >= todayStart && new Date(i.startDate) <= todayEnd);
           const tomorrowItems = scheduleItems.filter(i => new Date(i.startDate) >= tomorrowStart && new Date(i.startDate) <= tomorrowEnd);
-          if (todayItems.length === 0 && tomorrowItems.length === 0) return null;
+          if (todayItems.length === 0 && tomorrowItems.length === 0) {
+            return (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={22} color={colors.muted} />
+                <Text style={[styles.emptyText, { color: colors.secondary }]}>No upcoming schedule items</Text>
+              </View>
+            );
+          }
           const renderCard = (item: ScheduleItem, isTomorrow: boolean) => {
             const sc = getProjectColor(item.projectId);
             return (
@@ -904,7 +869,12 @@ export default function DashboardScreen({ navigation }: Props) {
             );
           };
           return (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleItemsScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.scheduleItemsScrollWrap}
+              contentContainerStyle={styles.scheduleItemsScroll}
+            >
               {todayItems.map(it => renderCard(it, false))}
               {tomorrowItems.map(it => renderCard(it, true))}
             </ScrollView>
@@ -2197,6 +2167,7 @@ const styles = StyleSheet.create({
   projectTilesScroll: {
     marginTop: 16,
     marginBottom: 4,
+    marginHorizontal: -16,
   },
   projectTilesRow: {
     paddingHorizontal: 16,
@@ -2344,32 +2315,9 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  // Schedule tiles
-  scheduleTilesRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 8,
-    marginBottom: 10,
-  },
-  scheduleTile: {
-    flex: 1,
-    borderRadius: 10,
-    overflow: 'hidden',
-    minHeight: 70,
-  },
-  scheduleTileBar: {
-    height: 4,
-  },
-  scheduleTileBody: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    gap: 4,
-  },
-  scheduleTileLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+  // Schedule items horizontal scroll
+  scheduleItemsScrollWrap: {
+    marginHorizontal: -16,
   },
   scheduleItemsScroll: {
     paddingHorizontal: 16,

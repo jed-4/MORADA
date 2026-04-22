@@ -23160,10 +23160,11 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         ? (activities as any[]).slice(0, 10)
         : (activities as any[]).filter(a => !a.projectId || visibleProjectIds.has(a.projectId)).slice(0, 10);
 
-      // Recent timesheets: 7 most recent for this user
-      const recentTimesheets = (allTimesheets as any[])
+      // Recent timesheets: 7 most recent for this user, enriched with cost code splits
+      const recentTimesheetsBase = (allTimesheets as any[])
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 7);
+      const recentTimesheets = await enrichTimesheetsWithCostCodes(recentTimesheetsBase);
 
       res.json({
         projects: visibleProjects,
