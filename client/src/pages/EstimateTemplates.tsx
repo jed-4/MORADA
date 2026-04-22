@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnPicker, type DataTableColumnMeta } from "@/components/data-table/DataTable";
+import { LineItemTable } from "@/components/LineItemTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1799,29 +1800,18 @@ export default function EstimateTemplates() {
             {previewData.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-sm">Preview ({previewData.filter(r => r.name).length} items)</Label>
-                <div className="border rounded-md overflow-auto max-h-48">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted sticky top-0">
-                      <tr>
-                        <th className="text-left p-2 border-b font-medium">Group</th>
-                        <th className="text-left p-2 border-b font-medium">Item Name</th>
-                        <th className="text-left p-2 border-b font-medium">Cost Code</th>
-                        <th className="text-left p-2 border-b font-medium">Qty</th>
-                        <th className="text-right p-2 border-b font-medium">Unit Price</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewData.slice(0, 10).map((row, idx) => (
-                        <tr key={idx} className="border-b">
-                          <td className="p-2">{row.groupName || "-"}</td>
-                          <td className="p-2 font-medium">{row.name || "-"}</td>
-                          <td className="p-2">{row.costCode || "-"}</td>
-                          <td className="p-2">{row.quantity || "-"}</td>
-                          <td className="p-2 text-right">{row.unitPrice ? `$${row.unitPrice}` : "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="border rounded-md overflow-hidden">
+                  <LineItemTable
+                    data={previewData.slice(0, 10)}
+                    rowKey={(_row, idx) => idx}
+                    columns={[
+                      { key: "groupName", header: "Group", cell: (row) => row.groupName || "-" },
+                      { key: "name", header: "Item Name", cell: (row) => row.name || "-", className: "font-medium" },
+                      { key: "costCode", header: "Cost Code", cell: (row) => row.costCode || "-" },
+                      { key: "qty", header: "Qty", cell: (row) => row.quantity || "-" },
+                      { key: "unitPrice", header: "Unit Price", align: "right", cell: (row) => (row.unitPrice ? `$${row.unitPrice}` : "-") },
+                    ]}
+                  />
                   {previewData.length > 10 && (
                     <div className="p-2 text-center text-xs text-muted-foreground border-t bg-muted/50">
                       ... and {previewData.length - 10} more items

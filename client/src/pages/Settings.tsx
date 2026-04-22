@@ -8,6 +8,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { LineItemTable } from "@/components/LineItemTable";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -2160,59 +2161,62 @@ function DefaultValuesSection() {
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left p-3 font-medium">Name</th>
-                    <th className="text-left p-3 font-medium">Due</th>
-                    <th className="text-center p-3 font-medium">Bill Default</th>
-                    <th className="text-center p-3 font-medium">Invoice Default</th>
-                    <th className="text-right p-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {paymentTermsOptions.map((term: any) => (
-                    <tr key={term.id} className="hover:bg-muted/30">
-                      <td className="p-3 font-medium">{term.name}</td>
-                      <td className="p-3 text-muted-foreground">{formatDueType(term.dueValue, term.dueType)}</td>
-                      <td className="p-3 text-center">
-                        <Switch
-                          checked={term.isBillDefault}
-                          onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'bill' })}
-                          data-testid={`switch-bill-default-${term.id}`}
-                        />
-                      </td>
-                      <td className="p-3 text-center">
-                        <Switch
-                          checked={term.isInvoiceDefault}
-                          onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'invoice' })}
-                          data-testid={`switch-invoice-default-${term.id}`}
-                        />
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setEditingPaymentTerm(term)}
-                            data-testid={`button-edit-payment-term-${term.id}`}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => deletePaymentTermMutation.mutate(term.id)}
-                            data-testid={`button-delete-payment-term-${term.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <LineItemTable
+                size="sm"
+                data={paymentTermsOptions as any[]}
+                rowKey={(term) => term.id}
+                columns={[
+                  { key: "name", header: "Name", className: "font-medium", cell: (term) => term.name },
+                  { key: "due", header: "Due", className: "text-muted-foreground", cell: (term) => formatDueType(term.dueValue, term.dueType) },
+                  {
+                    key: "billDefault",
+                    header: "Bill Default",
+                    align: "center",
+                    truncate: false,
+                    cell: (term) => (
+                      <Switch
+                        checked={term.isBillDefault}
+                        onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'bill' })}
+                        data-testid={`switch-bill-default-${term.id}`}
+                      />
+                    ),
+                  },
+                  {
+                    key: "invoiceDefault",
+                    header: "Invoice Default",
+                    align: "center",
+                    truncate: false,
+                    cell: (term) => (
+                      <Switch
+                        checked={term.isInvoiceDefault}
+                        onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'invoice' })}
+                        data-testid={`switch-invoice-default-${term.id}`}
+                      />
+                    ),
+                  },
+                ]}
+                actionsHeader="Actions"
+                actions={(term) => (
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setEditingPaymentTerm(term)}
+                      data-testid={`button-edit-payment-term-${term.id}`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deletePaymentTermMutation.mutate(term.id)}
+                      data-testid={`button-delete-payment-term-${term.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              />
             </div>
           )}
         </CardContent>

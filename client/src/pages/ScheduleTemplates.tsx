@@ -8,6 +8,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type ScheduleTemplate } from "@shared/schema";
 import { type ColumnDef } from "@tanstack/react-table";
+import { LineItemTable } from "@/components/LineItemTable";
 import {
   DataTable,
   DataTableColumnPicker,
@@ -1080,27 +1081,17 @@ export default function ScheduleTemplates() {
             {previewData.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-sm">Preview ({previewData.filter(r => r.name).length} tasks)</Label>
-                <div className="border rounded-md overflow-auto max-h-48">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted sticky top-0">
-                      <tr>
-                        <th className="text-left p-2 border-b font-medium">Category</th>
-                        <th className="text-left p-2 border-b font-medium">Task Name</th>
-                        <th className="text-left p-2 border-b font-medium">Duration</th>
-                        <th className="text-left p-2 border-b font-medium">Assignee</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewData.slice(0, 10).map((row, idx) => (
-                        <tr key={idx} className="border-b">
-                          <td className="p-2">{row.category || "-"}</td>
-                          <td className="p-2 font-medium">{row.name || "-"}</td>
-                          <td className="p-2">{row.duration || "1"} days</td>
-                          <td className="p-2">{row.assignee || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="border rounded-md overflow-hidden">
+                  <LineItemTable
+                    data={previewData.slice(0, 10)}
+                    rowKey={(_row, idx) => idx}
+                    columns={[
+                      { key: "category", header: "Category", cell: (row) => row.category || "-" },
+                      { key: "name", header: "Task Name", cell: (row) => row.name || "-", className: "font-medium" },
+                      { key: "duration", header: "Duration", cell: (row) => `${row.duration || "1"} days` },
+                      { key: "assignee", header: "Assignee", cell: (row) => row.assignee || "-" },
+                    ]}
+                  />
                   {previewData.length > 10 && (
                     <div className="p-2 text-center text-xs text-muted-foreground border-t bg-muted/50">
                       ... and {previewData.length - 10} more tasks

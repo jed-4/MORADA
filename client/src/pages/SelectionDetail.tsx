@@ -43,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { LineItemTable } from "@/components/LineItemTable";
 import {
   Tabs,
   TabsContent,
@@ -768,116 +769,128 @@ export default function SelectionDetail() {
             ) : (
               /* Table View */
               <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr className="border-b">
-                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground w-16">Image</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Option</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">SKU</th>
-                      <th className="text-center px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Qty</th>
-                      <th className="text-right px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Unit Price</th>
-                      <th className="text-right px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Amount</th>
-                      <th className="text-center px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Status</th>
-                      <th className="w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOptions.map((option, idx) => (
-                      <tr 
-                        key={option.id}
-                        className={cn(
-                          "border-b hover-elevate cursor-pointer",
-                          idx % 2 === 0 ? "bg-background" : "bg-muted/20"
-                        )}
-                        onClick={() => handleEditOption(option)}
-                        data-testid={`row-option-${option.id}`}
-                      >
-                        <td className="px-3 py-2">
-                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
-                            <Package className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-sm">{option.name}</span>
-                            {option.brand && (
-                              <span className="text-xs text-muted-foreground">{option.brand}</span>
-                            )}
-                            {option.productUrl && (
-                              <a 
-                                href={option.productUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                                View product
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className="font-mono text-xs text-muted-foreground">{option.sku || "-"}</span>
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <span className="text-sm">{option.quantity} {option.unitType}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <span className="text-sm">${((option.unitCost || 0) / 100).toFixed(2)}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <span className="text-sm font-semibold">${((option.totalCost || 0) / 100).toFixed(2)}</span>
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          {option.isSelectedByClient ? (
-                            <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Selected
-                            </Badge>
-                          ) : !option.visibleToClient ? (
-                            <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
-                              <EyeOff className="w-3 h-3 mr-1" />
-                              Hidden
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-xs">
-                              <Eye className="w-3 h-3 mr-1" />
-                              Visible
-                            </Badge>
+                <LineItemTable
+                  size="sm"
+                  data={filteredOptions}
+                  rowKey={(option) => option.id}
+                  rowTestId={(option) => `row-option-${option.id}`}
+                  onRowClick={(option) => handleEditOption(option)}
+                  rowClassName={(_option, idx) => cn("hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
+                  columns={[
+                    {
+                      key: "image",
+                      header: "Image",
+                      width: 64,
+                      truncate: false,
+                      cell: () => (
+                        <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                          <Package className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "option",
+                      header: "Option",
+                      truncate: false,
+                      cell: (option) => (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium text-sm">{option.name}</span>
+                          {option.brand && (
+                            <span className="text-xs text-muted-foreground">{option.brand}</span>
                           )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-6 w-6"
-                                data-testid={`button-option-menu-${option.id}`}
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
-                                <Edit3 className="w-4 h-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={(e) => { e.stopPropagation(); deleteOptionMutation.mutate(option.id); }}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          {option.productUrl && (
+                            <a
+                              href={option.productUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              View product
+                            </a>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "sku",
+                      header: "SKU",
+                      cell: (option) => (
+                        <span className="font-mono text-xs text-muted-foreground">{option.sku || "-"}</span>
+                      ),
+                    },
+                    {
+                      key: "qty",
+                      header: "Qty",
+                      align: "center",
+                      cell: (option) => `${option.quantity} ${option.unitType}`,
+                    },
+                    {
+                      key: "unitPrice",
+                      header: "Unit Price",
+                      align: "right",
+                      cell: (option) => `$${((option.unitCost || 0) / 100).toFixed(2)}`,
+                    },
+                    {
+                      key: "amount",
+                      header: "Amount",
+                      align: "right",
+                      className: "font-semibold",
+                      cell: (option) => `$${((option.totalCost || 0) / 100).toFixed(2)}`,
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      align: "center",
+                      truncate: false,
+                      cell: (option) =>
+                        option.isSelectedByClient ? (
+                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Selected
+                          </Badge>
+                        ) : !option.visibleToClient ? (
+                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
+                            <EyeOff className="w-3 h-3 mr-1" />
+                            Hidden
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            <Eye className="w-3 h-3 mr-1" />
+                            Visible
+                          </Badge>
+                        ),
+                    },
+                  ]}
+                  actions={(option) => (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          data-testid={`button-option-menu-${option.id}`}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
+                          <Edit3 className="w-4 h-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); deleteOptionMutation.mutate(option.id); }}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                />
               </div>
             )}
           </div>

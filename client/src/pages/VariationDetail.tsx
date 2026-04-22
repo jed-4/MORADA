@@ -32,6 +32,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
 import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
@@ -171,33 +172,12 @@ export default function VariationDetail() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  const [colWidths, setColWidths] = useState<Record<string, number>>({
+  // Column widths for cost-line table (was draggable; resize removed in #169 in
+  // favour of fixed widths shared via the LineItemTable primitive).
+  const colWidths: Record<string, number> = {
     type: 80, name: 112, description: 200, costCode: 140,
     qty: 56, unit: 56, unitCost: 96, markup: 64,
     amtExTax: 96, amtIncTax: 96, visible: 52,
-  });
-  const colResizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
-  const [resizingCol, setResizingCol] = useState<string | null>(null);
-
-  const startColResize = (col: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizingCol(col);
-    colResizeRef.current = { col, startX: e.clientX, startWidth: colWidths[col] };
-    const onMove = (ev: MouseEvent) => {
-      if (!colResizeRef.current) return;
-      const delta = ev.clientX - colResizeRef.current.startX;
-      const next = Math.max(36, colResizeRef.current.startWidth + delta);
-      setColWidths(prev => ({ ...prev, [colResizeRef.current!.col]: next }));
-    };
-    const onUp = () => {
-      colResizeRef.current = null;
-      setResizingCol(null);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
   };
 
   // T003: Preview / PDF / Send state
@@ -1317,125 +1297,117 @@ export default function VariationDetail() {
                           <span className="text-xs text-muted-foreground/50">Items added here appear as a mini estimate</span>
                         </div>
                       ) : (
-                        <div>
-                          <table className="w-full text-sm border-collapse min-w-[1050px] table-fixed">
-                            <thead>
-                              <tr className="h-6 bg-muted/30 select-none">
-                                {([
-                                  { key: "type", label: "Type", align: "left" },
-                                  { key: "name", label: "Name", align: "left" },
-                                  { key: "description", label: "Description", align: "left" },
-                                  { key: "costCode", label: "Cost Code", align: "left" },
-                                  { key: "qty", label: "Qty", align: "right" },
-                                  { key: "unit", label: "Unit", align: "left" },
-                                  { key: "unitCost", label: "Unit Cost", align: "right" },
-                                  { key: "markup", label: "Mkup %", align: "right" },
-                                  { key: "amtExTax", label: "Amt ex Tax", align: "right" },
-                                  { key: "amtIncTax", label: "Amt inc Tax", align: "right" },
-                                  { key: "visible", label: "Visible", align: "center" },
-                                ] as const).map(({ key, label, align }) => (
-                                  <th
-                                    key={key}
-                                    style={{ width: colWidths[key], position: "relative" }}
-                                    className={`text-${align} text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2`}
-                                  >
-                                    {label}
-                                    <div
-                                      className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize group/resize flex items-center justify-center z-10"
-                                      onMouseDown={(e) => startColResize(key, e)}
-                                      onClick={(e) => e.stopPropagation()}
+                        <div className="min-w-[1050px]">
+                          <LineItemTable
+                            fixedLayout
+                            data={costLines}
+                            rowKey={(_line, index) => index}
+                            rowTestId={(_line, index) => `row-cost-line-${index}`}
+                            rowClassName={(line) => cn("transition-opacity", !line.showInPdf && "opacity-40")}
+                            columns={(() => {
+                              const typeColors: Record<string, string> = {
+                                Material: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                                Labour: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+                                Subcontractor: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+                                Fee: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                              };
+                              const cols: LineItemColumn<typeof costLines[number]>[] = [
+                                {
+                                  key: "type", header: "Type", width: colWidths.type, truncate: false,
+                                  cell: (line, index) => (
+                                    <Select value={line.type} onValueChange={(val) => updateCostLine(index, "type", val)}>
+                                      <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
+                                        <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium", typeColors[line.type] || typeColors.Material)}>{line.type}</span>
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="Material">Material</SelectItem>
+                                        <SelectItem value="Labour">Labour</SelectItem>
+                                        <SelectItem value="Subcontractor">Subcontractor</SelectItem>
+                                        <SelectItem value="Fee">Fee</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ),
+                                },
+                                {
+                                  key: "name", header: "Name", width: colWidths.name, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "description", header: "Description", width: colWidths.description, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-description-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "costCode", header: "Cost Code", width: colWidths.costCode, truncate: false,
+                                  cell: (line, index) => (
+                                    <CostCodeSelect value={line.costCode || ""} onValueChange={(val) => updateCostLine(index, "costCode", val)} allowNone triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full" data-testid={`select-cost-code-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "qty", header: "Qty", align: "right", width: colWidths.qty, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "unit", header: "Unit", width: colWidths.unit, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-unit-type-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "unitCost", header: "Unit Cost", align: "right", width: colWidths.unitCost, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "markup", header: "Mkup %", align: "right", width: colWidths.markup, truncate: false,
+                                  cell: (line, index) => (
+                                    <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
+                                  ),
+                                },
+                                {
+                                  key: "amtExTax", header: "Amt ex Tax", align: "right", width: colWidths.amtExTax,
+                                  cell: (line, index) => {
+                                    const amtExTax = getCostLineAmountExTax(line);
+                                    return <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>;
+                                  },
+                                },
+                                {
+                                  key: "amtIncTax", header: "Amt inc Tax", align: "right", width: colWidths.amtIncTax,
+                                  cell: (line, index) => {
+                                    const amtExTax = getCostLineAmountExTax(line);
+                                    const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
+                                    return <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>;
+                                  },
+                                },
+                                {
+                                  key: "visible", header: "Visible", align: "center", width: colWidths.visible, truncate: false,
+                                  cell: (line, index) => (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateCostLine(index, "showInPdf", !line.showInPdf)}
+                                      className={cn("h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 mx-auto", line.showInPdf ? "text-muted-foreground" : "text-muted-foreground/40")}
+                                      title={line.showInPdf ? "Visible in PDF — click to hide" : "Hidden from PDF — click to show"}
+                                      data-testid={`button-toggle-visibility-${index}`}
                                     >
-                                      <div className={`w-0.5 h-4 rounded-full transition-all ${resizingCol === key ? 'bg-primary' : 'bg-transparent group-hover/resize:bg-primary/60'}`} />
-                                    </div>
-                                  </th>
-                                ))}
-                                <th style={{ width: 32 }} />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {costLines.map((line, index) => {
-                                const typeColors: Record<string, string> = {
-                                  Material: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                                  Labour: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-                                  Subcontractor: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-                                  Fee: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-                                };
-                                const amtExTax = getCostLineAmountExTax(line);
-                                const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
-                                return (
-                                  <tr key={index} className={cn("h-9 border-b border-border/30 last:border-0 transition-opacity", !line.showInPdf && "opacity-40")} data-testid={`row-cost-line-${index}`}>
-                                    <td className="px-2 py-1">
-                                      <Select
-                                        value={line.type}
-                                        onValueChange={(val) => updateCostLine(index, "type", val)}
-                                      >
-                                        <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
-                                          <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium", typeColors[line.type] || typeColors.Material)}>
-                                            {line.type}
-                                          </span>
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="Material">Material</SelectItem>
-                                          <SelectItem value="Labour">Labour</SelectItem>
-                                          <SelectItem value="Subcontractor">Subcontractor</SelectItem>
-                                          <SelectItem value="Fee">Fee</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-description-${index}`} />
-                                    </td>
-                                    <td className="px-1 py-1">
-                                      <CostCodeSelect
-                                        value={line.costCode || ""}
-                                        onValueChange={(val) => updateCostLine(index, "costCode", val)}
-                                        allowNone
-                                        triggerClassName="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground w-full"
-                                        data-testid={`select-cost-code-${index}`}
-                                      />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-unit-type-${index}`} />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} onFocus={(e) => e.target.select()} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
-                                    </td>
-                                    <td className="px-2 py-1 text-right">
-                                      <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>
-                                    </td>
-                                    <td className="px-2 py-1 text-right">
-                                      <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>
-                                    </td>
-                                    <td className="px-2 py-1 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => updateCostLine(index, "showInPdf", !line.showInPdf)}
-                                        className={cn("h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 mx-auto", line.showInPdf ? "text-muted-foreground" : "text-muted-foreground/40")}
-                                        title={line.showInPdf ? "Visible in PDF — click to hide" : "Hidden from PDF — click to show"}
-                                        data-testid={`button-toggle-visibility-${index}`}
-                                      >
-                                        {line.showInPdf ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                                      </button>
-                                    </td>
-                                    <td className="px-2 py-1">
-                                      <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                                      {line.showInPdf ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                    </button>
+                                  ),
+                                },
+                              ];
+                              return cols;
+                            })()}
+                            actions={(_line, index) => (
+                              <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          />
                           <div className="flex items-center justify-end gap-6 pt-2 border-t border-border/30 text-sm">
                             <span className="text-muted-foreground">Ex Tax:</span>
                             <span className="font-semibold tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>

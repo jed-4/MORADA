@@ -28,6 +28,7 @@ import {
   Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
 import { Card } from "@/components/ui/card";
 import { DocumentPreview } from "@/components/DocumentPreview";
 import { ToastAction } from "@/components/ui/toast";
@@ -220,9 +221,7 @@ export default function BillDetail() {
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const dueDateManuallySet = useRef(false);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [colMenuOpen, setColMenuOpen] = useState(false);
-  const resizingCol = useRef<{ key: string; startX: number; startW: number } | null>(null);
   const [unmappedContactDialogOpen, setUnmappedContactDialogOpen] = useState(false);
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(null);
@@ -730,6 +729,8 @@ export default function BillDetail() {
     return getLineExTax(item) + getLineTax(item);
   };
 
+  // Column widths for the line-item grid. Resize handles were removed in #169
+  // when this table was migrated to the shared LineItemTable primitive.
   const defaultColWidths: Record<string, number> = {
     description: 140,
     costCode: 130,
@@ -744,30 +745,7 @@ export default function BillDetail() {
     incTax: 90,
   };
 
-  const getColWidth = (key: string) => columnWidths[key] || defaultColWidths[key] || 100;
-
-  const onResizeStart = (key: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = getColWidth(key);
-    resizingCol.current = { key, startX, startW };
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!resizingCol.current) return;
-      const diff = ev.clientX - resizingCol.current.startX;
-      const newW = Math.max(40, resizingCol.current.startW + diff);
-      setColumnWidths((prev) => ({ ...prev, [resizingCol.current!.key]: newW }));
-    };
-
-    const onMouseUp = () => {
-      resizingCol.current = null;
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-  };
+  const getColWidth = (key: string) => defaultColWidths[key] || 100;
 
   const createMutation = useMutation({
     mutationFn: async (data: BillFormData) => {
@@ -2445,83 +2423,39 @@ export default function BillDetail() {
               )}
 
               <div className="overflow-x-auto">
-                <table className="w-full text-[11px]" style={{ tableLayout: "fixed" }}>
-                  <thead>
-                    <tr className="border-b bg-muted/20">
-                      <th className="w-[28px] px-1 py-1.5 text-center">
-                        <Checkbox
-                          checked={lineItems.length > 0 && selectedLineIndices.size === lineItems.length}
-                          onCheckedChange={(checked) => {
-                            if (checked) setSelectedLineIndices(new Set(lineItems.map((_, i) => i)));
-                            else setSelectedLineIndices(new Set());
-                          }}
-                          data-testid="checkbox-select-all-lines"
-                        />
-                      </th>
-                      {[
-                        { key: "description", label: "Description", align: "left" },
-                        { key: "costCode", label: "Cost Code", align: "left" },
-                        { key: "qty", label: "Qty", align: "right" },
-                        { key: "unit", label: "Unit", align: "left" },
-                        { key: "tax", label: "Tax", align: "left" },
-                        { key: "account", label: "Account", align: "left" },
-                        { key: "unitCost", label: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)", align: "right" },
-                        ...(visibleAmountCols.exTax ? [{ key: "exTax", label: "Amt ex Tax", align: "right" as const }] : []),
-                        ...(visibleAmountCols.tax ? [{ key: "amtTax", label: "Amt Tax", align: "right" as const }] : []),
-                        ...(visibleAmountCols.incTax ? [{ key: "incTax", label: "Amt inc Tax", align: "right" as const }] : []),
-                        { key: "allowance", label: "Allowance", align: "left" },
-                      ].map((col) => (
-                        <th
-                          key={col.key}
-                          className={`relative font-medium text-muted-foreground px-2 py-1.5 select-none group ${col.align === "right" ? "text-right" : "text-left"}`}
-                          style={{ width: getColWidth(col.key), minWidth: col.key === "description" ? 100 : 40 }}
-                        >
-                          {col.label}
-                          <div
-                            className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize invisible group-hover:visible bg-primary/20"
-                            onMouseDown={(e) => onResizeStart(col.key, e)}
-                            data-testid={`resize-${col.key}`}
-                          />
-                        </th>
-                      ))}
-                      <th className="w-[32px] px-1 py-1.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lineItems.map((item, index) => (
-                      <tr key={index} className={`border-b last:border-b-0 hover:bg-muted/10 ${selectedLineIndices.has(index) ? 'bg-muted/20' : ''}`} data-testid={`row-line-item-${index}`}>
-                        <td className="px-1 py-0.5 text-center w-[28px]">
-                          <Checkbox
-                            checked={selectedLineIndices.has(index)}
-                            onCheckedChange={(checked) => {
-                              setSelectedLineIndices(prev => {
-                                const next = new Set(prev);
-                                if (checked) next.add(index); else next.delete(index);
-                                return next;
-                              });
-                            }}
-                            data-testid={`checkbox-line-${index}`}
-                          />
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("description") }}>
+                <LineItemTable
+                  fixedLayout
+                  data={lineItems}
+                  rowKey={(_item, index) => index}
+                  rowTestId={(_item, index) => `row-line-item-${index}`}
+                  rowCheckboxTestId={(_item, index) => `checkbox-line-${index}`}
+                  selectAllTestId="checkbox-select-all-lines"
+                  selection={{
+                    selectedKeys: selectedLineIndices as Set<string | number>,
+                    onChange: (next) => setSelectedLineIndices(new Set(Array.from(next).map((k) => Number(k)))),
+                  }}
+                  columns={(() => {
+                    const cols: LineItemColumn<LineItem>[] = [
+                      {
+                        key: "description", header: "Description", width: getColWidth("description"), truncate: false,
+                        cell: (item, index) => (
                           <input
                             value={item.description}
-                            onChange={(e) =>
-                              updateLineItem(index, "description", e.target.value)
-                            }
+                            onChange={(e) => updateLineItem(index, "description", e.target.value)}
                             placeholder="Description..."
                             className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-description-${index}`}
                           />
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("costCode") }}>
+                        ),
+                      },
+                      {
+                        key: "costCode", header: "Cost Code", width: getColWidth("costCode"), truncate: false,
+                        cell: (item, index) => (
                           <div className="flex items-center gap-1">
                             <div className="flex-1 min-w-0">
                               <CostCodeSelect
                                 value={item.costCodeId || ""}
-                                onValueChange={(value) =>
-                                  updateLineItem(index, "costCodeId", value)
-                                }
+                                onValueChange={(value) => updateLineItem(index, "costCodeId", value)}
                                 placeholder="Select..."
                                 triggerClassName="border-0 shadow-none bg-transparent text-[11px]"
                                 data-testid={`select-cost-code-${index}`}
@@ -2531,40 +2465,36 @@ export default function BillDetail() {
                               <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-cost-code-default-${index}`}>default</span>
                             )}
                           </div>
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("qty") }}>
+                        ),
+                      },
+                      {
+                        key: "qty", header: "Qty", align: "right", width: getColWidth("qty"), truncate: false,
+                        cell: (item, index) => (
                           <input
                             type="number"
                             value={item.quantity}
-                            onChange={(e) =>
-                              updateLineItem(
-                                index,
-                                "quantity",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
+                            onChange={(e) => updateLineItem(index, "quantity", parseFloat(e.target.value) || 0)}
                             className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-quantity-${index}`}
                           />
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("unit") }}>
+                        ),
+                      },
+                      {
+                        key: "unit", header: "Unit", width: getColWidth("unit"), truncate: false,
+                        cell: (item, index) => (
                           <input
                             value={item.unit}
-                            onChange={(e) =>
-                              updateLineItem(index, "unit", e.target.value)
-                            }
+                            onChange={(e) => updateLineItem(index, "unit", e.target.value)}
                             placeholder="Unit"
                             className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-unit-${index}`}
                           />
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("tax") }}>
-                          <Select
-                            value={item.tax}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "tax", value)
-                            }
-                          >
+                        ),
+                      },
+                      {
+                        key: "tax", header: "Tax", width: getColWidth("tax"), truncate: false,
+                        cell: (item, index) => (
+                          <Select value={item.tax} onValueChange={(value) => updateLineItem(index, "tax", value)}>
                             <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-tax-${index}`}>
                               <SelectValue />
                             </SelectTrigger>
@@ -2573,164 +2503,171 @@ export default function BillDetail() {
                               <SelectItem value="No GST">GST Free Expenses</SelectItem>
                             </SelectContent>
                           </Select>
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("account") }}>
+                        ),
+                      },
+                      {
+                        key: "account", header: "Account", width: getColWidth("account"), truncate: false,
+                        cell: (item, index) => (
                           <div className="flex items-center gap-1">
                             <div className="flex-1 min-w-0">
-                          {xeroAccounts.length > 0 ? (
-                            <Popover
-                              open={accountPickerOpenIndex === index}
-                              onOpenChange={(open) => {
-                                setAccountPickerOpenIndex(open ? index : null);
-                                if (!open) setAccountPickerSearch("");
-                              }}
-                            >
-                              <PopoverTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm text-left truncate hover-elevate"
-                                  data-testid={`select-account-${index}`}
+                              {xeroAccounts.length > 0 ? (
+                                <Popover
+                                  open={accountPickerOpenIndex === index}
+                                  onOpenChange={(open) => {
+                                    setAccountPickerOpenIndex(open ? index : null);
+                                    if (!open) setAccountPickerSearch("");
+                                  }}
                                 >
-                                  {(() => {
-                                    const acc = xeroAccounts.find((a) => a.code === item.account);
-                                    if (acc) return `${acc.code} - ${acc.name}`;
-                                    return item.account || (
-                                      <span className="text-muted-foreground">Select account...</span>
-                                    );
-                                  })()}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent
-                                className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]"
-                                align="start"
-                              >
-                                <Command shouldFilter={true}>
-                                  <CommandInput
-                                    placeholder="Search accounts..."
-                                    value={accountPickerSearch}
-                                    onValueChange={setAccountPickerSearch}
-                                    data-testid={`input-account-search-${index}`}
-                                  />
-                                  <CommandList className="max-h-[260px]">
-                                    <CommandEmpty>No accounts found.</CommandEmpty>
-                                    <CommandGroup>
-                                      <CommandItem
-                                        value="__none__ none clear"
-                                        onSelect={() => {
-                                          updateLineItem(index, "account", "");
-                                          setAccountPickerOpenIndex(null);
-                                          setAccountPickerSearch("");
-                                        }}
-                                        data-testid={`option-account-${index}-none`}
-                                      >
-                                        <span className="text-muted-foreground">None</span>
-                                      </CommandItem>
-                                      {xeroAccounts.map((acc) => (
-                                        <CommandItem
-                                          key={acc.code}
-                                          value={`${acc.code} ${acc.name}`}
-                                          onSelect={() => {
-                                            updateLineItem(index, "account", acc.code);
-                                            setAccountPickerOpenIndex(null);
-                                            setAccountPickerSearch("");
-                                          }}
-                                          data-testid={`option-account-${index}-${acc.code}`}
-                                        >
-                                          <span className="truncate">{acc.code} - {acc.name}</span>
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          ) : (
-                            <input
-                              value={item.account}
-                              onChange={(e) =>
-                                updateLineItem(index, "account", e.target.value)
-                              }
-                              placeholder="Account"
-                              className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                              data-testid={`input-account-${index}`}
-                            />
-                          )}
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm text-left truncate hover-elevate"
+                                      data-testid={`select-account-${index}`}
+                                    >
+                                      {(() => {
+                                        const acc = xeroAccounts.find((a) => a.code === item.account);
+                                        if (acc) return `${acc.code} - ${acc.name}`;
+                                        return item.account || (
+                                          <span className="text-muted-foreground">Select account...</span>
+                                        );
+                                      })()}
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]" align="start">
+                                    <Command shouldFilter={true}>
+                                      <CommandInput
+                                        placeholder="Search accounts..."
+                                        value={accountPickerSearch}
+                                        onValueChange={setAccountPickerSearch}
+                                        data-testid={`input-account-search-${index}`}
+                                      />
+                                      <CommandList className="max-h-[260px]">
+                                        <CommandEmpty>No accounts found.</CommandEmpty>
+                                        <CommandGroup>
+                                          <CommandItem
+                                            value="__none__ none clear"
+                                            onSelect={() => {
+                                              updateLineItem(index, "account", "");
+                                              setAccountPickerOpenIndex(null);
+                                              setAccountPickerSearch("");
+                                            }}
+                                            data-testid={`option-account-${index}-none`}
+                                          >
+                                            <span className="text-muted-foreground">None</span>
+                                          </CommandItem>
+                                          {xeroAccounts.map((acc) => (
+                                            <CommandItem
+                                              key={acc.code}
+                                              value={`${acc.code} ${acc.name}`}
+                                              onSelect={() => {
+                                                updateLineItem(index, "account", acc.code);
+                                                setAccountPickerOpenIndex(null);
+                                                setAccountPickerSearch("");
+                                              }}
+                                              data-testid={`option-account-${index}-${acc.code}`}
+                                            >
+                                              <span className="truncate">{acc.code} - {acc.name}</span>
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+                              ) : (
+                                <input
+                                  value={item.account}
+                                  onChange={(e) => updateLineItem(index, "account", e.target.value)}
+                                  placeholder="Account"
+                                  className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                                  data-testid={`input-account-${index}`}
+                                />
+                              )}
                             </div>
                             {supplierDefaultAccountCode && item.account === supplierDefaultAccountCode && (
                               <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-account-default-${index}`}>default</span>
                             )}
                           </div>
-                        </td>
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("unitCost") }}>
+                        ),
+                      },
+                      {
+                        key: "unitCost",
+                        header: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)",
+                        align: "right", width: getColWidth("unitCost"), truncate: false,
+                        cell: (item, index) => (
                           <input
                             type="number"
                             value={item.unitPrice}
-                            onChange={(e) =>
-                              updateLineItem(
-                                index,
-                                "unitPrice",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
+                            onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
                             className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-amount-${index}`}
                           />
-                        </td>
-                        {visibleAmountCols.exTax && (
-                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("exTax") }}>
-                            {formatCurrency(getLineExTax(item))}
-                          </td>
-                        )}
-                        {visibleAmountCols.tax && (
-                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("amtTax") }}>
-                            {formatCurrency(getLineTax(item))}
-                          </td>
-                        )}
-                        {visibleAmountCols.incTax && (
-                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("incTax") }}>
-                            {formatCurrency(getLineIncTax(item))}
-                          </td>
-                        )}
-                        <td className="px-1 py-0.5" style={{ width: getColWidth("allowance") }}>
-                          <Select
-                            value={item.allowanceItemId || "none"}
-                            onValueChange={(value) => {
-                              if (value === "none") {
-                                updateLineItem(index, "appliesToAllowances", false);
-                                updateLineItem(index, "allowanceItemId", undefined);
-                              } else {
-                                updateLineItem(index, "appliesToAllowances", true);
-                                updateLineItem(index, "allowanceItemId", value);
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-allowance-${index}`}>
-                              <SelectValue placeholder="None" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {allowances.map((allowance) => (
-                                <SelectItem key={allowance.id} value={allowance.id}>
-                                  {allowance.description} ({allowance.itemType})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-0.5 py-0.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => deleteLineItem(index)}
-                            className="p-1 rounded-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            data-testid={`button-delete-line-${index}`}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        ),
+                      },
+                    ];
+                    if (visibleAmountCols.exTax) {
+                      cols.push({
+                        key: "exTax", header: "Amt ex Tax", align: "right", width: getColWidth("exTax"),
+                        className: "text-muted-foreground",
+                        cell: (item) => formatCurrency(getLineExTax(item)),
+                      });
+                    }
+                    if (visibleAmountCols.tax) {
+                      cols.push({
+                        key: "amtTax", header: "Amt Tax", align: "right", width: getColWidth("amtTax"),
+                        className: "text-muted-foreground",
+                        cell: (item) => formatCurrency(getLineTax(item)),
+                      });
+                    }
+                    if (visibleAmountCols.incTax) {
+                      cols.push({
+                        key: "incTax", header: "Amt inc Tax", align: "right", width: getColWidth("incTax"),
+                        className: "text-muted-foreground",
+                        cell: (item) => formatCurrency(getLineIncTax(item)),
+                      });
+                    }
+                    cols.push({
+                      key: "allowance", header: "Allowance", width: getColWidth("allowance"), truncate: false,
+                      cell: (item, index) => (
+                        <Select
+                          value={item.allowanceItemId || "none"}
+                          onValueChange={(value) => {
+                            if (value === "none") {
+                              updateLineItem(index, "appliesToAllowances", false);
+                              updateLineItem(index, "allowanceItemId", undefined);
+                            } else {
+                              updateLineItem(index, "appliesToAllowances", true);
+                              updateLineItem(index, "allowanceItemId", value);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-allowance-${index}`}>
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {allowances.map((allowance) => (
+                              <SelectItem key={allowance.id} value={allowance.id}>
+                                {allowance.description} ({allowance.itemType})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ),
+                    });
+                    return cols;
+                  })()}
+                  actions={(_item, index) => (
+                    <button
+                      type="button"
+                      onClick={() => deleteLineItem(index)}
+                      className="p-1 rounded-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      data-testid={`button-delete-line-${index}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                />
               </div>
 
               <div className="px-3 py-1.5 border-t">
