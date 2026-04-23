@@ -28,8 +28,23 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type PaymentTermsOption } from "@shared/schema";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { z } from "zod";
 
 const DEFAULT_GREY = "#64748b";
+
+// Trade and supplier contacts MUST have an explicit Business Name. Without
+// this guard the form silently falls back to firstName + lastName, which
+// makes the contact appear as the key person in lists.
+const addContactFormSchema = insertContactSchema.superRefine((data, ctx) => {
+  const isBusiness = data.contactType === "trade" || data.contactType === "supplier";
+  if (isBusiness && !(data.name || "").trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["name"],
+      message: "Business name is required",
+    });
+  }
+});
 
 class DialogErrorBoundary extends Component<
   { children: ReactNode; onClose: () => void },
@@ -85,7 +100,7 @@ export default function AddContactDialog({
   });
 
   const form = useForm<InsertContact>({
-    resolver: zodResolver(insertContactSchema),
+    resolver: zodResolver(addContactFormSchema),
     defaultValues: {
       name: "",
       firstName: "",
@@ -185,10 +200,17 @@ export default function AddContactDialog({
       if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = undefined;
       
       // `name` is the canonical business / person name. For business
-      // contacts the user typed it directly; for team/client contacts we
-      // fall back to firstName + lastName so the row always has a name.
+      // contacts (trade/supplier) the schema requires the user to type it
+      // directly — DO NOT fall back to firstName + lastName, because that
+      // makes the contact appear as the key person in lists. For team and
+      // client contacts the fallback is fine because there is no separate
+      // business name concept.
+      const isBusiness = cleanData.contactType === "trade" || cleanData.contactType === "supplier";
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
-      const fullName = (cleanData.name || "").trim() || personName || "Unnamed Contact";
+      const typedName = (cleanData.name || "").trim();
+      const fullName = isBusiness
+        ? typedName
+        : typedName || personName || "Unnamed Contact";
       const payload = { ...cleanData, name: fullName };
       return await apiRequest("/api/contacts", "POST", payload);
     },

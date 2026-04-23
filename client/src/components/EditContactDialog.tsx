@@ -28,9 +28,24 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type Contact } from "@shared/schema";
+import { z } from "zod";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+
+// Trade and supplier contacts MUST keep an explicit Business Name. Without
+// this guard, blanking the Business Name on save would silently fall back
+// to firstName + lastName, making the contact appear as the key person.
+const editContactFormSchema = insertContactSchema.superRefine((data, ctx) => {
+  const isBusiness = data.contactType === "trade" || data.contactType === "supplier";
+  if (isBusiness && !(data.name || "").trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["name"],
+      message: "Business name is required",
+    });
+  }
+});
 
 const PAYMENT_TERMS_OPTIONS = [
   { value: "on_receipt",        label: "On Receipt" },
@@ -65,7 +80,7 @@ export default function EditContactDialog({
   const isXeroConnected = xeroStatus?.connected === true;
 
   const form = useForm<InsertContact>({
-    resolver: zodResolver(insertContactSchema),
+    resolver: zodResolver(editContactFormSchema),
     defaultValues: {
       name: contact.name || "",
       firstName: contact.firstName || "",
@@ -266,13 +281,16 @@ export default function EditContactDialog({
   const onSubmit = (data: InsertContact) => {
     // Derive the canonical `name` so the contact list always matches what
     // the user just typed. Business types (trade/supplier) edit `name`
-    // directly via the Business Name field; team/client types only edit
-    // firstName + lastName, so we re-compose `name` from those.
+    // directly via the Business Name field — never fall back to the key
+    // person, because that would overwrite the business identity in lists.
+    // Team/client types only edit firstName + lastName, so we re-compose
+    // `name` from those.
     const isBusiness = data.contactType === "trade" || data.contactType === "supplier";
     const personName = `${data.firstName || ""} ${data.lastName || ""}`.trim();
+    const typedName = (data.name || "").trim();
     const resolvedName = isBusiness
-      ? (data.name || "").trim() || personName
-      : personName || (data.name || "").trim();
+      ? typedName
+      : personName || typedName;
 
     // Contact colour drives schedule colour — keep them in sync
     const syncedData = {

@@ -9506,12 +9506,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Belt-and-braces: ensure `name` is always populated. Falls back to
-      // firstName + lastName, then `company` (legacy), so any caller
-      // (mobile, Xero import, OCR) can't create a nameless row.
+      // Ensure `name` is always populated. For business contacts
+      // (trade/supplier) `name` is the Business Name and MUST be supplied
+      // explicitly — never fall back to firstName + lastName, because that
+      // would silently overwrite the business identity with the key
+      // person. For team/client contacts the firstName + lastName fallback
+      // is fine.
       const data = { ...validationResult.data };
       const trimmedName = (data.name || "").trim();
+      const isBusiness = data.contactType === "trade" || data.contactType === "supplier";
       if (!trimmedName) {
+        if (isBusiness) {
+          return res.status(400).json({ error: "Business name is required for trade and supplier contacts" });
+        }
         const personName = `${data.firstName || ""} ${data.lastName || ""}`.trim();
         const fallback = personName || (data.company || "").trim();
         if (!fallback) {
@@ -9569,7 +9576,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${fromZodError(validationResult.error).toString()}`);
             continue;
           }
-          await storage.createContact({ ...validationResult.data, companyId });
+          // Apply the same business-name guard as the single-create
+          // endpoint so bulk import can't bypass the rule.
+          const validated = validationResult.data;
+          const isBusiness = validated.contactType === "trade" || validated.contactType === "supplier";
+          const trimmedName = (validated.name || "").trim();
+          if (isBusiness && !trimmedName) {
+            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): Business name is required for trade and supplier contacts`);
+            continue;
+          }
+          await storage.createContact({ ...validated, name: trimmedName || validated.name || "", companyId });
           results.success++;
         } catch (error: any) {
           results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${error.message || 'Failed to import'}`);

@@ -12306,9 +12306,16 @@ export class DbStorage implements IStorage {
 
   async createContact(contact: InsertContact & { companyId: string }): Promise<Contact> {
     try {
-      // Auto-generate name from firstName and lastName if not provided
-      const name = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
-      
+      // For business contacts (trade/supplier) `name` is the Business Name
+      // and must be supplied by the caller — never auto-fall-back to the
+      // key person, because that overwrites business identity in lists.
+      // For team/client/etc. the firstName + lastName fallback is fine.
+      const isBusiness = contact.contactType === "trade" || contact.contactType === "supplier";
+      const trimmedName = (contact.name || "").trim();
+      const name = isBusiness
+        ? trimmedName
+        : trimmedName || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
+
       const newContacts = await db.insert(schema.contacts)
         .values({ ...contact, name })
         .returning();
@@ -12328,17 +12335,25 @@ export class DbStorage implements IStorage {
         // Get existing contact to merge firstName/lastName
         const existing = await this.getContact(id, companyId);
         if (existing) {
-          const firstName = contact.firstName !== undefined ? contact.firstName : existing.firstName;
-          const lastName = contact.lastName !== undefined ? contact.lastName : existing.lastName;
-          
-          // Only regenerate name if at least one name component is non-empty
-          const trimmedFirst = (firstName || "").trim();
-          const trimmedLast = (lastName || "").trim();
-          
-          if (trimmedFirst || trimmedLast) {
-            updateData.name = [trimmedFirst, trimmedLast].filter(Boolean).join(" ");
+          // For trade/supplier the canonical `name` is the Business Name
+          // and editing the key person must NOT overwrite it. Only
+          // re-derive `name` from firstName + lastName for team/client.
+          const effectiveType = (contact.contactType ?? existing.contactType) as string;
+          const isBusiness = effectiveType === "trade" || effectiveType === "supplier";
+
+          if (!isBusiness) {
+            const firstName = contact.firstName !== undefined ? contact.firstName : existing.firstName;
+            const lastName = contact.lastName !== undefined ? contact.lastName : existing.lastName;
+
+            // Only regenerate name if at least one name component is non-empty
+            const trimmedFirst = (firstName || "").trim();
+            const trimmedLast = (lastName || "").trim();
+
+            if (trimmedFirst || trimmedLast) {
+              updateData.name = [trimmedFirst, trimmedLast].filter(Boolean).join(" ");
+            }
+            // If both are empty, preserve the existing name (don't overwrite with "")
           }
-          // If both are empty, preserve the existing name (don't overwrite with "")
         }
       }
       
