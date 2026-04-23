@@ -278,7 +278,7 @@ export default function Header() {
 
   
   return (
-    <header className="flex items-center justify-between px-3 py-1 sticky top-0 z-50 flex-shrink-0">
+    <header className="flex items-center justify-between px-3 py-0 sticky top-0 z-50 flex-shrink-0">
       <div className="flex items-center gap-2">
         {/* Logo */}
         <div className="flex items-center justify-center w-6 h-6 bg-primary rounded" data-testid="company-logo">
@@ -672,7 +672,7 @@ export default function Header() {
         {/* New Button with Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" size="sm" data-testid="button-new" className="h-7 px-2 text-[11px] gap-1">
+            <Button variant="default" size="sm" data-testid="button-new" className="h-6 px-2 text-[11px] gap-1">
               <Plus className="h-3 w-3" />
               New
             </Button>
