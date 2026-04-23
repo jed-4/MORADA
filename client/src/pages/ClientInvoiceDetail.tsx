@@ -246,6 +246,7 @@ export default function ClientInvoiceDetail() {
   const [sendToXero, setSendToXero] = useState(false);
   const [xeroLinkModalOpen, setXeroLinkModalOpen] = useState(false);
   const [xeroUnmappedClientName, setXeroUnmappedClientName] = useState("");
+  const xeroRetryRef = useRef<(() => Promise<void>) | null>(null);
 
   // ── new UI state ─────────────────────────────────────────────────────────────
   const [introCollapsed, setIntroCollapsed] = useState(true);
@@ -868,18 +869,14 @@ export default function ClientInvoiceDetail() {
     sendToXero: sendToXero,
   });
 
-  const openXeroLinkModal = (errorMsg: string) => {
-    try {
-      const jsonStart = errorMsg.indexOf("{");
-      if (jsonStart !== -1) {
-        const parsed = JSON.parse(errorMsg.slice(jsonStart));
-        if (parsed.error === "UNMAPPED_CONTACT") {
-          setXeroUnmappedClientName(parsed.clientName || "Unknown Client");
-          setXeroLinkModalOpen(true);
-          return true;
-        }
-      }
-    } catch {}
+  const openXeroLinkModal = (error: any, retryFn: () => Promise<void>) => {
+    const payload = error?.payload;
+    if (payload?.error === "UNMAPPED_CONTACT") {
+      setXeroUnmappedClientName(payload.clientName || "Unknown Client");
+      xeroRetryRef.current = retryFn;
+      setXeroLinkModalOpen(true);
+      return true;
+    }
     return false;
   };
 
@@ -968,19 +965,24 @@ export default function ClientInvoiceDetail() {
 
       // Auto-push to Xero if sendToXero is enabled on create
       if (sendToXero && xeroStatus?.connected && inv.id) {
-        try {
+        const doPush = async () => {
           const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: inv.id });
           toast({ title: "Created & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
+        };
+        try {
+          await doPush();
+          handleCancel();
         } catch (xeroErr: any) {
-          if (!openXeroLinkModal(xeroErr.message || "")) {
+          if (!openXeroLinkModal(xeroErr, doPush)) {
             toast({ title: "Created, but Xero push failed", description: xeroErr.message || "Invoice saved — you can push to Xero manually", variant: "destructive" });
+            handleCancel();
           }
+          // if modal opened, stay on page so user can link and retry
         }
       } else {
         toast({ title: "Success", description: "Invoice created successfully" });
+        handleCancel();
       }
-
-      handleCancel();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to create invoice", variant: "destructive" });
@@ -1099,28 +1101,31 @@ export default function ClientInvoiceDetail() {
 
       // Auto-sync to Xero if sendToXero is enabled
       if (sendToXero && xeroStatus?.connected && effectiveInvoiceId) {
-        try {
-          const xeroInvoiceId = (inv as ClientInvoice).xeroInvoiceId;
+        const xeroInvoiceId = (inv as ClientInvoice).xeroInvoiceId;
+        const doPush = async () => {
           if (xeroInvoiceId) {
-            // Update existing Xero invoice — apiRequest throws on error, returns parsed JSON on success
             const data = await apiRequest(`/api/xero/update-client-invoice/${effectiveInvoiceId}`, "PATCH");
             toast({ title: "Saved & synced to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || xeroInvoiceId} updated` });
           } else {
-            // Push as new Xero invoice
             const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: effectiveInvoiceId });
             queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
             toast({ title: "Saved & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
           }
+        };
+        try {
+          await doPush();
+          handleCancel();
         } catch (xeroErr: any) {
-          if (!openXeroLinkModal(xeroErr.message || "")) {
+          if (!openXeroLinkModal(xeroErr, doPush)) {
             toast({ title: "Saved, but Xero sync failed", description: xeroErr.message || "Unknown Xero error", variant: "destructive" });
+            handleCancel();
           }
+          // if modal opened, stay on page so user can link and retry
         }
       } else {
         toast({ title: "Success", description: "Invoice updated successfully" });
+        handleCancel();
       }
-
-      handleCancel();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to update invoice", variant: "destructive" });
@@ -1217,7 +1222,7 @@ export default function ClientInvoiceDetail() {
 
       // Auto-sync to Xero on send if sendToXero is enabled
       if (sendToXero && xeroStatus?.connected && effectiveInvoiceId) {
-        try {
+        const doPush = async () => {
           if (invoice?.xeroInvoiceId) {
             await apiRequest(`/api/xero/update-client-invoice/${effectiveInvoiceId}`, "PATCH");
             toast({ title: "Sent & synced to Xero", description: "Invoice marked as sent and synced to Xero" });
@@ -1225,14 +1230,21 @@ export default function ClientInvoiceDetail() {
             const data = await apiRequest("/api/xero/push-client-invoice", "POST", { invoiceId: effectiveInvoiceId });
             toast({ title: "Sent & pushed to Xero", description: `Xero invoice ${data.xeroInvoiceNumber || data.xeroInvoiceId} created` });
           }
+        };
+        try {
+          await doPush();
+          handleCancel();
         } catch (xeroErr: any) {
-          toast({ title: "Sent, but Xero sync failed", description: xeroErr.message || "Invoice sent — you can sync to Xero manually", variant: "destructive" });
+          if (!openXeroLinkModal(xeroErr, doPush)) {
+            toast({ title: "Sent, but Xero sync failed", description: xeroErr.message || "Invoice sent — you can sync to Xero manually", variant: "destructive" });
+            handleCancel();
+          }
+          // if modal opened, stay on page so user can link and retry
         }
       } else {
         toast({ title: "Success", description: "Invoice sent successfully" });
+        handleCancel();
       }
-
-      handleCancel();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to send invoice", variant: "destructive" });
@@ -1285,8 +1297,7 @@ export default function ClientInvoiceDetail() {
   const handlePushToXero = async () => {
     if (!effectiveInvoiceId || xeroPushing) return;
     setXeroPushing(true);
-    try {
-      // apiRequest throws on non-2xx and returns parsed JSON on success
+    const doPush = async () => {
       const data = await apiRequest("/api/xero/push-client-invoice", "POST", {
         invoiceId: effectiveInvoiceId,
       });
@@ -1297,8 +1308,11 @@ export default function ClientInvoiceDetail() {
       queryClient.invalidateQueries({
         queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
+    };
+    try {
+      await doPush();
     } catch (error: any) {
-      if (!openXeroLinkModal(error.message || "")) {
+      if (!openXeroLinkModal(error, doPush)) {
         toast({
           title: "Failed to send to Xero",
           description: error.message || "Could not push invoice to Xero",
@@ -4451,12 +4465,23 @@ export default function ClientInvoiceDetail() {
 
       <XeroContactLinkModal
         open={xeroLinkModalOpen}
-        onClose={() => setXeroLinkModalOpen(false)}
+        onClose={() => {
+          xeroRetryRef.current = null;
+          setXeroLinkModalOpen(false);
+        }}
         clientId={(currentProject as any)?.clientId || null}
         clientName={xeroUnmappedClientName}
-        onLinked={() => {
+        onLinked={async () => {
           setXeroLinkModalOpen(false);
-          handlePushToXero();
+          const retry = xeroRetryRef.current;
+          xeroRetryRef.current = null;
+          if (retry) {
+            try {
+              await retry();
+            } catch (err: any) {
+              toast({ title: "Xero push failed", description: err.message || "Could not push invoice to Xero", variant: "destructive" });
+            }
+          }
         }}
       />
     </div>
