@@ -672,8 +672,8 @@ export default function Header() {
         {/* New Button with Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" size="sm" data-testid="button-new" className="h-7 text-xs">
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
+            <Button variant="default" size="sm" data-testid="button-new" className="h-7 px-2 text-[11px] gap-1">
+              <Plus className="h-3 w-3" />
               New
             </Button>
           </DropdownMenuTrigger>

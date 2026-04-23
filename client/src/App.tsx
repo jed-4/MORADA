@@ -449,7 +449,7 @@ function AuthWrapper() {
             <WarmPaletteSwitcher />
             <SidebarProvider style={style as React.CSSProperties}>
             <div 
-              className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-2"
+              className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-0.5"
               style={pageBackgroundStyle}
             >
               {DEBUG_MODE && (
