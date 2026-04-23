@@ -336,8 +336,8 @@ export function TimesheetImportDialog({
         onOpenChange(v);
       }}
     >
-      <DialogContent className={step === 2 ? "max-w-3xl" : "max-w-md"}>
-        <DialogHeader>
+      <DialogContent className={`flex flex-col max-h-[90vh] p-0 ${step === 2 ? "max-w-3xl" : "max-w-md"}`}>
+        <DialogHeader className="px-6 pt-6 pb-2 flex-shrink-0">
           <DialogTitle>
             {step === 1
               ? "Import Timesheets"
@@ -346,7 +346,7 @@ export function TimesheetImportDialog({
         </DialogHeader>
 
         {step === 1 && (
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 px-6 py-2 overflow-y-auto flex-1 min-h-0">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Project *</label>
               <Select value={projectId} onValueChange={setProjectId}>
@@ -404,7 +404,7 @@ export function TimesheetImportDialog({
         )}
 
         {step === 2 && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-6 py-2 overflow-y-auto flex-1 min-h-0">
             <div className="flex items-center gap-4 text-sm">
               <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
                 <CheckCircle2 className="w-4 h-4" />
@@ -523,7 +523,7 @@ export function TimesheetImportDialog({
           </div>
         )}
 
-        <DialogFooter className="flex-wrap gap-2">
+        <DialogFooter className="flex-wrap gap-2 px-6 py-4 border-t border-border flex-shrink-0">
           {step === 1 ? (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>

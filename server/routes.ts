@@ -17405,17 +17405,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const dbUser = (req.user as any).dbUser;
-      const userRoleName = ((dbUser?.roleName as string | undefined) ?? "").toLowerCase();
-      const isAdmin =
-        userRoleName.includes("admin") ||
-        userRoleName.includes("owner") ||
-        userRoleName.includes("general manage");
-      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
-
-      if (!isAdmin && !canApprove) {
-        return res.status(403).json({ error: "You do not have permission to import timesheets" });
-      }
+      // Importing timesheets is allowed for anyone who can create timesheets
+      // on the project — i.e. any authenticated team member of the company
+      // that owns the project. This matches the (auth-only) gate on
+      // POST /api/timesheets and lets users like Riza import for projects
+      // they already work on. requireTeamMember (above) has already ensured
+      // the user belongs to a company; we additionally check the target
+      // project belongs to the same company below.
 
       const projectId = req.body?.projectId as string | undefined;
       if (!projectId) {
@@ -17429,6 +17425,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project || project.companyId !== req.user.companyId) {
         return res.status(403).json({ error: "Project not found or access denied" });
       }
+
+      // Only users who can approve timesheets are allowed to import rows
+      // already marked as `approved`. For everyone else we coerce `approved`
+      // down to `submitted` so the explicit approval workflow remains the
+      // single source of truth for who approved what and when.
+      const importerCanApprove = await storage.canUserApproveTimesheets(req.user.id);
 
       // Parse XLSX workbook from uploaded buffer
       const wb = XLSX.read(new Uint8Array(req.file.buffer), { type: "array" });
@@ -17566,10 +17568,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors.push(`${rowLabel} warning: break "${breakParse.rawValue}" not understood — imported as 0`);
         }
 
-        // Parse status — only submitted/approved are valid for import; everything else becomes draft
+        // Parse status — only submitted/approved are valid for import; everything else becomes draft.
+        // Importers without approval permission can never set rows to `approved`;
+        // those get coerced to `submitted` so they still flow through the
+        // normal approval workflow.
         const rawStatus = String(row["Status"] ?? "").trim().toLowerCase();
-        const validStatus = (["submitted", "approved"].includes(rawStatus) ? rawStatus : "draft") as
-          "draft" | "submitted" | "approved" | "rejected";
+        let validStatus: "draft" | "submitted" | "approved" | "rejected" =
+          (["submitted", "approved"].includes(rawStatus) ? rawStatus : "draft") as
+            "draft" | "submitted" | "approved" | "rejected";
+        if (validStatus === "approved" && !importerCanApprove) {
+          validStatus = "submitted";
+          errors.push(`${rowLabel} info: status "approved" downgraded to "submitted" (importer cannot approve)`);
+        }
 
         const description = String(row["Description"] ?? "").trim() || null;
 

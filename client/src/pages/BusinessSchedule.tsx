@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical, EyeOff } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -315,6 +315,54 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
   );
 }
 
+function HiddenProjectsPill({ breakdown, onShowAll, testIdSuffix }: {
+  breakdown: { total: number; hiddenByVisibility: number; hiddenByOnline: number; hiddenByOffline: number; hiddenByProspective: number; hiddenByScheduleType: number };
+  onShowAll: () => void;
+  testIdSuffix: string;
+}) {
+  if (breakdown.total === 0) return null;
+  const lines: { label: string; count: number }[] = [
+    { label: "manually hidden in the project filter", count: breakdown.hiddenByVisibility },
+    { label: "hidden by Online toggle", count: breakdown.hiddenByOnline },
+    { label: "hidden by Offline toggle (no published online schedule yet)", count: breakdown.hiddenByOffline },
+    { label: "hidden by Prospective toggle", count: breakdown.hiddenByProspective },
+    { label: "hidden by Construction/Pre-con toggle", count: breakdown.hiddenByScheduleType },
+  ].filter(l => l.count > 0);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          data-testid={`pill-hidden-${testIdSuffix}`}
+          className="h-7 px-2.5 text-xs rounded-md border border-amber-300 text-amber-700 dark:text-amber-300 dark:border-amber-700/60 bg-amber-500/10 flex items-center gap-1.5 hover-elevate"
+          title="Some projects are hidden — click for details"
+        >
+          <EyeOff className="w-3 h-3" />
+          {breakdown.total} hidden
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 text-xs space-y-2">
+        <div className="font-medium">Why am I not seeing a project?</div>
+        <ul className="space-y-1 text-muted-foreground">
+          {lines.map((l, i) => (
+            <li key={i}>
+              <span className="font-medium text-foreground">{l.count}</span> {l.label}
+            </li>
+          ))}
+        </ul>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full mt-2"
+          onClick={onShowAll}
+          data-testid={`button-show-all-${testIdSuffix}`}
+        >
+          Show all projects
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -375,6 +423,55 @@ export default function BusinessSchedule() {
       return true;
     });
   }, [projects, scheduleTypeFilter, showOnline, showOffline, showProspective]);
+
+  // Why are some projects not showing? Break the gap into reasons so the user
+  // can see at a glance and one-click fix it.
+  const hiddenBreakdown = useMemo(() => {
+    let hiddenByVisibility = 0;
+    let hiddenByOnline = 0;
+    let hiddenByOffline = 0;
+    let hiddenByProspective = 0;
+    let hiddenByScheduleType = 0;
+    for (const p of projects) {
+      if (!p.isVisible) { hiddenByVisibility++; continue; }
+      if (p.category === 'online' && !showOnline) { hiddenByOnline++; continue; }
+      if (p.category === 'offline' && !showOffline) { hiddenByOffline++; continue; }
+      if (p.category === 'prospective' && !showProspective) { hiddenByProspective++; continue; }
+      if (scheduleTypeFilter === 'construction' &&
+          !(p.currentSystemPhase === 'construction' || p.currentSystemPhase === 'post_construction')) {
+        hiddenByScheduleType++; continue;
+      }
+      if (scheduleTypeFilter === 'precon' &&
+          !(p.currentSystemPhase === 'lead' || p.currentSystemPhase === 'pre_construction')) {
+        hiddenByScheduleType++; continue;
+      }
+    }
+    const total = hiddenByVisibility + hiddenByOnline + hiddenByOffline + hiddenByProspective + hiddenByScheduleType;
+    return { total, hiddenByVisibility, hiddenByOnline, hiddenByOffline, hiddenByProspective, hiddenByScheduleType };
+  }, [projects, scheduleTypeFilter, showOnline, showOffline, showProspective]);
+
+  const showAllProjects = useCallback(async () => {
+    setShowOnline(true);
+    setShowOffline(true);
+    setShowProspective(true);
+    setScheduleTypeFilter('all');
+    // Re-enable any individually-hidden projects on the server in one batch
+    // so we don't trigger N re-renders / N invalidations.
+    const hidden = projects.filter(p => !p.isVisible);
+    if (hidden.length === 0) return;
+    try {
+      await Promise.all(
+        hidden.map(p =>
+          apiRequest("PATCH", `/api/business-schedule/projects/${p.id}`, { isVisible: true })
+        )
+      );
+    } catch (err) {
+      console.error("Failed to show all projects", err);
+      toast({ title: "Some projects could not be shown", variant: "destructive" });
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
+    }
+  }, [projects, toast]);
 
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
@@ -575,8 +672,8 @@ export default function BusinessSchedule() {
     return (
       <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
         {/* Toolbar */}
-        <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
-          <div className="flex items-center gap-2">
+        <div className="min-h-10 flex items-center justify-between flex-wrap px-3 py-1 border-b border-border flex-shrink-0 gap-2">
+          <div className="flex items-center flex-wrap gap-2">
             <ViewModeTabs active="week" />
             <div className="flex items-center border rounded-md overflow-hidden">
               <button
@@ -600,6 +697,69 @@ export default function BusinessSchedule() {
               <span className={cn("inline-block w-2.5 h-2.5 rounded-sm", weekCompanyOnly ? "bg-primary" : "bg-muted")} />
               Company only
             </button>
+
+            {/* Category visibility toggles — same as Projects view so users
+                in Week view can see/adjust why projects might be hidden. */}
+            <button
+              data-testid="toggle-week-online"
+              aria-pressed={showOnline}
+              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-blue-700 dark:text-blue-300 bg-blue-500/10' : 'border-border text-muted-foreground'}`}
+              onClick={() => setShowOnline(v => !v)}
+            >
+              <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
+              Online
+            </button>
+            <button
+              data-testid="toggle-week-offline"
+              aria-pressed={showOffline}
+              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOffline ? 'border-amber-600 text-amber-700 dark:text-amber-300 bg-amber-500/10' : 'border-border text-muted-foreground'}`}
+              onClick={() => setShowOffline(v => !v)}
+            >
+              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed ${showOffline ? 'border-amber-600' : 'border-muted-foreground/40'}`} />
+              Offline
+            </button>
+            <button
+              data-testid="toggle-week-prospective"
+              aria-pressed={showProspective}
+              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-gray-400 text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
+              onClick={() => setShowProspective(v => !v)}
+            >
+              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-gray-400' : 'border-muted-foreground/40'}`} />
+              Prospective
+            </button>
+
+            {/* Project visibility filter (per-project show/hide). */}
+            <Popover open={showFilter} onOpenChange={setShowFilter}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-week-filter-projects">
+                  <Filter className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 max-h-80 overflow-y-auto">
+                <div className="text-xs font-medium mb-2">Show Projects</div>
+                {projects.map(p => (
+                  <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                    <Checkbox
+                      checked={p.isVisible}
+                      onCheckedChange={(checked) => {
+                        updateProjectMutation.mutate({ projectId: p.id, isVisible: !!checked });
+                      }}
+                    />
+                    <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
+                    <span className="text-xs truncate">{p.name}</span>
+                    <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1 capitalize shrink-0">
+                      {p.category}
+                    </Badge>
+                  </label>
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            <HiddenProjectsPill
+              breakdown={hiddenBreakdown}
+              onShowAll={showAllProjects}
+              testIdSuffix="week"
+            />
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
@@ -770,6 +930,12 @@ export default function BusinessSchedule() {
               ))}
             </PopoverContent>
           </Popover>
+
+          <HiddenProjectsPill
+            breakdown={hiddenBreakdown}
+            onShowAll={showAllProjects}
+            testIdSuffix="schedule"
+          />
         </div>
         <div className="flex items-center gap-1">
           <div className="flex items-center border rounded-md overflow-hidden">
