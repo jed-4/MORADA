@@ -1,6 +1,42 @@
 import { db } from "../db";
 import { contacts } from "@shared/schema";
 import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import path from "path";
+import fs from "fs";
+
+// Sentinel so the orphan-warn log fires only once across restarts,
+// matching the "one-time backend log" requirement. The sentinel just
+// records the run timestamp; we always still rewrite healable rows
+// (idempotent) but skip re-logging the same orphans on every boot.
+const SENTINEL_PATH = path.resolve(
+  import.meta.dirname,
+  "..",
+  "..",
+  ".local",
+  "state",
+  "heal-contact-names.json",
+);
+
+function readSentinel(): { completedAt?: string } | null {
+  try {
+    if (!fs.existsSync(SENTINEL_PATH)) return null;
+    return JSON.parse(fs.readFileSync(SENTINEL_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeSentinel(): void {
+  try {
+    fs.mkdirSync(path.dirname(SENTINEL_PATH), { recursive: true });
+    fs.writeFileSync(
+      SENTINEL_PATH,
+      JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
+    );
+  } catch (error) {
+    console.warn("[heal-contact-names] Could not write completion sentinel:", error);
+  }
+}
 
 /**
  * One-time data heal for trade/supplier contacts whose `name` was previously
@@ -58,13 +94,19 @@ export async function healContactNames(): Promise<void> {
       );
     }
 
-    if (orphaned.length > 0) {
+    // Log orphans only on the first heal run so we don't spam every
+    // restart with the same warning. The sentinel is written below after
+    // the run completes successfully.
+    const alreadyRan = readSentinel() !== null;
+    if (orphaned.length > 0 && !alreadyRan) {
       const sample = orphaned.slice(0, 10).map((c) => `${c.id}: "${c.name}"`).join(", ");
       console.warn(
         `[heal-contact-names] ${orphaned.length} trade/supplier contact(s) have a person-style name but no company value. ` +
           `Manual review needed. First ${Math.min(10, orphaned.length)}: ${sample}`,
       );
     }
+
+    writeSentinel();
   } catch (error) {
     console.error("[heal-contact-names] Failed to heal contact names:", error);
   }
