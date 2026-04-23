@@ -141,6 +141,8 @@ import {
   scheduleBaselines,
   scheduleBaselineItems,
   insertScheduleBaselineSchema,
+  activityNotes,
+  activities as activitiesTable,
   contacts,
   projects as projectsTable,
   users as usersTable,
@@ -18494,7 +18496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: `added schedule item`,
             entityId: item.id,
             entityName: null,
-            metadata: { changes: [{ name: item.name, change: "added" }] }
+            metadata: { scheduleId: schedule.id, changes: [{ name: item.name, change: "added", itemId: item.id }] }
           });
         }
       } catch (activityError) {
@@ -18633,14 +18635,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
           
-          // Determine what changed
+          // Determine what changed (with before/after values for from→to display)
           const changes: string[] = [];
+          const fields: Array<{ field: string; before: any; after: any }> = [];
           const logUpdateData = validationResult.data;
-          if (logUpdateData.name && logUpdateData.name !== originalItem?.name) changes.push("renamed");
-          if (logUpdateData.startDate || logUpdateData.endDate) changes.push("dates updated");
-          if (logUpdateData.status && logUpdateData.status !== originalItem?.status) changes.push(`status changed to ${logUpdateData.status}`);
-          if (logUpdateData.assigneeId !== undefined && logUpdateData.assigneeId !== originalItem?.assigneeId) changes.push("assigned");
-          if (logUpdateData.progress !== undefined && logUpdateData.progress !== originalItem?.progress) changes.push(`progress updated to ${logUpdateData.progress}%`);
+          if (logUpdateData.name && logUpdateData.name !== originalItem?.name) {
+            changes.push("renamed");
+            fields.push({ field: "name", before: originalItem?.name ?? null, after: logUpdateData.name });
+          }
+          if (logUpdateData.startDate && logUpdateData.startDate !== originalItem?.startDate) {
+            changes.push("start date updated");
+            fields.push({ field: "startDate", before: originalItem?.startDate ?? null, after: logUpdateData.startDate });
+          }
+          if (logUpdateData.endDate && logUpdateData.endDate !== originalItem?.endDate) {
+            changes.push("end date updated");
+            fields.push({ field: "endDate", before: originalItem?.endDate ?? null, after: logUpdateData.endDate });
+          }
+          if (logUpdateData.status && logUpdateData.status !== originalItem?.status) {
+            changes.push(`status changed to ${logUpdateData.status}`);
+            fields.push({ field: "status", before: originalItem?.status ?? null, after: logUpdateData.status });
+          }
+          if (logUpdateData.assigneeId !== undefined && logUpdateData.assigneeId !== originalItem?.assigneeId) {
+            changes.push("assigned");
+            fields.push({ field: "assigneeId", before: originalItem?.assigneeId ?? null, after: logUpdateData.assigneeId });
+          }
+          if (logUpdateData.progress !== undefined && logUpdateData.progress !== originalItem?.progress) {
+            changes.push(`progress updated to ${logUpdateData.progress}%`);
+            fields.push({ field: "progress", before: originalItem?.progress ?? null, after: logUpdateData.progress });
+          }
           
           const changeDescription = changes.length > 0 ? changes.join(", ") : "updated";
           
@@ -18653,7 +18675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: `updated schedule item`,
             entityId: item.id,
             entityName: null,
-            metadata: { changes: [{ name: item.name, change: changeDescription }] }
+            metadata: { scheduleId: schedule.id, changes: [{ name: item.name, change: changeDescription, fields, itemId: item.id }] }
           });
         }
       } catch (activityError) {
@@ -18722,23 +18744,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ? `${req.user.firstName} ${req.user.lastName}`
               : req.user.username || req.user.email || "User";
             
-            // Build changes list for grouped display
-            const changes: Array<{ name: string; change: string }> = [];
+            // Build changes list for grouped display (with before/after for from→to)
+            const changes: Array<{ name: string; change: string; fields?: Array<{ field: string; before: any; after: any }>; itemId?: string }> = [];
             
             for (const item of updatedItems) {
               const original = originalItemsMap.get(item.id);
               const changeDetails: string[] = [];
+              const fields: Array<{ field: string; before: any; after: any }> = [];
               
               if (original) {
-                if (item.name !== original.name) changeDetails.push("renamed");
-                if (item.startDate !== original.startDate || item.endDate !== original.endDate) changeDetails.push("dates updated");
-                if (item.status !== original.status) changeDetails.push(`status changed to ${item.status}`);
-                if (item.assigneeId !== original.assigneeId) changeDetails.push("assigned");
-                if (item.progress !== original.progress) changeDetails.push(`progress updated to ${item.progress}%`);
+                if (item.name !== original.name) {
+                  changeDetails.push("renamed");
+                  fields.push({ field: "name", before: original.name ?? null, after: item.name });
+                }
+                if (item.startDate !== original.startDate) {
+                  changeDetails.push("start date updated");
+                  fields.push({ field: "startDate", before: original.startDate ?? null, after: item.startDate });
+                }
+                if (item.endDate !== original.endDate) {
+                  changeDetails.push("end date updated");
+                  fields.push({ field: "endDate", before: original.endDate ?? null, after: item.endDate });
+                }
+                if (item.status !== original.status) {
+                  changeDetails.push(`status changed to ${item.status}`);
+                  fields.push({ field: "status", before: original.status ?? null, after: item.status });
+                }
+                if (item.assigneeId !== original.assigneeId) {
+                  changeDetails.push("assigned");
+                  fields.push({ field: "assigneeId", before: original.assigneeId ?? null, after: item.assigneeId });
+                }
+                if (item.progress !== original.progress) {
+                  changeDetails.push(`progress updated to ${item.progress}%`);
+                  fields.push({ field: "progress", before: original.progress ?? null, after: item.progress });
+                }
               }
               
               const changeText = changeDetails.length > 0 ? changeDetails.join(", ") : "updated";
-              changes.push({ name: item.name, change: changeText });
+              changes.push({ name: item.name, change: changeText, fields, itemId: item.id });
             }
             
             await storage.createActivity({
@@ -18750,7 +18792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               description: `updated ${updatedItems.length} schedule items`,
               entityId: null,
               entityName: null,
-              metadata: { changes }
+              metadata: { scheduleId: schedule.id, changes }
             });
           }
         }
@@ -18923,9 +18965,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             entityId: null,
             entityName: null,
             metadata: { 
+              scheduleId: schedule.id,
               changes: createdItems.slice(0, 5).map(item => ({ 
                 name: item.name, 
-                change: "imported" 
+                change: "imported",
+                itemId: item.id,
               }))
             }
           });
@@ -18972,7 +19016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               description: `removed schedule item`,
               entityId: req.params.id,
               entityName: null,
-              metadata: { changes: [{ name: item.name, change: "removed" }] }
+              metadata: { scheduleId: schedule.id, changes: [{ name: item.name, change: "removed", itemId: req.params.id }] }
             });
           }
         }
@@ -19175,7 +19219,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             entityId: null,
             entityName: null,
             metadata: { 
-              changes: items.map(item => ({ name: item.name, change: "removed" })),
+              changes: items.map(item => ({ name: item.name, change: "removed", itemId: item.id, scheduleId: item.scheduleId })),
+              scheduleIds: Array.from(new Set(items.map(item => item.scheduleId))),
               bulkDelete: true,
               count: deletedCount
             }
@@ -19608,6 +19653,257 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete activity note",
         details: error.message 
       });
+    }
+  });
+
+  // Unified schedule-level activity feed (notes + system change activities)
+  app.get("/api/schedules/:scheduleId/activity-feed", requireAuth, async (req, res) => {
+    try {
+      const scheduleId = req.params.scheduleId;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const filter = (req.query.filter as string) || "all"; // "all" | "notes" | "changes"
+
+      const schedule = await storage.getScheduleById(scheduleId);
+      if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+
+      // Authorize: user must belong to the project's company
+      const project = await storage.getProject(schedule.projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const items = await storage.getScheduleItems(scheduleId);
+      const itemIds = items.map(i => i.id);
+      const itemNameById = new Map(items.map(i => [i.id, i.name] as const));
+
+      type FeedEntry = {
+        id: string;
+        source: "note" | "change";
+        kind: string;
+        authorType: "user" | "system" | "ai";
+        userId: string | null;
+        userName: string | null;
+        scheduleItemId: string | null;
+        scheduleItemName: string | null;
+        action: string | null;
+        content: string;
+        metadata: any;
+        createdAt: string;
+      };
+
+      const entries: FeedEntry[] = [];
+
+      // Hard cap to keep memory bounded on huge schedules; pagination is
+      // applied below over the merged set so total/hasMore are accurate.
+      const SOURCE_HARD_CAP = 5000;
+
+      // Notes (user + system + ai-marked via metadata.authorType)
+      if (filter !== "changes" && itemIds.length > 0) {
+        const notes = await db.select()
+          .from(activityNotes)
+          .where(inArray(activityNotes.scheduleItemId, itemIds))
+          .orderBy(desc(activityNotes.createdAt))
+          .limit(SOURCE_HARD_CAP);
+
+        for (const n of notes) {
+          const meta: any = n.metadata || {};
+          const authorType: "user" | "system" | "ai" =
+            meta?.authorType === "ai" ? "ai" : (n.type === "system" ? "system" : "user");
+          entries.push({
+            id: `note:${n.id}`,
+            source: "note",
+            kind: n.activityType || (n.type === "system" ? "system_note" : "user_note"),
+            authorType,
+            userId: n.userId,
+            userName: n.userName,
+            scheduleItemId: n.scheduleItemId,
+            scheduleItemName: itemNameById.get(n.scheduleItemId) || null,
+            action: n.activityType || null,
+            content: n.content,
+            metadata: meta,
+            createdAt: (n.createdAt as Date).toISOString(),
+          });
+        }
+      }
+
+      // Change activities (project-scoped, type=schedule)
+      if (filter !== "notes") {
+        const acts = await db.select()
+          .from(activitiesTable)
+          .where(and(
+            eq(activitiesTable.projectId, schedule.projectId),
+            eq(activitiesTable.activityType, "schedule"),
+          ))
+          .orderBy(desc(activitiesTable.createdAt))
+          .limit(SOURCE_HARD_CAP);
+
+        for (const a of acts) {
+          const meta: any = a.metadata || {};
+          // Activities with metadata.scheduleId are stably scoped to this schedule
+          // (works for deleted items too). Fall back to current-item membership for
+          // legacy entries without scheduleId metadata.
+          const stableScheduleId: string | undefined = meta.scheduleId;
+          const stableScheduleIds: string[] = Array.isArray(meta.scheduleIds) ? meta.scheduleIds : [];
+          const matchesStable = stableScheduleId === scheduleId || stableScheduleIds.includes(scheduleId);
+
+          if (matchesStable && a.entityId) {
+            // Single-item activity stably tied to this schedule (item may be deleted)
+            entries.push({
+              id: `act:${a.id}`,
+              source: "change",
+              kind: a.action,
+              authorType: a.userId ? "user" : "system",
+              userId: a.userId,
+              userName: a.userName,
+              scheduleItemId: a.entityId,
+              scheduleItemName: itemNameById.get(a.entityId)
+                || (Array.isArray(meta.changes) ? meta.changes[0]?.name : null)
+                || null,
+              action: a.action,
+              content: a.description,
+              metadata: meta,
+              createdAt: (a.createdAt as Date).toISOString(),
+            });
+          } else if (!a.entityId) {
+            // Batch activity — split into one per-item entry so each is clickable.
+            const changes: any[] = Array.isArray(meta.changes) ? meta.changes : [];
+            for (let i = 0; i < changes.length; i++) {
+              const c = changes[i];
+              const itemId: string | undefined = c?.itemId;
+              const changeScheduleId: string | undefined = c?.scheduleId || stableScheduleId;
+              const inThisSchedule = changeScheduleId
+                ? changeScheduleId === scheduleId
+                : (itemId ? itemNameById.has(itemId) : false);
+              if (!itemId || !inThisSchedule) continue;
+              const fields = Array.isArray(c?.fields) ? c.fields : [];
+              entries.push({
+                id: `act:${a.id}:${itemId}:${i}`,
+                source: "change",
+                kind: a.action,
+                authorType: a.userId ? "user" : "system",
+                userId: a.userId,
+                userName: a.userName,
+                scheduleItemId: itemId,
+                scheduleItemName: itemNameById.get(itemId) || c?.name || null,
+                action: a.action,
+                content: c?.change ? `${c.change}` : a.description,
+                metadata: { ...meta, changes: [{ ...c, fields }] },
+                createdAt: (a.createdAt as Date).toISOString(),
+              });
+            }
+          } else if (a.entityId && itemNameById.has(a.entityId)) {
+            // Legacy single-item activity (no scheduleId metadata) — fall back to
+            // current item membership.
+            entries.push({
+              id: `act:${a.id}`,
+              source: "change",
+              kind: a.action,
+              authorType: a.userId ? "user" : "system",
+              userId: a.userId,
+              userName: a.userName,
+              scheduleItemId: a.entityId,
+              scheduleItemName: itemNameById.get(a.entityId) || null,
+              action: a.action,
+              content: a.description,
+              metadata: meta,
+              createdAt: (a.createdAt as Date).toISOString(),
+            });
+          }
+        }
+      }
+
+      // Sort all entries by createdAt desc, then paginate
+      entries.sort((x, y) => y.createdAt.localeCompare(x.createdAt));
+      const total = entries.length;
+      const page = entries.slice(offset, offset + limit);
+
+      res.json({
+        entries: page,
+        totalCount: total,
+        hasMore: offset + page.length < total,
+      });
+    } catch (error: any) {
+      console.error("Failed to fetch schedule activity feed:", error);
+      res.status(500).json({ error: "Failed to fetch activity feed", details: error.message });
+    }
+  });
+
+  // Unread count for the schedule activity feed
+  app.get("/api/schedules/:scheduleId/activity-feed/unread-count", requireAuth, async (req, res) => {
+    try {
+      const scheduleId = req.params.scheduleId;
+      const since = (req.query.since as string) || "";
+
+      const schedule = await storage.getScheduleById(scheduleId);
+      if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+      const project = await storage.getProject(schedule.projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const items = await storage.getScheduleItems(scheduleId);
+      const itemIds = items.map(i => i.id);
+      const itemNameSet = new Set(items.map(i => i.name));
+      const sinceDate = since ? new Date(since) : null;
+      const sinceConditionNote = sinceDate ? gt(activityNotes.createdAt, sinceDate) : undefined;
+      const sinceConditionAct = sinceDate ? gt(activitiesTable.createdAt, sinceDate) : undefined;
+
+      let noteCount = 0;
+      if (itemIds.length > 0) {
+        const noteRows = await db.select({ id: activityNotes.id }).from(activityNotes).where(
+          sinceConditionNote
+            ? and(inArray(activityNotes.scheduleItemId, itemIds), sinceConditionNote)
+            : inArray(activityNotes.scheduleItemId, itemIds)
+        );
+        noteCount = noteRows.length;
+      }
+
+      const actRows = await db.select({
+        id: activitiesTable.id,
+        entityId: activitiesTable.entityId,
+        metadata: activitiesTable.metadata,
+      }).from(activitiesTable).where(
+        and(
+          eq(activitiesTable.projectId, schedule.projectId),
+          eq(activitiesTable.activityType, "schedule"),
+          ...(sinceConditionAct ? [sinceConditionAct] : []),
+        )
+      );
+      const itemIdSet = new Set(itemIds);
+      let actCount = 0;
+      for (const a of actRows) {
+        const meta: any = a.metadata || {};
+        const stableScheduleId: string | undefined = meta.scheduleId;
+        const stableScheduleIds: string[] = Array.isArray(meta.scheduleIds) ? meta.scheduleIds : [];
+        const matchesStable = stableScheduleId === scheduleId || stableScheduleIds.includes(scheduleId);
+
+        if (matchesStable && a.entityId) { actCount++; continue; }
+        if (!a.entityId) {
+          // Batch activity — count one per change that is either tagged with this
+          // schedule (stable) or whose itemId is a current item (legacy).
+          const changes: any[] = Array.isArray(meta.changes) ? meta.changes : [];
+          for (const c of changes) {
+            const changeScheduleId: string | undefined = c?.scheduleId || stableScheduleId;
+            if (changeScheduleId) {
+              if (changeScheduleId === scheduleId) actCount++;
+            } else if (c?.itemId && itemIdSet.has(c.itemId)) {
+              actCount++;
+            }
+          }
+        } else if (a.entityId && itemIdSet.has(a.entityId)) {
+          // Legacy single-item activity without scheduleId metadata
+          actCount++;
+        }
+      }
+      res.json({ count: noteCount + actCount });
+    } catch (error: any) {
+      console.error("Failed to fetch activity feed unread count:", error);
+      res.status(500).json({ error: "Failed to fetch unread count", details: error.message });
     }
   });
 

@@ -65,6 +65,12 @@ export function ActivityNotesPopover({
       queryClient.invalidateQueries({ 
         queryKey: ['/api/activity-notes/batch-counts'] 
       });
+      // Invalidate any schedule activity feeds so the new note shows up
+      queryClient.invalidateQueries({
+        predicate: (q) => Array.isArray(q.queryKey)
+          && q.queryKey[0] === "/api/schedules"
+          && q.queryKey.includes("activity-feed"),
+      });
       setNewNoteContent("");
       setOffset(0);
       toast({

@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface ScheduleItem {
@@ -243,6 +244,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [items, setItems] = useState<ScheduleItem[]>([]);
+  const [scheduleId, setScheduleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -382,8 +384,12 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     if (selectedProjectId) {
       setLoading(true);
       fetchItems(selectedProjectId).finally(() => setLoading(false));
+      apiFetch<{ id: string }>(`/api/projects/${selectedProjectId}/schedule`)
+        .then((s) => setScheduleId(s?.id ?? null))
+        .catch(() => setScheduleId(null));
     } else {
       setItems([]);
+      setScheduleId(null);
     }
   }, [selectedProjectId, fetchItems]);
 
@@ -1921,6 +1927,17 @@ export default function ScheduleScreen({ navigation, route }: Props) {
             </Text>
             <Ionicons name="chevron-down" size={14} color={colors.secondary} />
           </TouchableOpacity>
+        )}
+
+        {scheduleId && (
+          <ScheduleActivityFeedButton
+            scheduleId={scheduleId}
+            userId={user?.id ?? null}
+            onSelectItem={(id) => {
+              const target = items.find(i => i.id === id);
+              if (target) openDetail(target);
+            }}
+          />
         )}
 
         {viewMode === 'gantt' && (

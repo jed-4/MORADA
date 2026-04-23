@@ -95,6 +95,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+import { ScheduleActivityFeedPopover } from "@/components/ScheduleActivityFeedPopover";
 import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
 import { ImportScheduleDialog } from "@/components/schedule/ImportScheduleDialog";
@@ -282,6 +283,8 @@ export default function Schedule() {
     queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
     if (schedule?.id) {
       queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
+      // Invalidate the schedule activity feed and unread count
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", schedule.id, "activity-feed"] });
     }
   }, [projectId, schedule?.id]);
 
@@ -1688,6 +1691,18 @@ export default function Schedule() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-1.5">
+            {schedule?.id && (
+              <ScheduleActivityFeedPopover
+                scheduleId={schedule.id}
+                onSelectItem={(itemId) => {
+                  const target = scheduleItems.find((i: any) => i.id === itemId);
+                  if (target) {
+                    setEditingItem(target);
+                    setShowItemDialog(true);
+                  }
+                }}
+              />
+            )}
             {/* Lock/Unlock Toggle */}
             {schedule?.status === "locked" ? (
               <button
