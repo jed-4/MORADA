@@ -651,8 +651,12 @@ export default function DashboardScreen({ navigation }: Props) {
           >
             {projects.slice(0, 12).map(p => {
               const tint = p.color || getProjectColor(p.id);
-              const prettify = (k?: string) => (k ? subStatusLabels[k] || phaseLabels[k] || k.replace(/_/g, ' ') : '');
-              const typeLabel = prettify(p.projectSubStatus) || prettify(p.currentSystemPhase) || '';
+              const prettify = (k: string | undefined, map: Record<string, string>) =>
+                k ? map[k] || k.replace(/_/g, ' ') : '';
+              const typeLabel =
+                prettify(p.projectSubStatus, subStatusLabels) ||
+                prettify(p.currentSystemPhase, phaseLabels) ||
+                '';
               return (
                 <TouchableOpacity
                   key={p.id}
