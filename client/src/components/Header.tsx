@@ -674,7 +674,7 @@ export default function Header() {
           <DropdownMenuTrigger asChild>
             <button
               data-testid="button-new"
-              className="h-6 px-2 text-xs rounded-md bg-primary text-primary-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+              className="h-5 px-2 text-[11px] rounded-md bg-primary text-primary-foreground hover-elevate active-elevate-2 flex items-center gap-1"
             >
               <Plus className="w-3 h-3" />
               <span>New</span>
