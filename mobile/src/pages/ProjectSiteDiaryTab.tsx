@@ -322,7 +322,7 @@ export function ProjectSiteDiaryTab() {
             />
 
             {templates.length === 0 && (
-              <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+              <p className="text-xs text-status-warning bg-status-warning-bg p-2 rounded">
                 No templates available. Create a template in the web app first.
               </p>
             )}

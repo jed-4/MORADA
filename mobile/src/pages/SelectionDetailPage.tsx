@@ -387,13 +387,13 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
 
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {option.isSelectedByClient && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1 text-xs bg-status-success-bg text-status-success px-2 py-0.5 rounded-md">
                           <CheckCircle className="w-3 h-3" />
                           Selected
                         </span>
                       )}
                       {!option.visibleToClient && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-red-100 dark:bg-red-900/30 text-status-danger dark:text-red-400 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1 text-xs bg-status-danger-bg text-status-danger px-2 py-0.5 rounded-md">
                           <EyeOff className="w-3 h-3" />
                           Hidden
                         </span>

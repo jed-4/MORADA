@@ -247,12 +247,12 @@ export function ProjectScopeTab() {
                                 </span>
                               )}
                               {item.needsRfi && (
-                                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                                <span className="text-xs bg-status-warning-bg text-status-warning px-2 py-0.5 rounded">
                                   RFI
                                 </span>
                               )}
                               {item.needsRfq && (
-                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                <span className="text-xs bg-status-info-bg text-status-info px-2 py-0.5 rounded">
                                   RFQ
                                 </span>
                               )}

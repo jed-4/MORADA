@@ -26,7 +26,7 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     color: "#3B82F6",
     icon: Eye,
     description: "Selection is open for client to view and choose",
-    bgClass: "bg-blue-100",
+    bgClass: "bg-status-info-bg",
     textClass: "text-status-info"
   },
   approved: {
@@ -35,7 +35,7 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     color: "#10B981",
     icon: CheckCircle2,
     description: "Client has approved their selection",
-    bgClass: "bg-green-100",
+    bgClass: "bg-status-success-bg",
     textClass: "text-status-success"
   },
   completed: {
@@ -44,8 +44,8 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     color: "#8B5CF6",
     icon: LockKeyhole,
     description: "Selection is complete and finalized",
-    bgClass: "bg-purple-100",
-    textClass: "text-purple-600"
+    bgClass: "bg-status-action-bg",
+    textClass: "text-status-action"
   }
 };
 

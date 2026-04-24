@@ -117,19 +117,19 @@ export function ProjectOverviewTab() {
         <div 
           className="rounded-xl p-4"
           style={{ 
-            background: `linear-gradient(to bottom right, ${hexToRgba(currentProject.color || '#6366f1', 0.15)}, ${hexToRgba(currentProject.color || '#6366f1', 0.05)})`,
-            border: `1px solid ${hexToRgba(currentProject.color || '#6366f1', 0.2)}`
+            background: `linear-gradient(to bottom right, ${hexToRgba(currentProject.color || '#A890D4', 0.15)}, ${hexToRgba(currentProject.color || '#A890D4', 0.05)})`,
+            border: `1px solid ${hexToRgba(currentProject.color || '#A890D4', 0.2)}`
           }}
         >
           <div className="flex items-start gap-3">
             <div 
               className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
               style={{ 
-                backgroundColor: hexToRgba(currentProject.color || '#6366f1', 0.15),
-                border: `2px solid ${currentProject.color || '#6366f1'}`
+                backgroundColor: hexToRgba(currentProject.color || '#A890D4', 0.15),
+                border: `2px solid ${currentProject.color || '#A890D4'}`
               }}
             >
-              <Building2 className="w-6 h-6" style={{ color: currentProject.color || '#6366f1' }} />
+              <Building2 className="w-6 h-6" style={{ color: currentProject.color || '#A890D4' }} />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate">{currentProject.name}</h1>
@@ -137,7 +137,7 @@ export function ProjectOverviewTab() {
                 <span 
                   className="inline-block mt-1 text-xs font-medium px-2.5 py-1 rounded-full shadow-sm"
                   style={{ 
-                    backgroundColor: currentProject.color || '#6366f1',
+                    backgroundColor: currentProject.color || '#A890D4',
                     color: 'white',
                     textShadow: '0 1px 2px rgba(0,0,0,0.2)'
                   }}

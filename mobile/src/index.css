@@ -56,6 +56,18 @@
     --rose: 333 26% 70%;
     --rose-light: 325 50% 93%;
 
+    /* Status pill tokens (soft pastel pills) — mirrors web client/src/index.css */
+    --status-success-fg: 145 40% 65%;          /* sage */
+    --status-success-bg: 145 60% 94%;
+    --status-warning-fg: 39 50% 64%;           /* amber */
+    --status-warning-bg: 43 80% 93%;
+    --status-info-fg:    261 44% 70%;          /* lavender */
+    --status-info-bg:    265 70% 95%;
+    --status-danger-fg:  11 53% 70%;           /* coral */
+    --status-danger-bg:  4 86% 95%;
+    --status-action-fg:  222 56% 71%;          /* sky */
+    --status-action-bg:  186 70% 94%;
+
     --radius: 0.5rem;
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   }
@@ -110,6 +122,18 @@
     --coral-light: 11 25% 22%;
     --rose: 333 30% 75%;
     --rose-light: 333 25% 22%;
+
+    /* Status pill tokens (dark mode = translucent on tint) — mirrors web */
+    --status-success-fg: 145 40% 65%;
+    --status-success-bg: 145 40% 65% / 0.18;
+    --status-warning-fg: 39 50% 64%;
+    --status-warning-bg: 39 50% 64% / 0.18;
+    --status-info-fg:    261 44% 70%;
+    --status-info-bg:    261 44% 70% / 0.18;
+    --status-danger-fg:  11 53% 70%;
+    --status-danger-bg:  11 53% 70% / 0.18;
+    --status-action-fg:  222 56% 71%;
+    --status-action-bg:  222 56% 71% / 0.18;
   }
 }
 

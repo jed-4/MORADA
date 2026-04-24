@@ -52,9 +52,9 @@ const statusOptionsConfig = [
 ];
 
 const statusColors: Record<string, { bg: string; text: string }> = {
-  pending: { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-400" },
-  in_progress: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-400" },
-  finalized: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-400" },
+  pending: { bg: "bg-status-warning-bg", text: "text-status-warning" },
+  in_progress: { bg: "bg-status-info-bg", text: "text-status-info" },
+  finalized: { bg: "bg-status-success-bg", text: "text-status-success" },
 };
 
 const getStatusLabel = (key: string): string => {
@@ -273,7 +273,7 @@ export function ProjectAllowancesTab() {
           <div className="divide-y">
             {filteredAllowances.map((allowance) => {
               const statusStyle = statusColors[allowance.item.allowanceStatus] || 
-                { bg: "bg-muted dark:bg-gray-800", text: "text-secondary dark:text-muted" };
+                { bg: "bg-muted", text: "text-secondary" };
               const isPC = allowance.item.allowance === "Prime Cost";
               
               return (
@@ -290,8 +290,8 @@ export function ProjectAllowancesTab() {
                         <h3 className="font-medium text-sm truncate">{allowance.item.name}</h3>
                         <span className={`px-1.5 py-0.5 rounded text-data font-medium ${
                           isPC 
-                            ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400" 
-                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                            ? "bg-status-info-bg text-status-info" 
+                            : "bg-status-warning-bg text-status-warning"
                         }`}>
                           {isPC ? "PC" : "PS"}
                         </span>
@@ -361,8 +361,8 @@ export function ProjectAllowancesTab() {
                 <h2 className="text-lg font-semibold">{selectedAllowance.item.name}</h2>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                   selectedAllowance.item.allowance === "Prime Cost"
-                    ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400" 
-                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                    ? "bg-status-info-bg text-status-info" 
+                    : "bg-status-warning-bg text-status-warning"
                 }`}>
                   {selectedAllowance.item.allowance === "Prime Cost" ? "PC" : "PS"}
                 </span>

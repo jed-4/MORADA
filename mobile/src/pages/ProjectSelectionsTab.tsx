@@ -333,18 +333,18 @@ export function ProjectSelectionsTab() {
             <div>
               <label className="block text-sm font-medium mb-2">Status</label>
               <div className="flex flex-wrap gap-2">
-                {statusOptions.filter(s => s.value !== "all").map((status) => (
+                {statusOptions.map((status) => (
                   <button
-                    key={status.value}
-                    onClick={() => setFormStatus(status.value)}
+                    key={status.key}
+                    onClick={() => setFormStatus(status.key)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
-                      formStatus === status.value
+                      formStatus === status.key
                         ? "bg-primary text-white"
                         : "border hover-elevate"
                     }`}
-                    data-testid={`form-status-${status.value}`}
+                    data-testid={`form-status-${status.key}`}
                   >
-                    {status.label}
+                    {status.name}
                   </button>
                 ))}
               </div>

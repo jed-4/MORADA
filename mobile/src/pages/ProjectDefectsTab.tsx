@@ -142,9 +142,9 @@ export function ProjectDefectsTab() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "open": return "bg-red-100 text-red-800";
-      case "in_progress": return "bg-blue-100 text-blue-800";
-      case "resolved": return "bg-green-100 text-green-800";
+      case "open": return "bg-status-danger-bg text-status-danger";
+      case "in_progress": return "bg-status-info-bg text-status-info";
+      case "resolved": return "bg-status-success-bg text-status-success";
       case "closed": return "bg-muted text-foreground";
       default: return "bg-muted text-muted-foreground";
     }

@@ -14,6 +14,10 @@ const mobileButtonVariants = cva(
         ghost: "bg-transparent",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Heights are intentionally taller than the web Button (which uses min-h-9 = 36px).
+      // 44px (h-11) is the Apple Human Interface Guidelines and Google Material Design minimum
+      // recommended touch-target size. Do NOT shrink these to match the web button heights —
+      // smaller touch targets degrade tap accuracy on phones and tablets.
       size: {
         default: "h-11 px-4 text-base min-h-11",
         sm: "h-11 px-3 text-sm min-h-11",

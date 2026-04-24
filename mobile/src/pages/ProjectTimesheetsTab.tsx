@@ -464,10 +464,10 @@ export function ProjectTimesheetsTab() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft": return "bg-muted text-foreground dark:bg-gray-800 dark:text-gray-200";
-      case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-      case "approved": return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      case "draft": return "bg-muted text-foreground";
+      case "submitted": return "bg-status-info-bg text-status-info";
+      case "approved": return "bg-status-success-bg text-status-success";
+      case "rejected": return "bg-status-danger-bg text-status-danger";
       default: return "bg-muted text-muted-foreground";
     }
   };
@@ -549,13 +549,13 @@ export function ProjectTimesheetsTab() {
       
       <div className="p-4 space-y-3">
         {/* Clock In/Out Section */}
-        <div className={`p-4 rounded-xl ${activeTimesheet ? "bg-green-50 dark:bg-green-950 border-2 border-green-500" : "bg-card border"}`}>
+        <div className={`p-4 rounded-xl ${activeTimesheet ? "bg-status-success-bg border-2 border-status-success" : "bg-card border"}`}>
           {activeTimesheet ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                  <span className="font-medium text-status-success dark:text-green-300">Clocked In</span>
+                  <span className="font-medium text-status-success">Clocked In</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
                   Started {activeTimesheet.clockInTime ? format(new Date(activeTimesheet.clockInTime), "h:mm a") : ""}
@@ -563,7 +563,7 @@ export function ProjectTimesheetsTab() {
               </div>
               
               <div className="text-center py-2">
-                <div className="text-4xl font-mono font-bold text-status-success dark:text-green-400" data-testid="text-elapsed-time">
+                <div className="text-4xl font-mono font-bold text-status-success" data-testid="text-elapsed-time">
                   {elapsedTime}
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">Time elapsed</p>
@@ -583,7 +583,7 @@ export function ProjectTimesheetsTab() {
             <button
               onClick={() => clockInMutation.mutate()}
               disabled={clockInMutation.isPending}
-              style={{ backgroundColor: currentProject?.color || "#22c55e" }}
+              style={{ backgroundColor: currentProject?.color || "#A890D4" }}
               className="w-full h-16 text-white rounded-xl flex items-center justify-center gap-3 font-semibold text-lg transition-colors hover:opacity-90"
               data-testid="button-clock-in"
             >
@@ -652,7 +652,7 @@ export function ProjectTimesheetsTab() {
                   setSelectedTimesheet(timesheet);
                   setIsDetailOpen(true);
                 }}
-                className={`p-3 bg-card border rounded-lg cursor-pointer active:bg-muted/50 ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
+                className={`p-3 bg-card border rounded-lg cursor-pointer active:bg-muted/50 ${timesheet.isActive ? "border-status-success bg-status-success-bg" : ""}`}
                 data-testid={`timesheet-card-${timesheet.id}`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -663,7 +663,7 @@ export function ProjectTimesheetsTab() {
                         {format(new Date(timesheet.date), "EEE, MMM d")}
                       </span>
                       {timesheet.isActive && (
-                        <span className="flex items-center gap-1 text-xs text-status-success dark:text-green-400">
+                        <span className="flex items-center gap-1 text-xs text-status-success">
                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                           Active
                         </span>
@@ -1074,7 +1074,7 @@ export function ProjectTimesheetsTab() {
                 {selectedTimesheet.status}
               </span>
               {selectedTimesheet.isActive && (
-                <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
+                <span className="text-xs bg-status-success-bg text-status-success px-2 py-1 rounded-md flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   Active
                 </span>
