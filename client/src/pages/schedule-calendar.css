@@ -34,16 +34,12 @@
   z-index: 3;
 }
 
-/* Lilac events with minimal margins */
+/* Base fallback background; inline TYPE_COLORS styles can override (no !important) */
 .rbc-event {
-  background-color: hsl(var(--primary)) !important;
+  background-color: hsl(var(--primary));
   border: none !important;
   padding: 2px 4px !important;
   margin: 0 !important;
-}
-
-.rbc-event:hover {
-  background-color: hsl(var(--primary) / 0.85) !important;
 }
 
 .rbc-event-label {
@@ -78,7 +74,7 @@
 }
 
 .rbc-month-view .rbc-event {
-  background-color: hsl(var(--primary)) !important;
+  background-color: hsl(var(--primary));
 }
 
 /* Header styling - 40px */
