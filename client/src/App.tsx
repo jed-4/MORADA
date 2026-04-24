@@ -97,7 +97,6 @@ import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
-import { WarmPaletteSwitcher } from "@/components/WarmPaletteSwitcher";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
@@ -446,7 +445,6 @@ function AuthWrapper() {
           <SocketProvider>
             <TaskEventsListener />
             <GlobalMessageNotifier />
-            <WarmPaletteSwitcher />
             <SidebarProvider style={style as React.CSSProperties}>
             <div 
               className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-0"
