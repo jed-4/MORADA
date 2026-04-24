@@ -36,7 +36,7 @@ import {
   isBefore,
   startOfDay,
 } from "date-fns";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import { EventDetailModal } from "@/components/EventDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -57,12 +57,16 @@ const DAY_HOURS = Array.from({ length: 24 }, (_, i) => i);
 const WEEK_HOUR_HEIGHT = 40;
 const WEEK_HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
 
+// Calendar event type → hex colour, brand-aligned with TYPE_COLORS_HEX. Hex (not CSS var) is
+// required because these values feed generateNotionColors, which derives pastel/dark variants by
+// parsing the hex. "schedule"/"timesheet"/"google-calendar"/"reminder" are widget-local types
+// not in the canonical TYPE_COLORS set, so they pin to the closest organic accents.
 const typeColors: Record<string, string> = {
-  task: "#3b82f6",
-  schedule: "#10b981",
-  timesheet: "#f59e0b",
-  "google-calendar": "#ef4444",
-  reminder: "#a855f7",
+  task:              TYPE_COLORS_HEX.task,        // lavender
+  schedule:          TYPE_COLORS_HEX.inspection,  // sage
+  timesheet:         TYPE_COLORS_HEX.milestone,   // amber
+  "google-calendar": TYPE_COLORS_HEX.delivery,    // teal
+  reminder:          TYPE_COLORS_HEX.leave,       // rose
 };
 
 const priorityColors: Record<string, string> = {

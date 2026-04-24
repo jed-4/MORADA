@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import {
   DndContext,
   DragEndEvent,
@@ -131,8 +131,26 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   const isRecurring = !!event.templateId;
   const showTime = event.startTime || event.endTime;
 
-  // Generate Notion-style colors from project color (or fallback)
-  const baseColor = isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1");
+  // Event colour priority: explicit per-event color → inherited project colour → schedule type
+  // colour → brand lavender fallback. event.color (set on this specific event) wins over the
+  // project default so users can override per-event when needed.
+  // The local type alias map covers widget-only types (schedule/timesheet/google-calendar/
+  // site_diary) that aren't in the canonical TYPE_COLORS set, mapping them onto the closest
+  // organic accents so type differentiation isn't collapsed to lavender.
+  const TYPE_FALLBACK_HEX: Record<string, string> = {
+    task:              TYPE_COLORS_HEX.task,        // lavender
+    milestone:         TYPE_COLORS_HEX.milestone,   // amber
+    inspection:        TYPE_COLORS_HEX.inspection,  // sage
+    delivery:          TYPE_COLORS_HEX.delivery,    // teal
+    meeting:           TYPE_COLORS_HEX.meeting,     // coral
+    leave:             TYPE_COLORS_HEX.leave,       // rose
+    schedule:          TYPE_COLORS_HEX.inspection,  // sage (widget-local)
+    timesheet:         TYPE_COLORS_HEX.milestone,   // amber (widget-local)
+    "google-calendar": TYPE_COLORS_HEX.delivery,    // teal (widget-local)
+    site_diary:        TYPE_COLORS_HEX.inspection,  // sage (widget-local)
+  };
+  const typeFallback = TYPE_FALLBACK_HEX[event.type as string] ?? TYPE_COLORS_HEX.task;
+  const baseColor = event.color || event.projectColor || typeFallback;
   const notionColors = generateNotionColors(baseColor);
 
   return (

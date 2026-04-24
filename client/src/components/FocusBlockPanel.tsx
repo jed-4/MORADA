@@ -4,7 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors , TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { X, Edit2, Trash2, Clock, CalendarDays, Pin, PinOff, Plus, Search } from "lucide-react";
 import type { FocusBlock, Task } from "@shared/schema";
 import { FocusBlockCreator } from "./FocusBlockCreator";
@@ -214,7 +214,7 @@ export function FocusBlockPanel({ block, onClose }: FocusBlockPanelProps) {
             ) : (
               <div className="space-y-1">
                 {blockTasks.map((task) => {
-                  const taskColors = generateNotionColors(task.color || "#6366f1");
+                  const taskColors = generateNotionColors(task.color || TYPE_COLORS_HEX.task);
                   const isPinned = pinnedTaskIds.has(task.id);
                   const priorityColor = PRIORITY_COLORS[task.priority || ""] || "#6b7280";
                   return (

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { TYPE_COLORS } from "@/lib/taskColors";
 import { useToast } from "@/hooks/use-toast";
 import { type ScheduleTemplate, type Project, type ScheduleItem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -99,14 +100,6 @@ const ITEM_TYPES = [
   { value: "delivery", label: "Delivery" },
   { value: "meeting", label: "Meeting" },
 ];
-
-const TYPE_COLORS: Record<string, string> = {
-  task: "#A890D4",
-  milestone: "#9b87c7",
-  inspection: "#c9b8e8",
-  delivery: "#a494cc",
-  meeting: "#d4c7f0",
-};
 
 function SortableItem({
   item,
@@ -212,7 +205,7 @@ function SortableItem({
   const displayDuration = effectiveDuration ?? currentDuration;
   const barLeft = displayStartDay * dayWidth;
   const barWidth = Math.max(displayDuration * dayWidth, 20);
-  const barColor = item.color || TYPE_COLORS[item.type] || TYPE_COLORS.task;
+  const barColor = item.color || TYPE_COLORS[item.type as keyof typeof TYPE_COLORS] || TYPE_COLORS.task;
 
   const indentClass = depth === 1 ? 'pl-6' : depth === 2 ? 'pl-12' : '';
 
@@ -283,7 +276,7 @@ function SortableItem({
             return (
               <div
                 key={`weekend-${i}`}
-                className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50"
+                className="absolute top-0 bottom-0 bg-muted/50"
                 style={{ left: `${i * dayWidth}px`, width: `${dayWidth}px` }}
               />
             );

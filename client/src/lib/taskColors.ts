@@ -1,5 +1,51 @@
 // Notion-style color utilities: Generate pastel backgrounds and dark text from any hex color
 
+// Schedule / calendar event type colour palette — aligned with our organic accent system.
+// Use TYPE_COLORS (CSS variables) wherever the value flows into a CSS context (className, inline
+// style backgroundColor, border, etc.). Use TYPE_COLORS_HEX only for contexts that cannot resolve
+// CSS variables — react-pdf, charting libraries, hex-only colour utilities like generateNotionColors.
+export const TYPE_COLORS = {
+  task:       'hsl(var(--primary))', // lavender — brand colour for standard tasks
+  milestone:  'hsl(var(--amber))',   // amber — important, stands out
+  inspection: 'hsl(var(--sage))',    // sage — systematic, green
+  delivery:   'hsl(var(--teal))',    // teal — active, in-motion
+  meeting:    'hsl(var(--coral))',   // coral — social, warm
+  leave:      'hsl(var(--rose))',    // rose — personal/absence
+} as const;
+
+export const TYPE_COLORS_HEX = {
+  task:       '#A890D4', // lavender
+  milestone:  '#D4B670', // amber
+  inspection: '#82C8A2', // sage
+  delivery:   '#70CAD0', // teal
+  meeting:    '#DA988A', // coral
+  leave:      '#D08AAF', // rose
+} as const;
+
+export type ScheduleItemType = keyof typeof TYPE_COLORS;
+
+// Project auto-colour palette — assigned cyclically as new projects are created.
+// Picked from the warm organic accent system to feel coherent with the app design language.
+export const PROJECT_COLORS = [
+  '#70CAD0', // teal
+  '#A890D4', // lavender
+  '#82C8A2', // sage
+  '#D4B670', // amber
+  '#DA988A', // coral
+  '#D08AAF', // rose
+  '#9278C4', // lavender deep
+  '#4ECAC8', // teal bright
+  '#B8D48A', // lime sage
+  '#E8A87C', // warm orange
+] as const;
+
+// Cyclic project-colour selector — always returns a colour from PROJECT_COLORS for any non-negative index.
+export function getProjectColor(index: number): string {
+  if (!Number.isFinite(index) || index < 0) return PROJECT_COLORS[0];
+  return PROJECT_COLORS[index % PROJECT_COLORS.length];
+}
+
+
 // Convert hex color to HSL
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
   // Remove # if present

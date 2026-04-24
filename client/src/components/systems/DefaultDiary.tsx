@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, User, ListTodo, Timer, Plus } from "lucide-react";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors , TYPE_COLORS_HEX } from "@/lib/taskColors";
 import type { TaskTemplate, FocusBlock } from "@shared/schema";
 import { FocusBlockCreator } from "@/components/FocusBlockCreator";
 import { FocusBlockPanel } from "@/components/FocusBlockPanel";
@@ -553,7 +553,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                           const leftPercent = colInfo.colIdx * widthPercent;
                           
                           const assigneeName = template.assigneeUserName || template.defaultRoleName;
-                          const notionColors = generateNotionColors(template.color || '#6366f1');
+                          const notionColors = generateNotionColors(template.color || TYPE_COLORS_HEX.task);
 
                           return (
                             <div

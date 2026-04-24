@@ -21,7 +21,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import type { CalendarItem } from "@/components/user-workspace/widgets/usePersonalCalendarEvents";
 
 interface EventDetailModalProps {
@@ -30,11 +30,13 @@ interface EventDetailModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Calendar event type → hex colour, brand-aligned with TYPE_COLORS_HEX (organic accent palette).
+// "task" intentionally absent here — the modal renders task colour via project/projectColor flow.
 const typeColorMap: Record<string, string> = {
-  schedule: "#10b981",
-  timesheet: "#f59e0b",
-  reminder: "#a855f7",
-  "google-calendar": "#7aafff",
+  schedule:          TYPE_COLORS_HEX.inspection,  // sage
+  timesheet:         TYPE_COLORS_HEX.milestone,   // amber
+  reminder:          TYPE_COLORS_HEX.leave,       // rose
+  "google-calendar": TYPE_COLORS_HEX.delivery,    // teal
 };
 
 const typeLabelMap: Record<string, string> = {

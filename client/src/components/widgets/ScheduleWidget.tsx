@@ -51,7 +51,7 @@ import {
   startOfDay,
   getDay
 } from "date-fns";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ViewMode = "list" | "day" | "week" | "month";
@@ -71,15 +71,18 @@ interface ScheduleItem {
   progress?: number;
 }
 
+// Schedule type → hex colour, sourced from canonical TYPE_COLORS_HEX so widgets render in the
+// organic accent palette. Hex (not CSS var) is required because these values are passed to
+// generateNotionColors which derives pastel/dark variants by parsing the hex.
 const typeHexColors: Record<string, string> = {
-  task: "#3b82f6",
-  milestone: "#a855f7",
-  meeting: "#22c55e",
-  inspection: "#f59e0b",
+  task:       TYPE_COLORS_HEX.task,        // lavender
+  milestone:  TYPE_COLORS_HEX.milestone,   // amber
+  meeting:    TYPE_COLORS_HEX.meeting,     // coral
+  inspection: TYPE_COLORS_HEX.inspection,  // sage
 };
 
 function getTypeNotionColors(type: string) {
-  return generateNotionColors(typeHexColors[type] || "#6b7280");
+  return generateNotionColors(typeHexColors[type] || TYPE_COLORS_HEX.task);
 }
 
 const priorityColors = {

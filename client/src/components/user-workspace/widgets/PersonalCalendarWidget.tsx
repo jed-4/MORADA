@@ -9,7 +9,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isTomorrow, addDays, subDays, startOfWeek, endOfWeek, isSameDay, eachDayOfInterval, isBefore } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { generateNotionColors } from "@/lib/taskColors";
+import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
@@ -22,11 +22,14 @@ type ViewMode = "list" | "day" | "week";
 const HOUR_HEIGHT = 36;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
+// Calendar event type → hex colour, sourced from TYPE_COLORS_HEX where defined.
+// "schedule"/"timesheet"/"reminder" are widget-local types not in the canonical set, so they're
+// pinned to brand-aligned organic accents (sage/amber/rose).
 const typeHexColors: Record<string, string> = {
-  task: "#3b82f6",
-  schedule: "#10b981",
-  timesheet: "#f59e0b",
-  reminder: "#a855f7",
+  task:      TYPE_COLORS_HEX.task,        // lavender
+  schedule:  TYPE_COLORS_HEX.inspection,  // sage
+  timesheet: TYPE_COLORS_HEX.milestone,   // amber
+  reminder:  TYPE_COLORS_HEX.leave,       // rose
 };
 
 interface CalendarEvent {
@@ -55,7 +58,7 @@ function TimelineEvent({ event, compact, onClick }: { event: CalendarEvent; comp
   const eventDate = new Date(event.start);
   const isPast = isBefore(eventDate, now) && !isToday(eventDate);
   
-  const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+  const baseColor = event.projectColor || typeHexColors[event.type || "task"] || TYPE_COLORS_HEX.task;
   const notionColors = generateNotionColors(baseColor);
   
   return (
@@ -389,7 +392,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         {displayEvents.map((event) => {
           const eventDate = new Date(event.start);
           const isTodayEvent = isToday(eventDate);
-          const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+          const baseColor = event.projectColor || typeHexColors[event.type || "task"] || TYPE_COLORS_HEX.task;
           const notionColors = generateNotionColors(baseColor);
           return (
             <div 
@@ -458,7 +461,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         {allDayEvents.length > 0 && (
           <div className="border-b border-border/30 px-1 py-1 space-y-0.5 flex-shrink-0">
             {allDayEvents.map((event) => {
-              const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+              const baseColor = event.projectColor || typeHexColors[event.type || "task"] || TYPE_COLORS_HEX.task;
               const notionColors = generateNotionColors(baseColor);
               return (
                 <div
@@ -618,7 +621,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                 return (
                   <div key={day.toISOString()} className="px-0.5 py-0.5 space-y-0.5">
                     {allDayEvts.map((event) => {
-                      const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+                      const baseColor = event.projectColor || typeHexColors[event.type || "task"] || TYPE_COLORS_HEX.task;
                       const nc = generateNotionColors(baseColor);
                       return (
                         <div
@@ -670,7 +673,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                     const leftPercent = Math.min(lane * OFFSET_PER_LANE, MAX_OFFSET);
                     const widthPercent = 100 - leftPercent - RIGHT_MARGIN;
                     
-                    const baseColor = eventPos.event.projectColor || typeHexColors[eventPos.event.type || 'task'] || "#3b82f6";
+                    const baseColor = eventPos.event.projectColor || typeHexColors[eventPos.event.type || "task"] || TYPE_COLORS_HEX.task;
                     const notionColors = generateNotionColors(baseColor);
                     
                     return (

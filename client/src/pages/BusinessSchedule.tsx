@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical, EyeOff } from "lucide-react";
+import { TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -213,8 +214,8 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
             {activeItems.map(item => {
               const isCompany = isCompanyItem(item);
               const fill = isCompany
-                ? (companyColor || item.assignedToColor || project.color || '#3b82f6')
-                : (item.assignedToColor || project.color || '#3b82f6');
+                ? (companyColor || item.assignedToColor || project.color || TYPE_COLORS_HEX.task)
+                : (item.assignedToColor || project.color || TYPE_COLORS_HEX.task);
               return (
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
@@ -585,12 +586,12 @@ export default function BusinessSchedule() {
     if (project.category === "offline") {
       return {
         backgroundColor: "transparent",
-        border: `2px dashed ${project.color || "#3b82f6"}`,
+        border: `2px dashed ${project.color || TYPE_COLORS_HEX.task}`,
         opacity: 0.8,
       };
     }
     return {
-      backgroundColor: project.color || "#3b82f6",
+      backgroundColor: project.color || TYPE_COLORS_HEX.task,
       border: "none",
       opacity: 1,
     };

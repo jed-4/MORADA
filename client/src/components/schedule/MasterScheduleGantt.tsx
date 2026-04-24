@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TYPE_COLORS_HEX } from "@/lib/taskColors";
 import {
   ChevronRight,
   ChevronDown,
@@ -150,7 +151,7 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
     },
   });
 
-  const color = project.color || "#3b82f6";
+  const color = project.color || TYPE_COLORS_HEX.task;
 
   return (
     <>
@@ -298,7 +299,7 @@ function SortableProjectRow({
   return (
     <div ref={setNodeRef} style={style}>
       <div
-        style={{ height: PROJECT_ROW_HEIGHT, borderLeft: `3px ${project.category === 'offline' ? 'dashed' : 'solid'} ${project.color || "#3b82f6"}` }}
+        style={{ height: PROJECT_ROW_HEIGHT, borderLeft: `3px ${project.category === 'offline' ? 'dashed' : 'solid'} ${project.color || TYPE_COLORS_HEX.task}` }}
         className="flex items-center pl-1.5 pr-2 border-b border-border/20 gap-1.5"
       >
         <button
@@ -320,7 +321,7 @@ function SortableProjectRow({
           </span>
           <div
             className="w-3 h-3 rounded-sm shrink-0"
-            style={{ backgroundColor: project.color || "#3b82f6" }}
+            style={{ backgroundColor: project.color || TYPE_COLORS_HEX.task }}
           />
           <span className="text-xs font-medium truncate">{project.name}</span>
         </button>
@@ -656,7 +657,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               {visibleProjects.map((project) => {
                 const isExpanded = expandedProjects.has(project.id);
                 const dates = getProjectDates(project);
-                const color = project.color || "#3b82f6";
+                const color = project.color || TYPE_COLORS_HEX.task;
 
                 let projectBarLeft = 0;
                 let projectBarWidth = 0;

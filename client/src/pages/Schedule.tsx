@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { TYPE_COLORS } from "@/lib/taskColors";
 import { computeMoveCascade } from "@/lib/scheduleCascade";
 import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact, type CompanySettings } from "@shared/schema";
@@ -1585,11 +1586,16 @@ export default function Schedule() {
     }
   };
 
-  // Calendar event style getter - lilac events
+  // Calendar event style getter — single source of truth for event colour priority:
+  //   1. event.color  (user-assigned per-item override)
+  //   2. TYPE_COLORS[event.type]  (schedule-item type colour)
+  //   3. lavender fallback (TYPE_COLORS.task)
   const eventStyleGetter = (event: any) => {
+    const typeColor = TYPE_COLORS[event?.type as keyof typeof TYPE_COLORS];
+    const backgroundColor = event?.color || typeColor || TYPE_COLORS.task;
     return {
       style: {
-        backgroundColor: "hsl(var(--primary))",
+        backgroundColor,
         borderRadius: "4px",
         opacity: 0.9,
         color: "white",
@@ -1599,16 +1605,12 @@ export default function Schedule() {
     };
   };
 
-  // Day prop getter - add class to weekends for styling
+  // Day prop getter - add class to weekends for styling. Background colour is applied via the
+  // .rbc-weekend-day rule in schedule-calendar.css using hsl(var(--muted)/0.5).
   const dayPropGetter = (date: Date) => {
     const day = date.getDay();
     if (day === 0 || day === 6) {
-      return {
-        className: "rbc-weekend-day",
-        style: {
-          backgroundColor: "#f3f4f6",
-        },
-      };
+      return { className: "rbc-weekend-day" };
     }
     return {};
   };
