@@ -81,10 +81,7 @@ import {
   LayoutGrid,
   ExternalLink,
   Users,
-  Truck,
-  HardHat,
-  MessageSquare,
-  Send,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -102,6 +99,7 @@ export default function SelectionDetail() {
   const [optionsView, setOptionsView] = useState<"table" | "grid">("table");
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
   const { toast } = useToast();
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
 
@@ -405,6 +403,33 @@ export default function SelectionDetail() {
     updateSelectionMutation.mutate(data);
   };
 
+  const handleSaveDetails = () => {
+    const data = selectionForm.getValues();
+    updateSelectionMutation.mutate(data, {
+      onSuccess: () => setIsEditingDetails(false),
+    });
+  };
+
+  const handleCancelEditDetails = () => {
+    if (selection) {
+      selectionForm.reset({
+        projectId: selection.projectId,
+        name: selection.name,
+        description: selection.description || "",
+        category: selection.category || "",
+        room: selection.room || "",
+        selectionType: (selection as any).selectionType || "selection",
+        status: selection.status,
+        deadline: selection.deadline || undefined,
+        allowance: selection.allowance || undefined,
+        clientCanChange: selection.clientCanChange,
+        clientCanSeePrice: selection.clientCanSeePrice,
+      });
+    }
+    setHasUnsavedChanges(false);
+    setIsEditingDetails(false);
+  };
+
 
   const goBack = () => {
     if (effectiveProjectId) {
@@ -492,9 +517,7 @@ export default function SelectionDetail() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => {
-                document.getElementById('selection-details-card')?.scrollIntoView({ behavior: 'smooth' });
-              }}>
+              <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
                 <Settings className="w-4 h-4 mr-2" />
                 Edit Details
               </DropdownMenuItem>
@@ -506,11 +529,11 @@ export default function SelectionDetail() {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
-          {/* Selection Details Card - Compact */}
-          <Card>
-            <CardContent className="py-3">
+          {/* Selection Details — summary strip OR inline edit form */}
+          <div className="surface-panel p-3" data-testid="selection-details-block">
+            {!isEditingDetails ? (
               <div className="flex items-center gap-6 flex-wrap">
-                {/* Status - Far Left */}
+                {/* Status */}
                 <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Status</div>
                   <Badge 
@@ -546,10 +569,9 @@ export default function SelectionDetail() {
                   </div>
                 </div>
                 
-                {/* Spacer to push pricing to right */}
                 <div className="flex-1" />
                 
-                {/* Pricing Section - Two Column Layout */}
+                {/* Pricing Section */}
                 <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
                   setPricingPopoverOpen(open);
                   if (open) {
@@ -563,7 +585,6 @@ export default function SelectionDetail() {
                       data-testid="button-edit-pricing"
                     >
                       <div className="flex items-start gap-6">
-                        {/* Left Column: Allowance & Selected stacked */}
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Allowance</span>
@@ -574,8 +595,6 @@ export default function SelectionDetail() {
                             <span className="text-sm font-semibold text-[#A890D4]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
-                        
-                        {/* Right Column: Difference */}
                         <div className="flex flex-col items-end">
                           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Difference</span>
                           {(() => {
@@ -646,9 +665,302 @@ export default function SelectionDetail() {
                     </div>
                   </PopoverContent>
                 </Popover>
+
+                {/* Edit toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIsEditingDetails(true)}
+                  className="h-7 w-7 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground"
+                  data-testid="button-toggle-edit-details"
+                  aria-label="Edit selection details"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
               </div>
-            </CardContent>
-          </Card>
+            ) : (
+              <Form {...selectionForm}>
+                <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
+                  {/* Row 1: Name (wide), Category, Location */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <FormField
+                      control={selectionForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem className="lg:col-span-2">
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Name</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., Kitchen Splashback Tiles"
+                              className="h-7 text-sm"
+                              {...field}
+                              data-testid="input-selection-name"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={selectionForm.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Category</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-7 text-sm" data-testid="select-category">
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {selectionCategories?.options?.map((opt) => (
+                                <SelectItem key={opt.key} value={opt.name}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={selectionForm.control}
+                      name="room"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Location</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-7 text-sm" data-testid="select-room">
+                                <SelectValue placeholder="Select location" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {locationCategories?.options?.map((opt) => (
+                                <SelectItem key={opt.key} value={opt.name}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Row 2: Deadline, Status, Allowance */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <FormField
+                      control={selectionForm.control}
+                      name="deadline"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full h-7 px-2 text-sm font-normal justify-start",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                  data-testid="button-deadline"
+                                >
+                                  {field.value ? (
+                                    format(new Date(field.value), "dd/MM/yyyy")
+                                  ) : (
+                                    <span>Select date</span>
+                                  )}
+                                  <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value ? new Date(field.value) : undefined}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={selectionForm.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</FormLabel>
+                          <Select onValueChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-7 text-sm" data-testid="select-status">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {statusOptions.map((status) => (
+                                <SelectItem key={status.key} value={status.key}>
+                                  {status.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={selectionForm.control}
+                      name="allowance"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance ($)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="h-7 pl-6 text-sm"
+                                value={field.value !== undefined && field.value !== null ? (Number(field.value) / 100).toString() : ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v === "") {
+                                    field.onChange(undefined);
+                                  } else {
+                                    const parsed = parseFloat(v);
+                                    field.onChange(isNaN(parsed) ? undefined : Math.round(parsed * 100));
+                                  }
+                                  setHasUnsavedChanges(true);
+                                }}
+                                data-testid="input-allowance"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Row 3: Description */}
+                  <FormField
+                    control={selectionForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Description</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="Add notes about this selection..."
+                            rows={2}
+                            className="text-sm"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-selection-description"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Client permissions accordion */}
+                  <Accordion type="multiple" defaultValue={["client"]} className="w-full">
+                    <AccordionItem value="client" className="border rounded-md px-3">
+                      <AccordionTrigger className="py-2 hover:no-underline" data-testid="accordion-client">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-3.5 h-3.5 text-[#A890D4]" />
+                          <span className="text-sm font-medium">Client permissions</span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pt-2 pb-3 space-y-2">
+                        <FormField
+                          control={selectionForm.control}
+                          name="clientCanChange"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-md border p-2 gap-3">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-sm">Allow Changes</FormLabel>
+                                <FormDescription className="text-xs">
+                                  Client can change their selection after choosing
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }}
+                                  data-testid="switch-client-can-change"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={selectionForm.control}
+                          name="clientCanSeePrice"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-md border p-2 gap-3">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-sm">Show Pricing</FormLabel>
+                                <FormDescription className="text-xs">
+                                  Client can see pricing information for options
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }}
+                                  data-testid="switch-client-can-see-price"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+
+                  {/* Save / Cancel footer */}
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleCancelEditDetails}
+                      data-testid="button-cancel-edit-details"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 px-3 text-xs"
+                      onClick={handleSaveDetails}
+                      disabled={updateSelectionMutation.isPending}
+                      data-testid="button-save-details"
+                    >
+                      {updateSelectionMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Save className="w-3 h-3 mr-1" />
+                      )}
+                      Save
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            )}
+          </div>
 
           {/* Options Section */}
           <div>
@@ -895,376 +1207,7 @@ export default function SelectionDetail() {
             )}
           </div>
 
-          {/* Selection Details Card - Below Options */}
-          <Card id="selection-details-card">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Settings className="w-4 h-4" />
-                  Selection Details
-                </CardTitle>
-                {hasUnsavedChanges && (
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveSelection}
-                    disabled={updateSelectionMutation.isPending}
-                    className="h-7 px-3 text-xs"
-                    data-testid="button-save-details"
-                  >
-                    {updateSelectionMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <>
-                        <Save className="w-3 h-3 mr-1" />
-                        Save
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Form {...selectionForm}>
-                <form className="space-y-6">
-                  {/* Basic Info Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Name */}
-                    <FormField
-                      control={selectionForm.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem className="lg:col-span-2">
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Name</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="e.g., Kitchen Splashback Tiles"
-                              {...field}
-                              data-testid="input-selection-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Category */}
-                    <FormField
-                      control={selectionForm.control}
-                      name="category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Category</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-category">
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {selectionCategories?.options?.map((opt) => (
-                                <SelectItem key={opt.key} value={opt.name}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Location */}
-                    <FormField
-                      control={selectionForm.control}
-                      name="room"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Location</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-room">
-                                <SelectValue placeholder="Select location" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {locationCategories?.options?.map((opt) => (
-                                <SelectItem key={opt.key} value={opt.name}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Second Row: Deadline, Description */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField
-                      control={selectionForm.control}
-                      name="deadline"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full pl-3 text-left font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                  data-testid="button-deadline"
-                                >
-                                  {field.value ? (
-                                    format(new Date(field.value), "dd/MM/yyyy")
-                                  ) : (
-                                    <span>Select date</span>
-                                  )}
-                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value ? new Date(field.value) : undefined}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={selectionForm.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem className="md:col-span-2">
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Description</FormLabel>
-                          <FormControl>
-                            <Textarea 
-                              placeholder="Add notes about this selection..."
-                              rows={2}
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-selection-description"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Status Section */}
-                  <div>
-                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Status</FormLabel>
-                    <FormField
-                      control={selectionForm.control}
-                      name="status"
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            {statusOptions.map((status) => {
-                              const Icon = status.icon;
-                              const isSelected = field.value === status.key;
-                              return (
-                                <button
-                                  key={status.key}
-                                  type="button"
-                                  onClick={() => {
-                                    field.onChange(status.key);
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                  className={cn(
-                                    "flex flex-col items-center gap-1 p-3 rounded-lg border transition-all",
-                                    isSelected 
-                                      ? "bg-[#A890D4] text-white border-[#A890D4]" 
-                                      : "hover-elevate border-border"
-                                  )}
-                                  data-testid={`status-${status.key}`}
-                                >
-                                  <Icon className="w-5 h-5" />
-                                  <span className="text-sm font-medium">{status.name}</span>
-                                  <span className={cn(
-                                    "text-[10px] text-center",
-                                    isSelected ? "text-white/80" : "text-muted-foreground"
-                                  )}>
-                                    {status.description}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Permissions Accordion */}
-                  <div>
-                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Permissions</FormLabel>
-                    <Accordion type="multiple" defaultValue={["client"]} className="w-full">
-                      {/* Client Permissions */}
-                      <AccordionItem value="client" className="border rounded-lg mb-2 px-3">
-                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-client">
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-[#A890D4]" />
-                            <span className="text-sm font-medium">Client</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="pt-2 pb-4 space-y-3">
-                          <FormField
-                            control={selectionForm.control}
-                            name="clientCanChange"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                                <div className="space-y-0.5">
-                                  <FormLabel className="text-sm">Allow Changes</FormLabel>
-                                  <FormDescription className="text-xs">
-                                    Client can change their selection after choosing
-                                  </FormDescription>
-                                </div>
-                                <FormControl>
-                                  <Switch
-                                    checked={field.value}
-                                    onCheckedChange={(val) => {
-                                      field.onChange(val);
-                                      setHasUnsavedChanges(true);
-                                    }}
-                                    data-testid="switch-client-can-change"
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={selectionForm.control}
-                            name="clientCanSeePrice"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                                <div className="space-y-0.5">
-                                  <FormLabel className="text-sm">Show Pricing</FormLabel>
-                                  <FormDescription className="text-xs">
-                                    Client can see pricing information for options
-                                  </FormDescription>
-                                </div>
-                                <FormControl>
-                                  <Switch
-                                    checked={field.value}
-                                    onCheckedChange={(val) => {
-                                      field.onChange(val);
-                                      setHasUnsavedChanges(true);
-                                    }}
-                                    data-testid="switch-client-can-see-price"
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        </AccordionContent>
-                      </AccordionItem>
-
-                      {/* Vendors Permissions */}
-                      <AccordionItem value="vendors" className="border rounded-lg mb-2 px-3">
-                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-vendors">
-                          <div className="flex items-center gap-2">
-                            <Truck className="w-4 h-4 text-[#A890D4]" />
-                            <span className="text-sm font-medium">Vendors</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="pt-2 pb-4 space-y-3">
-                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-sm">Can View Selection</FormLabel>
-                              <FormDescription className="text-xs">
-                                Vendors can see this selection and its options
-                              </FormDescription>
-                            </div>
-                            <Switch checked={true} disabled data-testid="switch-vendor-view" />
-                          </div>
-                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-sm">Can Submit Options</FormLabel>
-                              <FormDescription className="text-xs">
-                                Vendors can submit new options for consideration
-                              </FormDescription>
-                            </div>
-                            <Switch checked={false} disabled data-testid="switch-vendor-submit" />
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-
-                      {/* Installer Permissions */}
-                      <AccordionItem value="installer" className="border rounded-lg px-3">
-                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-installer">
-                          <div className="flex items-center gap-2">
-                            <HardHat className="w-4 h-4 text-[#A890D4]" />
-                            <span className="text-sm font-medium">Installer</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="pt-2 pb-4 space-y-3">
-                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-sm">Can View Final Selection</FormLabel>
-                              <FormDescription className="text-xs">
-                                Installer can see the approved selection details
-                              </FormDescription>
-                            </div>
-                            <Switch checked={true} disabled data-testid="switch-installer-view" />
-                          </div>
-                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-sm">Notify on Approval</FormLabel>
-                              <FormDescription className="text-xs">
-                                Send notification when selection is approved
-                              </FormDescription>
-                            </div>
-                            <Switch checked={true} disabled data-testid="switch-installer-notify" />
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </div>
-
-                  {/* Comments Section */}
-                  <div>
-                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block flex items-center gap-2">
-                      <MessageSquare className="w-4 h-4" />
-                      Comments
-                    </FormLabel>
-                    <div className="border rounded-lg p-4 space-y-4">
-                      {/* Empty state */}
-                      <div className="text-center py-4 text-muted-foreground">
-                        <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No comments yet</p>
-                      </div>
-                      
-                      {/* Comment input */}
-                      <div className="flex items-start gap-2 pt-2 border-t">
-                        <Textarea
-                          placeholder="Add a comment..."
-                          className="flex-1 min-h-[60px] text-sm"
-                          data-testid="input-comment"
-                        />
-                        <Button size="icon" className="h-8 w-8" disabled data-testid="button-send-comment">
-                          <Send className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
+          {/* Selection Details now lives above Options as a merged summary/edit block. */}
         </div>
       </div>
 
