@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../services/api';
 
+import { useTheme } from '../theme';
 type Entry = {
   id: string;
   source: 'note' | 'change';
@@ -61,9 +62,15 @@ export function ScheduleActivityFeedButton({
   onSelectItem?: (id: string) => void;
 }) {
   const isDark = useColorScheme() === 'dark';
-  const colors = isDark
-    ? { card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', bg: '#0f172a' }
-    : { card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', bg: '#f8fafc' };
+  const theme = useTheme();
+const colors = {
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    bg: theme.background,
+};
 
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');

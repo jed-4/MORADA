@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,105 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../services/api';
+import { useTheme } from '../theme';
 
 interface Props {
   navigation: any;
 }
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const theme = useTheme();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
+
+  const styles = useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    inner: {
+      flex: 1,
+      padding: 24,
+      paddingTop: 60,
+    },
+    backButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 40,
+    },
+    backText: {
+      color: theme.textMuted,
+      fontSize: 14,
+    },
+    header: {
+      marginBottom: 32,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: theme.textPrimary,
+      marginBottom: 8,
+    },
+    subtitle: {
+      fontSize: 14,
+      color: theme.textSecondary,
+    },
+    form: {
+      gap: 4,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: theme.textSecondary,
+      marginBottom: 6,
+    },
+    input: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 8,
+      padding: 14,
+      fontSize: 16,
+      color: theme.textPrimary,
+      marginBottom: 20,
+    },
+    button: {
+      backgroundColor: theme.primary,
+      borderRadius: 8,
+      padding: 16,
+      alignItems: 'center',
+    },
+    buttonDisabled: {
+      opacity: 0.5,
+    },
+    buttonText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    successBox: {
+      alignItems: 'center',
+      gap: 16,
+      marginTop: 20,
+    },
+    successTitle: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: theme.textPrimary,
+    },
+    successText: {
+      fontSize: 14,
+      color: theme.textSecondary,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    emailHighlight: {
+      color: theme.textPrimary,
+      fontWeight: '500',
+    },
+  }), [theme]);
 
   const handleSubmit = async () => {
     if (!email.trim()) return;
@@ -45,7 +135,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
     >
       <View style={styles.inner}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={20} color="#94a3b8" />
+          <Ionicons name="arrow-back" size={20} color={theme.textMuted} />
           <Text style={styles.backText}>Back to login</Text>
         </TouchableOpacity>
 
@@ -56,7 +146,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
         {sent ? (
           <View style={styles.successBox}>
-            <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
+            <Ionicons name="checkmark-circle" size={48} color={theme.statusSuccess} />
             <Text style={styles.successTitle}>Check your inbox</Text>
             <Text style={styles.successText}>
               If an account exists for{' '}
@@ -73,7 +163,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
             <TextInput
               style={styles.input}
               placeholder="your@email.com"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={theme.textMuted}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -101,91 +191,3 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  inner: {
-    flex: 1,
-    padding: 24,
-    paddingTop: 60,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 40,
-  },
-  backText: {
-    color: '#94a3b8',
-    fontSize: 14,
-  },
-  header: {
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-  },
-  form: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#cbd5e1',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#f1f5f9',
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: '#9b7fc4',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  successBox: {
-    alignItems: 'center',
-    gap: 16,
-    marginTop: 20,
-  },
-  successTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  successText: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  emailHighlight: {
-    color: '#cbd5e1',
-    fontWeight: '500',
-  },
-});

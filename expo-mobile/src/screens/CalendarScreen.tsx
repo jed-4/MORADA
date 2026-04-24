@@ -26,6 +26,7 @@ import { getCached, setCached } from '../services/cache';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useTheme } from '../theme';
 interface Task {
   id: string;
   title: string;
@@ -352,9 +353,17 @@ export default function CalendarScreen({ navigation }: Props) {
   // even before the first onScroll event fires from weekScrollRef.
   const weekScrollOffset = useRef(Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH));
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', input: '#0f172a' }
-    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', input: '#f8fafc' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+    input: theme.background,
+};
 
   const buildDateRange = useCallback(() => {
     const now = new Date();

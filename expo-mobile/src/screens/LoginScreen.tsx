@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,15 +14,123 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '../contexts/AuthContext';
 import { API_BASE_URL } from '../services/api';
+import { useTheme } from '../theme';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { login, loginWithSession } = useAuth();
+  const theme = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const styles = useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    inner: {
+      flex: 1,
+      justifyContent: 'center',
+      padding: 24,
+    },
+    header: {
+      alignItems: 'center',
+      marginBottom: 40,
+    },
+    logo: {
+      fontSize: 36,
+      fontWeight: '700',
+      color: theme.textPrimary,
+      letterSpacing: 1,
+    },
+    subtitle: {
+      fontSize: 14,
+      color: theme.textSecondary,
+      marginTop: 8,
+    },
+    googleButton: {
+      backgroundColor: theme.card,
+      borderRadius: 8,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    googleIcon: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#4285F4',
+    },
+    googleButtonText: {
+      color: theme.textPrimary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    divider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: 24,
+      gap: 12,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: theme.border,
+    },
+    dividerText: {
+      color: theme.textMuted,
+      fontSize: 13,
+    },
+    form: {
+      gap: 4,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: theme.textSecondary,
+      marginBottom: 6,
+      marginTop: 12,
+    },
+    input: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 8,
+      padding: 14,
+      fontSize: 16,
+      color: theme.textPrimary,
+    },
+    button: {
+      backgroundColor: theme.primary,
+      borderRadius: 8,
+      padding: 16,
+      alignItems: 'center',
+      marginTop: 24,
+    },
+    buttonDisabled: {
+      opacity: 0.7,
+    },
+    buttonText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    forgotButton: {
+      alignItems: 'center',
+      marginTop: 16,
+      paddingVertical: 4,
+    },
+    forgotText: {
+      color: theme.textMuted,
+      fontSize: 14,
+    },
+  }), [theme]);
 
   const handleGooglePress = async () => {
     setIsGoogleLoading(true);
@@ -88,7 +196,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           activeOpacity={0.8}
         >
           {isGoogleLoading ? (
-            <ActivityIndicator color="#333" />
+            <ActivityIndicator color={theme.textPrimary} />
           ) : (
             <>
               <Text style={styles.googleIcon}>G</Text>
@@ -108,7 +216,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           <TextInput
             style={styles.input}
             placeholder="your@email.com"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={theme.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -121,7 +229,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           <TextInput
             style={styles.input}
             placeholder="Enter your password"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={theme.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -153,107 +261,3 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  inner: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  logo: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 1,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginTop: 8,
-  },
-  googleButton: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  googleIcon: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#4285F4',
-  },
-  googleButtonText: {
-    color: '#333333',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#334155',
-  },
-  dividerText: {
-    color: '#64748b',
-    fontSize: 13,
-  },
-  form: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#cbd5e1',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#f1f5f9',
-  },
-  button: {
-    backgroundColor: '#9b7fc4',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  forgotButton: {
-    alignItems: 'center',
-    marginTop: 16,
-    paddingVertical: 4,
-  },
-  forgotText: {
-    color: '#94a3b8',
-    fontSize: 14,
-  },
-});

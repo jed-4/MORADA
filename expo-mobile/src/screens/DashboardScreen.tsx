@@ -23,6 +23,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import { setCached, clearCache } from '../services/cache';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useTheme } from '../theme';
 interface Project {
   id: string;
   name: string;
@@ -226,9 +227,20 @@ export default function DashboardScreen({ navigation }: Props) {
   const [phaseLabels, setPhaseLabels] = useState<Record<string, string>>({});
   const [subStatusLabels, setSubStatusLabels] = useState<Record<string, string>>({});
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449', topBar: '#1a1410', topBarText: '#f5e9d8', sectionLabel: '#94a3b8' }
-    : { bg: '#F7F5FC', card: '#ffffff', text: '#2E2018', secondary: '#78716c', border: '#EAE4F2', accent: '#A890D4', muted: '#C9C0D8', cardHover: '#F2EDFB', topBar: '#2E2018', topBarText: '#F5E9D8', sectionLabel: '#A29AA5' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+    cardHover: theme.subtle,
+    topBar: theme.background,
+    topBarText: theme.textPrimary,
+    sectionLabel: theme.textMuted,
+};
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {

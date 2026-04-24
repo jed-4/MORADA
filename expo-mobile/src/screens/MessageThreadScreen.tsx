@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
+import { useTheme } from '../theme';
 interface Message {
   id: string;
   channelId: string;
@@ -87,9 +88,19 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', input: '#1e293b', myBubble: '#4c1d95', otherBubble: '#1e293b' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#94a3b8', input: '#ffffff', myBubble: '#ede9fe', otherBubble: '#ffffff' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+    input: theme.background,
+    myBubble: theme.primary,
+    otherBubble: theme.card,
+};
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);

@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
 
+import { useTheme } from '../theme';
 interface MorePanelProps {
   visible: boolean;
   onClose: () => void;
@@ -95,27 +96,17 @@ export default function MorePanel({ visible, onClose, navigationRef }: MorePanel
     }
   }, [visible, slideAnim, fadeAnim]);
 
-  const colors = isDark
-    ? {
-        text: '#f1f5f9',
-        secondary: '#94a3b8',
-        sheetBg: '#1e293b',
-        accent: '#b196d2',
-        handle: '#475569',
-        inputBg: '#0f172a',
-        border: '#334155',
-        muted: '#64748b',
-      }
-    : {
-        text: '#0f172a',
-        secondary: '#64748b',
-        sheetBg: '#1e293b',
-        accent: '#9b7fc4',
-        handle: '#64748b',
-        inputBg: '#ffffff',
-        border: '#e2e8f0',
-        muted: '#94a3b8',
-      };
+  const theme = useTheme();
+const colors = {
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    sheetBg: theme.card,
+    accent: theme.primary,
+    handle: theme.textMuted,
+    inputBg: theme.card,
+    border: theme.border,
+    muted: theme.textMuted,
+};
 
   const nav = () => navigationRef.current;
 

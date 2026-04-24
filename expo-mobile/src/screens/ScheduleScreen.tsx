@@ -24,6 +24,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useTheme } from '../theme';
 interface ScheduleItem {
   id: string;
   scheduleId: string;
@@ -309,9 +310,16 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showBarStatus, setShowBarStatus] = useState(false);
   const [showGanttMenu, setShowGanttMenu] = useState(false);
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', inputBg: '#f1f5f9' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    inputBg: theme.card,
+};
 
   const fetchProjects = useCallback(async () => {
     try {

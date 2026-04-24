@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
 
+import { useTheme } from '../theme';
 type Props = {
   navigation: any;
 };
@@ -93,31 +94,19 @@ export default function MoreScreen({ navigation }: Props) {
     return unsubscribe;
   }, [navigation, slideAnim, fadeAnim]);
 
-  const colors = isDark
-    ? {
-        bg: '#0f172a',
-        text: '#f1f5f9',
-        secondary: '#94a3b8',
-        sheetBg: '#1e293b',
-        accent: '#b196d2',
-        handle: '#475569',
-        inputBg: '#0f172a',
-        border: '#334155',
-        muted: '#64748b',
-        danger: '#ef4444',
-      }
-    : {
-        bg: '#f8fafc',
-        text: '#0f172a',
-        secondary: '#64748b',
-        sheetBg: '#1e293b',
-        accent: '#9b7fc4',
-        handle: '#64748b',
-        inputBg: '#ffffff',
-        border: '#e2e8f0',
-        muted: '#94a3b8',
-        danger: '#ef4444',
-      };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    sheetBg: theme.card,
+    accent: theme.primary,
+    handle: theme.textMuted,
+    inputBg: theme.card,
+    border: theme.border,
+    muted: theme.textMuted,
+    danger: theme.statusDanger,
+};
 
   const handleItemPress = (item: MoreItem) => {
     if (item.action === 'coming-soon') {

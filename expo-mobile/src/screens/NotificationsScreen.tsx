@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useTheme } from '../theme';
 interface Notification {
   id: string;
   type: string;
@@ -57,9 +58,17 @@ export default function NotificationsScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', unread: '#1e2d45' }
-    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', unread: '#f3f0ff' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+    unread: theme.subtle,
+};
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);

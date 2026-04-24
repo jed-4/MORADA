@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
 
+import { useTheme } from '../theme';
 interface Project {
   id: string;
   status?: string;
@@ -41,9 +42,16 @@ export default function BusinessDashboardScreen({ navigation }: any) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [timesheets, setTimesheets] = useState<TimesheetEntry[]>([]);
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+};
 
   const fetchData = useCallback(async () => {
     try {

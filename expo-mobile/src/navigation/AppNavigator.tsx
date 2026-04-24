@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from 'react-native';
 import MorePanel from '../components/MorePanel';
 import { apiFetch } from '../services/api';
+import { useTheme } from '../theme';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -34,15 +35,14 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function WorkspaceStack() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
 
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
-        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerStyle: { backgroundColor: theme.card },
+        headerTintColor: theme.textPrimary,
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
@@ -60,14 +60,13 @@ function WorkspaceStack() {
 }
 
 function ProjectsStack() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
 
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
-        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerStyle: { backgroundColor: theme.card },
+        headerTintColor: theme.textPrimary,
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
@@ -97,15 +96,14 @@ function ProjectsStack() {
 }
 
 function MessagesStack() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
 
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
-        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerStyle: { backgroundColor: theme.card },
+        headerTintColor: theme.textPrimary,
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
@@ -118,15 +116,14 @@ function MessagesStack() {
 }
 
 function MoreStack() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
 
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
-        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerStyle: { backgroundColor: theme.card },
+        headerTintColor: theme.textPrimary,
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
@@ -146,8 +143,7 @@ function MoreStack() {
 }
 
 function MainTabs() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
   const [moreVisible, setMoreVisible] = useState(false);
   const tabNavRef = useRef<any>(null);
   const [messagesUnread, setMessagesUnread] = useState(0);
@@ -167,9 +163,13 @@ function MainTabs() {
     return () => clearInterval(interval);
   }, []);
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#A890D4', inactive: '#64748b' }
-    : { bg: '#F7F5FC', card: '#ffffff', border: '#EAE4F2', active: '#A890D4', inactive: '#A29AA5' };
+  const colors = {
+    bg: theme.background,
+    card: theme.card,
+    border: theme.border,
+    active: theme.primary,
+    inactive: theme.textMuted,
+  };
 
   return (
     <>
@@ -234,6 +234,7 @@ export default function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const theme = useTheme();
 
   if (isLoading) {
     return null;
@@ -244,12 +245,12 @@ export default function AppNavigator() {
       theme={{
         dark: isDark,
         colors: {
-          primary: isDark ? '#b196d2' : '#9b7fc4',
-          background: isDark ? '#0f172a' : '#f8fafc',
-          card: isDark ? '#1e293b' : '#ffffff',
-          text: isDark ? '#f1f5f9' : '#0f172a',
-          border: isDark ? '#334155' : '#e2e8f0',
-          notification: '#ef4444',
+          primary: theme.primary,
+          background: theme.background,
+          card: theme.card,
+          text: theme.textPrimary,
+          border: theme.border,
+          notification: theme.statusDanger,
         },
         fonts: {
           regular: { fontFamily: 'System', fontWeight: '400' },

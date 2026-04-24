@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest, uploadPhoto, API_BASE_URL, getSessionId } from '../services/api';
 
+import { useTheme } from '../theme';
 type Props = {
   navigation: any;
   route: any;
@@ -323,37 +324,22 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   savedNoteIdRef.current = savedNoteId;
   visibilityRef.current = visibility;
 
-  const colors = isDark
-    ? {
-        bg: '#0f172a',
-        text: '#f1f5f9',
-        secondary: '#94a3b8',
-        border: '#334155',
-        accent: '#b196d2',
-        placeholder: '#64748b',
-        toolbarBg: '#1e293b',
-        toolbarBorder: '#334155',
-        activeBtn: '#b196d2',
-        inactiveBtn: '#64748b',
-        checkboxBg: '#334155',
-        checkboxChecked: '#b196d2',
-        dividerColor: '#334155',
-      }
-    : {
-        bg: '#ffffff',
-        text: '#0f172a',
-        secondary: '#64748b',
-        border: '#e2e8f0',
-        accent: '#9b7fc4',
-        placeholder: '#94a3b8',
-        toolbarBg: '#f8fafc',
-        toolbarBorder: '#e2e8f0',
-        activeBtn: '#9b7fc4',
-        inactiveBtn: '#94a3b8',
-        checkboxBg: '#e2e8f0',
-        checkboxChecked: '#9b7fc4',
-        dividerColor: '#e2e8f0',
-      };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    placeholder: theme.textMuted,
+    toolbarBg: theme.card,
+    toolbarBorder: theme.border,
+    activeBtn: theme.primary,
+    inactiveBtn: theme.textMuted,
+    checkboxBg: theme.border,
+    checkboxChecked: theme.primary,
+    dividerColor: theme.border,
+};
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));

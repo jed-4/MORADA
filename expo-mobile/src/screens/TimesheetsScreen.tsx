@@ -23,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
+import { useTheme } from '../theme';
 
 interface Timesheet {
   id: string;
@@ -625,6 +626,7 @@ export default function TimesheetsScreen() {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const theme = useTheme();
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
@@ -668,10 +670,17 @@ export default function TimesheetsScreen() {
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
-  const colors = useMemo(() => isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', green: '#22c55e', red: '#ef4444', inputBg: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', green: '#16a34a', red: '#dc2626', inputBg: '#f1f5f9' },
-  [isDark]);
+  const colors = useMemo(() => ({
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    green: theme.statusSuccess,
+    red: theme.statusDanger,
+    inputBg: theme.background,
+  }), [theme]);
 
   const fetchData = useCallback(async () => {
     try {

@@ -15,6 +15,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
+import { useTheme } from '../theme';
 interface ScopeStage {
   id: string;
   name: string;
@@ -100,9 +101,17 @@ export default function ScopeScreen({ navigation, route }: Props) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
 
-  const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', success: '#22c55e' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', success: '#16a34a' };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    muted: theme.textMuted,
+    success: theme.statusSuccess,
+};
 
   const roleName = user?.roleName ?? '';
   const isAdmin =

@@ -20,6 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
 
+import { useTheme } from '../theme';
 type Props = {
   navigation: any;
 };
@@ -185,29 +186,18 @@ export default function NotesListScreen({ navigation }: Props) {
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateFetchError, setTemplateFetchError] = useState(false);
 
-  const colors = isDark
-    ? {
-        bg: '#0f172a',
-        card: '#1e293b',
-        text: '#f1f5f9',
-        secondary: '#94a3b8',
-        border: '#334155',
-        accent: '#b196d2',
-        inputBg: '#1e293b',
-        placeholder: '#64748b',
-        danger: '#ef4444',
-      }
-    : {
-        bg: '#f8fafc',
-        card: '#ffffff',
-        text: '#0f172a',
-        secondary: '#64748b',
-        border: '#e2e8f0',
-        accent: '#9b7fc4',
-        inputBg: '#ffffff',
-        placeholder: '#94a3b8',
-        danger: '#ef4444',
-      };
+  const theme = useTheme();
+const colors = {
+    bg: theme.background,
+    card: theme.card,
+    text: theme.textPrimary,
+    secondary: theme.textSecondary,
+    border: theme.border,
+    accent: theme.primary,
+    inputBg: theme.card,
+    placeholder: theme.textMuted,
+    danger: theme.statusDanger,
+};
 
   const fetchNotes = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
