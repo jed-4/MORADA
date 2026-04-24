@@ -356,7 +356,7 @@ function DroppableColumn({
     <div
       ref={setNodeRef}
       className={`rounded-xl border transition-all duration-200 ${
-        isOver ? 'border-2 border-[#A890D4] border-dashed bg-[#A890D4]/5' : 'border-border/50 bg-muted/20'
+        isOver ? 'border-2 border-primary border-dashed bg-primary/5' : 'border-border/50 bg-muted/20'
       }`}
     >
       {/* Column Header */}
@@ -371,7 +371,7 @@ function DroppableColumn({
             <h3 className="text-sm font-semibold text-foreground truncate">{column.title}</h3>
           </div>
           {projects.length > 0 && (
-            <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/20 no-default-hover-elevate font-semibold flex-shrink-0">
+            <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-primary/10 text-primary border-primary/20 no-default-hover-elevate font-semibold flex-shrink-0">
               {projects.length}
             </Badge>
           )}
@@ -1076,7 +1076,7 @@ export function ProjectBoard({
               <div className="px-3 py-2.5 border-b border-border/30 bg-muted/30">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">...</h3>
-                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/20 font-semibold">...</Badge>
+                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-primary/10 text-primary border-primary/20 font-semibold">...</Badge>
                 </div>
               </div>
               <div className="p-2 space-y-1.5">
@@ -1209,7 +1209,7 @@ export function ProjectBoard({
 
                   <DragOverlay>
                     {activeField ? (
-                      <div className="flex items-center gap-3 h-10 px-3 rounded-md border-2 bg-background border-[#A890D4] shadow-lg opacity-80">
+                      <div className="flex items-center gap-3 h-10 px-3 rounded-md border-2 bg-background border-primary shadow-lg opacity-80">
                         <GripVertical className="h-4 w-4 text-muted-foreground" />
                         <Checkbox checked={activeField.visible} />
                         <label

@@ -924,9 +924,9 @@ export default function VariationDetail() {
       case "pending":
         return <Badge variant="default" data-testid="badge-status-pending"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
       case "approved":
-        return <Badge variant="outline" className="border-green-500 text-green-700" data-testid="badge-status-approved"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
+        return <Badge variant="outline" className="border-green-500 text-status-success" data-testid="badge-status-approved"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
       case "rejected":
-        return <Badge variant="outline" className="border-red-500 text-red-700" data-testid="badge-status-rejected"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>;
+        return <Badge variant="outline" className="border-red-500 text-status-danger" data-testid="badge-status-rejected"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>;
       default:
         return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
     }
@@ -1062,7 +1062,7 @@ export default function VariationDetail() {
                 type="button"
                 onClick={() => sendForApprovalMutation.mutate()}
                 disabled={sendForApprovalMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
                 data-testid="button-send-for-approval"
               >
                 {sendForApprovalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
@@ -1097,7 +1097,7 @@ export default function VariationDetail() {
               type="button"
               onClick={form.handleSubmit(onSubmit)}
               disabled={createMutation.isPending || updateMutation.isPending}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
               data-testid="button-save"
             >
               {(createMutation.isPending || updateMutation.isPending) ? (
@@ -1111,20 +1111,20 @@ export default function VariationDetail() {
         </div>
 
         {/* Row 2 — Live financial summary strip */}
-        <div className="bg-[#A890D4]/10 flex items-center px-4 py-2 gap-5 text-xs">
+        <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
           <div className="flex items-center gap-1.5" data-testid="header-summary-subtotal">
             <span className="text-muted-foreground">Subtotal</span>
             <span className="font-semibold tabular-nums">{formatCurrency(calculateSubtotal())}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#A890D4]/40" />
+          <div className="w-px h-3.5 bg-primary/40" />
           <div className="flex items-center gap-1.5" data-testid="header-summary-gst">
             <span className="text-muted-foreground">GST</span>
             <span className="font-semibold tabular-nums">{formatCurrency(calculateGST())}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#A890D4]/40" />
+          <div className="w-px h-3.5 bg-primary/40" />
           <div className="flex items-center gap-1.5" data-testid="header-summary-total">
             <span className="text-muted-foreground">Total</span>
-            <span className="font-semibold tabular-nums text-[#A890D4]">{formatCurrency(calculateTotal())}</span>
+            <span className="font-semibold tabular-nums text-primary">{formatCurrency(calculateTotal())}</span>
           </div>
         </div>
 
@@ -1138,7 +1138,7 @@ export default function VariationDetail() {
                 {/* ── General Info ── */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#A890D4]/80 flex-shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary/80 flex-shrink-0" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">General Info</span>
                   </div>
                   <div className="p-4 space-y-3">
@@ -1306,10 +1306,10 @@ export default function VariationDetail() {
                             rowClassName={(line) => cn("transition-opacity", !line.showInPdf && "opacity-40")}
                             columns={(() => {
                               const typeColors: Record<string, string> = {
-                                Material: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                                Labour: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-                                Subcontractor: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-                                Fee: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                                Material: "bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300",
+                                Labour: "bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300",
+                                Subcontractor: "bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300",
+                                Fee: "bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300",
                               };
                               const cols: LineItemColumn<typeof costLines[number]>[] = [
                                 {
@@ -1637,9 +1637,9 @@ export default function VariationDetail() {
 
                   {/* ── Variation Summary panel ── */}
                   <div className="border-t border-border/50" data-testid="summary-panel">
-                    <div className="bg-[#A890D4]/10 px-4 py-3 flex items-center justify-between gap-4 border-b border-border/50">
+                    <div className="bg-primary/10 px-4 py-3 flex items-center justify-between gap-4 border-b border-border/50">
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                         <span className="text-xs font-medium">Variation Summary</span>
                       </div>
                       {costLines.length > 0 && (
@@ -1719,7 +1719,7 @@ export default function VariationDetail() {
                         {/* Right: Total callout */}
                         <div className="col-span-2 flex flex-col items-end justify-end gap-1">
                           <span className="text-xs text-muted-foreground uppercase tracking-wide">Total</span>
-                          <span className="text-2xl font-bold tabular-nums text-[#A890D4]" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
+                          <span className="text-2xl font-bold tabular-nums text-primary" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
                         </div>
                       </div>
                     </div>
@@ -1765,7 +1765,7 @@ export default function VariationDetail() {
                   {/* Terms & Conditions sub-section */}
                   <div className="border-t border-border/50">
                     <SubHeader
-                      dotColor="bg-slate-400/60"
+                      dotColor="bg-muted-foreground/40"
                       label="Terms & Conditions"
                       collapsible
                       collapsed={termsCollapsed}
@@ -1811,7 +1811,7 @@ export default function VariationDetail() {
                         ) : (
                           <p className="text-sm text-muted-foreground">
                             No terms templates configured.{" "}
-                            <a href="/settings" className="text-[#A890D4] hover:underline">Add templates in Company Settings</a>.
+                            <a href="/settings" className="text-primary hover:underline">Add templates in Company Settings</a>.
                           </p>
                         )}
                       </div>
@@ -1821,7 +1821,7 @@ export default function VariationDetail() {
                   {/* Attachments sub-section */}
                   <div className="border-t border-border/50">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/70 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">
                         Attachments {attachments.length > 0 && `· ${attachments.length}`}
                       </span>
@@ -2153,7 +2153,7 @@ export default function VariationDetail() {
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Variance</p>
-                          <p className={cn("text-sm font-semibold tabular-nums", variance < 0 ? "text-red-500" : variance > 0 ? "text-green-600" : "")}>
+                          <p className={cn("text-sm font-semibold tabular-nums", variance < 0 ? "text-red-500" : variance > 0 ? "text-status-success" : "")}>
                             {variance >= 0 ? "+" : ""}{formatCurrency(variance)}
                           </p>
                         </div>

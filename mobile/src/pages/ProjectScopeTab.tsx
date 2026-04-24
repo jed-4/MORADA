@@ -159,8 +159,8 @@ export function ProjectScopeTab() {
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-16 px-6">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#A890D4]/10 flex items-center justify-center">
-              <Plus className="w-8 h-8 text-[#A890D4]" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+              <Plus className="w-8 h-8 text-primary" />
             </div>
             <h3 className="text-lg font-semibold mb-2">No Scope Items Yet</h3>
             <p className="text-muted-foreground text-sm mb-6">
@@ -168,7 +168,7 @@ export function ProjectScopeTab() {
             </p>
             <button
               onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center gap-2 bg-[#A890D4] text-white px-4 py-2 rounded-lg font-medium"
+              className="inline-flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-medium"
               data-testid="button-add-first-scope"
             >
               <Plus className="w-4 h-4" />
@@ -271,7 +271,7 @@ export function ProjectScopeTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-scope"
       >
         <Plus className="w-6 h-6" />
@@ -300,7 +300,7 @@ export function ProjectScopeTab() {
                     onClick={() => setNewStage(stage)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
                       newStage === stage
-                        ? "bg-[#A890D4] text-white"
+                        ? "bg-primary text-white"
                         : "border hover-elevate"
                     }`}
                     data-testid={`stage-select-${stage}`}

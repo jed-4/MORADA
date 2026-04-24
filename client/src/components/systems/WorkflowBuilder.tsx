@@ -224,7 +224,7 @@ export const WorkflowBuilder = forwardRef<WorkflowBuilderHandle, WorkflowBuilder
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium">{workflow.name}</h4>
                         <Badge variant="outline" className="gap-1">
-                          <Power className="h-3 w-3 text-green-600" />
+                          <Power className="h-3 w-3 text-status-success" />
                           Active
                         </Badge>
                       </div>
@@ -445,7 +445,7 @@ export const WorkflowBuilder = forwardRef<WorkflowBuilderHandle, WorkflowBuilder
                         <span className="text-sm flex-1">{template.title}</span>
                         {template.isActive ? (
                           <Badge variant="outline" className="gap-1">
-                            <Power className="h-3 w-3 text-green-600" />
+                            <Power className="h-3 w-3 text-status-success" />
                             Active
                           </Badge>
                         ) : (

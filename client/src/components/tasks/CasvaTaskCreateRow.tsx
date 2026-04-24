@@ -55,7 +55,7 @@ export function CasvaTaskCreateRow({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Task name"
-          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-[#A890D4] rounded px-1 -mx-1 p-0"
+          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-primary rounded px-1 -mx-1 p-0"
           data-testid="input-task-title"
         />
       </div>
@@ -80,14 +80,14 @@ export function CasvaTaskCreateRow({
           className="h-6 w-6 rounded-md border border-border hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="button-save-task"
         >
-          <Check className="h-4 w-4 text-green-600" />
+          <Check className="h-4 w-4 text-status-success" />
         </button>
         <button
           onClick={onCancel}
           className="h-6 w-6 rounded-md border border-border hover-elevate active-elevate-2 flex items-center justify-center"
           data-testid="button-cancel-task"
         >
-          <X className="h-4 w-4 text-gray-500" />
+          <X className="h-4 w-4 text-muted" />
         </button>
       </div>
     </div>

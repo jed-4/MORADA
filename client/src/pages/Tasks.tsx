@@ -122,7 +122,7 @@ function SortableViewTab({
         onClick={onSelect}
         className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing ${
           isSelected
-            ? 'text-[#A890D4] font-medium'
+            ? 'text-primary font-medium'
             : 'text-muted-foreground hover:text-foreground'
         }`}
         data-testid={`tab-${view.id}`}
@@ -130,14 +130,14 @@ function SortableViewTab({
       >
         <span>{view.name}</span>
         {isSelected && (
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
         )}
       </button>
       {isSelected && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="h-5 px-0.5 text-[#A890D4] hover:text-[#A890D4]/80 flex items-center"
+              className="h-5 px-0.5 text-primary hover:text-primary/80 flex items-center"
               data-testid={`button-view-options-${view.id}`}
             >
               <ChevronDown className="h-3 w-3" />
@@ -1005,7 +1005,7 @@ export default function Tasks() {
             {params.projectId ? `${currentProject.name} Tasks` : 'Tasks'}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
             data-testid="button-add-task"
           >
@@ -1028,7 +1028,7 @@ export default function Tasks() {
                   onClick={() => setActiveView(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
                     isActive
-                      ? 'text-[#A890D4] font-medium'
+                      ? 'text-primary font-medium'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                   data-testid={`tab-${view}`}
@@ -1036,7 +1036,7 @@ export default function Tasks() {
                   <Icon className="w-3 h-3" />
                   <span className="capitalize">{view === "kanban" ? "Board" : view}</span>
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
                   )}
                 </button>
               );
@@ -1126,7 +1126,7 @@ export default function Tasks() {
                       onClick={() => setCalendarMode(mode)}
                       className={`h-6 w-auto px-2 text-xs border rounded-md ${
                         calendarMode === mode
-                          ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
+                          ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                           : 'hover-elevate'
                       } active-elevate-2`}
                       data-testid={`button-view-${mode}`}

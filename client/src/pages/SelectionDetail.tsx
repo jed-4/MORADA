@@ -594,7 +594,7 @@ export default function SelectionDetail() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Selected</span>
-                            <span className="text-sm font-semibold text-[#A890D4]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+                            <span className="text-sm font-semibold text-primary">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
                         <div className="flex flex-col items-end">
@@ -606,8 +606,8 @@ export default function SelectionDetail() {
                             return (
                               <span className={cn(
                                 "text-sm font-semibold",
-                                isOver && "text-red-600",
-                                isUnder && "text-green-600",
+                                isOver && "text-status-danger",
+                                isUnder && "text-status-success",
                                 !isOver && !isUnder && "text-muted-foreground"
                               )}>
                                 {isOver && "+"}${(Math.abs(difference) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
@@ -879,7 +879,7 @@ export default function SelectionDetail() {
                     <AccordionItem value="client" className="border rounded-md px-3">
                       <AccordionTrigger className="py-2 hover:no-underline" data-testid="accordion-client">
                         <div className="flex items-center gap-2">
-                          <Users className="w-3.5 h-3.5 text-[#A890D4]" />
+                          <Users className="w-3.5 h-3.5 text-primary" />
                           <span className="text-sm font-medium">Client permissions</span>
                         </div>
                       </AccordionTrigger>
@@ -977,7 +977,7 @@ export default function SelectionDetail() {
                     onClick={() => setOptionsView("grid")}
                     className={cn(
                       "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
-                      optionsView === "grid" ? "bg-[#A890D4] text-white" : "hover-elevate"
+                      optionsView === "grid" ? "bg-primary text-white" : "hover-elevate"
                     )}
                     data-testid="button-view-grid"
                   >
@@ -987,7 +987,7 @@ export default function SelectionDetail() {
                     onClick={() => setOptionsView("table")}
                     className={cn(
                       "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
-                      optionsView === "table" ? "bg-[#A890D4] text-white" : "hover-elevate"
+                      optionsView === "table" ? "bg-primary text-white" : "hover-elevate"
                     )}
                     data-testid="button-view-table"
                   >
@@ -1160,12 +1160,12 @@ export default function SelectionDetail() {
                       truncate: false,
                       cell: (option) =>
                         option.isSelectedByClient ? (
-                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-status-success">
                             <CheckCircle className="w-3 h-3 mr-1" />
                             Selected
                           </Badge>
                         ) : !option.visibleToClient ? (
-                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
+                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-status-danger">
                             <EyeOff className="w-3 h-3 mr-1" />
                             Hidden
                           </Badge>

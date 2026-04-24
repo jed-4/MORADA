@@ -239,7 +239,7 @@ export default function Allowances() {
           <Badge
             variant="outline"
             className={row.original.item.allowance === "Prime Cost"
-              ? "bg-blue-50 text-blue-700 border-blue-200"
+              ? "bg-blue-50 text-status-info border-blue-200"
               : "bg-amber-50 text-amber-700 border-amber-200"
             }
           >
@@ -422,8 +422,8 @@ export default function Allowances() {
   if (!currentProject) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16">
-        <div className="w-12 h-12 rounded-full bg-[#A890D4]/10 flex items-center justify-center mb-4">
-          <DollarSign className="w-6 h-6 text-[#A890D4]" />
+        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <DollarSign className="w-6 h-6 text-primary" />
         </div>
         <h3 className="text-sm font-semibold text-foreground mb-1">No Project Selected</h3>
         <p className="text-xs text-muted-foreground text-center max-w-xs">
@@ -557,7 +557,7 @@ export default function Allowances() {
             variant={typeFilter === "all" ? "default" : "outline"}
             size="sm"
             className={`h-6 px-2 text-xs gap-1 ${
-              typeFilter === "all" ? "bg-[#A890D4] hover:bg-[#A890D4]/90 border-[#A890D4]" : ""
+              typeFilter === "all" ? "bg-primary hover:bg-primary/90 border-primary" : ""
             }`}
             onClick={() => setTypeFilter("all")}
             data-testid="button-filter-all"
@@ -571,7 +571,7 @@ export default function Allowances() {
             variant={typeFilter === "pc" ? "default" : "outline"}
             size="sm"
             className={`h-6 px-2 text-xs gap-1 ${
-              typeFilter === "pc" ? "bg-[#A890D4] hover:bg-[#A890D4]/90 border-[#A890D4]" : ""
+              typeFilter === "pc" ? "bg-primary hover:bg-primary/90 border-primary" : ""
             }`}
             onClick={() => setTypeFilter("pc")}
             data-testid="button-filter-pc"
@@ -585,7 +585,7 @@ export default function Allowances() {
             variant={typeFilter === "ps" ? "default" : "outline"}
             size="sm"
             className={`h-6 px-2 text-xs gap-1 ${
-              typeFilter === "ps" ? "bg-[#A890D4] hover:bg-[#A890D4]/90 border-[#A890D4]" : ""
+              typeFilter === "ps" ? "bg-primary hover:bg-primary/90 border-primary" : ""
             }`}
             onClick={() => setTypeFilter("ps")}
             data-testid="button-filter-ps"
@@ -614,8 +614,8 @@ export default function Allowances() {
       <div className="flex-1 overflow-auto p-2">
         {filteredAllowances.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-16">
-            <div className="w-12 h-12 rounded-full bg-[#A890D4]/10 flex items-center justify-center mb-4">
-              <DollarSign className="w-6 h-6 text-[#A890D4]" />
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <DollarSign className="w-6 h-6 text-primary" />
             </div>
             <h3 className="text-sm font-semibold text-foreground mb-1">
               {allowances.length === 0 

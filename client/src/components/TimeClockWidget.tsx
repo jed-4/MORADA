@@ -156,7 +156,7 @@ export function TimeClockWidget() {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Time Clock</h3>
             {activeTimesheet && (
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <Badge variant="outline" className="bg-green-50 text-status-success border-green-200">
                 Active
               </Badge>
             )}

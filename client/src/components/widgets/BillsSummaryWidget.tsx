@@ -84,7 +84,7 @@ export default function BillsSummaryWidget({ widget, onUpdate, isConfiguring, on
       {/* Summary Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Receipt className="h-4 w-4 text-[#A890D4]" />
+          <Receipt className="h-4 w-4 text-primary" />
           <span className="font-medium text-sm">Bills Overview</span>
         </div>
         <Badge variant="secondary" className="text-xs">

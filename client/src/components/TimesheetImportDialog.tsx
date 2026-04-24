@@ -406,12 +406,12 @@ export function TimesheetImportDialog({
         {step === 2 && (
           <div className="space-y-3 px-6 py-2 overflow-y-auto flex-1 min-h-0">
             <div className="flex items-center gap-4 text-sm">
-              <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+              <span className="flex items-center gap-1.5 text-status-success dark:text-green-400">
                 <CheckCircle2 className="w-4 h-4" />
                 {importableRows.length} ready to import
               </span>
               {errorRows.length > 0 && (
-                <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                <span className="flex items-center gap-1.5 text-status-danger dark:text-red-400">
                   <AlertCircle className="w-4 h-4" />
                   {errorRows.length} will be skipped
                 </span>
@@ -516,7 +516,7 @@ export function TimesheetImportDialog({
 
             {(errorRows.length > 0 || parsedRows.some((r) => r.severity === "warning")) && (
               <p className="text-xs text-muted-foreground">
-                <span className="text-red-600 dark:text-red-400">Red</span> = skipped (missing date or invalid duration).{" "}
+                <span className="text-status-danger dark:text-red-400">Red</span> = skipped (missing date or invalid duration).{" "}
                 <span className="text-amber-600 dark:text-amber-400">Amber</span> = imported with warnings (user or cost code was fuzzy-matched to a similar one; unrecognised users import under your account; unrecognised cost codes import without one; unparseable break values import as 0).
               </p>
             )}

@@ -71,7 +71,7 @@ export default function BusinessRevenueWidget({ widget }: WidgetProps) {
           <p className="text-2xl font-bold">{formatCurrency(currentMonth.revenue)}</p>
           <p className="text-xs text-muted-foreground">Revenue this month</p>
         </div>
-        <div className={`flex items-center gap-1 text-sm ${revenueChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className={`flex items-center gap-1 text-sm ${revenueChange >= 0 ? 'text-status-success' : 'text-status-danger'}`}>
           {revenueChange > 0 ? <TrendingUp className="h-4 w-4" /> : 
            revenueChange < 0 ? <TrendingDown className="h-4 w-4" /> : 
            <Minus className="h-4 w-4" />}
@@ -119,15 +119,15 @@ export default function BusinessRevenueWidget({ widget }: WidgetProps) {
 
       <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t">
         <div>
-          <p className="text-sm font-semibold text-green-600">{formatCurrency(currentMonth.revenue)}</p>
+          <p className="text-sm font-semibold text-status-success">{formatCurrency(currentMonth.revenue)}</p>
           <p className="text-[10px] text-muted-foreground">Revenue</p>
         </div>
         <div>
-          <p className="text-sm font-semibold text-orange-600">{formatCurrency(currentMonth.expenses)}</p>
+          <p className="text-sm font-semibold text-status-warning">{formatCurrency(currentMonth.expenses)}</p>
           <p className="text-[10px] text-muted-foreground">Expenses</p>
         </div>
         <div>
-          <p className={`text-sm font-semibold ${currentMonth.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          <p className={`text-sm font-semibold ${currentMonth.profit >= 0 ? 'text-emerald-600' : 'text-status-danger'}`}>
             {formatCurrency(currentMonth.profit)}
           </p>
           <p className="text-[10px] text-muted-foreground">Profit</p>

@@ -269,10 +269,10 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-[#A890D4] z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-[#A890D4] z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-primary z-50 rounded-full shadow-[0_0_8px_rgba(168, 144, 212,0.6)]" />
       )}
       {/* Drag handle — floats in left dead zone, zero grid cost */}
       {isDraggable && (
@@ -3645,7 +3645,7 @@ export default function EstimateDetail() {
           itemClassName += " bg-green-50/70";
           break;
         case 'not relevant':
-          itemClassName += " bg-gray-100/70";
+          itemClassName += " bg-muted/70";
           break;
         case 'incomplete':
         default:
@@ -4063,10 +4063,10 @@ export default function EstimateDetail() {
 
       case 'type': {
         const typeColors: Record<string, string> = {
-          Material: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-          Labour: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-          Subcontractor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-          Fee: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+          Material: 'bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300',
+          Labour: 'bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300',
+          Subcontractor: 'bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300',
+          Fee: 'bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300',
         };
         const typeColor = typeColors[item.type] || typeColors.Material;
         if (isEditing) {
@@ -4248,9 +4248,9 @@ export default function EstimateDetail() {
         
         // Chip color based on shown as value
         const shownAsChipClass = 
-          currentShownAs === 'price' ? 'bg-[#A890D4]/20 text-[#7c5bb0] border-[#A890D4]/30' :
-          currentShownAs === 'included' ? 'bg-green-100 text-green-700 border-green-200' :
-          currentShownAs === 'excluded' ? 'bg-red-100 text-red-700 border-red-200' :
+          currentShownAs === 'price' ? 'bg-primary/20 text-[#7c5bb0] border-primary/30' :
+          currentShownAs === 'included' ? 'bg-green-100 text-status-success border-green-200' :
+          currentShownAs === 'excluded' ? 'bg-red-100 text-status-danger border-red-200' :
           'bg-muted text-muted-foreground border-border';
         
         return (
@@ -4303,10 +4303,10 @@ export default function EstimateDetail() {
             }
             // For non-hex colors (tailwind tokens, css variables), use a mapping
             const colorMap: Record<string, string> = {
-              'green': 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
+              'green': 'bg-green-100 text-status-success border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
               'amber': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
-              'red': 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
-              'blue': 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+              'red': 'bg-red-100 text-status-danger border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
+              'blue': 'bg-blue-100 text-status-info border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
               'gray': 'bg-muted text-muted-foreground border-border',
               'muted': 'bg-muted text-muted-foreground border-border',
             };
@@ -4319,7 +4319,7 @@ export default function EstimateDetail() {
             }
           }
           // Fallback to hardcoded colors for legacy statuses
-          if (currentStatus === 'done') return { className: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' };
+          if (currentStatus === 'done') return { className: 'bg-green-100 text-status-success border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' };
           if (currentStatus === 'not relevant') return { className: 'bg-muted text-muted-foreground border-border' };
           return { className: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' }; // incomplete/default
         };
@@ -4356,7 +4356,7 @@ export default function EstimateDetail() {
         
         // Chip styling for allowance
         const allowanceChipClass = 
-          allowanceType === 'Prime Cost' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+          allowanceType === 'Prime Cost' ? 'bg-blue-100 text-status-info border-blue-200' :
           allowanceType === 'Provisional Sum' ? 'bg-amber-100 text-amber-700 border-amber-200' :
           'bg-muted/50 text-muted-foreground border-border';
         
@@ -4437,9 +4437,9 @@ export default function EstimateDetail() {
         // Chip color based on wastage value
         const wastageChipClass = 
           currentWastage === 0 ? 'bg-muted/50 text-muted-foreground border-border' :
-          currentWastage === 10 ? 'bg-blue-100 text-blue-700 border-blue-200' :
+          currentWastage === 10 ? 'bg-blue-100 text-status-info border-blue-200' :
           currentWastage === 15 ? 'bg-amber-100 text-amber-700 border-amber-200' :
-          'bg-orange-100 text-orange-700 border-orange-200'; // 20%
+          'bg-orange-100 text-status-warning border-orange-200'; // 20%
         
         const wastageLabel = currentWastage === 0 ? '-' : `${currentWastage}%`;
         
@@ -4733,13 +4733,13 @@ export default function EstimateDetail() {
             <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <div className="h-6 bg-gray-300 rounded w-48 animate-pulse"></div>
+            <div className="h-6 bg-muted rounded w-48 animate-pulse"></div>
           </div>
         </div>
         <div className="flex-1 p-4">
           <div className="animate-pulse space-y-4">
-            <div className="h-32 bg-gray-300 rounded"></div>
-            <div className="h-64 bg-gray-300 rounded"></div>
+            <div className="h-32 bg-muted rounded"></div>
+            <div className="h-64 bg-muted rounded"></div>
           </div>
         </div>
       </div>
@@ -4771,7 +4771,7 @@ export default function EstimateDetail() {
   // Helper function to get status badge
   const getStatusBadge = (estimate: Estimate) => {
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/10 text-primary border-primary/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
     }
     
     // Use field settings for status
@@ -4897,7 +4897,7 @@ export default function EstimateDetail() {
               />
             ) : (
               <span 
-                className="font-semibold cursor-pointer hover:text-[#A890D4] transition-colors truncate" 
+                className="font-semibold cursor-pointer hover:text-primary transition-colors truncate" 
                 data-testid="text-estimate-title"
                 onClick={handleNameEdit}
                 title="Click to edit estimate name"
@@ -4988,11 +4988,11 @@ export default function EstimateDetail() {
                             autoFocus
                             value={renameValue}
                             onChange={e => setRenameValue(e.target.value)}
-                            className="flex-1 text-xs bg-background border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-[#A890D4]"
+                            className="flex-1 text-xs bg-background border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
                             onBlur={() => setRenamingRevisionId(null)}
                             onKeyDown={e => e.key === 'Escape' && setRenamingRevisionId(null)}
                           />
-                          <button type="submit" className="text-[#A890D4]"><Check className="h-3 w-3" /></button>
+                          <button type="submit" className="text-primary"><Check className="h-3 w-3" /></button>
                         </form>
                       ) : (
                         <button
@@ -5004,7 +5004,7 @@ export default function EstimateDetail() {
                           <span className="truncate flex-1">{getRevLabel(v.version)}{v.name && v.name !== estimate?.name ? ` — ${v.name}` : ''}</span>
                           {isContract && <Badge className="text-[9px] px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
                           {!isContract && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
-                          {!v.isLocked && isCurrent && <span className="text-[9px] text-[#A890D4] flex-shrink-0">working</span>}
+                          {!v.isLocked && isCurrent && <span className="text-[9px] text-primary flex-shrink-0">working</span>}
                         </button>
                       )}
                       <DropdownMenu>
@@ -5127,16 +5127,16 @@ export default function EstimateDetail() {
 
       {/* Finance summary — collapsible */}
       {summary && !isSummaryExpanded && (
-        <div className="bg-[#A890D4]/10 flex items-center justify-between px-5 py-1.5 border-b border-[#A890D4]/20">
+        <div className="bg-primary/10 flex items-center justify-between px-5 py-1.5 border-b border-primary/20">
           <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Summary</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-bold tabular-nums text-[#A890D4]">{formatCurrency(summary.total)}</span>
+            <span className="text-sm font-bold tabular-nums text-primary">{formatCurrency(summary.total)}</span>
             <span className="text-[11px] text-muted-foreground">inc. GST</span>
           </div>
         </div>
       )}
       {summary && isSummaryExpanded && (
-        <div className="bg-[#A890D4]/10 flex items-center px-5 py-3 gap-6 flex-wrap">
+        <div className="bg-primary/10 flex items-center px-5 py-3 gap-6 flex-wrap">
 
           {/* Hard left — breakdown: builder cost, line markup, global markup (ledger-aligned) */}
           <div className="flex flex-col gap-0.5 text-xs min-w-[220px]">
@@ -5173,7 +5173,7 @@ export default function EstimateDetail() {
                   />
                 ) : (
                   <span
-                    className="text-[#A890D4] underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity font-medium"
+                    className="text-primary underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity font-medium"
                     onClick={handleMarkupEdit}
                     title="Click to edit builder margin %"
                     data-testid="text-markup-percentage"
@@ -5210,7 +5210,7 @@ export default function EstimateDetail() {
           </div>
 
           {/* Divider */}
-          <div className="w-px self-stretch bg-[#A890D4]/30" />
+          <div className="w-px self-stretch bg-primary/30" />
 
           {/* Far right — big total */}
           <div className="flex flex-col items-end">
@@ -5236,7 +5236,7 @@ export default function EstimateDetail() {
               onClick={() => setEstimateTab(tab)}
               className={`h-8 px-4 text-xs font-medium border-b-2 transition-colors ${
                 estimateTab === tab
-                  ? 'border-[#A890D4] text-foreground'
+                  ? 'border-primary text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -5249,7 +5249,7 @@ export default function EstimateDetail() {
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
               <span className="tabular-nums">{enotesStats.filter((r: any) => r.completed).length}/{enotesStats.length}</span>
               <div className="w-20 bg-muted rounded-full h-1.5 overflow-hidden">
-                <div className="bg-[#A890D4] h-full rounded-full transition-all"
+                <div className="bg-primary h-full rounded-full transition-all"
                   style={{ width: `${(enotesStats.filter((r: any) => r.completed).length / enotesStats.length) * 100}%` }} />
               </div>
               <span className="text-[10px]">reviewed</span>
@@ -5347,7 +5347,7 @@ export default function EstimateDetail() {
                     <button 
                       className={`h-6 w-auto px-2 text-xs border rounded-md ${
                         filterType !== 'all' 
-                          ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
+                          ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
                           : 'hover-elevate'
                       } active-elevate-2`}
                       data-testid="filter-type"
@@ -5369,7 +5369,7 @@ export default function EstimateDetail() {
                     <button 
                       className={`h-6 w-auto px-2 text-xs border rounded-md ${
                         filterStatus !== 'all' 
-                          ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
+                          ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
                           : 'hover-elevate'
                       } active-elevate-2`}
                       data-testid="filter-status"
@@ -5453,7 +5453,7 @@ export default function EstimateDetail() {
                 </button>
 
                 <button 
-                  className="h-6 w-auto px-2 text-xs bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
+                  className="h-6 w-auto px-2 text-xs bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
                   data-testid="button-add-item" 
                   onClick={handleAddItem}
                   disabled={estimate?.isLocked}
@@ -5470,7 +5470,7 @@ export default function EstimateDetail() {
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-32 bg-gray-300 rounded-lg"></div>
+                      <div key={i} className="h-32 bg-muted rounded-lg"></div>
                     ))}
                   </div>
                 ) : items.length === 0 && groups.length === 0 ? (
@@ -5619,8 +5619,8 @@ export default function EstimateDetail() {
                                   <div
                                     className={`hidden md:block absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
                                       resizingColumn === column.id 
-                                        ? 'opacity-100 bg-[#A890D4] w-[3px]' 
-                                        : 'opacity-0 group-hover/header:opacity-100 hover:bg-[#A890D4] bg-gray-300'
+                                        ? 'opacity-100 bg-primary w-[3px]' 
+                                        : 'opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted'
                                     }`}
                                     style={{ pointerEvents: 'auto', touchAction: 'none' }}
                                     onMouseDown={(e) => handleResizeStart(e, column.id)}
@@ -5722,7 +5722,7 @@ export default function EstimateDetail() {
         <div className="w-px self-stretch bg-border/60 my-2" />
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total</span>
-          <span className="tabular-nums font-semibold text-[#A890D4]">{formatCurrency(summary?.total || 0)}</span>
+          <span className="tabular-nums font-semibold text-primary">{formatCurrency(summary?.total || 0)}</span>
         </div>
       </div>
 

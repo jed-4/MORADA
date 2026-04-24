@@ -464,7 +464,7 @@ export function ProjectTimesheetsTab() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft": return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+      case "draft": return "bg-muted text-foreground dark:bg-gray-800 dark:text-gray-200";
       case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
       case "approved": return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
       case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
@@ -555,7 +555,7 @@ export function ProjectTimesheetsTab() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                  <span className="font-medium text-green-700 dark:text-green-300">Clocked In</span>
+                  <span className="font-medium text-status-success dark:text-green-300">Clocked In</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
                   Started {activeTimesheet.clockInTime ? format(new Date(activeTimesheet.clockInTime), "h:mm a") : ""}
@@ -563,7 +563,7 @@ export function ProjectTimesheetsTab() {
               </div>
               
               <div className="text-center py-2">
-                <div className="text-4xl font-mono font-bold text-green-600 dark:text-green-400" data-testid="text-elapsed-time">
+                <div className="text-4xl font-mono font-bold text-status-success dark:text-green-400" data-testid="text-elapsed-time">
                   {elapsedTime}
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">Time elapsed</p>
@@ -663,7 +663,7 @@ export function ProjectTimesheetsTab() {
                         {format(new Date(timesheet.date), "EEE, MMM d")}
                       </span>
                       {timesheet.isActive && (
-                        <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                        <span className="flex items-center gap-1 text-xs text-status-success dark:text-green-400">
                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                           Active
                         </span>
@@ -846,7 +846,7 @@ export function ProjectTimesheetsTab() {
                         setSecondCostCodeDuration("");
                       }
                     }}
-                    className="w-4 h-4 rounded border-gray-300"
+                    className="w-4 h-4 rounded border-border"
                     data-testid="checkbox-split-cost-code"
                   />
                   Split codes

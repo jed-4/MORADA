@@ -121,31 +121,31 @@ function SignatureCard({
 
   if (mode === "preview" || (signedName && signedDate)) {
     return (
-      <div className="flex-1 border border-gray-200 rounded-lg p-5">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</p>
+      <div className="flex-1 border border-border rounded-lg p-5">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">{title}</p>
         {signedName && signedDate ? (
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <CheckCircle className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium text-gray-800">{signedName}</span>
+              <span className="text-sm font-medium text-foreground">{signedName}</span>
             </div>
-            <p className="text-xs text-gray-500 ml-5.5">
+            <p className="text-xs text-muted ml-5.5">
               Signed {format(new Date(signedDate), "d MMMM yyyy 'at' h:mm a")}
             </p>
           </div>
         ) : (
           <div className="space-y-2 mt-2">
             <div className="flex gap-2">
-              <span className="text-xs text-gray-400">Name:</span>
-              <div className="flex-1 border-b border-gray-300 h-5" />
+              <span className="text-xs text-muted">Name:</span>
+              <div className="flex-1 border-b border-border h-5" />
             </div>
             <div className="flex gap-2">
-              <span className="text-xs text-gray-400">Signature:</span>
-              <div className="flex-1 border-b border-gray-300 h-5" />
+              <span className="text-xs text-muted">Signature:</span>
+              <div className="flex-1 border-b border-border h-5" />
             </div>
             <div className="flex gap-2">
-              <span className="text-xs text-gray-400">Date:</span>
-              <div className="flex-1 border-b border-gray-300 h-5" />
+              <span className="text-xs text-muted">Date:</span>
+              <div className="flex-1 border-b border-border h-5" />
             </div>
           </div>
         )}
@@ -154,8 +154,8 @@ function SignatureCard({
   }
 
   return (
-    <div className="flex-1 border border-gray-200 rounded-lg p-5">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</p>
+    <div className="flex-1 border border-border rounded-lg p-5">
+      <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">{title}</p>
       {showReject ? (
         <div className="space-y-2">
           <Input
@@ -277,7 +277,7 @@ export function VariationPreviewContent({
   });
 
   return (
-    <div className="bg-white text-gray-900 font-sans" style={{ maxWidth: "900px", margin: "0 auto" }}>
+    <div className="bg-white text-foreground font-sans" style={{ maxWidth: "900px", margin: "0 auto" }}>
       {/* Hero Band */}
       <div
         className="relative overflow-hidden"
@@ -334,52 +334,52 @@ export function VariationPreviewContent({
       <div className="p-8 space-y-8">
         {/* Variation Information Grid */}
         <div>
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Variation Details</h2>
+          <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Variation Details</h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
             <div>
-              <p className="text-xs text-gray-400">Name</p>
-              <p className="text-sm font-medium text-gray-800">{variation.name}</p>
+              <p className="text-xs text-muted">Name</p>
+              <p className="text-sm font-medium text-foreground">{variation.name}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">Project</p>
-              <p className="text-sm font-medium text-gray-800">{project?.name || "—"}</p>
+              <p className="text-xs text-muted">Project</p>
+              <p className="text-sm font-medium text-foreground">{project?.name || "—"}</p>
             </div>
             {project?.address && (
               <div>
-                <p className="text-xs text-gray-400">Site Address</p>
-                <p className="text-sm font-medium text-gray-800">{project.address}</p>
+                <p className="text-xs text-muted">Site Address</p>
+                <p className="text-sm font-medium text-foreground">{project.address}</p>
               </div>
             )}
             {project?.clientName && (
               <div>
-                <p className="text-xs text-gray-400">Client</p>
-                <p className="text-sm font-medium text-gray-800">{project.clientName}</p>
+                <p className="text-xs text-muted">Client</p>
+                <p className="text-sm font-medium text-foreground">{project.clientName}</p>
               </div>
             )}
             {project?.clientEmail && (
               <div>
-                <p className="text-xs text-gray-400">Client Email</p>
-                <p className="text-sm font-medium text-gray-800">{project.clientEmail}</p>
+                <p className="text-xs text-muted">Client Email</p>
+                <p className="text-sm font-medium text-foreground">{project.clientEmail}</p>
               </div>
             )}
             {project?.clientPhone && (
               <div>
-                <p className="text-xs text-gray-400">Client Phone</p>
-                <p className="text-sm font-medium text-gray-800">{project.clientPhone}</p>
+                <p className="text-xs text-muted">Client Phone</p>
+                <p className="text-sm font-medium text-foreground">{project.clientPhone}</p>
               </div>
             )}
             {variation.approvalDeadline && (
               <div>
-                <p className="text-xs text-gray-400">Effective Until</p>
-                <p className="text-sm font-medium text-gray-800">
+                <p className="text-xs text-muted">Effective Until</p>
+                <p className="text-sm font-medium text-foreground">
                   {format(new Date(variation.approvalDeadline), "d MMM yyyy")}
                 </p>
               </div>
             )}
             {variation.daysChanged ? (
               <div>
-                <p className="text-xs text-gray-400">Schedule Impact</p>
-                <p className="text-sm font-medium text-gray-800">
+                <p className="text-xs text-muted">Schedule Impact</p>
+                <p className="text-sm font-medium text-foreground">
                   {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} working day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
                 </p>
               </div>
@@ -389,7 +389,7 @@ export function VariationPreviewContent({
 
         {/* Introduction Text */}
         {variation.introductionText && (
-          <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+          <div className="text-sm text-secondary leading-relaxed whitespace-pre-wrap">
             {variation.introductionText}
           </div>
         )}
@@ -397,8 +397,8 @@ export function VariationPreviewContent({
         {/* Cost Lines grouped by type */}
         {Object.keys(typeGroups).length > 0 && (
           <div>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Cost Lines</h2>
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Cost Lines</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
               {/* Header */}
               <div
                 className="grid text-xs font-semibold text-white px-3 py-2"
@@ -426,11 +426,11 @@ export function VariationPreviewContent({
                 return (
                   <div key={type}>
                     {/* Type header row */}
-                    <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <div className="px-3 py-1.5 bg-muted border-t border-border flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted uppercase tracking-wide">
                         {TYPE_LABELS[type] ?? type}
                       </span>
-                      <span className="text-xs font-semibold text-gray-600">
+                      <span className="text-xs font-semibold text-secondary">
                         {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(typeTotal)}
                       </span>
                     </div>
@@ -454,20 +454,20 @@ export function VariationPreviewContent({
                           }}
                         >
                           <div className="pr-2 min-w-0">
-                            {(item as any).name && <span className="block text-gray-800 font-semibold truncate">{(item as any).name}</span>}
-                            {item.description && <span className="block text-gray-500 text-xs truncate">{item.description}</span>}
-                            {!(item as any).name && !item.description && <span className="text-gray-400">—</span>}
+                            {(item as any).name && <span className="block text-foreground font-semibold truncate">{(item as any).name}</span>}
+                            {item.description && <span className="block text-muted text-xs truncate">{item.description}</span>}
+                            {!(item as any).name && !item.description && <span className="text-muted">—</span>}
                           </div>
-                          <span className="text-right text-gray-600 text-xs tabular-nums">
+                          <span className="text-right text-secondary text-xs tabular-nums">
                             {qty} {(item as any).unitType || ""}
                           </span>
-                          <span className="text-right text-gray-600 text-xs tabular-nums">
+                          <span className="text-right text-secondary text-xs tabular-nums">
                             {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(unitCost)}
                           </span>
-                          <span className="text-right text-gray-600 text-xs tabular-nums">
+                          <span className="text-right text-secondary text-xs tabular-nums">
                             {item.markupPercent ? `${item.markupPercent}%` : "—"}
                           </span>
-                          <span className="text-right text-gray-800 font-medium text-xs tabular-nums">
+                          <span className="text-right text-foreground font-medium text-xs tabular-nums">
                             {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incTax)}
                           </span>
                         </div>
@@ -483,8 +483,8 @@ export function VariationPreviewContent({
         {/* Allowances */}
         {allowanceItems.length > 0 && (
           <div>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Allowances</h2>
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Allowances</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
               {allowanceItems.map((item, idx) => {
                 const amount = (item.unitPrice ?? 0) / 100;
                 const isAlt = idx % 2 === 1;
@@ -494,9 +494,9 @@ export function VariationPreviewContent({
                     className="flex items-center justify-between px-3 py-2 border-t border-gray-100 text-sm"
                     style={{ backgroundColor: isAlt ? "#f9fafb" : "#ffffff" }}
                   >
-                    <span className="text-gray-800">{item.description}</span>
+                    <span className="text-foreground">{item.description}</span>
                     <span
-                      className={`font-medium tabular-nums ${amount < 0 ? "text-red-600" : "text-gray-800"}`}
+                      className={`font-medium tabular-nums ${amount < 0 ? "text-status-danger" : "text-foreground"}`}
                     >
                       {amount < 0 ? "-" : ""}
                       {new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(Math.abs(amount))}
@@ -511,9 +511,9 @@ export function VariationPreviewContent({
         {/* Bills */}
         {bills.length > 0 && (
           <div>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Linked Bills</h2>
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="grid text-xs font-semibold text-gray-500 px-3 py-2 bg-gray-50 border-b border-gray-200"
+            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Linked Bills</h2>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="grid text-xs font-semibold text-muted px-3 py-2 bg-muted border-b border-border"
                 style={{ gridTemplateColumns: "100px 1fr 100px 100px" }}>
                 <span>Bill #</span>
                 <span>Supplier</span>
@@ -532,9 +532,9 @@ export function VariationPreviewContent({
                       gridTemplateColumns: "100px 1fr 100px 100px",
                     }}
                   >
-                    <span className="text-gray-600">{bill.billNumber || "—"}</span>
-                    <span className="text-gray-800">{bill.supplierName || "—"}</span>
-                    <span className="text-right text-gray-600">
+                    <span className="text-secondary">{bill.billNumber || "—"}</span>
+                    <span className="text-foreground">{bill.supplierName || "—"}</span>
+                    <span className="text-right text-secondary">
                       {bill.invoiceDate ? format(new Date(bill.invoiceDate), "d MMM yy") : "—"}
                     </span>
                     <span className="text-right font-medium tabular-nums">
@@ -549,14 +549,14 @@ export function VariationPreviewContent({
 
         {/* Financial Summary */}
         <div className="flex justify-end">
-          <div className="w-72 border border-gray-200 rounded-lg overflow-hidden">
+          <div className="w-72 border border-border rounded-lg overflow-hidden">
             <div className="px-4 py-3 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Subtotal (ex. GST)</span>
+                <span className="text-muted">Subtotal (ex. GST)</span>
                 <span className="font-medium tabular-nums">{formatCents(subtotalCents)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">GST (10%)</span>
+                <span className="text-muted">GST (10%)</span>
                 <span className="font-medium tabular-nums">{formatCents(gstCents)}</span>
               </div>
               <div
@@ -574,7 +574,7 @@ export function VariationPreviewContent({
 
         {/* Closing text */}
         {variation.closingText && (
-          <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap border-t border-gray-100 pt-6">
+          <div className="text-sm text-secondary leading-relaxed whitespace-pre-wrap border-t border-gray-100 pt-6">
             {variation.closingText}
           </div>
         )}
@@ -582,16 +582,16 @@ export function VariationPreviewContent({
         {/* Terms & Conditions */}
         {variation.termsAndConditions && (
           <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Terms &amp; Conditions</p>
-            <p className="text-xs text-gray-500 leading-relaxed whitespace-pre-wrap">
+            <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Terms &amp; Conditions</p>
+            <p className="text-xs text-muted leading-relaxed whitespace-pre-wrap">
               {variation.termsAndConditions}
             </p>
           </div>
         )}
 
         {/* Signatures */}
-        <div className="border-t border-gray-200 pt-6">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Signatures</h2>
+        <div className="border-t border-border pt-6">
+          <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Signatures</h2>
           <div className="flex gap-4">
             <SignatureCard
               title={`Legal Representative of ${company?.name || "Builder"}`}
@@ -618,7 +618,7 @@ export function VariationPreviewContent({
 
       {/* Footer */}
       <div className="border-t border-gray-100 px-8 py-4 text-center">
-        <p className="text-xs text-gray-400">Powered by BuildPro</p>
+        <p className="text-xs text-muted">Powered by BuildPro</p>
       </div>
     </div>
   );

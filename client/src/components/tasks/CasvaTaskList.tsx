@@ -315,13 +315,13 @@ export function CasvaTaskList({
           />
         ) : onAddTask ? (
           <div 
-            className="group flex items-center gap-3 h-10 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
+            className="group flex items-center gap-3 h-10 px-2 transition-all duration-200 hover:bg-muted cursor-pointer border-t border-border"
             onClick={onAddTask}
             data-testid="button-add-task-inline"
           >
             <div className="w-4 flex-shrink-0"></div>
-            <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
-            <span className="text-sm text-gray-500 group-hover:text-gray-700">Add task</span>
+            <Plus className="h-4 w-4 text-muted flex-shrink-0" />
+            <span className="text-sm text-muted group-hover:text-secondary">Add task</span>
           </div>
         ) : null}
       </div>

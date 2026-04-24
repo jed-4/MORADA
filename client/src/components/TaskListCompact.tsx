@@ -104,18 +104,18 @@ interface TaskListCompactProps {
 // Status colors matching Asana 2025
 const getStatusColor = (status: string | null): string => {
   const s = status?.toLowerCase() || '';
-  if (s.includes('done') || s.includes('complete')) return 'bg-green-500/10 text-green-700 dark:text-green-400';
-  if (s.includes('progress') || s.includes('active')) return 'bg-blue-500/10 text-blue-700 dark:text-blue-400';
-  if (s.includes('todo') || s.includes('pending') || s.includes('capture')) return 'bg-gray-500/10 text-gray-700 dark:text-gray-400';
-  return 'bg-gray-500/10 text-gray-700 dark:text-gray-400';
+  if (s.includes('done') || s.includes('complete')) return 'bg-status-success-bg text-status-success dark:text-green-400';
+  if (s.includes('progress') || s.includes('active')) return 'bg-status-info-bg text-status-info dark:text-blue-400';
+  if (s.includes('todo') || s.includes('pending') || s.includes('capture')) return 'bg-muted text-secondary dark:text-muted';
+  return 'bg-muted text-secondary dark:text-muted';
 };
 
 // Priority colors
 const getPriorityColor = (priority: string | null): string | null => {
   const p = priority?.toLowerCase() || '';
-  if (p === 'high' || p === 'urgent') return 'bg-red-500/10 text-red-700 dark:text-red-400';
-  if (p === 'medium') return 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400';
-  if (p === 'low') return 'bg-gray-500/10 text-gray-600 dark:text-gray-500';
+  if (p === 'high' || p === 'urgent') return 'bg-status-danger-bg text-status-danger dark:text-red-400';
+  if (p === 'medium') return 'bg-status-warning-bg text-status-warning dark:text-yellow-400';
+  if (p === 'low') return 'bg-muted text-secondary dark:text-muted';
   return null;
 };
 

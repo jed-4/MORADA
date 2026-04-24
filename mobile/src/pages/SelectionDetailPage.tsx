@@ -241,7 +241,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
         <p className="text-muted-foreground mb-4">Selection not found</p>
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-[#A890D4] font-medium"
+          className="flex items-center gap-2 text-primary font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
@@ -282,7 +282,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
             onClick={() => setActiveTab("options")}
             className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "options"
-                ? "border-[#A890D4] text-[#A890D4]"
+                ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground"
             }`}
             data-testid="tab-options"
@@ -293,7 +293,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
             onClick={() => setActiveTab("details")}
             className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "details"
-                ? "border-[#A890D4] text-[#A890D4]"
+                ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground"
             }`}
             data-testid="tab-details"
@@ -330,7 +330,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                 </p>
                 <button
                   onClick={() => setIsAddOptionOpen(true)}
-                  className="inline-flex items-center gap-2 bg-[#A890D4] text-white px-4 py-2 rounded-lg font-medium"
+                  className="inline-flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-medium"
                   data-testid="button-add-first-option"
                 >
                   <Plus className="w-4 h-4" />
@@ -387,13 +387,13 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
 
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {option.isSelectedByClient && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1 text-xs bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 px-2 py-0.5 rounded-md">
                           <CheckCircle className="w-3 h-3" />
                           Selected
                         </span>
                       )}
                       {!option.visibleToClient && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1 text-xs bg-red-100 dark:bg-red-900/30 text-status-danger dark:text-red-400 px-2 py-0.5 rounded-md">
                           <EyeOff className="w-3 h-3" />
                           Hidden
                         </span>
@@ -423,7 +423,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                       }}
                       className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-all ${
                         isSelected 
-                          ? "bg-[#A890D4] text-white border-[#A890D4]" 
+                          ? "bg-primary text-white border-primary" 
                           : "hover-elevate border-border"
                       }`}
                       data-testid={`status-${status.key}`}
@@ -517,7 +517,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                     setHasUnsavedChanges(true);
                   }}
                   className={`w-11 h-6 rounded-full transition-colors ${
-                    formClientCanChange ? "bg-[#A890D4]" : "bg-gray-300 dark:bg-gray-600"
+                    formClientCanChange ? "bg-primary" : "bg-secondary"
                   }`}
                   data-testid="toggle-client-can-change"
                 >
@@ -538,7 +538,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                     setHasUnsavedChanges(true);
                   }}
                   className={`w-11 h-6 rounded-full transition-colors ${
-                    formClientCanSeePrice ? "bg-[#A890D4]" : "bg-gray-300 dark:bg-gray-600"
+                    formClientCanSeePrice ? "bg-primary" : "bg-secondary"
                   }`}
                   data-testid="toggle-client-can-see-price"
                 >
@@ -556,7 +556,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
       {activeTab === "options" && (
         <button
           onClick={() => setIsAddOptionOpen(true)}
-          className="fixed bottom-20 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-40"
+          className="fixed bottom-20 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-40"
           data-testid="button-add-option"
         >
           <Plus className="w-6 h-6" />

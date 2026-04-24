@@ -46,7 +46,7 @@ export default function Systems() {
             onClick={() => setActiveTab("folders")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "folders"
-                ? "bg-[#A890D4]/10 text-[#A890D4]"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-folders"
@@ -60,7 +60,7 @@ export default function Systems() {
             onClick={() => setActiveTab("tasks")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "tasks"
-                ? "bg-[#A890D4]/10 text-[#A890D4]"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-tasks"
@@ -74,7 +74,7 @@ export default function Systems() {
             onClick={() => setActiveTab("workflows")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "workflows"
-                ? "bg-[#A890D4]/10 text-[#A890D4]"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-workflows"
@@ -88,7 +88,7 @@ export default function Systems() {
             onClick={() => setActiveTab("reminders")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "reminders"
-                ? "bg-[#A890D4]/10 text-[#A890D4]"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-reminders"
@@ -102,7 +102,7 @@ export default function Systems() {
             onClick={() => setActiveTab("diary")}
             className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
               activeTab === "diary"
-                ? "bg-[#A890D4]/10 text-[#A890D4]"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover-elevate"
             }`}
             data-testid="tab-diary"
@@ -243,7 +243,7 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
     <>
       <div className="flex items-center gap-1">
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
-          <Power className="h-3 w-3 text-green-600" />
+          <Power className="h-3 w-3 text-status-success" />
           <span>Active</span>
         </Badge>
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
@@ -263,7 +263,7 @@ function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<Tas
       </Button>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
+        className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
         onClick={() => taskLibraryRef.current?.openNewTemplateDialog()}
         data-testid="button-new-template"
       >
@@ -280,7 +280,7 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
     <>
       <div className="flex items-center gap-1">
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
-          <Power className="h-3 w-3 text-green-600" />
+          <Power className="h-3 w-3 text-status-success" />
           <span>Active</span>
         </Badge>
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
@@ -290,7 +290,7 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
       </div>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
+        className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
         onClick={() => workflowBuilderRef.current?.openNewWorkflowDialog()}
         data-testid="button-new-workflow"
       >
@@ -307,7 +307,7 @@ function RemindersControls({ businessRemindersRef }: { businessRemindersRef: Rea
     <>
       <div className="flex items-center gap-1">
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
-          <Power className="h-3 w-3 text-green-600" />
+          <Power className="h-3 w-3 text-status-success" />
           <span>Active</span>
         </Badge>
         <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
@@ -317,7 +317,7 @@ function RemindersControls({ businessRemindersRef }: { businessRemindersRef: Rea
       </div>
       <Button
         size="sm"
-        className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-1"
+        className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-1"
         onClick={() => businessRemindersRef.current?.openNewReminderDialog()}
         data-testid="button-new-reminder"
       >

@@ -826,23 +826,28 @@
   }
 
   .casva-chip-status-todo {
-    @apply bg-slate-100 text-slate-700;
+    background-color: hsl(var(--muted));
+    color: hsl(var(--text-secondary));
   }
 
   .casva-chip-status-in-progress {
-    @apply bg-blue-100 text-blue-700;
+    background-color: hsl(var(--status-action-bg));
+    color: hsl(var(--status-action-fg));
   }
 
   .casva-chip-status-done {
-    @apply bg-green-100 text-green-700;
+    background-color: hsl(var(--status-success-bg));
+    color: hsl(var(--status-success-fg));
   }
 
   .casva-chip-status-blocked {
-    @apply bg-red-100 text-red-700;
+    background-color: hsl(var(--status-danger-bg));
+    color: hsl(var(--status-danger-fg));
   }
 
   .casva-chip-priority-low {
-    @apply bg-gray-100 text-gray-600;
+    background-color: hsl(var(--muted));
+    color: hsl(var(--text-secondary));
   }
 
   .casva-chip-priority-medium {
@@ -850,11 +855,13 @@
   }
 
   .casva-chip-priority-high {
-    @apply bg-purple-100 text-purple-700;
+    background-color: hsl(var(--status-info-bg));
+    color: hsl(var(--status-info-fg));
   }
 
   .casva-chip-priority-critical {
-    @apply bg-red-100 text-red-700;
+    background-color: hsl(var(--status-danger-bg));
+    color: hsl(var(--status-danger-fg));
   }
 
   /* ========== CASVA PRINCIPLE 4: Free-flow Drag-drop Glow ========== */

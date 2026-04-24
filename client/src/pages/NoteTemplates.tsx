@@ -37,7 +37,7 @@ export default function NoteTemplates() {
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => noteTemplatesRef.current?.openNewTemplateDialog()}
             data-testid="button-create-template"
           >

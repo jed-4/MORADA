@@ -338,9 +338,9 @@ export default function RfiTemplates() {
 
   const getPriorityColor = (priority: string | null) => {
     switch (priority) {
-      case "urgent": return "border-red-500 text-red-600";
-      case "high": return "border-orange-500 text-orange-600";
-      case "low": return "border-gray-400 text-gray-500";
+      case "urgent": return "border-red-500 text-status-danger";
+      case "high": return "border-orange-500 text-status-warning";
+      case "low": return "border-border-strong text-muted";
       default: return "";
     }
   };
@@ -542,7 +542,7 @@ export default function RfiTemplates() {
 
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleOpenAdd}
             data-testid="button-add-template"
           >
@@ -620,7 +620,7 @@ export default function RfiTemplates() {
             {!searchTerm && categoryFilter === "all" && (
               <button
                 onClick={handleOpenAdd}
-                className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
                 <Plus className="h-3 w-3" />

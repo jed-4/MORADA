@@ -53,8 +53,8 @@ const statusOptionsConfig = [
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   pending: { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-400" },
-  in_progress: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-400" },
-  finalized: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" },
+  in_progress: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-400" },
+  finalized: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-400" },
 };
 
 const getStatusLabel = (key: string): string => {
@@ -226,7 +226,7 @@ export function ProjectAllowancesTab() {
               onClick={() => setTypeFilter(option.value)}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 typeFilter === option.value
-                  ? "bg-[#A890D4] text-white"
+                  ? "bg-primary text-white"
                   : "bg-muted text-muted-foreground"
               }`}
               data-testid={`chip-type-${option.value}`}
@@ -242,7 +242,7 @@ export function ProjectAllowancesTab() {
               onClick={() => setStatusFilter(option.value)}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 statusFilter === option.value
-                  ? "bg-[#A890D4] text-white"
+                  ? "bg-primary text-white"
                   : "bg-muted text-muted-foreground"
               }`}
               data-testid={`chip-status-${option.value}`}
@@ -273,7 +273,7 @@ export function ProjectAllowancesTab() {
           <div className="divide-y">
             {filteredAllowances.map((allowance) => {
               const statusStyle = statusColors[allowance.item.allowanceStatus] || 
-                { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-600 dark:text-gray-400" };
+                { bg: "bg-muted dark:bg-gray-800", text: "text-secondary dark:text-muted" };
               const isPC = allowance.item.allowance === "Prime Cost";
               
               return (
@@ -290,7 +290,7 @@ export function ProjectAllowancesTab() {
                         <h3 className="font-medium text-sm truncate">{allowance.item.name}</h3>
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                           isPC 
-                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" 
+                            ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400" 
                             : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                         }`}>
                           {isPC ? "PC" : "PS"}
@@ -361,7 +361,7 @@ export function ProjectAllowancesTab() {
                 <h2 className="text-lg font-semibold">{selectedAllowance.item.name}</h2>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                   selectedAllowance.item.allowance === "Prime Cost"
-                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" 
+                    ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400" 
                     : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                 }`}>
                   {selectedAllowance.item.allowance === "Prime Cost" ? "PC" : "PS"}
@@ -385,7 +385,7 @@ export function ProjectAllowancesTab() {
                       disabled={updateStatusMutation.isPending}
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                         isSelected
-                          ? "bg-[#A890D4] text-white"
+                          ? "bg-primary text-white"
                           : "bg-muted text-muted-foreground"
                       }`}
                       data-testid={`button-status-${option.value}`}

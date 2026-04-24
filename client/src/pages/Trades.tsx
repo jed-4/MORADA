@@ -587,7 +587,7 @@ export default function Trades() {
         <span data-testid={`text-trade-category-${row.original.id}`}>
           <Badge
             variant="secondary"
-            className="text-xs bg-[#A890D4]/20 text-[#A890D4] border-[#A890D4]/30"
+            className="text-xs bg-primary/20 text-primary border-primary/30"
           >
             {row.original.tradeCategory || "Not Set"}
           </Badge>
@@ -725,7 +725,7 @@ export default function Trades() {
           )}
           <Button
             size="sm"
-            className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white border-[#A890D4]/20"
+            className="h-6 px-2 text-xs bg-primary hover:bg-primary/90 text-white border-primary/20"
             onClick={handleAddTrade}
             data-testid="button-add-trade"
           >
@@ -1100,7 +1100,7 @@ export default function Trades() {
                 <Button 
                   type="submit" 
                   disabled={createMutation.isPending || updateMutation.isPending}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                  className="bg-primary hover:bg-primary/90 text-white"
                   data-testid="button-submit"
                 >
                   {createMutation.isPending || updateMutation.isPending
@@ -1123,7 +1123,7 @@ export default function Trades() {
               <SheetHeader>
                 <div className="flex items-center justify-between">
                   <SheetTitle className="flex items-center gap-2">
-                    <HardHat className="h-5 w-5 text-[#A890D4]" />
+                    <HardHat className="h-5 w-5 text-primary" />
                     {selectedTrade.name}
                   </SheetTitle>
                   <div className="flex items-center gap-2">
@@ -1139,7 +1139,7 @@ export default function Trades() {
                   </div>
                 </div>
                 <SheetDescription>
-                  <Badge variant="secondary" className="mr-2 bg-[#A890D4]/20 text-[#A890D4]">
+                  <Badge variant="secondary" className="mr-2 bg-primary/20 text-primary">
                     {selectedTrade.tradeCategory}
                   </Badge>
                   {selectedTrade.email && <span>{selectedTrade.email}</span>}
@@ -1233,7 +1233,7 @@ export default function Trades() {
                     <h3 className="text-sm font-medium">Contact People</h3>
                     <Button
                       size="sm"
-                      className="h-7 bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                      className="h-7 bg-primary hover:bg-primary/90 text-white"
                       onClick={handleAddContact}
                       data-testid="button-add-contact"
                     >
@@ -1260,7 +1260,7 @@ export default function Trades() {
                                   {contact.firstName} {contact.lastName}
                                 </p>
                                 {contact.isPrimary && (
-                                  <Badge variant="secondary" className="text-xs bg-[#A890D4]/20 text-[#A890D4]">
+                                  <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
                                     Primary
                                   </Badge>
                                 )}
@@ -1310,7 +1310,7 @@ export default function Trades() {
                     <h3 className="text-sm font-medium">Insurance Documents</h3>
                     <Button
                       size="sm"
-                      className="h-7 bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                      className="h-7 bg-primary hover:bg-primary/90 text-white"
                       onClick={handleAddInsurance}
                       data-testid="button-add-insurance"
                     >
@@ -1509,7 +1509,7 @@ export default function Trades() {
                 <Button 
                   type="submit" 
                   disabled={createContactMutation.isPending || updateContactMutation.isPending}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                  className="bg-primary hover:bg-primary/90 text-white"
                 >
                   {createContactMutation.isPending || updateContactMutation.isPending ? "Saving..." : editingContact ? "Update" : "Add"}
                 </Button>
@@ -1622,7 +1622,7 @@ export default function Trades() {
                 <Button 
                   type="submit" 
                   disabled={createInsuranceMutation.isPending || updateInsuranceMutation.isPending}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                  className="bg-primary hover:bg-primary/90 text-white"
                 >
                   {createInsuranceMutation.isPending || updateInsuranceMutation.isPending ? "Saving..." : editingInsurance ? "Update" : "Add"}
                 </Button>

@@ -36,10 +36,10 @@ const ACTIVITY_ICONS: Record<string, any> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  created: "text-green-600 dark:text-green-400",
-  updated: "text-blue-600 dark:text-blue-400",
+  created: "text-status-success dark:text-green-400",
+  updated: "text-status-info dark:text-blue-400",
   completed: "text-emerald-600 dark:text-emerald-400",
-  deleted: "text-red-600 dark:text-red-400",
+  deleted: "text-status-danger dark:text-red-400",
   commented: "text-purple-600 dark:text-purple-400",
 };
 

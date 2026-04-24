@@ -670,9 +670,9 @@ export default function Timesheets() {
         meta: { headerLabel: "Status", defaultWidth: 70 },
         cell: ({ row }) => {
           const s = row.original.status;
-          if (s === "approved") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
-          if (s === "submitted") return <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800">Submitted</Badge>;
-          if (s === "rejected") return <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
+          if (s === "approved") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
+          if (s === "submitted") return <Badge variant="outline" className="text-[10px] font-medium bg-muted dark:bg-slate-900/20 text-secondary dark:text-muted border-border dark:border-slate-800">Submitted</Badge>;
+          if (s === "rejected") return <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-status-danger dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
           return <Badge variant="secondary" className="text-[10px] font-medium">{s}</Badge>;
         },
       },
@@ -685,8 +685,8 @@ export default function Timesheets() {
         cell: ({ row }) => {
           const p = row.original.poStatus;
           if (p === "awaiting_po") return <Badge variant="outline" className="text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">Awaiting PO</Badge>;
-          if (p === "on_po") return <Badge variant="outline" className="text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">On PO</Badge>;
-          if (p === "paid") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">Paid</Badge>;
+          if (p === "on_po") return <Badge variant="outline" className="text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800">On PO</Badge>;
+          if (p === "paid") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Paid</Badge>;
           return <span className="text-[11px] text-muted-foreground/50">&mdash;</span>;
         },
       },
@@ -746,7 +746,7 @@ export default function Timesheets() {
           )}
           <button
             onClick={() => setIsSubPODialogOpen(true)}
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-generate-sub-po"
           >
             <HardHat className="w-3 h-3" />
@@ -816,7 +816,7 @@ export default function Timesheets() {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-add-timesheet"
           >
             <Plus className="w-3 h-3" />
@@ -850,14 +850,14 @@ export default function Timesheets() {
                 <button 
                   className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                     selectedProjects.length > 0 
-                      ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                      ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                       : ""
                   }`}
                   data-testid="button-filter-project"
                 >
                   <span>Project</span>
                   {selectedProjects.length > 0 && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
+                    <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
                       {selectedProjects.length}
                     </Badge>
                   )}
@@ -894,14 +894,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedUsers.length > 0 
-                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                     : ""
                 }`}
                 data-testid="button-filter-user"
               >
                 <span>User</span>
                 {selectedUsers.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
                     {selectedUsers.length}
                   </Badge>
                 )}
@@ -933,14 +933,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedStatuses.length > 0 
-                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                     : ""
                 }`}
                 data-testid="button-filter-status"
               >
                 <span>Status</span>
                 {selectedStatuses.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
                     {selectedStatuses.length}
                   </Badge>
                 )}
@@ -976,14 +976,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedCostCodes.length > 0 
-                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                     : ""
                 }`}
                 data-testid="button-filter-cost-code"
               >
                 <span>Cost Code</span>
                 {selectedCostCodes.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
                     {selectedCostCodes.length}
                   </Badge>
                 )}
@@ -1019,14 +1019,14 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedPhases.length > 0 
-                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                     : ""
                 }`}
                 data-testid="button-filter-phase"
               >
                 <span>Phase</span>
                 {selectedPhases.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#A890D4]/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
                     {selectedPhases.length}
                   </Badge>
                 )}
@@ -1064,7 +1064,7 @@ export default function Timesheets() {
               <button 
                 className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   dateRangeType !== "all" 
-                    ? "bg-[#A890D4]/10 text-[#8b7ab8] border-[#A890D4]/40" 
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
                     : ""
                 }`}
                 data-testid="button-filter-date"
@@ -1146,7 +1146,7 @@ export default function Timesheets() {
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setActiveView("table")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-table"
             >
               <Table2 className="w-3 h-3" />
@@ -1154,7 +1154,7 @@ export default function Timesheets() {
             </button>
             <button
               onClick={() => setActiveView("weekly")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-weekly"
             >
               <Users2 className="w-3 h-3" />
@@ -1162,7 +1162,7 @@ export default function Timesheets() {
             </button>
             <button
               onClick={() => setActiveView("calendar")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-calendar"
             >
               <CalendarDays className="w-3 h-3" />
@@ -1270,7 +1270,7 @@ export default function Timesheets() {
                           return (
                             <TableCell key={dayKey} className="text-[11px] text-center tabular-nums px-1 py-1">
                               {hours > 0 ? (
-                                <span className={hours >= 8 ? "font-medium text-green-600 dark:text-green-400" : ""}>
+                                <span className={hours >= 8 ? "font-medium text-status-success dark:text-green-400" : ""}>
                                   {formatDuration(hours)}
                                 </span>
                               ) : (
@@ -1471,10 +1471,10 @@ export default function Timesheets() {
                           isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                         }`}
                       >
-                        <div className={isToday ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
+                        <div className={isToday ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
                           {format(day, "EEE")}
                         </div>
-                        <div className={`text-[10px] font-semibold ${isToday ? "text-blue-600 dark:text-blue-400" : ""}`}>
+                        <div className={`text-[10px] font-semibold ${isToday ? "text-status-info dark:text-blue-400" : ""}`}>
                           {format(day, "d")}
                         </div>
                         {/* Per-user lane labels (only when 2–5 users) */}
@@ -1797,7 +1797,7 @@ export default function Timesheets() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
                     <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "submitted" })}>
-                      <div className="w-2 h-2 rounded-full mr-2 bg-slate-500" />
+                      <div className="w-2 h-2 rounded-full mr-2 bg-muted-foreground" />
                       Submitted
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "approved" })}>
@@ -1832,9 +1832,9 @@ export default function Timesheets() {
             <div className="flex items-center justify-end gap-4 px-3 py-2">
               {(() => {
                 const statusGroups = [
-                  { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
-                  { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
-                  { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
+                  { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-secondary dark:text-slate-300" },
+                  { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-status-success dark:text-green-300" },
+                  { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-status-danger dark:text-red-300" },
                 ];
                 return (
                   <>

@@ -587,10 +587,10 @@ export default function ChecklistInstanceDetail() {
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
-      low: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-      medium: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-      high: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-      urgent: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      low: "bg-muted text-secondary dark:bg-gray-800 dark:text-gray-300",
+      medium: "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400",
+      high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
+      urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
     };
     return <Badge className={styles[priority] || styles.medium}>{priority}</Badge>;
   };
@@ -621,12 +621,12 @@ export default function ChecklistInstanceDetail() {
           <h1 className="text-sm font-semibold truncate max-w-[300px]">{checklist.name}</h1>
           {getPriorityBadge(checklist.priority || "medium")}
           {checklist.status === "completed" ? (
-            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+            <Badge className="bg-green-100 text-status-success dark:bg-green-900/30 dark:text-green-400">
               <CheckCircle2 className="h-3 w-3 mr-1" />
               Completed
             </Badge>
           ) : checklist.status === "in_progress" || progress > 0 ? (
-            <Badge className="bg-[#A890D4]/20 text-[#8b6bb8] dark:bg-[#A890D4]/10 dark:text-[#A890D4]">
+            <Badge className="bg-primary/20 text-[#8b6bb8] dark:bg-primary/10 dark:text-primary">
               In Progress
             </Badge>
           ) : (
@@ -673,7 +673,7 @@ export default function ChecklistInstanceDetail() {
       {/* Row 2: Info */}
       <div className={`h-9 flex items-center justify-between px-2 border-b flex-shrink-0 transition-colors ${
         (checklist.status === "in_progress" || progress > 0) && checklist.status !== "completed"
-          ? "bg-[#A890D4]/5 border-[#A890D4]/20"
+          ? "bg-primary/5 border-primary/20"
           : "bg-background border-border"
       }`}>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -698,7 +698,7 @@ export default function ChecklistInstanceDetail() {
           {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 text-[#A890D4]" data-testid="linked-item-display">
+                <span className="flex items-center gap-1 text-primary" data-testid="linked-item-display">
                   <Link2 className="h-3 w-3" />
                   <span className="truncate max-w-[120px]">
                     {checklist.linkedTaskId 
@@ -810,13 +810,13 @@ export default function ChecklistInstanceDetail() {
                           <div
                             className={`flex items-center gap-2 px-3 py-1.5 ${
                               item.status === "completed" ? "bg-green-50/50 dark:bg-green-900/10" :
-                              item.status === "na" ? "bg-gray-50/50 dark:bg-gray-900/10" : ""
+                              item.status === "na" ? "bg-muted/50 dark:bg-gray-900/10" : ""
                             }`}
                           >
                             {/* Checkbox */}
                             {item.status === "na" ? (
-                              <div className="h-4 w-4 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
-                                <Ban className="h-2.5 w-2.5 text-gray-500" />
+                              <div className="h-4 w-4 rounded bg-border dark:bg-gray-700 flex items-center justify-center shrink-0">
+                                <Ban className="h-2.5 w-2.5 text-muted" />
                               </div>
                             ) : (
                               <Checkbox
@@ -840,7 +840,7 @@ export default function ChecklistInstanceDetail() {
                                 {item.completedByName && item.status === "completed" && (
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <div className="flex items-center gap-0.5 text-green-600 shrink-0 ml-auto">
+                                      <div className="flex items-center gap-0.5 text-status-success shrink-0 ml-auto">
                                         <CheckCircle2 className="h-3 w-3" />
                                         <span className="text-[10px]">{item.completedByName}</span>
                                       </div>
@@ -864,7 +864,7 @@ export default function ChecklistInstanceDetail() {
                                   <Button variant="ghost" size="icon" className="h-5 w-5" data-testid={`button-assign-item-${item.id}`}>
                                     {item.assigneeName ? (
                                       <Avatar className="h-4 w-4">
-                                        <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
+                                        <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
                                           {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                         </AvatarFallback>
                                       </Avatar>
@@ -913,13 +913,13 @@ export default function ChecklistInstanceDetail() {
                                           }}
                                         >
                                           <Avatar className="h-4 w-4 mr-2">
-                                            <AvatarFallback className="text-[8px] bg-[#A890D4]/20 text-[#A890D4]">
+                                            <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
                                               {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                             </AvatarFallback>
                                           </Avatar>
                                           <span className="truncate">{member.name}</span>
                                           {item.assigneeId === member.id && (
-                                            <Check className="h-3 w-3 ml-auto text-[#A890D4] shrink-0" />
+                                            <Check className="h-3 w-3 ml-auto text-primary shrink-0" />
                                           )}
                                         </Button>
                                       ))}
@@ -960,7 +960,7 @@ export default function ChecklistInstanceDetail() {
                                     {isUploading && uploadingItemId === item.id ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
                                     ) : (
-                                      <Paperclip className={`h-3 w-3 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#A890D4]' : 'text-muted-foreground/50'}`} />
+                                      <Paperclip className={`h-3 w-3 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-primary' : 'text-muted-foreground/50'}`} />
                                     )}
                                   </Button>
                                 </TooltipTrigger>
@@ -1308,7 +1308,7 @@ export default function ChecklistInstanceDetail() {
                     {noteEntries.map((entry, idx) => (
                       <div key={idx} className="flex gap-2">
                         <Avatar className="h-6 w-6 shrink-0">
-                          <AvatarFallback className="text-[9px] bg-[#A890D4]/20 text-[#A890D4]">
+                          <AvatarFallback className="text-[9px] bg-primary/20 text-primary">
                             {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
@@ -1345,7 +1345,7 @@ export default function ChecklistInstanceDetail() {
                 />
                 <Button
                   size="icon"
-                  className="h-8 w-8 shrink-0 self-end bg-[#A890D4] hover:bg-[#a896c9]"
+                  className="h-8 w-8 shrink-0 self-end bg-primary hover:bg-[#a896c9]"
                   onClick={handleAddNote}
                   disabled={!newNoteText.trim() || updateItemMutation.isPending}
                 >

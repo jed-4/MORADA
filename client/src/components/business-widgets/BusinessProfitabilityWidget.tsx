@@ -80,7 +80,7 @@ export default function BusinessProfitabilityWidget({ widget }: WidgetProps) {
           <p className="text-[10px] text-muted-foreground">Total Gross Margin</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50 text-center">
-          <p className={`text-lg font-bold ${avgMarginPercent >= 20 ? 'text-green-600' : avgMarginPercent >= 10 ? 'text-yellow-600' : 'text-red-600'}`}>
+          <p className={`text-lg font-bold ${avgMarginPercent >= 20 ? 'text-status-success' : avgMarginPercent >= 10 ? 'text-status-warning' : 'text-status-danger'}`}>
             {avgMarginPercent.toFixed(1)}%
           </p>
           <p className="text-[10px] text-muted-foreground">Avg Margin</p>
@@ -107,8 +107,8 @@ export default function BusinessProfitabilityWidget({ widget }: WidgetProps) {
                       <TrendingDown className="h-3 w-3 text-red-500" />
                     )}
                     <span className={`text-xs font-medium ${
-                      marginPercent >= 20 ? 'text-green-600' : 
-                      marginPercent >= 10 ? 'text-yellow-600' : 'text-red-600'
+                      marginPercent >= 20 ? 'text-status-success' : 
+                      marginPercent >= 10 ? 'text-status-warning' : 'text-status-danger'
                     }`}>
                       {marginPercent.toFixed(1)}%
                     </span>

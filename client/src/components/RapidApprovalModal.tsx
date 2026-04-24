@@ -318,7 +318,7 @@ export function RapidApprovalModal({
           <DialogContent className="sm:max-w-[380px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Check className="w-5 h-5 text-green-600" />
+                <Check className="w-5 h-5 text-status-success" />
                 All Done!
               </DialogTitle>
             </DialogHeader>
@@ -546,11 +546,11 @@ export function RapidApprovalModal({
                 </div>
               </PopoverContent>
             </Popover>
-            <div className="flex-1 flex items-center justify-between px-2 py-1 bg-[#A890D4]/10 rounded border border-[#A890D4]/30">
+            <div className="flex-1 flex items-center justify-between px-2 py-1 bg-primary/10 rounded border border-primary/30">
               <span className="text-[11px] font-medium">Net Hours / Total</span>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-medium">{netHours.toFixed(2)} hrs</span>
-                <span className="text-[11px] font-bold text-[#A890D4]">${calculatedTotal}</span>
+                <span className="text-[11px] font-bold text-primary">${calculatedTotal}</span>
               </div>
             </div>
           </div>
@@ -586,7 +586,7 @@ export function RapidApprovalModal({
               size="sm"
               onClick={() => rejectMutation.mutate(currentTimesheet.id)}
               disabled={rejectMutation.isPending}
-              className="h-7 gap-1 text-xs text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="h-7 gap-1 text-xs text-status-danger dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
               data-testid="button-rapid-reject"
             >
               <X className="w-3 h-3" />

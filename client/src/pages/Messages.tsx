@@ -199,8 +199,8 @@ function TaskLinkPreview({ taskId }: { taskId: string }) {
   const assigneeName: string = task.assigneeName || (task.assigneeIds?.length ? "Assigned" : "Unassigned");
   const dueDate: string | null = task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : null;
   const statusColor: string =
-    status === "done" ? "text-green-600 dark:text-green-400" :
-    status === "in-progress" ? "text-blue-600 dark:text-blue-400" :
+    status === "done" ? "text-status-success dark:text-green-400" :
+    status === "in-progress" ? "text-status-info dark:text-blue-400" :
     "text-muted-foreground";
 
   // Route to the correct tasks page based on task context

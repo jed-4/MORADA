@@ -669,7 +669,7 @@ export default function Variations() {
               : pageTitle}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleAddVariation}
             data-testid="button-add-variation"
           >
@@ -690,7 +690,7 @@ export default function Variations() {
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
                   isActive
-                    ? "text-foreground border-[#A890D4]"
+                    ? "text-foreground border-primary"
                     : "text-muted-foreground hover:text-foreground border-transparent"
                 )}
                 data-testid={`tab-status-${status.key}`}
@@ -699,7 +699,7 @@ export default function Variations() {
                 {status.key !== "all" && count > 0 && (
                   <span className={cn(
                     "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
-                    isActive ? "bg-[#A890D4]/20 text-[#A890D4]" : "bg-muted text-muted-foreground"
+                    isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                   )}>
                     {count}
                   </span>
@@ -710,17 +710,17 @@ export default function Variations() {
         </div>
 
         {/* Row 3 — Lilac summary strip */}
-        <div className="bg-[#A890D4]/10 flex items-center px-4 py-2 gap-5 text-xs">
+        <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
           <div className="flex items-center gap-1.5" data-testid="text-total-action">
             <span className="text-muted-foreground">Action</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.action)}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#A890D4]/40" />
+          <div className="w-px h-3.5 bg-primary/40" />
           <div className="flex items-center gap-1.5" data-testid="text-total-pending">
             <span className="text-muted-foreground">Pending</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.pending)}</span>
           </div>
-          <div className="w-px h-3.5 bg-[#A890D4]/40" />
+          <div className="w-px h-3.5 bg-primary/40" />
           <div className="flex items-center gap-1.5" data-testid="text-total-approved">
             <span className="text-muted-foreground">Approved</span>
             <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(statusTotals.approved)}</span>
@@ -742,7 +742,7 @@ export default function Variations() {
               className={cn(
                 "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
                 currentView === "kanban"
-                  ? "bg-[#A890D4] text-white border-[#A890D4]/20"
+                  ? "bg-primary text-white border-primary/20"
                   : "hover-elevate active-elevate-2"
               )}
               data-testid="button-kanban-view"
@@ -799,7 +799,7 @@ export default function Variations() {
                 </span>
                 {variations.length === 0 && (
                   <button
-                    className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                    className="h-7 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
                     onClick={handleAddVariation}
                     data-testid="button-add-first-variation"
                   >
@@ -817,7 +817,7 @@ export default function Variations() {
               columns={variationColumns}
               rowKey={(v) => v.id}
               onRowClick={(v) => handleRowClick(v.id)}
-              rowClassName={(v) => selectedIds.has(v.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : ""}
+              rowClassName={(v) => selectedIds.has(v.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
               className="max-h-[calc(100vh-260px)]"
             />
           )}

@@ -145,7 +145,7 @@ export function ProjectDefectsTab() {
       case "open": return "bg-red-100 text-red-800";
       case "in_progress": return "bg-blue-100 text-blue-800";
       case "resolved": return "bg-green-100 text-green-800";
-      case "closed": return "bg-gray-100 text-gray-800";
+      case "closed": return "bg-muted text-foreground";
       default: return "bg-muted text-muted-foreground";
     }
   };
@@ -174,7 +174,7 @@ export function ProjectDefectsTab() {
               onClick={() => setStatusFilter(status)}
               className={`h-6 px-2.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                 statusFilter === status
-                  ? "bg-[#A890D4] text-white"
+                  ? "bg-primary text-white"
                   : "bg-muted text-muted-foreground hover-elevate"
               }`}
               data-testid={`filter-${status}`}
@@ -265,7 +265,7 @@ export function ProjectDefectsTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-defect"
       >
         <Plus className="w-6 h-6" />
@@ -322,7 +322,7 @@ export function ProjectDefectsTab() {
                     onClick={() => setNewType(type)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
                       newType === type
-                        ? "bg-[#A890D4] text-white"
+                        ? "bg-primary text-white"
                         : "border hover-elevate"
                     }`}
                     data-testid={`type-select-${type}`}

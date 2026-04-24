@@ -287,7 +287,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
   if (!unreviewedItems || unreviewedItems.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-16">
-        <Sparkles className="h-12 w-12 mb-4 text-[#A890D4]" />
+        <Sparkles className="h-12 w-12 mb-4 text-primary" />
         <p className="text-lg font-medium">All caught up!</p>
         <p className="text-sm">No unlinked bill line items to review.</p>
       </div>
@@ -310,7 +310,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
                 ) : (
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 )}
-                <Building2 className="h-4 w-4 text-[#A890D4]" />
+                <Building2 className="h-4 w-4 text-primary" />
                 <span className="font-medium flex-1">{group.supplierName}</span>
                 <Badge variant="secondary" className="text-xs">
                   {group.items.length} items
@@ -409,7 +409,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
             <Button
               onClick={handleLink}
               disabled={!selectedPriceListItem || linkMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
             >
               {linkMutation.isPending ? "Linking..." : "Link Item"}
             </Button>
@@ -500,7 +500,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
             <Button
               onClick={handleCreateAndLink}
               disabled={!createForm.name || createAndLinkMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
             >
               {createAndLinkMutation.isPending ? "Creating..." : "Create & Link"}
             </Button>
@@ -532,7 +532,7 @@ function MatchSuggestion({ description, priceListItems, onSelect }: {
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-xs gap-1 text-[#A890D4]"
+          className="h-6 px-2 text-xs gap-1 text-primary"
         >
           <Sparkles className="h-3 w-3" />
           <span>Match found</span>

@@ -93,7 +93,7 @@ function SortableCategoryItem({
       ref={setNodeRef}
       style={style}
       className={`group/cat flex items-center border-l-2 transition-colors min-h-[32px] ${
-        isSelected ? "bg-[#A890D4]/10 border-[#A890D4]" : "border-transparent hover-elevate"
+        isSelected ? "bg-primary/10 border-primary" : "border-transparent hover-elevate"
       }`}
     >
       {/* Drag handle */}

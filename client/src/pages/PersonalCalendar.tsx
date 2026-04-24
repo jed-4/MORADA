@@ -803,7 +803,7 @@ export default function PersonalCalendar() {
                     onClick={() => handleViewSelect(view)}
                     className={`h-6 w-auto px-2 text-xs border rounded-md ${
                       selectedViewId === view.id
-                        ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
+                        ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                         : 'hover-elevate'
                     } active-elevate-2 flex items-center gap-1`}
                     data-testid={`tab-${view.id}`}
@@ -1229,7 +1229,7 @@ export default function PersonalCalendar() {
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
                   calendarMode === mode.value
-                    ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
+                    ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
                 data-testid={`button-mode-${mode.value}`}
@@ -1251,7 +1251,7 @@ export default function PersonalCalendar() {
 
           {/* Add Event Button */}
           <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
             onClick={() => {
               toast({ title: "Add Event", description: "Event creation coming soon!" });
             }}
@@ -1392,7 +1392,7 @@ export default function PersonalCalendar() {
               Cancel
             </button>
             <button
-              className="h-8 px-3 text-sm rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2"
+              className="h-8 px-3 text-sm rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2"
               onClick={handleSaveView}
               disabled={!newViewName.trim()}
               data-testid="button-confirm-save-view"

@@ -408,7 +408,7 @@ export function ImportContactsDialog({ open, onOpenChange }: ImportContactsDialo
               <Button 
                 onClick={handleImport} 
                 disabled={importMutation.isPending}
-                className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                className="bg-primary hover:bg-primary/90 text-white"
                 data-testid="button-import"
               >
                 {importMutation.isPending ? "Importing..." : `Import ${parsedContacts.length} Contacts`}

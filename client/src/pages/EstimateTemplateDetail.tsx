@@ -156,7 +156,7 @@ const fmt = (n: number) =>
 
 const allowanceChipClass = (a?: string) =>
   a === "Prime Cost"
-    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800"
+    ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800"
     : a === "Provisional Sum"
     ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800"
     : "text-muted-foreground";
@@ -734,7 +734,7 @@ export default function EstimateTemplateDetail() {
             Add Group
           </button>
           <button
-            className="h-6 px-2 text-xs rounded-md bg-[#A890D4] text-white border border-[#A890D4]/20 active-elevate-2 flex items-center gap-1"
+            className="h-6 px-2 text-xs rounded-md bg-primary text-white border border-primary/20 active-elevate-2 flex items-center gap-1"
             onClick={() => handleAddItem(groups[groups.length - 1] || "ungrouped")}
             data-testid="button-add-item"
           >
@@ -780,7 +780,7 @@ export default function EstimateTemplateDetail() {
                 Add Group
               </button>
               <button
-                className="h-7 px-3 text-xs rounded-md bg-[#A890D4] text-white border border-[#A890D4]/20 active-elevate-2 flex items-center gap-1"
+                className="h-7 px-3 text-xs rounded-md bg-primary text-white border border-primary/20 active-elevate-2 flex items-center gap-1"
                 onClick={() => handleAddItem("ungrouped")}
                 data-testid="button-add-first-item"
               >
@@ -914,7 +914,7 @@ export default function EstimateTemplateDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveSettings} className="bg-[#A890D4] text-white border-[#A890D4]/20">
+            <Button onClick={handleSaveSettings} className="bg-primary text-white border-primary/20">
               Save
             </Button>
           </DialogFooter>
@@ -941,7 +941,7 @@ export default function EstimateTemplateDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddGroupDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddGroup} className="bg-[#A890D4] text-white border-[#A890D4]/20">
+            <Button onClick={handleAddGroup} className="bg-primary text-white border-primary/20">
               Add Group
             </Button>
           </DialogFooter>

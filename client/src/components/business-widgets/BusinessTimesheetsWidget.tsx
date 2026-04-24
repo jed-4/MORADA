@@ -58,10 +58,10 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "approved": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "submitted": return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-      case "rejected": return "bg-red-500/10 text-red-700 dark:text-red-400";
-      default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+      case "approved": return "bg-status-success-bg text-status-success dark:text-green-400";
+      case "submitted": return "bg-status-warning-bg text-status-warning dark:text-yellow-400";
+      case "rejected": return "bg-status-danger-bg text-status-danger dark:text-red-400";
+      default: return "bg-muted text-secondary dark:text-muted";
     }
   };
 

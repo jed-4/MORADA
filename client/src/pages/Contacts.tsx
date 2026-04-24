@@ -366,7 +366,7 @@ export default function Contacts() {
           return displayPhone ? (
             <a
               href={`tel:${displayPhone}`}
-              className="text-sm text-[#A890D4] hover:underline"
+              className="text-sm text-primary hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               {displayPhone}
@@ -387,7 +387,7 @@ export default function Contacts() {
           return contact.email ? (
             <a
               href={`mailto:${contact.email}`}
-              className="text-sm text-[#A890D4] hover:underline"
+              className="text-sm text-primary hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               {contact.email}
@@ -414,7 +414,7 @@ export default function Contacts() {
                   : contact.contactType === "trade"
                   ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
                   : contact.contactType === "supplier"
-                  ? "bg-[#A890D4]/20 text-[#A890D4]"
+                  ? "bg-primary/20 text-primary"
                   : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
               }`}
             >
@@ -532,7 +532,7 @@ export default function Contacts() {
           </Button>
           <Button
             size="sm"
-            className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white border-[#A890D4]/20"
+            className="h-6 px-2 text-xs bg-primary hover:bg-primary/90 text-white border-primary/20"
             onClick={() => handleAddContact(selectedTab === "all" ? undefined : selectedTab as any)}
             data-testid="button-add-contact"
           >
@@ -575,7 +575,7 @@ export default function Contacts() {
               size="sm"
               className={`h-6 px-2 text-xs ${
                 selectedTab === tab.value 
-                  ? "bg-[#A890D4]/20 text-[#A890D4] border border-[#A890D4]/30" 
+                  ? "bg-primary/20 text-primary border border-primary/30" 
                   : ""
               }`}
               onClick={() => setSelectedTab(tab.value)}
@@ -651,7 +651,7 @@ export default function Contacts() {
             legacyConfigKey="contacts-column-config-v1"
             rowKey={(c) => c.id}
             onRowClick={(c) => handleEdit(c)}
-            rowClassName={(c) => (selectedIds.has(c.id) ? "bg-[#A890D4]/8 dark:bg-[#A890D4]/10" : "")}
+            rowClassName={(c) => (selectedIds.has(c.id) ? "bg-primary/8 dark:bg-primary/10" : "")}
           />
         )}
 

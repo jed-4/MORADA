@@ -195,7 +195,7 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
       {showInsertionLine && (
         <span
           aria-hidden
-          className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-[#A890D4] z-20"
+          className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-primary z-20"
           style={{ [insertSide]: -1 } as React.CSSProperties}
         />
       )}
@@ -457,8 +457,8 @@ export function DataTable<TData>({
                             </span>
                             {canSort && !meta.pinned && (
                               <span className="flex-shrink-0">
-                                {sortDir === "asc" && <ArrowUp className="w-3 h-3 text-[#A890D4]" />}
-                                {sortDir === "desc" && <ArrowDown className="w-3 h-3 text-[#A890D4]" />}
+                                {sortDir === "asc" && <ArrowUp className="w-3 h-3 text-primary" />}
+                                {sortDir === "desc" && <ArrowDown className="w-3 h-3 text-primary" />}
                                 {!sortDir && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-30" />}
                               </span>
                             )}
@@ -479,8 +479,8 @@ export function DataTable<TData>({
                                 className={cn(
                                   "absolute right-0 top-0 h-full w-0.5 transition-colors",
                                   header.column.getIsResizing()
-                                    ? "bg-[#A890D4]"
-                                    : "bg-transparent group-hover/resize:bg-[#A890D4]",
+                                    ? "bg-primary"
+                                    : "bg-transparent group-hover/resize:bg-primary",
                                 )}
                               />
                             </div>

@@ -109,9 +109,9 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
   const displayDeadlines = deadlines.slice(0, maxItems);
 
   const getDaysLabel = (daysUntil: number) => {
-    if (daysUntil < 0) return { label: `${Math.abs(daysUntil)}d overdue`, color: 'text-red-600 bg-red-50 dark:bg-red-900/20' };
+    if (daysUntil < 0) return { label: `${Math.abs(daysUntil)}d overdue`, color: 'text-status-danger bg-red-50 dark:bg-red-900/20' };
     if (daysUntil === 0) return { label: 'Today', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
-    if (daysUntil === 1) return { label: 'Tomorrow', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' };
+    if (daysUntil === 1) return { label: 'Tomorrow', color: 'text-status-info bg-blue-50 dark:bg-blue-900/20' };
     return { label: `${daysUntil}d`, color: 'text-muted-foreground bg-muted/50' };
   };
 
@@ -209,7 +209,7 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
               >
                 <div className="flex items-start gap-2">
                   {item.daysUntil < 0 ? (
-                    <AlertCircle className="h-3 w-3 text-red-600 mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="h-3 w-3 text-status-danger mt-0.5 flex-shrink-0" />
                   ) : (
                     <Calendar className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
                   )}

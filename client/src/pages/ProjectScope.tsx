@@ -597,7 +597,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           data-testid={`button-toggle-complete-${item.id}`}
         >
           {isCompleted ? (
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <CheckCircle2 className="h-4 w-4 text-status-success" />
           ) : (
             <Circle className="h-4 w-4 text-muted-foreground/50 hover:text-muted-foreground" />
           )}
@@ -761,7 +761,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             <DropdownMenuItem 
               onClick={() => onUpdate(item.id, { isTodo: !item.isTodo })}
               data-testid={`menu-toggle-todo-${item.id}`}
-              className={item.isTodo ? 'text-orange-600 dark:text-orange-400' : ''}
+              className={item.isTodo ? 'text-status-warning dark:text-orange-400' : ''}
             >
               <Flag className="h-3 w-3 mr-2" />
               {item.isTodo ? 'Clear Action Flag' : 'Flag as Action Item'}
@@ -1295,7 +1295,7 @@ function DroppableStage({
                 </span>
               )}
               {stageData.isCompleted && (
-                <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">✓ Complete</span>
+                <span className="text-[10px] text-status-success dark:text-green-400 font-medium">✓ Complete</span>
               )}
 
               {/* Item Count Badge */}
@@ -1504,7 +1504,7 @@ function DroppableStage({
                               po.status === 'completed' || po.status === 'billed'
                                 ? 'bg-green-100 text-green-800'
                                 : po.status === 'draft'
-                                  ? 'bg-gray-100 text-gray-600'
+                                  ? 'bg-muted text-secondary'
                                   : 'bg-amber-100 text-amber-800'
                             }`}>
                               {po.status.replace('_', ' ')}
@@ -1558,7 +1558,7 @@ function DroppableStage({
                                 ? 'bg-blue-100 text-blue-800' 
                                 : item.status === 'on_hold'
                                   ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-gray-100 text-gray-600'
+                                  : 'bg-muted text-secondary'
                           }`}>
                             {item.status.replace('_', ' ')}
                           </span>
@@ -1617,7 +1617,7 @@ function DroppableStage({
                                     )}
                                   </div>
                                   <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
-                                    cl.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                    cl.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-muted text-secondary'
                                   }`}>
                                     {cl.status.replace('_', ' ')}
                                   </span>
@@ -1644,7 +1644,7 @@ function DroppableStage({
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : cl.status === 'in_progress'
                                   ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                  : 'bg-muted text-secondary dark:bg-gray-800 dark:text-muted'
                             }`}>
                               {cl.status.replace('_', ' ')}
                             </span>
@@ -1725,7 +1725,7 @@ function DroppableStage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{task.title}</span>
                             {task.statusName && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 shrink-0">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-secondary dark:bg-gray-800 dark:text-muted shrink-0">
                                 {task.statusName}
                               </span>
                             )}

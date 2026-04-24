@@ -219,7 +219,7 @@ export default function CreateRFQ() {
             size="sm"
             onClick={handleSubmit}
             disabled={createRfqMutation.isPending}
-            className="h-7 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+            className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
             data-testid="button-create-rfq"
           >
             {createRfqMutation.isPending ? "Creating..." : "Create RFQ"}
@@ -235,7 +235,7 @@ export default function CreateRFQ() {
           {/* Title & Project */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
               <span className="text-xs font-medium">RFQ Details</span>
             </div>
             <div className="p-3">
@@ -398,7 +398,7 @@ export default function CreateRFQ() {
           {/* Description */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
               <span className="text-xs font-medium">Description</span>
             </div>
             <div className="p-3">
@@ -415,7 +415,7 @@ export default function CreateRFQ() {
           {/* Scope of Work */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
               <span className="text-xs font-medium">Scope of Work</span>
             </div>
             <div className="p-3">
@@ -558,7 +558,7 @@ export default function CreateRFQ() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                 <span className="text-xs font-medium">Track Only Mode</span>
               </div>
               <Switch
@@ -622,7 +622,7 @@ export default function CreateRFQ() {
           {/* Internal Notes */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
               <span className="text-xs font-medium">Internal Notes</span>
             </div>
             <div className="p-3">

@@ -227,7 +227,7 @@ export default function Minutes() {
               <Button 
                 onClick={() => { setEditingMinute(null); form.reset(); }}
                 size="sm"
-                className="h-6 px-2 text-xs bg-[#A890D4] text-white hover:bg-[#A890D4]/90 gap-0.5"
+                className="h-6 px-2 text-xs bg-primary text-white hover:bg-primary/90 gap-0.5"
                 data-testid="button-create-minute"
               >
                 <Plus className="w-3 h-3" />
@@ -449,7 +449,7 @@ function MinuteCard({
 
           {/* Pencil icon on hover */}
           {isHovered && (
-            <Pencil className="h-3 w-3 text-[#A890D4] shrink-0" />
+            <Pencil className="h-3 w-3 text-primary shrink-0" />
           )}
         </div>
 

@@ -33,8 +33,8 @@ export default function VariationPortal() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3 text-gray-500">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
+        <div className="flex flex-col items-center gap-3 text-muted">
           <Loader2 className="w-8 h-8 animate-spin" />
           <p className="text-sm">Loading variation...</p>
         </div>
@@ -44,11 +44,11 @@ export default function VariationPortal() {
 
   if (error || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
         <div className="flex flex-col items-center gap-3 text-center max-w-sm px-4">
           <AlertCircle className="w-10 h-10 text-destructive" />
           <h1 className="text-lg font-semibold">Link not found</h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted">
             This variation link is invalid or has expired. Please contact your builder for a new link.
           </p>
         </div>
@@ -61,7 +61,7 @@ export default function VariationPortal() {
     : null;
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4">
+    <div className="min-h-screen bg-muted py-8 px-4">
       <div className="shadow-lg rounded-xl overflow-hidden bg-white max-w-4xl mx-auto">
         <VariationPreviewContent
           variation={data.variation}

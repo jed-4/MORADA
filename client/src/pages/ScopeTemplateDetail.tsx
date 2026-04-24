@@ -147,7 +147,7 @@ function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: So
       <Checkbox
         checked={isSelected}
         onCheckedChange={() => onToggleSelect(item.id)}
-        className="data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
+        className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
         data-testid={`checkbox-item-${item.id}`}
       />
       
@@ -705,7 +705,7 @@ export default function ScopeTemplateDetail() {
             <span>Add Stage</span>
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => {
               setAddingToStageId(null);
               setAddItemDialogOpen(true);
@@ -725,7 +725,7 @@ export default function ScopeTemplateDetail() {
             <Checkbox
               checked={items.length > 0 && items.every(item => selectedItems.has(item.id))}
               onCheckedChange={toggleSelectAll}
-              className="data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
+              className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
               data-testid="checkbox-select-all"
             />
             <span className="text-xs text-muted-foreground ml-1">
@@ -741,7 +741,7 @@ export default function ScopeTemplateDetail() {
                 variant={activeTypeFilters.has(type) ? "default" : "outline"}
                 className={`h-5 text-[10px] cursor-pointer ${
                   activeTypeFilters.has(type) 
-                    ? 'bg-[#A890D4] hover:bg-[#A890D4]/90 text-white' 
+                    ? 'bg-primary hover:bg-primary/90 text-white' 
                     : 'hover:bg-muted'
                 }`}
                 onClick={() => toggleTypeFilter(type)}
@@ -756,7 +756,7 @@ export default function ScopeTemplateDetail() {
         {selectedItems.size > 0 && (
           <Button
             size="sm"
-            className="h-6 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90"
+            className="h-6 text-xs bg-primary hover:bg-primary/90"
             onClick={() => setAddToProjectDialogOpen(true)}
             data-testid="button-add-to-project"
           >
@@ -776,7 +776,7 @@ export default function ScopeTemplateDetail() {
               Add stages to organize your scope items
             </p>
             <button
-              className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+              className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
               onClick={() => setAddStageDialogOpen(true)}
               data-testid="button-add-first-stage"
             >
@@ -837,7 +837,7 @@ export default function ScopeTemplateDetail() {
                         )}
 
                         {stageItems.length > 0 && (
-                          <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#A890D4]/10 text-[#A890D4] border border-[#A890D4]/20">
+                          <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20">
                             {stageItems.length}
                           </span>
                         )}
@@ -929,7 +929,7 @@ export default function ScopeTemplateDetail() {
                             <div className="flex flex-col items-center gap-1">
                               <span className="text-xs opacity-60">No items in this stage</span>
                               <button
-                                className="text-[10px] text-[#A890D4] hover:underline"
+                                className="text-[10px] text-primary hover:underline"
                                 onClick={() => openAddItemForStage(stage.id)}
                               >
                                 Add first item
@@ -999,7 +999,7 @@ export default function ScopeTemplateDetail() {
             <Button
               onClick={handleAddStage}
               disabled={updateMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-add-stage"
             >
               {updateMutation.isPending ? "Adding..." : "Add Stage"}
@@ -1108,7 +1108,7 @@ export default function ScopeTemplateDetail() {
             <Button
               onClick={handleAddItem}
               disabled={updateMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-add"
             >
               {updateMutation.isPending ? "Adding..." : "Add Item"}
@@ -1214,7 +1214,7 @@ export default function ScopeTemplateDetail() {
             <Button
               onClick={handleSaveEdit}
               disabled={updateMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-save-edit"
             >
               {updateMutation.isPending ? "Saving..." : "Save Changes"}
@@ -1301,7 +1301,7 @@ export default function ScopeTemplateDetail() {
                   const item = items.find(i => i.id === itemId);
                   return item ? (
                     <li key={item.id} className="flex items-center gap-2">
-                      <Check className="h-3 w-3 text-[#A890D4]" />
+                      <Check className="h-3 w-3 text-primary" />
                       <span>{item.title}</span>
                       {item.itemType && (
                         <Badge variant="outline" className="h-4 text-[10px]">{getTypeLabel(item.itemType)}</Badge>
@@ -1319,7 +1319,7 @@ export default function ScopeTemplateDetail() {
             <Button
               onClick={handleAddToProject}
               disabled={!selectedProjectId || addToProjectMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-add-to-project"
             >
               {addToProjectMutation.isPending ? "Adding..." : "Add to Project"}

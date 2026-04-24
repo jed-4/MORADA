@@ -57,11 +57,11 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" },
-  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-300" },
+  draft: { bg: "bg-muted dark:bg-gray-800", text: "text-secondary dark:text-gray-300" },
+  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-300" },
+  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-300" },
   received: { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300" },
-  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-300" },
+  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-status-danger dark:text-red-300" },
 };
 
 type POType = "all" | "main" | "site";
@@ -261,7 +261,7 @@ export default function PurchaseOrders() {
         header: "PO Number",
         accessorFn: (po) => po.poNumber || "",
         cell: ({ row }) => (
-          <span className="text-xs font-medium text-[#A890D4]" data-testid={`cell-po-number-${row.original.id}`}>
+          <span className="text-xs font-medium text-primary" data-testid={`cell-po-number-${row.original.id}`}>
             {row.original.poNumber}
           </span>
         ),
@@ -290,7 +290,7 @@ export default function PurchaseOrders() {
             className={`text-[10px] uppercase font-medium ${
               row.original.poType === "site"
                 ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400"
-                : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                : "bg-blue-50 border-blue-200 text-status-info dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
             }`}
           >
             {row.original.poType === "site" ? "Site" : "Std"}
@@ -416,7 +416,7 @@ export default function PurchaseOrders() {
         <button
           onClick={handleNewPO}
           disabled={createPoMutation.isPending}
-          className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+          className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
           data-testid="button-new-po"
         >
           {createPoMutation.isPending ? (
@@ -435,7 +435,7 @@ export default function PurchaseOrders() {
             onClick={() => setSelectedType("all")}
             className={`h-6 px-2 text-xs border rounded-md ${
               selectedType === "all"
-                ? "bg-[#A890D4] text-white border-[#A890D4]/20"
+                ? "bg-primary text-white border-primary/20"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-type-all"
@@ -448,7 +448,7 @@ export default function PurchaseOrders() {
             onClick={() => setSelectedType("main")}
             className={`h-6 px-2 text-xs border rounded-md ${
               selectedType === "main"
-                ? "bg-[#A890D4] text-white border-[#A890D4]/20"
+                ? "bg-primary text-white border-primary/20"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-type-main"
@@ -461,7 +461,7 @@ export default function PurchaseOrders() {
             onClick={() => setSelectedType("site")}
             className={`h-6 px-2 text-xs border rounded-md ${
               selectedType === "site"
-                ? "bg-[#A890D4] text-white border-[#A890D4]/20"
+                ? "bg-primary text-white border-primary/20"
                 : "hover-elevate"
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-type-site"
@@ -503,7 +503,7 @@ export default function PurchaseOrders() {
               onClick={() => setSelectedStatus(status.key)}
               className={`h-6 px-2 text-xs rounded-md transition-all ${
                 selectedStatus === status.key
-                  ? "bg-[#A890D4]/10 text-[#A890D4] border border-[#A890D4]/30 font-medium"
+                  ? "bg-primary/10 text-primary border border-primary/30 font-medium"
                   : "bg-background border hover-elevate"
               }`}
               data-testid={`filter-status-${status.key}`}
@@ -525,7 +525,7 @@ export default function PurchaseOrders() {
             <button
               className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                 selectedSupplierId
-                  ? "bg-[#A890D4]/10 text-[#A890D4] border border-[#A890D4]/30 font-medium"
+                  ? "bg-primary/10 text-primary border border-primary/30 font-medium"
                   : "bg-background border hover-elevate"
               }`}
               data-testid="filter-supplier-popover"
@@ -540,8 +540,8 @@ export default function PurchaseOrders() {
             <div className="space-y-1 max-h-64 overflow-y-auto">
               <button
                 onClick={() => setSelectedSupplierId(null)}
-                className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                  !selectedSupplierId ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
+                  !selectedSupplierId ? "bg-primary/10 text-primary font-medium" : ""
                 }`}
                 data-testid="filter-supplier-all"
               >
@@ -551,8 +551,8 @@ export default function PurchaseOrders() {
                 <button
                   key={supplier.id}
                   onClick={() => setSelectedSupplierId(supplier.id)}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors truncate ${
-                    selectedSupplierId === supplier.id ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
+                    selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid={`filter-supplier-${supplier.id}`}
                 >
@@ -589,8 +589,8 @@ export default function PurchaseOrders() {
           </div>
         ) : filteredPOs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12">
-            <div className="w-12 h-12 rounded-full bg-[#A890D4]/10 flex items-center justify-center mb-4">
-              <ShoppingCart className="w-6 h-6 text-[#A890D4]" />
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <ShoppingCart className="w-6 h-6 text-primary" />
             </div>
             <h3 className="text-lg font-medium mb-2">No Purchase Orders</h3>
             <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
@@ -602,7 +602,7 @@ export default function PurchaseOrders() {
               <Button
                 onClick={handleNewPO}
                 disabled={createPoMutation.isPending}
-                className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+                className="bg-primary hover:bg-primary/90"
                 size="sm"
                 data-testid="button-empty-new-po"
               >
@@ -661,7 +661,7 @@ export default function PurchaseOrders() {
             <Button
               onClick={handleCreatePOWithProject}
               disabled={!newPOProjectId || createPoMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-create-po"
             >
               {createPoMutation.isPending ? (

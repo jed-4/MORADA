@@ -266,7 +266,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
           <Button size="sm" variant="ghost" onClick={onCloseConfig} className="h-7 px-3 text-xs">
             Cancel
           </Button>
-          <Button size="sm" onClick={saveConfig} className="h-7 px-3 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white">
+          <Button size="sm" onClick={saveConfig} className="h-7 px-3 text-xs bg-primary hover:bg-primary/90 text-white">
             Save
           </Button>
         </div>
@@ -384,7 +384,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         {/* View All Metrics link */}
         <button
           onClick={() => setShowAllMetrics(true)}
-          className="w-full text-[10px] text-[#A890D4] hover:text-[#A890D4]/80 flex items-center justify-center gap-1 pt-1"
+          className="w-full text-[10px] text-primary hover:text-primary/80 flex items-center justify-center gap-1 pt-1"
           data-testid="button-view-all-metrics"
         >
           <ExternalLink className="h-2.5 w-2.5" />

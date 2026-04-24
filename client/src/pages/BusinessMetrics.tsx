@@ -87,8 +87,8 @@ function ExpiryBadge({ dateStr }: { dateStr: string | null | undefined }) {
   const days = daysUntil(dateStr);
   if (days === null) return <Badge variant="secondary" className="text-[10px]">Not set</Badge>;
   if (days < 0) return <Badge variant="destructive" className="text-[10px]">Expired</Badge>;
-  if (days <= 30) return <Badge className="text-[10px] bg-orange-500/15 text-orange-700 dark:text-orange-400 hover:bg-orange-500/20">{days}d left</Badge>;
-  if (days <= 90) return <Badge className="text-[10px] bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/20">{days}d left</Badge>;
+  if (days <= 30) return <Badge className="text-[10px] bg-orange-500/15 text-status-warning dark:text-orange-400 hover:bg-orange-500/20">{days}d left</Badge>;
+  if (days <= 90) return <Badge className="text-[10px] bg-yellow-500/15 text-status-warning dark:text-yellow-400 hover:bg-yellow-500/20">{days}d left</Badge>;
   const d = new Date(dateStr!);
   return <Badge variant="secondary" className="text-[10px]">{d.toLocaleDateString("en-AU")}</Badge>;
 }
@@ -194,7 +194,7 @@ function HWITracker({ limit, committed, onSave }: { limit: number | null; commit
         <div>
           <div className="h-4 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${isOver ? 'bg-destructive' : pct > 80 ? 'bg-orange-500' : 'bg-[#A890D4]'}`}
+              className={`h-full rounded-full transition-all ${isOver ? 'bg-destructive' : pct > 80 ? 'bg-orange-500' : 'bg-primary'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -274,7 +274,7 @@ function OverviewTab({ projects }: { projects: Project[] }) {
   const stages = [
     { label: "Lead", count: leads.length, color: "bg-blue-400" },
     { label: "Pre-Construction", count: preCon.length, color: "bg-yellow-400" },
-    { label: "Construction", count: construction.length, color: "bg-[#A890D4]" },
+    { label: "Construction", count: construction.length, color: "bg-primary" },
     { label: "Post-Construction", count: postCon.length, color: "bg-green-400" },
   ];
   const total = clientProjects.length || 1;
@@ -500,7 +500,7 @@ function FinancialTab({ settings, onSave, projects }: { settings: CompanySetting
             <div>
               <div className="h-4 bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#A890D4] rounded-full transition-all"
+                  className="h-full bg-primary rounded-full transition-all"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -578,7 +578,7 @@ function PipelineTab({ projects }: { projects: Project[] }) {
   const pipelineStages = [
     { label: "Leads", count: leads.length, color: "bg-blue-400", desc: "New enquiries & site inspections" },
     { label: "Quoting", count: quotes.length, color: "bg-yellow-400", desc: "Estimates being prepared" },
-    { label: "Won (Active)", count: active.length, color: "bg-[#A890D4]", desc: "Currently under construction" },
+    { label: "Won (Active)", count: active.length, color: "bg-primary", desc: "Currently under construction" },
     { label: "Completed", count: completed.length, color: "bg-green-400", desc: "Post-construction & handover" },
   ];
 
@@ -617,7 +617,7 @@ function PipelineTab({ projects }: { projects: Project[] }) {
           </div>
           <div className="h-3 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full bg-[#A890D4] rounded-full transition-all"
+              className="h-full bg-primary rounded-full transition-all"
               style={{ width: `${conversionRate}%` }}
             />
           </div>
@@ -707,7 +707,7 @@ export default function BusinessMetrics() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 h-9 px-3 text-xs font-medium border-b-2 transition-colors flex-shrink-0 ${
                 isActive
-                  ? "border-[#A890D4] text-foreground"
+                  ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >

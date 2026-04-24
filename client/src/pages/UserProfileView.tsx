@@ -963,7 +963,7 @@ export default function UserProfileView() {
                 </Button>
                 <Button 
                   type="submit" 
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+                  className="bg-primary hover:bg-primary/90"
                   disabled={updateUserMutation.isPending}
                   data-testid="button-save-user"
                 >

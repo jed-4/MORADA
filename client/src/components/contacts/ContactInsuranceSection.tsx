@@ -179,7 +179,7 @@ export function ContactInsuranceSection({ contactId, contactName }: ContactInsur
     if (days <= 30) {
       return <Badge className="bg-amber-500 hover:bg-amber-600">Expires in {days} days</Badge>;
     }
-    return <Badge variant="outline" className="text-green-600 border-green-600">Valid</Badge>;
+    return <Badge variant="outline" className="text-status-success border-green-600">Valid</Badge>;
   };
 
   const getInsuranceTypeLabel = (type: string) => {

@@ -70,9 +70,9 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "optimal": return "text-green-600 bg-green-500/10";
-      case "moderate": return "text-yellow-600 bg-yellow-500/10";
-      default: return "text-red-600 bg-red-500/10";
+      case "optimal": return "text-status-success bg-status-success-bg";
+      case "moderate": return "text-status-warning bg-status-warning-bg";
+      default: return "text-status-danger bg-status-danger-bg";
     }
   };
 

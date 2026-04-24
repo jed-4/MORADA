@@ -168,7 +168,7 @@ export function DriveFilePicker({
     if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) {
       return <Presentation className="h-5 w-5 text-orange-500" />;
     }
-    return <File className="h-5 w-5 text-gray-500" />;
+    return <File className="h-5 w-5 text-muted" />;
   };
 
   const isSelected = (file: DriveFile) => selectedFiles.some(f => f.id === file.id);

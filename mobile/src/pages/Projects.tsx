@@ -142,8 +142,8 @@ export function Projects() {
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-sm truncate">{project.name}</h3>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap flex-shrink-0 ${
-                        project.status === "active" ? "bg-green-500/10 text-green-600" :
-                        project.status === "on_hold" ? "bg-yellow-500/10 text-yellow-600" :
+                        project.status === "active" ? "bg-status-success-bg text-status-success" :
+                        project.status === "on_hold" ? "bg-status-warning-bg text-status-warning" :
                         "bg-muted text-muted-foreground"
                       }`}>
                         {project.status === "active" ? "Active" :

@@ -113,7 +113,7 @@ export function ListPageToolbar({
               onClick={primaryAction.onClick}
               disabled={primaryAction.disabled || primaryAction.loading}
               data-testid={primaryAction["data-testid"] ?? "button-primary-action"}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
             >
               <PrimaryIcon className={cn("w-3 h-3", primaryAction.loading && "animate-spin")} />
               <span>{primaryAction.label}</span>

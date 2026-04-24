@@ -214,7 +214,7 @@ export function CasvaTaskRow({
     <div 
       ref={setNodeRef}
       style={style}
-      className="group flex items-center gap-3 h-8 px-2 transition-all duration-200 hover:bg-gray-50 relative"
+      className="group flex items-center gap-3 h-8 px-2 transition-all duration-200 hover:bg-muted relative"
       data-testid={`task-row-${task.id}`}
     >
       {/* Drag Handle - Hidden until hover */}
@@ -224,7 +224,7 @@ export function CasvaTaskRow({
         {...listeners}
         data-testid="drag-handle"
       >
-        <GripVertical className="h-4 w-4 text-gray-400" />
+        <GripVertical className="h-4 w-4 text-muted" />
       </div>
 
       {/* Checkbox - Hidden by default, shows on hover */}
@@ -234,7 +234,7 @@ export function CasvaTaskRow({
             <Checkbox
               checked={isCompleted}
               onCheckedChange={onToggleComplete}
-              className="w-4 h-4 border-2 rounded data-[state=checked]:bg-[#A890D4] data-[state=checked]:border-[#A890D4]"
+              className="w-4 h-4 border-2 rounded data-[state=checked]:bg-primary data-[state=checked]:border-primary"
               data-testid={`checkbox-task-${task.id}`}
             />
           </div>
@@ -251,13 +251,13 @@ export function CasvaTaskRow({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={saveEdit}
             onKeyDown={handleKeyDown}
-            className="w-full text-sm font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-[#A890D4] rounded px-1 -mx-1"
+            className="w-full text-sm font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-primary rounded px-1 -mx-1"
             data-testid="input-edit-title"
           />
         ) : (
           <div 
             className={cn(
-              "text-sm font-medium truncate cursor-text hover:bg-gray-100 rounded px-1 -mx-1",
+              "text-sm font-medium truncate cursor-text hover:bg-muted rounded px-1 -mx-1",
               isCompleted && "line-through opacity-60"
             )} 
             onClick={(e) => {
@@ -284,11 +284,11 @@ export function CasvaTaskRow({
               <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
                 <PopoverTrigger asChild>
                   <button 
-                    className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
+                    className="text-left w-full hover:bg-muted rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {task.assigneeName && (
-                      <div className="text-[13px] text-gray-600 truncate" data-testid="task-assignee">
+                      <div className="text-[13px] text-secondary truncate" data-testid="task-assignee">
                         {task.assigneeName}
                       </div>
                     )}
@@ -301,8 +301,8 @@ export function CasvaTaskRow({
                         key={user.id}
                         onClick={() => handleAssigneeChange(user.id)}
                         className={cn(
-                          "w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 transition-colors",
-                          task.assigneeId === user.id && "bg-[#A890D4]/10 text-[#A890D4]"
+                          "w-full text-left px-3 py-2 text-sm rounded hover:bg-muted transition-colors",
+                          task.assigneeId === user.id && "bg-primary/10 text-primary"
                         )}
                       >
                         <div className="font-medium">
@@ -310,11 +310,11 @@ export function CasvaTaskRow({
                             ? `${user.firstName || ''} ${user.lastName || ''}`.trim() 
                             : user.email}
                         </div>
-                        <div className="text-xs text-gray-500">{user.email}</div>
+                        <div className="text-xs text-muted">{user.email}</div>
                       </button>
                     ))}
                     {users.length === 0 && (
-                      <div className="px-3 py-2 text-sm text-gray-500">No users available</div>
+                      <div className="px-3 py-2 text-sm text-muted">No users available</div>
                     )}
                   </div>
                 </PopoverContent>
@@ -330,15 +330,15 @@ export function CasvaTaskRow({
               <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
                 <PopoverTrigger asChild>
                   <button 
-                    className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
+                    className="text-left w-full hover:bg-muted rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {task.dueDate ? (
-                      <div className="text-[13px] text-gray-600" data-testid="task-due-date">
+                      <div className="text-[13px] text-secondary" data-testid="task-due-date">
                         {format(new Date(task.dueDate), 'MMM d, h:mm a')}
                       </div>
                     ) : (
-                      <div className="text-[13px] text-gray-400">Optional</div>
+                      <div className="text-[13px] text-muted">Optional</div>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -356,7 +356,7 @@ export function CasvaTaskRow({
                       initialFocus
                     />
                     <div className="border-t p-3 space-y-2">
-                      <div className="text-xs font-medium text-gray-600 mb-2">Time</div>
+                      <div className="text-xs font-medium text-secondary mb-2">Time</div>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -369,9 +369,9 @@ export function CasvaTaskRow({
                             const minutes = currentDate.getMinutes().toString().padStart(2, '0');
                             handleDueDateChange(currentDate, e.target.value, minutes);
                           }}
-                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#A890D4] outline-none text-center"
+                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-primary outline-none text-center"
                         />
-                        <span className="text-gray-500">:</span>
+                        <span className="text-muted">:</span>
                         <input
                           type="number"
                           min="0"
@@ -383,13 +383,13 @@ export function CasvaTaskRow({
                             const hours = currentDate.getHours().toString().padStart(2, '0');
                             handleDueDateChange(currentDate, hours, e.target.value);
                           }}
-                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#A890D4] outline-none text-center"
+                          className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-primary outline-none text-center"
                         />
                       </div>
                       {task.dueDate && (
                         <button
                           onClick={() => handleDueDateChange(undefined)}
-                          className="w-full text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+                          className="w-full text-sm text-muted hover:text-secondary px-2 py-1 rounded hover:bg-muted"
                         >
                           Clear date
                         </button>
@@ -421,7 +421,7 @@ export function CasvaTaskRow({
                       <button
                         key={option.key}
                         onClick={() => handleStatusChange(option.key)}
-                        className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                        className="w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors flex items-center gap-2"
                       >
                         <ColorChip type="status" value={option.key} />
                       </button>
@@ -446,7 +446,7 @@ export function CasvaTaskRow({
                     {task.priority ? (
                       <ColorChip type="priority" value={task.priority} />
                     ) : (
-                      <span className="text-[13px] text-gray-400">-</span>
+                      <span className="text-[13px] text-muted">-</span>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -456,7 +456,7 @@ export function CasvaTaskRow({
                       <button
                         key={option.key}
                         onClick={() => handlePriorityChange(option.key)}
-                        className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                        className="w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors flex items-center gap-2"
                       >
                         <ColorChip type="priority" value={option.key} />
                       </button>

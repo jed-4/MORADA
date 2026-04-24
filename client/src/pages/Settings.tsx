@@ -458,7 +458,7 @@ export default function Settings() {
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                <HardDrive className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                <HardDrive className="h-6 w-6 text-status-info dark:text-blue-400" />
               </div>
               <div className="flex-1">
                 <CardTitle className="flex items-center gap-2">
@@ -613,7 +613,7 @@ export default function Settings() {
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
-                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
                     </div>
                     <div>
                       <p className="font-medium">Connected to Google Drive</p>
@@ -783,7 +783,7 @@ export default function Settings() {
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
                   </div>
                   <div>
                     <p className="font-medium">Connected to Xero</p>
@@ -1412,7 +1412,7 @@ export default function Settings() {
                         }}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                           isActive 
-                            ? "bg-[#A890D4] text-white" 
+                            ? "bg-primary text-white" 
                             : "text-foreground hover-elevate"
                         }`}
                         data-testid={`settings-nav-${category.id}`}
@@ -1451,7 +1451,7 @@ export default function Settings() {
                     size="sm" 
                     onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
                     disabled={updateCompanyMutation.isPending}
-                    className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+                    className="bg-primary hover:bg-primary/90"
                     data-testid="button-save-settings"
                   >
                     <Save className="h-4 w-4 mr-1" />
@@ -1462,7 +1462,7 @@ export default function Settings() {
                 <Button 
                   size="sm" 
                   onClick={handleEditCompanyInfo}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+                  className="bg-primary hover:bg-primary/90"
                   data-testid="button-edit-settings"
                 >
                   <Edit className="h-4 w-4 mr-1" />
@@ -1789,7 +1789,7 @@ function ScheduleSettingsSection() {
                 variant={isActive ? "default" : "outline"}
                 size="sm"
                 onClick={() => setWorkDays({ ...workDays, [day]: !isActive })}
-                className={isActive ? "bg-[#A890D4] hover:bg-[#A890D4]/90" : ""}
+                className={isActive ? "bg-primary hover:bg-primary/90" : ""}
                 data-testid={`workday-${day}`}
               >
                 {day.charAt(0).toUpperCase() + day.slice(1, 3)}
@@ -1980,7 +1980,7 @@ function ScheduleSettingsSection() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} className="bg-[#A890D4] hover:bg-[#A890D4]/90" data-testid="button-save-schedule">
+        <Button onClick={handleSave} className="bg-primary hover:bg-primary/90" data-testid="button-save-schedule">
           <Save className="h-4 w-4 mr-2" />
           Save Schedule Settings
         </Button>
@@ -2407,7 +2407,7 @@ function DefaultValuesSection() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} className="bg-[#A890D4] hover:bg-[#A890D4]/90" data-testid="button-save-defaults">
+        <Button onClick={handleSave} className="bg-primary hover:bg-primary/90" data-testid="button-save-defaults">
           <Save className="h-4 w-4 mr-2" />
           Save Default Values
         </Button>
@@ -2542,7 +2542,7 @@ function TermsConditionsSection() {
         </div>
         <Button 
           onClick={() => setIsAddingTemplate(true)} 
-          className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+          className="bg-primary hover:bg-primary/90"
           data-testid="button-add-template"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -2742,7 +2742,7 @@ function ClientInvoiceTermsEditor({
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            className="w-full min-h-[300px] p-3 border rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#A890D4] bg-background"
+            className="w-full min-h-[300px] p-3 border rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary bg-background"
             placeholder="Enter your terms and conditions for client invoices..."
             data-testid="textarea-client-invoice-terms"
           />
@@ -2754,7 +2754,7 @@ function ClientInvoiceTermsEditor({
           <Button
             onClick={() => onSave(content)}
             disabled={isSaving}
-            className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+            className="bg-primary hover:bg-primary/90"
             data-testid="button-save-client-invoice-terms"
           >
             {isSaving ? "Saving..." : "Save Terms"}
@@ -2810,7 +2810,7 @@ function TermsTemplateEditor({
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="mt-1.5 w-full min-h-[200px] p-3 border-2 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#A890D4] bg-background"
+              className="mt-1.5 w-full min-h-[200px] p-3 border-2 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary bg-background"
               placeholder="Enter your terms and conditions..."
               data-testid="textarea-template-content"
             />
@@ -2831,7 +2831,7 @@ function TermsTemplateEditor({
                       setDefaultFor([...defaultFor, docType.value]);
                     }
                   }}
-                  className={defaultFor.includes(docType.value) ? "bg-[#A890D4] hover:bg-[#A890D4]/90" : ""}
+                  className={defaultFor.includes(docType.value) ? "bg-primary hover:bg-primary/90" : ""}
                   data-testid={`toggle-doctype-${docType.value}`}
                 >
                   {docType.label}
@@ -2847,7 +2847,7 @@ function TermsTemplateEditor({
           </Button>
           <Button 
             onClick={handleSubmit} 
-            className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+            className="bg-primary hover:bg-primary/90"
             data-testid="button-save-template"
           >
             <Save className="h-4 w-4 mr-2" />
@@ -3059,10 +3059,10 @@ function ActivitySection() {
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-md flex items-center justify-center ${
-                      isEnabled ? "bg-[#A890D4]/15" : "bg-muted"
+                      isEnabled ? "bg-primary/15" : "bg-muted"
                     }`}>
                       <Icon className={`h-4 w-4 ${
-                        isEnabled ? "text-[#A890D4]" : "text-muted-foreground"
+                        isEnabled ? "text-primary" : "text-muted-foreground"
                       }`} />
                     </div>
                     <div>
@@ -3159,8 +3159,8 @@ function MaintenanceSection() {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-4 rounded-lg border bg-background">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-md flex items-center justify-center bg-[#A890D4]/15">
-                <Folder className="h-5 w-5 text-[#A890D4]" />
+              <div className="w-10 h-10 rounded-md flex items-center justify-center bg-primary/15">
+                <Folder className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <p className="text-sm font-medium">Fix Project Phases</p>
@@ -3395,7 +3395,7 @@ function FieldSettingsSection() {
                     <p className="text-sm text-muted-foreground mt-1">
                       {section.description}
                     </p>
-                    <p className="text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 mt-2">
+                    <p className="text-xs text-status-warning bg-yellow-50 border border-yellow-200 rounded px-2 py-1 mt-2">
                       Note: Custom fields are shared across all notes and tasks
                     </p>
                   </div>

@@ -75,6 +75,41 @@ export default {
         "coral-light": "hsl(var(--coral-light))",
         "rose-accent": "hsl(var(--rose) / <alpha-value>)",
         "rose-light": "hsl(var(--rose-light))",
+        // Status pill (soft pastel) tokens — declared on `colors` so both
+        // `text-status-*` and `bg-status-*-bg` utilities are generated.
+        "status-success": {
+          DEFAULT: "hsl(var(--status-success-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-success-bg))",
+        },
+        "status-warning": {
+          DEFAULT: "hsl(var(--status-warning-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-warning-bg))",
+        },
+        "status-info": {
+          DEFAULT: "hsl(var(--status-info-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-info-bg))",
+        },
+        "status-danger": {
+          DEFAULT: "hsl(var(--status-danger-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-danger-bg))",
+        },
+        "status-action": {
+          DEFAULT: "hsl(var(--status-action-fg) / <alpha-value>)",
+          bg: "hsl(var(--status-action-bg))",
+        },
+      },
+      textColor: {
+        // Override `text-secondary` / `text-muted` to point at the helper
+        // text tokens, while preserving the `*-foreground` subkeys that
+        // shadcn relies on (text-secondary-foreground, text-muted-foreground).
+        secondary: {
+          DEFAULT: "hsl(var(--text-secondary) / <alpha-value>)",
+          foreground: "hsl(var(--secondary-foreground) / <alpha-value>)",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--text-muted) / <alpha-value>)",
+          foreground: "hsl(var(--muted-foreground) / <alpha-value>)",
+        },
         chart: {
           "1": "hsl(var(--chart-1) / <alpha-value>)",
           "2": "hsl(var(--chart-2) / <alpha-value>)",

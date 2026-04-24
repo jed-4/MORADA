@@ -168,11 +168,11 @@ export default function ChecklistTemplates() {
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case "Task": return "bg-blue-500/10 text-blue-700 dark:text-blue-400";
-      case "Job": return "bg-green-500/10 text-green-700 dark:text-green-400";
+      case "Task": return "bg-status-info-bg text-status-info dark:text-blue-400";
+      case "Job": return "bg-status-success-bg text-status-success dark:text-green-400";
       case "Estimation": return "bg-purple-500/10 text-purple-700 dark:text-purple-400";
-      case "Lead": return "bg-orange-500/10 text-orange-700 dark:text-orange-400";
-      default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+      case "Lead": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+      default: return "bg-muted text-secondary dark:text-muted";
     }
   };
 
@@ -368,7 +368,7 @@ export default function ChecklistTemplates() {
             <span>Import</span>
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
             data-testid="button-add-template"
           >
@@ -431,7 +431,7 @@ export default function ChecklistTemplates() {
             {!searchTerm && (
               <button
                 onClick={() => setIsAddingTemplate(true)}
-                className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
                 <Plus className="h-3 w-3" />

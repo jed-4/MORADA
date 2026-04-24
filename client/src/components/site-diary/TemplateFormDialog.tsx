@@ -190,7 +190,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
                       <FormLabel className="flex items-center gap-1.5">
-                        <Star className="h-3.5 w-3.5 text-[#A890D4]" />
+                        <Star className="h-3.5 w-3.5 text-primary" />
                         Set as Default Template
                       </FormLabel>
                       <p className="text-xs text-muted-foreground">

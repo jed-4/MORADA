@@ -179,9 +179,9 @@ export default function PhaseTransitionDialog({
               ) : (
                 <div className="border rounded-md p-3 bg-green-50 dark:bg-green-900/20">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <CheckCircle2 className="h-4 w-4 text-status-success" />
                     <span className="text-sm">Auto-generated number:</span>
-                    <span className="font-mono font-bold text-green-700 dark:text-green-400">
+                    <span className="font-mono font-bold text-status-success dark:text-green-400">
                       {previewJobNumber || "Loading..."}
                     </span>
                   </div>

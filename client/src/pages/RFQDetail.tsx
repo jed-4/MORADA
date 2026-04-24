@@ -371,7 +371,7 @@ export default function RFQDetail() {
       sent: {
         label: "Sent",
         className:
-          "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+          "bg-blue-100 text-status-info border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
       },
       pending: {
         label: "Pending",
@@ -396,7 +396,7 @@ export default function RFQDetail() {
       declined: {
         label: "Declined",
         className:
-          "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800",
+          "bg-red-100 text-status-danger border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800",
       },
       expired: {
         label: "Expired",
@@ -509,7 +509,7 @@ export default function RFQDetail() {
           <Button
             size="sm"
             onClick={() => setShowSendDialog(true)}
-            className="h-7 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+            className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
             data-testid="button-send-rfq"
           >
             <Send className="w-3 h-3 mr-1" />
@@ -527,7 +527,7 @@ export default function RFQDetail() {
           <Card className="overflow-hidden">
             {/* Card header */}
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
               <span className="text-xs font-medium">RFQ Info</span>
             </div>
 
@@ -943,7 +943,7 @@ export default function RFQDetail() {
           {showPreview && (
             <Card className="overflow-hidden">
               <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                 <span className="text-xs font-medium">PDF Preview</span>
               </div>
               {isGenerating ? (
@@ -972,7 +972,7 @@ export default function RFQDetail() {
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                 <span className="text-xs font-medium">Track Only Mode</span>
               </div>
               <Switch
@@ -1043,7 +1043,7 @@ export default function RFQDetail() {
           {/* Internal Notes */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
               <span className="text-xs font-medium">Internal Notes</span>
             </div>
             <div className="p-3">
@@ -1063,7 +1063,7 @@ export default function RFQDetail() {
           {/* Activity */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
               <span className="text-xs font-medium">Activity</span>
             </div>
             <div className="p-3 space-y-3">
@@ -1172,7 +1172,7 @@ export default function RFQDetail() {
             <Button
               onClick={() => createItemMutation.mutate(newItem)}
               disabled={!newItem.description || createItemMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {createItemMutation.isPending ? "Adding..." : "Add Item"}
             </Button>
@@ -1260,7 +1260,7 @@ export default function RFQDetail() {
             <Button
               onClick={() => importItemsMutation.mutate(selectedEstimateItems)}
               disabled={selectedEstimateItems.length === 0 || importItemsMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {importItemsMutation.isPending ? "Importing..." : `Import ${selectedEstimateItems.length} Items`}
             </Button>

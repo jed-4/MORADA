@@ -153,7 +153,7 @@ export default function InviteUserDialog({
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-center py-4">
               <div className="h-12 w-12 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
+                <Check className="h-6 w-6 text-status-success dark:text-green-400" />
               </div>
             </div>
             <div className="text-center">

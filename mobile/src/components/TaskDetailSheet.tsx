@@ -78,7 +78,7 @@ export function TaskDetailSheet({ task, isOpen, onClose, onSave }: TaskDetailShe
                   onClick={() => setStatus(s.value)}
                   className={`flex-1 h-9 rounded-md text-sm font-medium ${
                     status === s.value
-                      ? "bg-[#A890D4] text-white"
+                      ? "bg-primary text-white"
                       : "border hover-elevate"
                   }`}
                   data-testid={`button-status-${s.value}`}

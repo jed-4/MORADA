@@ -474,10 +474,10 @@ export default function ScheduleTemplates() {
 
   const getCategoryColor = (category: string | null) => {
     switch (category?.toLowerCase()) {
-      case "residential": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "commercial": return "bg-blue-500/10 text-blue-700 dark:text-blue-400";
-      case "renovation": return "bg-orange-500/10 text-orange-700 dark:text-orange-400";
-      default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+      case "residential": return "bg-status-success-bg text-status-success dark:text-green-400";
+      case "commercial": return "bg-status-info-bg text-status-info dark:text-blue-400";
+      case "renovation": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+      default: return "bg-muted text-secondary dark:text-muted";
     }
   };
 
@@ -645,7 +645,7 @@ export default function ScheduleTemplates() {
             <span>Import</span>
           </button>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleOpenAdd}
             data-testid="button-add-template"
           >
@@ -717,7 +717,7 @@ export default function ScheduleTemplates() {
                 </button>
                 <button 
                   onClick={handleOpenAdd} 
-                  className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+                  className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
                   data-testid="button-create-first-template"
                 >
                   <Plus className="h-3 w-3" />

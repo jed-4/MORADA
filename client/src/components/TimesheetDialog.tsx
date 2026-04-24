@@ -876,11 +876,11 @@ export function TimesheetDialog({
               }`}>
                 <div className="flex items-center gap-1.5">
                   {timesheet.status === "approved" ? (
-                    <Check className="h-3 w-3 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    <Check className="h-3 w-3 text-status-success dark:text-green-400 flex-shrink-0" />
                   ) : (
-                    <AlertTriangle className="h-3 w-3 text-red-600 dark:text-red-400 flex-shrink-0" />
+                    <AlertTriangle className="h-3 w-3 text-status-danger dark:text-red-400 flex-shrink-0" />
                   )}
-                  <span className={timesheet.status === "approved" ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}>
+                  <span className={timesheet.status === "approved" ? "text-status-success dark:text-green-300" : "text-status-danger dark:text-red-300"}>
                     {timesheet.status === "approved" ? "Approved" : "Rejected"} by{" "}
                     <span className="font-medium">
                       {(() => {
@@ -896,7 +896,7 @@ export function TimesheetDialog({
                   </span>
                 </div>
                 {timesheet.status === "rejected" && timesheet.rejectionReason && (
-                  <div className="text-red-600 dark:text-red-400 pl-[18px]">
+                  <div className="text-status-danger dark:text-red-400 pl-[18px]">
                     Reason: {timesheet.rejectionReason}
                   </div>
                 )}

@@ -53,13 +53,13 @@ const mockNotifications: Notification[] = [
 const getIcon = (type: Notification["type"]) => {
   switch (type) {
     case "task":
-      return <CheckCircle className="w-4 h-4 text-blue-500" />;
+      return <CheckCircle className="w-4 h-4 text-primary" />;
     case "message":
-      return <MessageSquare className="w-4 h-4 text-green-500" />;
+      return <MessageSquare className="w-4 h-4 text-teal" />;
     case "schedule":
-      return <Calendar className="w-4 h-4 text-purple-500" />;
+      return <Calendar className="w-4 h-4 text-sage" />;
     case "alert":
-      return <AlertCircle className="w-4 h-4 text-orange-500" />;
+      return <AlertCircle className="w-4 h-4 text-amber" />;
   }
 };
 
@@ -103,7 +103,7 @@ export function NotificationSheet({ isOpen, onClose }: NotificationSheetProps) {
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-sm">Notifications</h3>
             {unreadCount > 0 && (
-              <span className="bg-[#A890D4] text-white text-xs px-2 py-0.5 rounded-full">
+              <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full">
                 {unreadCount}
               </span>
             )}
@@ -129,7 +129,7 @@ export function NotificationSheet({ isOpen, onClose }: NotificationSheetProps) {
                   key={notification.id}
                   onClick={onClose}
                   className={`w-full text-left px-4 py-3 transition-colors hover:bg-accent/10 border-b last:border-b-0 ${
-                    !notification.read ? "bg-[#A890D4]/5" : ""
+                    !notification.read ? "bg-primary/5" : ""
                   }`}
                   data-testid={`notification-${notification.id}`}
                 >
@@ -148,7 +148,7 @@ export function NotificationSheet({ isOpen, onClose }: NotificationSheetProps) {
                           </p>
                         </div>
                         {!notification.read && (
-                          <div className="w-2 h-2 bg-[#A890D4] rounded-full flex-shrink-0 mt-1" />
+                          <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 mt-1" />
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -173,7 +173,7 @@ export function NotificationSheet({ isOpen, onClose }: NotificationSheetProps) {
             </button>
             <button 
               onClick={onClose}
-              className="text-xs text-[#A890D4] hover:text-[#A890D4]/80 flex items-center gap-1"
+              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
             >
               View all
               <ChevronRight className="w-3 h-3" />

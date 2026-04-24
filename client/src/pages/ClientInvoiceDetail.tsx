@@ -1606,7 +1606,7 @@ export default function ClientInvoiceDetail() {
                 <button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
                   data-testid="button-save-invoice"
                 >
                   {(createMutation.isPending || updateMutation.isPending) ? (
@@ -1620,18 +1620,18 @@ export default function ClientInvoiceDetail() {
             </div>
 
             {/* Row 2 — Lilac summary strip */}
-            <div className="bg-[#A890D4]/10 flex items-center justify-between px-4 py-2 gap-6">
+            <div className="bg-primary/10 flex items-center justify-between px-4 py-2 gap-6">
               <div className="flex items-center gap-5 text-xs">
                 <div className="flex items-center gap-1.5" data-testid="header-summary-total">
                   <span className="text-muted-foreground">Total</span>
                   <span className="font-semibold">{formatCurrency(total)}</span>
                 </div>
-                <div className="w-px h-3.5 bg-[#A890D4]/40" />
+                <div className="w-px h-3.5 bg-primary/40" />
                 <div className="flex items-center gap-1.5" data-testid="header-summary-paid">
                   <span className="text-muted-foreground">Paid</span>
                   <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(paid)}</span>
                 </div>
-                <div className="w-px h-3.5 bg-[#A890D4]/40" />
+                <div className="w-px h-3.5 bg-primary/40" />
                 <div className="flex items-center gap-1.5" data-testid="header-summary-due">
                   <span className="text-muted-foreground">Due</span>
                   <span className={cn(
@@ -1665,7 +1665,7 @@ export default function ClientInvoiceDetail() {
                       <div className={cn(
                         "flex items-center gap-1.5 px-2 h-6 border rounded-md text-xs",
                         xeroStatus?.connected
-                          ? "text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                          ? "text-status-info dark:text-blue-400 border-blue-300 dark:border-blue-600"
                           : "text-muted-foreground border-border opacity-60 cursor-not-allowed"
                       )}>
                         <Switch
@@ -1693,7 +1693,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Synced badge with Xero invoice number */}
                 {isEditMode && invoice?.xeroInvoiceId && (
-                  <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
+                  <span className="text-[10px] text-status-success dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
                     <SiXero className="w-3 h-3" />
                     {invoice.xeroInvoiceNumber ? `#${invoice.xeroInvoiceNumber}` : "Synced"}
                   </span>
@@ -1723,7 +1723,7 @@ export default function ClientInvoiceDetail() {
                     type="button"
                     onClick={handlePushToXero}
                     disabled={xeroPushing}
-                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-status-info dark:text-blue-400 border-blue-300 dark:border-blue-600"
                     data-testid="button-send-to-xero"
                   >
                     {xeroPushing ? (
@@ -1747,7 +1747,7 @@ export default function ClientInvoiceDetail() {
                 {(currentProject || clientContact) && (
                   <div className="rounded-lg border border-border bg-card overflow-hidden">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</span>
                     </div>
                     <div className="px-4 py-2.5 flex items-start gap-6">
@@ -1780,7 +1780,7 @@ export default function ClientInvoiceDetail() {
 
                   {/* Section header */}
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
                   </div>
 
@@ -2887,7 +2887,7 @@ export default function ClientInvoiceDetail() {
                     <div className="border-t border-border/50" data-testid="section-selections">
                       <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                           <span className="text-xs font-medium">Selections</span>
                           {selectedSelectionOptionIds.length > 0 && (
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -2946,7 +2946,7 @@ export default function ClientInvoiceDetail() {
                 <div className="border-t border-border/50" data-testid="section-custom-lines">
                   <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/70" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -3198,9 +3198,9 @@ export default function ClientInvoiceDetail() {
 
               {/* ── Invoice Summary ── */}
               <div data-testid="summary-panel">
-                <div className="bg-[#A890D4]/10 px-4 py-3 flex items-center justify-between gap-4">
+                <div className="bg-primary/10 px-4 py-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#A890D4]/80" />
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/80" />
                     <span className="text-xs font-medium">Invoice Summary</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs">
@@ -3434,7 +3434,7 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setTermsCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                       <span className="text-xs font-medium">Terms &amp; Conditions</span>
                     </div>
                     {termsCollapsed ? (
@@ -3488,7 +3488,7 @@ export default function ClientInvoiceDetail() {
                         <button
                           type="button"
                           onClick={() => setTermsAndConditions(companySettings.termsAndConditions!)}
-                          className="text-xs text-[#A890D4] hover:underline"
+                          className="text-xs text-primary hover:underline"
                           data-testid="button-load-company-terms"
                         >
                           Load company default terms
@@ -3502,7 +3502,7 @@ export default function ClientInvoiceDetail() {
                 <div className="border-t border-border/50" data-testid="section-attachments">
                   <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
                       <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <span className="text-xs font-medium">Attachments</span>
                     </div>
@@ -3526,7 +3526,7 @@ export default function ClientInvoiceDetail() {
                       <button
                         type="button"
                         onClick={() => setPaymentDialogOpen(true)}
-                        className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+                        className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
                         data-testid="button-record-payment"
                       >
                         <Plus className="w-3 h-3" />
@@ -3599,7 +3599,7 @@ export default function ClientInvoiceDetail() {
               <button
                 type="button"
                 onClick={() => setPaymentDialogOpen(true)}
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 flex items-center gap-1"
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 flex items-center gap-1"
                 data-testid="button-record-payment-footer"
               >
                 <DollarSign className="w-3 h-3" />
@@ -4069,7 +4069,7 @@ export default function ClientInvoiceDetail() {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
                       awaiting_approval: { label: "Pending Approval", cls: "text-amber-600 dark:text-amber-400" },
-                      awaiting_payment: { label: "Awaiting Payment", cls: "text-blue-600 dark:text-blue-400" },
+                      awaiting_payment: { label: "Awaiting Payment", cls: "text-status-info dark:text-blue-400" },
                       paid: { label: "Paid", cls: "text-emerald-600 dark:text-emerald-400" },
                     };
                     const s = map[status] || { label: status || "—", cls: "text-muted-foreground" };

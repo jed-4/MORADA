@@ -30,7 +30,7 @@ export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* PDF Document - All pages scrollable */}
-      <div className="flex-1 overflow-auto bg-gray-100 flex flex-col items-center p-4 gap-4">
+      <div className="flex-1 overflow-auto bg-muted flex flex-col items-center p-4 gap-4">
         <Document
           file={pdfBlob}
           onLoadSuccess={onDocumentLoadSuccess}

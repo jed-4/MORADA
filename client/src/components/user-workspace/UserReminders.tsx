@@ -414,12 +414,12 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className={`flex items-center justify-center w-6 h-6 rounded ${
-                        isDismissed ? "bg-muted" : isSnoozed ? "bg-orange-500/10" : "bg-[#A890D4]/10"
+                        isDismissed ? "bg-muted" : isSnoozed ? "bg-status-warning-bg" : "bg-primary/10"
                       }`}>
                         {isSnoozed ? (
                           <AlarmClockOff className="h-3 w-3 text-orange-500" />
                         ) : (
-                          <TypeIcon className={`h-3 w-3 ${isDismissed ? "text-muted-foreground" : "text-[#A890D4]"}`} />
+                          <TypeIcon className={`h-3 w-3 ${isDismissed ? "text-muted-foreground" : "text-primary"}`} />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -637,7 +637,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                 <Button 
                   type="submit" 
                   disabled={createMutation.isPending || updateMutation.isPending}
-                  className="bg-[#A890D4] text-white hover:bg-[#A890D4]/90"
+                  className="bg-primary text-white hover:bg-primary/90"
                   data-testid="button-save-reminder"
                 >
                   {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingReminder ? "Update" : "Create"}

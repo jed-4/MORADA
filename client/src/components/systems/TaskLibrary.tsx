@@ -679,11 +679,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
   const getSortIcon = (column: string) => {
     if (sortColumn !== column) {
-      return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      return <ArrowUpDown className="h-3.5 w-3.5 text-muted" />;
     }
     return sortDirection === 'asc' 
-      ? <ArrowUp className="h-3.5 w-3.5 text-gray-700" />
-      : <ArrowDown className="h-3.5 w-3.5 text-gray-700" />;
+      ? <ArrowUp className="h-3.5 w-3.5 text-secondary" />
+      : <ArrowDown className="h-3.5 w-3.5 text-secondary" />;
   };
 
   // Filter templates
@@ -1014,7 +1014,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Status (Published/Draft/Archived) */}
                   <div>
                     {(template.status === 'published' || template.status === 'active' || !template.status) ? (
-                      <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-status-info-bg text-status-info dark:text-blue-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Published
                       </Badge>
                     ) : template.status === 'draft' ? (
@@ -1022,7 +1022,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                         Draft
                       </Badge>
                     ) : (
-                      <Badge className="bg-gray-500/10 text-gray-700 dark:text-gray-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-muted text-secondary dark:text-muted h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Archived
                       </Badge>
                     )}
@@ -1031,11 +1031,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Active/Inactive */}
                   <div>
                     {template.isActive ? (
-                      <Badge className="bg-green-500/10 text-green-700 dark:text-green-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-status-success-bg text-status-success dark:text-green-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         On
                       </Badge>
                     ) : (
-                      <Badge className="bg-gray-500/10 text-gray-600 dark:text-gray-500 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
+                      <Badge className="bg-muted text-secondary dark:text-muted h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Off
                       </Badge>
                     )}

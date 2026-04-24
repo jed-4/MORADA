@@ -43,7 +43,7 @@ export const GridRow = React.memo(({
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card' : ''}`}
+      className={`${className} group hover:bg-muted dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card' : ''}`}
       data-testid={`row-item-${id}`}
       onClick={onClick}
     >
@@ -119,7 +119,7 @@ export const GridHeaderRow = React.memo(({
         display: 'grid', 
         gridTemplateColumns: gridTemplate 
       }}
-      className={`bg-muted/30 border-b-2 border-gray-200 dark:border-gray-700 ${className}`}
+      className={`bg-muted/30 border-b-2 border-border dark:border-gray-700 ${className}`}
     >
       {/* Empty drag handle column */}
       <div className="h-10 px-1 flex items-center" role="columnheader" />
@@ -154,7 +154,7 @@ export const GridHeaderCell = React.memo(({
       <span className="truncate">{children}</span>
       {!isLastColumn && onResizeStart && (
         <div
-          className="absolute right-0 top-0 h-full w-1 cursor-col-resize opacity-0 group-hover/header:opacity-100 hover:bg-[#A890D4] bg-gray-300 transition-all z-10"
+          className="absolute right-0 top-0 h-full w-1 cursor-col-resize opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted transition-all z-10"
           onMouseDown={(e) => onResizeStart(e, columnId)}
           data-testid={`resize-handle-${columnId}`}
         />

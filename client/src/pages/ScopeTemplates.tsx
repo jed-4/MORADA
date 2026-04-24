@@ -389,7 +389,7 @@ export default function ScopeTemplates() {
 
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setCreateDialogOpen(true)}
             data-testid="button-add-template"
           >
@@ -451,7 +451,7 @@ export default function ScopeTemplates() {
             {!searchQuery && (
               <button
                 onClick={() => setCreateDialogOpen(true)}
-                className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
                 data-testid="button-create-first-template"
               >
                 <Plus className="h-3 w-3" />
@@ -520,7 +520,7 @@ export default function ScopeTemplates() {
             <Button
               onClick={handleCreateTemplate}
               disabled={createMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-create"
             >
               {createMutation.isPending ? "Creating..." : "Create Template"}
@@ -583,7 +583,7 @@ export default function ScopeTemplates() {
             <Button
               onClick={handleUpdateTemplate}
               disabled={updateMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90"
+              className="bg-primary hover:bg-primary/90"
               data-testid="button-confirm-edit"
             >
               {updateMutation.isPending ? "Updating..." : "Update Template"}

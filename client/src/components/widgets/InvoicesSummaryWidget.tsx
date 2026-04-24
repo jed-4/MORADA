@@ -80,7 +80,7 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
       {/* Summary Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-[#A890D4]" />
+          <FileText className="h-4 w-4 text-primary" />
           <span className="font-medium text-sm">Client Invoices</span>
         </div>
         <Badge variant="secondary" className="text-xs">
@@ -101,12 +101,12 @@ export default function InvoicesSummaryWidget({ widget, onUpdate, isConfiguring,
 
         <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-green-700 dark:text-green-300">Collected</span>
-            <span className="text-xs text-green-700 dark:text-green-300">{formatPercentage(metrics.paidInvoicesPercentage)}</span>
+            <span className="text-xs text-status-success dark:text-green-300">Collected</span>
+            <span className="text-xs text-status-success dark:text-green-300">{formatPercentage(metrics.paidInvoicesPercentage)}</span>
           </div>
           <div className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-green-600" />
-            <span className="text-lg font-bold text-green-700 dark:text-green-300">
+            <DollarSign className="h-4 w-4 text-status-success" />
+            <span className="text-lg font-bold text-status-success dark:text-green-300">
               {formatCurrency(metrics.paidInvoices)}
             </span>
           </div>

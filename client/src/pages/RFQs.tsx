@@ -559,7 +559,7 @@ export default function RFQs() {
               : "Requests for Quote"}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
             onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
             data-testid="button-create-rfq"
           >
@@ -580,7 +580,7 @@ export default function RFQs() {
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
                   isActive
-                    ? "text-foreground border-[#A890D4]"
+                    ? "text-foreground border-primary"
                     : "text-muted-foreground hover:text-foreground border-transparent"
                 )}
                 data-testid={`tab-status-${status.key}`}
@@ -590,7 +590,7 @@ export default function RFQs() {
                   <span className={cn(
                     "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-[10px] font-semibold",
                     isActive
-                      ? "bg-[#A890D4]/20 text-[#8b6bb1]"
+                      ? "bg-primary/20 text-[#8b6bb1]"
                       : "bg-muted text-muted-foreground"
                   )}>
                     {count}
@@ -644,8 +644,8 @@ export default function RFQs() {
             </Card>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 px-4">
-              <div className="w-20 h-20 rounded-full bg-[#A890D4]/10 flex items-center justify-center mb-6">
-                <ClipboardList className="w-10 h-10 text-[#A890D4]" />
+              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+                <ClipboardList className="w-10 h-10 text-primary" />
               </div>
               <h3 className="text-xl font-semibold mb-2">No Requests for Quote yet</h3>
               <p className="text-muted-foreground text-center max-w-md mb-8 text-sm">
@@ -654,7 +654,7 @@ export default function RFQs() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white gap-2"
+                  className="bg-primary hover:bg-primary/90 text-white gap-2"
                   data-testid="button-create-rfq-empty"
                 >
                   <Plus className="w-4 h-4" />
@@ -723,7 +723,7 @@ export default function RFQs() {
                   type="button"
                   className={cn(
                     "w-full flex items-center gap-2 px-3 py-2.5 text-left border-b border-border/30 hover-elevate",
-                    activeAttachment?.url === file.url && "bg-[#A890D4]/10"
+                    activeAttachment?.url === file.url && "bg-primary/10"
                   )}
                   onClick={() => handleSelectAttachment(file)}
                   data-testid={`button-attachment-file-${idx}`}

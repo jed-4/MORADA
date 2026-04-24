@@ -138,23 +138,23 @@ export default function ProjectActivity() {
   const getActivityColor = (type: string) => {
     switch (type) {
       case "task":
-        return "text-[#A890D4] bg-[#A890D4]/10";
+        return "text-primary bg-primary/10";
       case "estimate":
         return "text-primary bg-primary/10";
       case "bill":
         return "text-destructive bg-destructive/10";
       case "variation":
-        return "text-[#A890D4] bg-[#A890D4]/10";
+        return "text-primary bg-primary/10";
       case "invoice":
         return "text-primary bg-primary/10";
       case "project":
         return "text-primary bg-primary/10";
       case "schedule":
-        return "text-[#A890D4] bg-[#A890D4]/10";
+        return "text-primary bg-primary/10";
       case "site_diary":
         return "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950";
       case "manual":
-        return "text-[#A890D4] bg-[#A890D4]/10";
+        return "text-primary bg-primary/10";
       default:
         return "text-muted-foreground bg-muted";
     }
@@ -182,7 +182,7 @@ export default function ProjectActivity() {
       <div className="flex items-center justify-end">
         <Button 
           onClick={() => setIsAddDialogOpen(true)} 
-          className="bg-[#A890D4] text-white border-[#A890D4]"
+          className="bg-primary text-white border-primary"
           data-testid="button-add-activity"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -207,7 +207,7 @@ export default function ProjectActivity() {
         <div className="space-y-4">
           {pinnedActivities.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-sm font-medium flex items-center gap-2 text-[#A890D4]">
+              <h3 className="text-sm font-medium flex items-center gap-2 text-primary">
                 <Pin className="h-4 w-4" />
                 Pinned
               </h3>
@@ -261,7 +261,7 @@ export default function ProjectActivity() {
             <Button 
               onClick={handleAddActivity}
               disabled={!newActivityDescription.trim() || createActivityMutation.isPending}
-              className="bg-[#A890D4] text-white border-[#A890D4]"
+              className="bg-primary text-white border-primary"
               data-testid="button-save-activity"
             >
               {createActivityMutation.isPending ? "Adding..." : "Add Note"}
@@ -285,7 +285,7 @@ function ActivityItem({
   onTogglePin: (pinned: boolean) => void;
 }) {
   return (
-    <Card className={activity.pinned ? "border-[#A890D4]/50 bg-[#A890D4]/5" : ""}>
+    <Card className={activity.pinned ? "border-primary/50 bg-primary/5" : ""}>
       <CardContent className="p-3">
         <div className="flex items-start gap-3">
           <div className={`p-2 rounded-full ${getActivityColor(activity.activityType)}`}>
@@ -310,7 +310,7 @@ function ActivityItem({
             data-testid={`button-pin-activity-${activity.id}`}
           >
             {activity.pinned ? (
-              <PinOff className="h-4 w-4 text-[#A890D4]" />
+              <PinOff className="h-4 w-4 text-primary" />
             ) : (
               <Pin className="h-4 w-4 text-muted-foreground" />
             )}

@@ -455,7 +455,7 @@ export default function ProjectEstimates() {
                 onClick={() => setLocation(`/projects/${projectId}/estimates/${v.id}`)}
                 className={`text-[10px] px-1.5 py-0.5 rounded border ${
                   v.id === estimate.id
-                    ? 'bg-[#A890D4]/20 border-[#A890D4]/50 text-[#A890D4] font-medium'
+                    ? 'bg-primary/20 border-primary/50 text-primary font-medium'
                     : 'border-border/50 text-muted-foreground hover-elevate'
                 }`}
               >
@@ -485,7 +485,7 @@ export default function ProjectEstimates() {
         {/* Right: New Estimate Button */}
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleNewEstimate}
             data-testid="button-new-estimate"
           >
@@ -503,7 +503,7 @@ export default function ProjectEstimates() {
             onClick={() => setCurrentView('grid')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               currentView === 'grid' 
-                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
+                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-grid-view"
@@ -515,7 +515,7 @@ export default function ProjectEstimates() {
             onClick={() => setCurrentView('kanban')}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
               currentView === 'kanban' 
-                ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90' 
+                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="button-kanban-view"
@@ -541,8 +541,8 @@ export default function ProjectEstimates() {
               <div className="space-y-1">
                 <button
                   onClick={() => setCardWidth('compact')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
-                    cardWidth === 'compact' ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                    cardWidth === 'compact' ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="button-width-compact"
                 >
@@ -550,8 +550,8 @@ export default function ProjectEstimates() {
                 </button>
                 <button
                   onClick={() => setCardWidth('comfortable')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
-                    cardWidth === 'comfortable' ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                    cardWidth === 'comfortable' ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="button-width-comfortable"
                 >
@@ -559,8 +559,8 @@ export default function ProjectEstimates() {
                 </button>
                 <button
                   onClick={() => setCardWidth('spacious')}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
-                    cardWidth === 'spacious' ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                    cardWidth === 'spacious' ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="button-width-spacious"
                 >
@@ -607,8 +607,8 @@ export default function ProjectEstimates() {
               <div className="space-y-1">
                 <button
                   onClick={() => setSelectedStatus("All")}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
-                    selectedStatus === "All" ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                    selectedStatus === "All" ? "bg-primary/10 text-primary font-medium" : ""
                   }`}
                   data-testid="filter-status-all"
                 >
@@ -621,8 +621,8 @@ export default function ProjectEstimates() {
                     <button
                       key={status.key}
                       onClick={() => setSelectedStatus(status.key)}
-                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
-                        selectedStatus === status.key ? "bg-[#A890D4]/10 text-[#A890D4] font-medium" : ""
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                        selectedStatus === status.key ? "bg-primary/10 text-primary font-medium" : ""
                       }`}
                       data-testid={`filter-status-${status.key}`}
                     >
@@ -657,7 +657,7 @@ export default function ProjectEstimates() {
             {!searchTerm && selectedStatus === "All" && (
               <button
                 onClick={handleNewEstimate}
-                className="h-8 w-auto px-3 text-sm border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1 mx-auto"
+                className="h-8 w-auto px-3 text-sm border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 mx-auto"
                 data-testid="button-create-first-project-estimate"
               >
                 <Plus className="h-4 w-4" />
@@ -788,13 +788,13 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, c
     <div className={`flex-shrink-0 ${getWidthClass()}`}>
       <div
         className={`rounded-xl border transition-all duration-200 ${
-          isHighlighted ? 'border-2 border-[#A890D4] border-dashed bg-[#A890D4]/10' : 'border-border/50'
+          isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
         }`}
       >
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground">{status.name}</h3>
-            <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-[#A890D4]/10 text-[#A890D4] border-[#A890D4]/20 no-default-hover-elevate font-semibold">
+            <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-primary/10 text-primary border-primary/20 no-default-hover-elevate font-semibold">
               {count}
             </Badge>
           </div>
@@ -891,7 +891,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
       );
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-blue-700"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
     }
     return <Badge variant="outline" className="h-4 text-[10px] px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };

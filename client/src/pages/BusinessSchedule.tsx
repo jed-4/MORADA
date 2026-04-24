@@ -206,7 +206,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
             className={cn(
               "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col px-1 gap-[3px]",
               isWknd ? "bg-muted/20" : "",
-              isToday ? "bg-[#A890D4]/5" : ""
+              isToday ? "bg-primary/5" : ""
             )}
             style={{ minHeight: rowH, paddingTop: WEEK_ROW_PAD, paddingBottom: WEEK_ROW_PAD }}
           >
@@ -703,7 +703,7 @@ export default function BusinessSchedule() {
             <button
               data-testid="toggle-week-online"
               aria-pressed={showOnline}
-              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-blue-700 dark:text-blue-300 bg-blue-500/10' : 'border-border text-muted-foreground'}`}
+              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-status-info dark:text-blue-300 bg-status-info-bg' : 'border-border text-muted-foreground'}`}
               onClick={() => setShowOnline(v => !v)}
             >
               <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
@@ -721,10 +721,10 @@ export default function BusinessSchedule() {
             <button
               data-testid="toggle-week-prospective"
               aria-pressed={showProspective}
-              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-gray-400 text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
+              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-border-strong text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
               onClick={() => setShowProspective(v => !v)}
             >
-              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-gray-400' : 'border-muted-foreground/40'}`} />
+              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-border-strong' : 'border-muted-foreground/40'}`} />
               Prospective
             </button>
 
@@ -818,7 +818,7 @@ export default function BusinessSchedule() {
                 return (
                   <div key={colIdx} className={cn(
                     "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-[10px] font-medium",
-                    isToday ? "bg-[#A890D4]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
+                    isToday ? "bg-primary/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
                   )}>
                     <span>{format(day, 'EEE')}</span>
                     <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
@@ -879,7 +879,7 @@ export default function BusinessSchedule() {
           <button
             data-testid="toggle-online"
             aria-pressed={showOnline}
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-blue-700 dark:text-blue-300 bg-blue-500/10' : 'border-border text-muted-foreground'}`}
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-status-info dark:text-blue-300 bg-status-info-bg' : 'border-border text-muted-foreground'}`}
             onClick={() => setShowOnline(v => !v)}
           >
             <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
@@ -897,10 +897,10 @@ export default function BusinessSchedule() {
           <button
             data-testid="toggle-prospective"
             aria-pressed={showProspective}
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-gray-400 text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-border-strong text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
             onClick={() => setShowProspective(v => !v)}
           >
-            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-gray-400' : 'border-muted-foreground/40'}`} />
+            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-border-strong' : 'border-muted-foreground/40'}`} />
             Prospective
           </button>
 
@@ -982,7 +982,7 @@ export default function BusinessSchedule() {
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
-              <div className="w-5 h-3 rounded-sm border-2 border-dotted border-gray-400" />
+              <div className="w-5 h-3 rounded-sm border-2 border-dotted border-border-strong" />
               <span className="text-[10px] text-muted-foreground">Prospective</span>
             </div>
           </TooltipTrigger>
@@ -1135,7 +1135,7 @@ export default function BusinessSchedule() {
 
               {/* Today line */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
+                className="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-20"
                 style={{ left: todayPosition }}
               />
 

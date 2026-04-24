@@ -139,28 +139,28 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
         
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
-            <TrendingUp className="h-3 w-3 text-green-600" />
+            <TrendingUp className="h-3 w-3 text-status-success" />
             <span className="text-[10px] text-muted-foreground">Done This Week</span>
           </div>
-          <p className="text-lg font-bold text-green-600" data-testid="metric-completed-week">{completedThisWeek.length}</p>
+          <p className="text-lg font-bold text-status-success" data-testid="metric-completed-week">{completedThisWeek.length}</p>
         </div>
         
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
-            <Target className="h-3 w-3 text-red-600" />
+            <Target className="h-3 w-3 text-status-danger" />
             <span className="text-[10px] text-muted-foreground">Overdue</span>
           </div>
-          <p className={`text-lg font-bold ${overdueTasks.length > 0 ? 'text-red-600' : ''}`} data-testid="metric-overdue">
+          <p className={`text-lg font-bold ${overdueTasks.length > 0 ? 'text-status-danger' : ''}`} data-testid="metric-overdue">
             {overdueTasks.length}
           </p>
         </div>
         
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
-            <Clock className="h-3 w-3 text-blue-600" />
+            <Clock className="h-3 w-3 text-status-info" />
             <span className="text-[10px] text-muted-foreground">Hours</span>
           </div>
-          <p className="text-lg font-bold text-blue-600" data-testid="metric-hours">{hoursThisWeek.toFixed(1)}</p>
+          <p className="text-lg font-bold text-status-info" data-testid="metric-hours">{hoursThisWeek.toFixed(1)}</p>
         </div>
       </div>
 

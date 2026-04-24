@@ -424,7 +424,7 @@ export function ProposalBuilder({
         </div>
 
         {showPreview ? (
-          <div className="flex-1 border rounded-lg overflow-hidden bg-gray-100 relative">
+          <div className="flex-1 border rounded-lg overflow-hidden bg-muted relative">
             {isGenerating ? (
               <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                 <div className="flex items-center gap-2">

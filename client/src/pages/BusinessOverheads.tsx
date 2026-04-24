@@ -419,10 +419,10 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
   const grandAnnual = useMemo(() => data.items.reduce((s, i) => s + toAnnualCents(i), 0), [data.items]);
 
   const FREQ_COLORS: Record<Frequency, string> = {
-    weekly:    "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-    monthly:   "bg-[#A890D4]/10 text-[#8b6db5] dark:text-[#A890D4]",
-    quarterly: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
-    annual:    "bg-green-500/10 text-green-700 dark:text-green-400",
+    weekly:    "bg-status-info-bg text-status-info dark:text-blue-400",
+    monthly:   "bg-primary/10 text-[#8b6db5] dark:text-primary",
+    quarterly: "bg-status-warning-bg text-status-warning dark:text-yellow-400",
+    annual:    "bg-status-success-bg text-status-success dark:text-green-400",
   };
 
   const commitField = (itemId: string, field: string, rawVal: string) => {
@@ -575,7 +575,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
           <div className="h-full flex items-center justify-end px-1">
             {item.xeroAccountType ? (
               <Badge className={`text-[10px] no-default-active-elevate ${
-                item.xeroAccountType === "DIRECTCOSTS" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400" :
+                item.xeroAccountType === "DIRECTCOSTS" ? "bg-status-warning-bg text-status-warning dark:text-orange-400" :
                 item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
                 "bg-muted text-muted-foreground"
               }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
@@ -1051,7 +1051,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       const up = diff > 0;
       const good = invert ? !up : up;
       return (
-        <span className={`inline-flex items-center gap-0.5 text-[10px] tabular-nums ${good ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+        <span className={`inline-flex items-center gap-0.5 text-[10px] tabular-nums ${good ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
           {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           {pct}%
         </span>
@@ -1096,7 +1096,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             <div className="border-b border-border/40 bg-green-500/5">
               <div className="flex items-center" style={{ height: 36 }}>
                 <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                  <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" />
                   Income
                   {incomeBreakdown12.length > 0 && (
                     <button
@@ -1108,8 +1108,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     </button>
                   )}
                 </div>
-                <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-green-600 dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
-                <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
+                <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-status-success dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
+                <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
                 <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
                 <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
               </div>
@@ -1119,7 +1119,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   {incomeBreakdown12.map(([name, cents]) => (
                     <div key={name} className="flex items-center" style={{ height: 28 }}>
                       <div className="flex-1 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
-                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-green-600/70 dark:text-green-400/70 tabular-nums">{fmtK(cents)}</div>
+                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/70 dark:text-green-400/70 tabular-nums">{fmtK(cents)}</div>
                       <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-muted-foreground/50 tabular-nums">{fmtK(Math.round(cents / 12))}</div>
                       <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground/50 tabular-nums">{totalIncome12 > 0 ? `${((cents / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
                       <div className="w-20 flex-shrink-0" />
@@ -1141,11 +1141,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             {/* Gross Profit row */}
             <div className={`flex items-center border-b border-border/50 font-semibold ${grossProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
               <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
-                {grossProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
+                {grossProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
                 Gross Profit
               </div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${grossProfit12 >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(grossProfit12) : "—"}</div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${grossProfit12 >= 0 ? "text-green-600/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(avgGrossProfit) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${grossProfit12 >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(grossProfit12) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${grossProfit12 >= 0 ? "text-status-success/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(avgGrossProfit) : "—"}</div>
               <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{totalIncome12 > 0 ? `${gpPct.toFixed(1)}%` : "—"}</div>
               <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome - lastDC} prev={prevIncome - prevDC} /></div>
             </div>
@@ -1201,11 +1201,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             {/* Net Profit */}
             <div className={`flex items-center border-t border-border/40 rounded-b-md font-semibold ${netProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
               <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
-                {netProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
+                {netProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
                 Net Profit
               </div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${netProfit12 >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(netProfit12) : "—"}</div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${netProfit12 >= 0 ? "text-green-600/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(avgNetProfit) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${netProfit12 >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(netProfit12) : "—"}</div>
+              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${netProfit12 >= 0 ? "text-status-success/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(avgNetProfit) : "—"}</div>
               <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{totalIncome12 > 0 ? `${((netProfit12 / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
               <div className="w-20 flex-shrink-0 text-right px-3">
                 <MoMArrow cur={lastIncome - lastDC - lastOH} prev={prevIncome - prevDC - prevOH} />
@@ -1258,7 +1258,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               const chipCls = hasDrift
                 ? "text-orange-500 dark:text-orange-400"
                 : isConfirmed
-                  ? "text-green-600 dark:text-green-400"
+                  ? "text-status-success dark:text-green-400"
                   : hasData
                     ? "text-amber-500 dark:text-amber-400"
                     : "text-muted-foreground/30 hover:text-muted-foreground/60";
@@ -1291,7 +1291,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {/* Income row */}
           <div className="flex items-center border-b border-border/40 bg-green-500/5" style={{ height: 34 }}>
             <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
-              <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />Income
+              <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Income
             </div>
             {rolling12.map(({ year, month }) => {
               const key = `${year}__${month}`;
@@ -1304,7 +1304,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-[10px] tabular-nums text-green-600 dark:text-green-400 flex items-center gap-0.5">
+                          <span className="text-[10px] tabular-nums text-status-success dark:text-green-400 flex items-center gap-0.5">
                             <Lock className="w-2.5 h-2.5 opacity-50" />
                             {cents > 0 ? fmtK(cents) : "—"}
                           </span>
@@ -1333,7 +1333,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   ) : (
                     <button
                       onClick={() => { setEditingIncome(key); setIncomeInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
-                      className="w-full text-[10px] tabular-nums text-right text-green-600 dark:text-green-400 hover:opacity-80 transition-opacity">
+                      className="w-full text-[10px] tabular-nums text-right text-status-success dark:text-green-400 hover:opacity-80 transition-opacity">
                       {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
                     </button>
                   )}
@@ -1409,7 +1409,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   const income = incomeMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
                   const dc = directCostMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
                   return (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
                       {income || dc ? fmtK(gp) : "—"}
                     </div>
                   );
@@ -1450,7 +1450,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                           </div>
                         );
                       })}
-                      <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
+                      <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
                         {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                       </div>
                     </div>
@@ -1492,7 +1492,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   {grandActuals.map((actual, idx) => (
                     <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > grandBudgets[idx] * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{actual > 0 ? fmtK(actual) : "—"}</div>
                   ))}
-                  <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
+                  <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
                     {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                   </div>
                 </div>
@@ -1514,12 +1514,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 {/* Net Profit row */}
                 <div className="flex items-center border-t border-border/40 bg-muted/10 rounded-b-md font-medium" style={{ height: 30 }}>
                   <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />Net Profit
+                    <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Net Profit
                   </div>
                   {netProfits.map((np, idx) => {
                     const hasIncome = incomeActuals[idx] > 0;
                     return (
-                      <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                      <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
                         {hasIncome ? fmtK(np) : "—"}
                       </div>
                     );
@@ -1615,7 +1615,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <button onClick={() => setAutoGrowth(v => !v)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            {autoGrowth ? <ToggleRight className="w-5 h-5 text-[#A890D4]" /> : <ToggleLeft className="w-5 h-5" />}
+            {autoGrowth ? <ToggleRight className="w-5 h-5 text-primary" /> : <ToggleLeft className="w-5 h-5" />}
             <span className={autoGrowth ? "text-foreground font-medium" : ""}>Auto YoY growth (from actuals)</span>
           </button>
         </div>
@@ -1630,7 +1630,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           return (
             <div key={cat.id} className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">{cat.name}:</span>
-              <Badge variant="secondary" className={`text-[10px] no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-green-600 dark:text-green-400" : ""}`}>
+              <Badge variant="secondary" className={`text-[10px] no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-status-success dark:text-green-400" : ""}`}>
                 {rate > 0 ? "+" : ""}{(rate * 100).toFixed(1)}% YoY
               </Badge>
             </div>
@@ -1650,10 +1650,10 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <p className="text-[9px] text-muted-foreground/40">{year}</p>
               </div>
             ))}
-            <div className="w-px bg-[#A890D4]/40 self-stretch mx-0.5" />
+            <div className="w-px bg-primary/40 self-stretch mx-0.5" />
             {next12.map(({ year, month }) => (
               <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-2">
-                <p className="text-[10px] text-[#A890D4] font-medium">{MONTH_NAMES[month - 1]}</p>
+                <p className="text-[10px] text-primary font-medium">{MONTH_NAMES[month - 1]}</p>
                 <p className="text-[9px] text-muted-foreground/40">{year}</p>
               </div>
             ))}
@@ -1661,8 +1661,8 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           <div className="flex border-b border-border/30 bg-muted/10">
             <div className="w-44 flex-shrink-0" />
             <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-muted-foreground/50 py-0.5">← Actuals (last 12 months, readonly)</div>
-            <div className="w-px bg-[#A890D4]/40" />
-            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-[#A890D4]/60 py-0.5">Forecast — next 12 months (click to override) →</div>
+            <div className="w-px bg-primary/40" />
+            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-primary/60 py-0.5">Forecast — next 12 months (click to override) →</div>
           </div>
 
           {data.categories.map(cat => {
@@ -1673,7 +1673,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
                   <div className="w-44 flex-shrink-0 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
                   {last12.map(({ year, month }) => <div key={`a-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
-                  <div className="w-px bg-[#A890D4]/40 self-stretch" />
+                  <div className="w-px bg-primary/40 self-stretch" />
                   {next12.map(({ year, month }) => <div key={`f-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
                 </div>
 
@@ -1688,12 +1688,12 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                         </div>
                       );
                     })}
-                    <div className="w-px bg-[#A890D4]/30 self-stretch" />
+                    <div className="w-px bg-primary/30 self-stretch" />
                     {next12.map(({ year, month }, idx) => {
                       const projected = getForecastCents(item, year, month, idx);
                       const isOverridden = overrideMap.has(getKey(item.id, year, month));
                       return (
-                        <div key={`f-${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${isOverridden ? "bg-[#A890D4]/5" : ""}`}>
+                        <div key={`f-${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${isOverridden ? "bg-primary/5" : ""}`}>
                           <ActualCell cents={projected} onSave={val => upsertForecastMut.mutate({ itemId: item.id, year, month, forecastCents: val })} />
                         </div>
                       );
@@ -1705,8 +1705,8 @@ function ForecastTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center border-b border-border/30 bg-muted/10" style={{ height: 26 }}>
                   <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">Subtotal</div>
                   {last12.map(({ year, month }) => { const t = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0); return <div key={`a-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-muted-foreground">{t > 0 ? fmtK(t) : "—"}</div>; })}
-                  <div className="w-px bg-[#A890D4]/30 self-stretch" />
-                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-[#A890D4]/70">{fmtK(t)}</div>; })}
+                  <div className="w-px bg-primary/30 self-stretch" />
+                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-primary/70">{fmtK(t)}</div>; })}
                 </div>
               </div>
             );
@@ -1718,10 +1718,10 @@ function ForecastTab({ data }: { data: OverheadsData }) {
             {last12ActualTotals.map((t, idx) => (
               <div key={idx} className={`flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums ${t > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{t > 0 ? fmtK(t) : "—"}</div>
             ))}
-            <div className="w-px bg-[#A890D4]/40 self-stretch" />
+            <div className="w-px bg-primary/40 self-stretch" />
             {next12.map(({ year, month }, idx) => {
               const t = data.items.reduce((s, item) => s + getForecastCents(item, year, month, idx), 0);
-              return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums text-[#A890D4]">{fmtK(t)}</div>;
+              return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-xs px-0.5 tabular-nums text-primary">{fmtK(t)}</div>;
             })}
           </div>
         </div>
@@ -1790,7 +1790,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
 
   // Traffic light: green ≥ 100%, amber 90–100%, red < 90%
   const isAmber = !isCovered && coveragePct >= 90;
-  const trafficColor = isCovered ? "text-green-600 dark:text-green-400" : isAmber ? "text-yellow-600 dark:text-yellow-400" : "text-destructive";
+  const trafficColor = isCovered ? "text-status-success dark:text-green-400" : isAmber ? "text-status-warning dark:text-yellow-400" : "text-destructive";
   const TrafficIcon = isCovered ? CheckCircle2 : AlertTriangle;
 
   // Gap callout: additional revenue needed at current OH% to close the shortfall
@@ -1840,7 +1840,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
             <div className="flex items-center gap-2">
               <TrafficIcon className={`w-4 h-4 ${trafficColor}`} />
               <CardTitle className="text-sm font-semibold">Coverage Status</CardTitle>
-              <Badge className={`text-[10px] no-default-active-elevate ${isCovered ? "bg-green-500/10 text-green-700 dark:text-green-400" : isAmber ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400" : "bg-destructive/10 text-destructive"}`}>
+              <Badge className={`text-[10px] no-default-active-elevate ${isCovered ? "bg-status-success-bg text-status-success dark:text-green-400" : isAmber ? "bg-status-warning-bg text-status-warning dark:text-yellow-400" : "bg-destructive/10 text-destructive"}`}>
                 {isCovered ? "Fully Covered" : isAmber ? "Close to Target" : "Under-Recovered"}
               </Badge>
             </div>
@@ -1867,7 +1867,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <p className="text-[10px] text-muted-foreground mt-1">{coveragePct.toFixed(0)}% of breakeven revenue ({fmtDollars(breakevenCents)})</p>
             </div>
             {!isCovered && revenueGapCents > 0 && (
-              <div className={`text-xs font-medium rounded-md px-3 py-2 ${isAmber ? "bg-yellow-500/10 text-yellow-800 dark:text-yellow-300" : "bg-destructive/10 text-destructive"}`}>
+              <div className={`text-xs font-medium rounded-md px-3 py-2 ${isAmber ? "bg-status-warning-bg text-yellow-800 dark:text-yellow-300" : "bg-destructive/10 text-destructive"}`}>
                 Need {fmtDollars(revenueGapCents)} more in contracted/pipeline revenue to close the gap at {ohPct}% OH.
               </div>
             )}
@@ -2056,10 +2056,10 @@ export default function BusinessOverheads() {
           const isActive = activeTab === id;
           return (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-t-sm transition-colors flex-shrink-0 ${isActive ? "text-[#A890D4] font-medium" : "text-muted-foreground hover:text-foreground"}`}>
+              className={`relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-t-sm transition-colors flex-shrink-0 ${isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}>
               <Icon className="w-3 h-3" />
               {label}
-              {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4]" />}
+              {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
             </button>
           );
         })}

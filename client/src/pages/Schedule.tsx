@@ -1718,7 +1718,7 @@ export default function Schedule() {
             ) : (
               <button
                 onClick={() => setShowLockConfirm(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
                 data-testid="button-lock-schedule"
               >
                 <Unlock className="w-3.5 h-3.5" />

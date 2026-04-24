@@ -224,7 +224,7 @@ export default function RFIs() {
 
   const getPriorityBadge = (priority: string) => {
     const config: Record<string, { color: string; label: string }> = {
-      low: { color: "bg-gray-100 text-gray-800", label: "Low" },
+      low: { color: "bg-muted text-foreground", label: "Low" },
       normal: { color: "bg-blue-100 text-blue-800", label: "Normal" },
       high: { color: "bg-orange-100 text-orange-800", label: "High" },
       urgent: { color: "bg-red-100 text-red-800", label: "Urgent" },
@@ -445,7 +445,7 @@ export default function RFIs() {
           </Badge>
         </div>
         <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+          className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
           onClick={() => setLocation(getNavigationPath("/rfis/new"))}
           data-testid="button-create-rfi"
         >
@@ -513,8 +513,8 @@ export default function RFIs() {
             </Card>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 px-4">
-              <div className="w-20 h-20 rounded-full bg-[#A890D4]/10 flex items-center justify-center mb-6">
-                <HelpCircle className="w-10 h-10 text-[#A890D4]" />
+              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+                <HelpCircle className="w-10 h-10 text-primary" />
               </div>
               <h3 className="text-xl font-semibold mb-2">No Requests for Information yet</h3>
               <p className="text-muted-foreground text-center max-w-md mb-8">
@@ -523,7 +523,7 @@ export default function RFIs() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   onClick={() => setLocation(getNavigationPath("/rfis/new"))}
-                  className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white gap-2"
+                  className="bg-primary hover:bg-primary/90 text-white gap-2"
                   data-testid="button-create-rfi-empty"
                 >
                   <Plus className="w-4 h-4" />

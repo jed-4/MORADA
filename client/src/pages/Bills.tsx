@@ -581,7 +581,7 @@ export default function Bills() {
           <div className="flex items-center gap-1 font-medium">
             {row.original.billNumber}
             {row.original.billType === "credit" && (
-              <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
+              <Badge variant="outline" className="text-[10px] px-1 py-0 text-status-success dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
             )}
           </div>
         ),
@@ -651,7 +651,7 @@ export default function Bills() {
         header: "Total",
         accessorFn: (b) => (b.billType === "credit" ? -b.total : b.total),
         cell: ({ row }) => (
-          <span className={cn("font-medium", row.original.billType === "credit" && "text-green-600 dark:text-green-400")}>
+          <span className={cn("font-medium", row.original.billType === "credit" && "text-status-success dark:text-green-400")}>
             {row.original.billType === "credit"
               ? `-${formatCurrency(row.original.total)}`
               : formatCurrency(row.original.total)}
@@ -821,7 +821,7 @@ export default function Bills() {
               <span>Import from Xero</span>
             </button>
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
               onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
               data-testid="button-create-bill"
             >
@@ -843,7 +843,7 @@ export default function Bills() {
                 onClick={() => handleStatusChange(status.key)}
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
-                  isActive ? "text-foreground border-[#A890D4]" : "text-muted-foreground hover:text-foreground border-transparent"
+                  isActive ? "text-foreground border-primary" : "text-muted-foreground hover:text-foreground border-transparent"
                 )}
                 data-testid={`tab-status-${status.key}`}
               >
@@ -851,7 +851,7 @@ export default function Bills() {
                 {showCount && count > 0 && (
                   <span className={cn(
                     "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
-                    isActive ? "bg-[#A890D4]/20 text-[#A890D4]" : "bg-muted text-muted-foreground"
+                    isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                   )}>
                     {count}
                   </span>
@@ -862,16 +862,16 @@ export default function Bills() {
         </div>
 
         {/* Row 3 — Lilac summary strip (no Paid) */}
-        <div className="bg-[#A890D4]/10 flex items-center px-5 py-2">
+        <div className="bg-primary/10 flex items-center px-5 py-2">
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground ml-auto">
             <span data-testid="text-total-draft">
               Draft <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.draft * 100)}</span>
             </span>
-            <span className="w-px h-3 bg-[#A890D4]/40 self-center" />
+            <span className="w-px h-3 bg-primary/40 self-center" />
             <span data-testid="text-total-awaiting-approval">
               Awaiting Approval <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
             </span>
-            <span className="w-px h-3 bg-[#A890D4]/40 self-center" />
+            <span className="w-px h-3 bg-primary/40 self-center" />
             <span data-testid="text-total-awaiting-payment">
               Awaiting Payment <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
             </span>
@@ -1002,7 +1002,7 @@ export default function Bills() {
                     </p>
                     {bills.length === 0 && (
                       <button
-                        className="h-7 px-3 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                        className="h-7 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
                         onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
                         data-testid="button-add-first-bill"
                       >

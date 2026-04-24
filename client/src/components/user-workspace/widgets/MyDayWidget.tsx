@@ -414,7 +414,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       case "overdue":
         items = overdueTasks;
         emptyMessage = "No overdue tasks";
-        itemColor = "text-red-600 dark:text-red-400";
+        itemColor = "text-status-danger dark:text-red-400";
         break;
       case "today":
         items = todaysTasks;
@@ -424,7 +424,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       case "schedule":
         items = scheduleItems;
         emptyMessage = "No schedule items today";
-        itemColor = "text-blue-600 dark:text-blue-400";
+        itemColor = "text-status-info dark:text-blue-400";
         break;
       case "focus":
         items = todayFocusBlocks;
@@ -457,9 +457,9 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           )}
           <span className={`text-[11px] font-semibold uppercase tracking-wide flex-1 text-left ${
             sectionConfig.id === 'overdue' && count > 0 
-              ? 'text-red-700 dark:text-red-400' 
+              ? 'text-status-danger dark:text-red-400' 
               : sectionConfig.id === 'schedule'
-              ? 'text-blue-700 dark:text-blue-400'
+              ? 'text-status-info dark:text-blue-400'
               : sectionConfig.id === 'focus'
               ? 'text-violet-700 dark:text-violet-400'
               : 'text-foreground/80'

@@ -130,7 +130,7 @@ function DraggableGridRow({
     <div
       ref={setNodeRef}
       className={cn(
-        "grid items-center gap-4 px-4 h-10 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer",
+        "grid items-center gap-4 px-4 h-10 border-b border-gray-100 hover:bg-muted transition-colors cursor-pointer",
         isDragging && "relative z-50 shadow-lg",
         isSelected && "bg-blue-50"
       )}
@@ -158,7 +158,7 @@ function DraggableGridRow({
         className={cn(
           "flex items-center justify-center",
           canDrag 
-            ? "cursor-grab hover:cursor-grabbing text-gray-400 hover:text-gray-600" 
+            ? "cursor-grab hover:cursor-grabbing text-muted hover:text-secondary" 
             : "cursor-not-allowed opacity-30"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -186,7 +186,7 @@ function DraggableGridRow({
             "truncate text-sm font-medium",
             task.status === completedOption?.key 
               ? "line-through text-muted-foreground" 
-              : "text-gray-900"
+              : "text-foreground"
           )}
           title={task.title}
         >
@@ -206,28 +206,28 @@ function DraggableGridRow({
       <div className="flex items-center gap-2 min-w-0">
         {task.assigneeName ? (
           <>
-            <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-700 flex-shrink-0">
+            <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-[10px] font-semibold text-secondary flex-shrink-0">
               {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
             </div>
-            <span className="text-sm text-gray-700 truncate" title={task.assigneeName}>
+            <span className="text-sm text-secondary truncate" title={task.assigneeName}>
               {task.assigneeName}
             </span>
           </>
         ) : (
-          <span className="text-sm text-gray-400">Unassigned</span>
+          <span className="text-sm text-muted">Unassigned</span>
         )}
       </div>
 
       {/* Due Date */}
-      <div className="flex items-center gap-1.5 text-sm text-gray-600">
-        <Calendar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+      <div className="flex items-center gap-1.5 text-sm text-secondary">
+        <Calendar className="h-3.5 w-3.5 text-muted flex-shrink-0" />
         <span className="truncate">{task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "-"}</span>
       </div>
 
       {/* Priority */}
       <div className="flex items-center gap-1.5">
         {getPriorityIcon(task.priority || "medium")}
-        <span className="capitalize text-sm text-gray-700">
+        <span className="capitalize text-sm text-secondary">
           {task.priority || "medium"}
         </span>
       </div>
@@ -244,7 +244,7 @@ function DraggableGridRow({
             <DropdownMenuItem>Edit Task</DropdownMenuItem>
             <DropdownMenuItem>Add Subtask</DropdownMenuItem>
             <DropdownMenuItem>Duplicate</DropdownMenuItem>
-            <DropdownMenuItem className="text-red-600">
+            <DropdownMenuItem className="text-status-danger">
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -1009,7 +1009,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
               >
                 {/* Grid Header */}
                 <div 
-                  className="sticky top-0 z-10 bg-background border-b border-gray-200 grid items-center gap-4 px-4 h-9"
+                  className="sticky top-0 z-10 bg-background border-b border-border grid items-center gap-4 px-4 h-9"
                   style={{ gridTemplateColumns: "28px 32px 120px 1fr 140px 120px 100px 32px" }}
                 >
                   <div className="flex items-center justify-center">
@@ -1026,11 +1026,11 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                     />
                   </div>
                   <div></div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Status</div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Task</div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Assignee</div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Due Date</div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Priority</div>
+                  <div className="text-xs font-semibold text-muted uppercase">Status</div>
+                  <div className="text-xs font-semibold text-muted uppercase">Task</div>
+                  <div className="text-xs font-semibold text-muted uppercase">Assignee</div>
+                  <div className="text-xs font-semibold text-muted uppercase">Due Date</div>
+                  <div className="text-xs font-semibold text-muted uppercase">Priority</div>
                   <div></div>
                 </div>
                   
@@ -1039,7 +1039,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                   {/* Regular ungrouped tasks */}
                   <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {sortedTasks.length === 0 ? (
-                      <div className="text-center py-8 text-gray-400">
+                      <div className="text-center py-8 text-muted">
                         No tasks found
                       </div>
                     ) : (

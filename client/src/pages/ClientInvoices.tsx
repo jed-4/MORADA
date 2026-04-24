@@ -447,7 +447,7 @@ export default function ClientInvoices() {
               : pageTitle}
           </h2>
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
             onClick={handleCreateInvoice}
             data-testid="button-create-invoice"
           >
@@ -458,7 +458,7 @@ export default function ClientInvoices() {
 
         {/* Row 2 — Finance summary (lilac, bottom section of card) */}
         {!invoicesLoading && (
-        <div className="bg-[#A890D4]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
+        <div className="bg-primary/10 flex items-center px-5 py-3 gap-8 flex-wrap">
 
           {/* Left — total project value: big number first, label below */}
           {hasProjectContext && (
@@ -505,7 +505,7 @@ export default function ClientInvoices() {
                 </div>
               </div>
 
-              <div className="w-px self-stretch bg-[#A890D4]/30 mx-1" />
+              <div className="w-px self-stretch bg-primary/30 mx-1" />
             </>
           )}
 
@@ -586,7 +586,7 @@ export default function ClientInvoices() {
                   <button
                     className={cn(
                       "h-6 px-2 text-xs border border-border/40 rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
-                      selectedStatus !== "all" && "border-[#A890D4] text-[#A890D4] bg-[#A890D4]/5"
+                      selectedStatus !== "all" && "border-primary text-primary bg-primary/5"
                     )}
                     data-testid="filter-status-popover"
                   >
@@ -595,7 +595,7 @@ export default function ClientInvoices() {
                     </span>
                     {selectedStatus !== "all" && (
                       <span
-                        className="ml-0.5 text-[10px] text-[#A890D4] cursor-pointer"
+                        className="ml-0.5 text-[10px] text-primary cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); setSelectedStatus("all"); }}
                       >×</span>
                     )}
@@ -608,7 +608,7 @@ export default function ClientInvoices() {
                       onClick={() => { setSelectedStatus(opt.value); setStatusPopoverOpen(false); }}
                       className={cn(
                         "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
-                        selectedStatus === opt.value && "bg-[#A890D4]/10 text-[#A890D4] font-medium"
+                        selectedStatus === opt.value && "bg-primary/10 text-primary font-medium"
                       )}
                       data-testid={`filter-status-${opt.value}`}
                     >

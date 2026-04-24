@@ -56,7 +56,7 @@ function statusBadgeClass(status: string): string {
     case "approved": return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
     case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
     case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-    default: return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400";
+    default: return "bg-muted text-foreground dark:bg-gray-900/30 dark:text-muted";
   }
 }
 
@@ -245,14 +245,14 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   key={view}
                   onClick={() => setViewType(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
-                    isActive ? "text-[#A890D4] font-medium" : "text-muted-foreground hover:text-foreground"
+                    isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"
                   }`}
                   data-testid={`tab-${view}`}
                 >
                   <Icon className="w-3 h-3" />
                   <span>{label}</span>
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
                   )}
                 </button>
               );
@@ -309,10 +309,10 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                       today ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                     }`}
                   >
-                    <div className={today ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
+                    <div className={today ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
                       {format(day, "EEE")}
                     </div>
-                    <div className={`text-[13px] font-semibold ${today ? "text-blue-600 dark:text-blue-400" : ""}`}>
+                    <div className={`text-[13px] font-semibold ${today ? "text-status-info dark:text-blue-400" : ""}`}>
                       {format(day, "d")}
                     </div>
                   </div>
@@ -611,7 +611,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               </div>
 
               {selectedTimesheet.status === "rejected" && selectedTimesheet.rejectionReason && (
-                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-red-700 dark:text-red-400">
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-status-danger dark:text-red-400">
                   <span className="font-medium">Rejection reason: </span>
                   {selectedTimesheet.rejectionReason}
                 </div>

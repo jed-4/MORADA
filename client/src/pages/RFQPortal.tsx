@@ -192,7 +192,7 @@ export default function RFQPortal() {
       <div className="min-h-screen flex items-center justify-center bg-muted/30">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <div className="flex items-center gap-2 text-green-600">
+            <div className="flex items-center gap-2 text-status-success">
               <CheckCircle2 className="h-6 w-6" />
               <CardTitle>Quote Submitted</CardTitle>
             </div>

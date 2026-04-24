@@ -2308,8 +2308,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     <div className="flex flex-col h-full bg-background">
       {pendingPredecessor !== null && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
-          <span className="text-blue-700 dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
-          <button onClick={() => setPendingPredecessor(null)} className="text-blue-500 hover:text-blue-700">
+          <span className="text-status-info dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
+          <button onClick={() => setPendingPredecessor(null)} className="text-blue-500 hover:text-status-info">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -2493,7 +2493,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 <div
                   key={item.id}
                   ref={(el) => registerRowRef(item.id, el)}
-                  className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
+                  className={`h-8 flex items-center px-2 hover:bg-muted dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
                   onClick={(e) => handleRowClick(e, item)}
                   data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                 >
@@ -2907,7 +2907,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           key={`${week.weekLabel}-${dayIdx}`}
                           className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
                             day.isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''
-                          } ${isToday ? 'text-[#A890D4] font-semibold' : 'text-foreground'}`}
+                          } ${isToday ? 'text-primary font-semibold' : 'text-foreground'}`}
                           style={{ width: `${day.widthPx}px` }}
                         >
                           {day.label}
@@ -2925,7 +2925,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   return (
                     <div
                       key={idx}
-                      className={`border-r text-xs text-center py-1 flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${isToday ? 'bg-[#A890D4]/20 text-[#A890D4]' : ''}`}
+                      className={`border-r text-xs text-center py-1 flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${isToday ? 'bg-primary/20 text-primary' : ''}`}
                       style={{ width: `${header.width}px` }}
                     >
                       {header.dateLabel} {header.dayLabel && `${header.dayLabel}`}
@@ -2992,7 +2992,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
               {/* Today line - lilac color */}
               <div
-                className="absolute top-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
+                className="absolute top-0 w-0.5 bg-primary pointer-events-none z-20"
                 style={{ 
                   left: `${todayPosition}px`,
                   height: `${orderedItems.length * ROW_HEIGHT}px`,
@@ -3050,7 +3050,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 
                 return (
                   <div
-                    className="absolute h-6 rounded-sm border-2 border-dashed border-[#A890D4] bg-[#A890D4]/30 pointer-events-none z-40"
+                    className="absolute h-6 rounded-sm border-2 border-dashed border-primary bg-primary/30 pointer-events-none z-40"
                     style={{
                       left: `${previewLeft}px`,
                       width: `${previewWidth}px`,
@@ -3117,7 +3117,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       
                       <div
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
-                          ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#A890D4]' : 'hover:shadow-md'}
+                          ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-primary' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
                         `}
@@ -3565,7 +3565,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
               {/* Today line */}
               <div
-                className="absolute top-0 w-0.5 bg-[#A890D4] pointer-events-none z-20"
+                className="absolute top-0 w-0.5 bg-primary pointer-events-none z-20"
                 style={{ left: `${todayPosition}px`, height: `${orderedItems.length * ROW_HEIGHT}px` }}
               />
 
@@ -3975,7 +3975,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               
               {contextMenu.item.dependencies && contextMenu.item.dependencies.length > 0 && (
                 <button
-                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-orange-600 dark:text-orange-400"
+                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-status-warning dark:text-orange-400"
                   onClick={() => {
                     const deps = contextMenu.item.dependencies as Array<{ id: string }>;
                     deps.forEach((dep) => {

@@ -81,7 +81,7 @@ export default function BusinessFinancialsWidget({ widget }: WidgetProps) {
       <div className="pt-2 border-t mt-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Gross Margin</span>
-          <span className={`text-sm font-bold ${grossMargin >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid="value-gross-margin">
+          <span className={`text-sm font-bold ${grossMargin >= 0 ? 'text-status-success' : 'text-status-danger'}`} data-testid="value-gross-margin">
             {formatCurrency(grossMargin)}
           </span>
         </div>

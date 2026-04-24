@@ -102,7 +102,7 @@ export default function TeamManagement() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setIsInviteDialogOpen(true)}
-            className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-invite-user"
           >
             <UserPlus className="w-3 h-3" />
@@ -229,7 +229,7 @@ function TeamMemberCard({
     >
       <CardContent className="p-3 h-full flex items-center gap-3">
         <Avatar className="h-12 w-12 shrink-0">
-          <AvatarFallback className="bg-[#A890D4]/10 text-[#A890D4] font-semibold">
+          <AvatarFallback className="bg-primary/10 text-primary font-semibold">
             {getInitials(user.firstName, user.lastName, user.email)}
           </AvatarFallback>
         </Avatar>

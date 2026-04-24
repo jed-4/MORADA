@@ -152,15 +152,15 @@ const PROJECT_TABS = PROJECT_TAB_GROUPS.flatMap(group => group.items);
 const backgroundOptions = [
   { id: "default", name: "Default", value: "bg-background", preview: "bg-slate-100 dark:bg-slate-900" },
   { id: "white", name: "White", value: "bg-white dark:bg-slate-950", preview: "bg-white" },
-  { id: "slate", name: "Slate", value: "bg-slate-50 dark:bg-slate-900", preview: "bg-slate-100" },
+  { id: "slate", name: "Slate", value: "bg-muted dark:bg-slate-900", preview: "bg-slate-100" },
   { id: "zinc", name: "Zinc", value: "bg-zinc-50 dark:bg-zinc-900", preview: "bg-zinc-100" },
   { id: "stone", name: "Stone", value: "bg-stone-50 dark:bg-stone-900", preview: "bg-stone-100" },
   { id: "gradient-blue", name: "Blue Gradient", value: "bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950 dark:to-indigo-950", preview: "bg-gradient-to-br from-blue-100 to-indigo-200" },
   { id: "gradient-purple", name: "Purple Gradient", value: "bg-gradient-to-br from-purple-50 to-pink-100 dark:from-purple-950 dark:to-pink-950", preview: "bg-gradient-to-br from-purple-100 to-pink-200" },
   { id: "gradient-green", name: "Green Gradient", value: "bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-950", preview: "bg-gradient-to-br from-green-100 to-emerald-200" },
   { id: "gradient-warm", name: "Warm Gradient", value: "bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-950 dark:to-amber-950", preview: "bg-gradient-to-br from-orange-100 to-amber-200" },
-  { id: "dots", name: "Subtle Dots", value: "bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:16px_16px] bg-slate-50 dark:bg-slate-900", preview: "bg-slate-200" },
-  { id: "grid", name: "Grid", value: "bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] [background-size:24px_24px] bg-white dark:bg-slate-950", preview: "bg-gray-200" },
+  { id: "dots", name: "Subtle Dots", value: "bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:16px_16px] bg-muted dark:bg-slate-900", preview: "bg-border" },
+  { id: "grid", name: "Grid", value: "bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] [background-size:24px_24px] bg-white dark:bg-slate-950", preview: "bg-border" },
 ];
 
 // Preset widget configurations
@@ -717,7 +717,7 @@ export default function CustomizableProjectOverview() {
       <div className="flex flex-col h-full" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#A890D4] mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
             <p>Loading dashboard...</p>
           </div>
         </div>
@@ -735,7 +735,7 @@ export default function CustomizableProjectOverview() {
             <p className="mb-4">There was a problem loading your dashboard views.</p>
             <Button 
               onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] })}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               Try Again
             </Button>
@@ -907,7 +907,7 @@ export default function CustomizableProjectOverview() {
               className={`text-xs ${
                 currentProject.status === 'active'
                   ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                  : 'bg-muted text-secondary dark:bg-gray-800 dark:text-gray-300'
               }`}
             >
               {currentProject.status === 'active' ? 'Active' : 'Inactive'}
@@ -937,7 +937,7 @@ export default function CustomizableProjectOverview() {
                   <Palette className="w-3 h-3" />
                 </button>
                 <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-1"
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
                   onClick={() => setIsAddingWidget(true)}
                   data-testid="button-add-widget"
                 >
@@ -978,7 +978,7 @@ export default function CustomizableProjectOverview() {
               }}
               className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
                 isActive
-                  ? 'text-[#A890D4] font-medium'
+                  ? 'text-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
               data-testid={`tab-${tab.id}`}
@@ -986,7 +986,7 @@ export default function CustomizableProjectOverview() {
               <Icon className="w-3 h-3" />
               <span>{tab.label}</span>
               {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
               )}
             </button>
           );
@@ -1053,11 +1053,11 @@ export default function CustomizableProjectOverview() {
                         <VisIcon className="w-3 h-3 text-muted-foreground" />
                         <span className="flex-1 truncate">{view.name}</span>
                         {view.id === activeViewId && (
-                          <Check className="w-3 h-3 text-[#A890D4] flex-shrink-0" />
+                          <Check className="w-3 h-3 text-primary flex-shrink-0" />
                         )}
                       </button>
                       {view.isCompanyDefault && (
-                        <span className="text-[10px] px-1 py-0.5 bg-[#A890D4]/20 text-[#A890D4] rounded" title="Company Default">
+                        <span className="text-[10px] px-1 py-0.5 bg-primary/20 text-primary rounded" title="Company Default">
                           Default
                         </span>
                       )}
@@ -1164,7 +1164,7 @@ export default function CustomizableProjectOverview() {
                         </div>
                         <Button
                           onClick={() => setIsAddingWidget(true)}
-                          className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                          className="bg-primary hover:bg-primary/90 text-white"
                         >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Your First Widget
@@ -1216,9 +1216,9 @@ export default function CustomizableProjectOverview() {
                   <div className="space-y-3">
                     {/* Widget Preview Header */}
                     <div className="flex items-center justify-between">
-                      <definition.icon className="h-5 w-5 text-[#A890D4]" />
+                      <definition.icon className="h-5 w-5 text-primary" />
                       <div className="h-2 w-16 bg-muted rounded-full">
-                        <div className="h-full w-3/4 bg-[#A890D4] rounded-full"></div>
+                        <div className="h-full w-3/4 bg-primary rounded-full"></div>
                       </div>
                     </div>
 
@@ -1367,7 +1367,7 @@ export default function CustomizableProjectOverview() {
             <Button
               onClick={handleCreateView}
               disabled={createViewMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {createViewMutation.isPending ? "Creating..." : "Create View"}
             </Button>
@@ -1516,7 +1516,7 @@ export default function CustomizableProjectOverview() {
             <Button
               onClick={handleEditView}
               disabled={updateViewMutation.isPending || !editViewName.trim()}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {updateViewMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>

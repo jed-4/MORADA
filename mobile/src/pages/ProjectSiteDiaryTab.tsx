@@ -186,7 +186,7 @@ export function ProjectSiteDiaryTab() {
                 onClick={() => setSelectedDate(date)}
                 className={`flex flex-col items-center min-w-[48px] p-2 rounded-lg ${
                   isSelected
-                    ? "bg-[#A890D4] text-white"
+                    ? "bg-primary text-white"
                     : "bg-card border hover-elevate"
                 }`}
                 data-testid={`date-${offset}`}
@@ -194,7 +194,7 @@ export function ProjectSiteDiaryTab() {
                 <span className="text-xs">{format(date, "EEE")}</span>
                 <span className="text-lg font-medium">{format(date, "d")}</span>
                 {hasEntries && !isSelected && (
-                  <span className="w-1.5 h-1.5 bg-[#A890D4] rounded-full mt-0.5" />
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full mt-0.5" />
                 )}
               </button>
             );
@@ -266,7 +266,7 @@ export function ProjectSiteDiaryTab() {
                   {entry.labels && (entry.labels as string[]).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {(entry.labels as string[]).slice(0, 3).map((label, idx) => (
-                        <span key={idx} className="text-xs bg-[#A890D4]/20 text-[#A890D4] px-2 py-0.5 rounded">
+                        <span key={idx} className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
                           {label}
                         </span>
                       ))}
@@ -289,7 +289,7 @@ export function ProjectSiteDiaryTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-diary"
       >
         <Plus className="w-6 h-6" />
@@ -380,7 +380,7 @@ export function ProjectSiteDiaryTab() {
             {selectedEntry.labels && (selectedEntry.labels as string[]).length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
                 {(selectedEntry.labels as string[]).map((label, idx) => (
-                  <span key={idx} className="text-sm bg-[#A890D4]/20 text-[#A890D4] px-3 py-1 rounded">
+                  <span key={idx} className="text-sm bg-primary/20 text-primary px-3 py-1 rounded">
                     {label}
                   </span>
                 ))}
@@ -423,7 +423,7 @@ export function ProjectSiteDiaryTab() {
                 <p>Created by: {selectedEntry.createdByName}</p>
               )}
               {selectedEntry.shareWithClient && (
-                <p className="text-green-600 mt-1">Shared with client</p>
+                <p className="text-status-success mt-1">Shared with client</p>
               )}
             </div>
 

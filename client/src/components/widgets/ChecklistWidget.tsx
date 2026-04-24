@@ -188,7 +188,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       'active': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
       'in_progress': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
       'completed': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-      'cancelled': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+      'cancelled': 'bg-muted text-foreground dark:bg-gray-900/30 dark:text-muted',
     };
     return colors[status] || colors.active;
   };
@@ -382,7 +382,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             <Button 
               size="icon" 
               variant="ghost"
-              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-[#A890D4]' : ''}`}
+              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-primary' : ''}`}
               data-testid="checklist-widget-toggle-hide-completed"
             >
               {(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? (
@@ -844,9 +844,9 @@ function ChecklistGroupItem({
                   data-testid={`checklist-item-toggle-${item.id}`}
                 >
                   {item.status === "completed" ? (
-                    <Check className="h-3.5 w-3.5 text-green-600" />
+                    <Check className="h-3.5 w-3.5 text-status-success" />
                   ) : item.status === "na" ? (
-                    <X className="h-3.5 w-3.5 text-gray-400" />
+                    <X className="h-3.5 w-3.5 text-muted" />
                   ) : (
                     <Circle className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
                   )}
@@ -863,7 +863,7 @@ function ChecklistGroupItem({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Avatar className="h-4 w-4 flex-shrink-0">
-                        <AvatarFallback className="text-[7px] bg-[#A890D4]/20 text-[#A890D4]">
+                        <AvatarFallback className="text-[7px] bg-primary/20 text-primary">
                           {getInitials(item.assigneeName)}
                         </AvatarFallback>
                       </Avatar>

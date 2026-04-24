@@ -207,7 +207,7 @@ export default function RFIDetail() {
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      low: "bg-gray-100 text-gray-800",
+      low: "bg-muted text-foreground",
       normal: "bg-blue-100 text-blue-800",
       high: "bg-orange-100 text-orange-800",
       urgent: "bg-red-100 text-red-800",
@@ -378,7 +378,7 @@ export default function RFIDetail() {
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">Response</Label>
               {rfi.response && (
-                <div className="flex items-center gap-1 text-xs text-green-600">
+                <div className="flex items-center gap-1 text-xs text-status-success">
                   <CheckCircle2 className="w-3 h-3" />
                   Answered {rfi.respondedAt && format(new Date(rfi.respondedAt), "MMM d, yyyy")}
                 </div>

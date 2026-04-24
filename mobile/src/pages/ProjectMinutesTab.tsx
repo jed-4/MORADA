@@ -186,7 +186,7 @@ export function ProjectMinutesTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-minute"
       >
         <Plus className="w-6 h-6" />

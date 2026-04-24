@@ -138,8 +138,8 @@ export function ProjectNotesTab() {
           </div>
         ) : notes.length === 0 ? (
           <div className="text-center py-16 px-6">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#A890D4]/10 flex items-center justify-center">
-              <Plus className="w-8 h-8 text-[#A890D4]" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+              <Plus className="w-8 h-8 text-primary" />
             </div>
             <h3 className="text-lg font-semibold mb-2">No Notes Yet</h3>
             <p className="text-muted-foreground text-sm mb-6">
@@ -147,7 +147,7 @@ export function ProjectNotesTab() {
             </p>
             <button
               onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center gap-2 bg-[#A890D4] text-white px-4 py-2 rounded-lg font-medium"
+              className="inline-flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-medium"
               data-testid="button-add-first-note"
             >
               <Plus className="w-4 h-4" />
@@ -171,7 +171,7 @@ export function ProjectNotesTab() {
                 }}
                 leftAction={{
                   icon: note.pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />,
-                  color: "bg-[#A890D4]",
+                  color: "bg-primary",
                   label: note.pinned ? "Unpin" : "Pin",
                 }}
                 rightAction={{
@@ -188,7 +188,7 @@ export function ProjectNotesTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {note.pinned && (
-                          <Pin className="w-3 h-3 text-[#A890D4] flex-shrink-0" />
+                          <Pin className="w-3 h-3 text-primary flex-shrink-0" />
                         )}
                         <h3 className="font-medium truncate">{note.title}</h3>
                       </div>
@@ -216,7 +216,7 @@ export function ProjectNotesTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#A890D4] text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-note"
       >
         <Plus className="w-6 h-6" />
@@ -245,7 +245,7 @@ export function ProjectNotesTab() {
                     onClick={() => setNewCategory(category)}
                     className={`h-8 px-3 rounded-md text-sm font-medium ${
                       newCategory === category
-                        ? "bg-[#A890D4] text-white"
+                        ? "bg-primary text-white"
                         : "border hover-elevate"
                     }`}
                     data-testid={`category-select-${category}`}
@@ -297,7 +297,7 @@ export function ProjectNotesTab() {
           <div className="p-4">
             <div className="flex items-center gap-2 mb-2">
               {selectedNote.pinned && (
-                <Pin className="w-4 h-4 text-[#A890D4]" />
+                <Pin className="w-4 h-4 text-primary" />
               )}
               <h2 className="text-xl font-bold">{selectedNote.title}</h2>
             </div>

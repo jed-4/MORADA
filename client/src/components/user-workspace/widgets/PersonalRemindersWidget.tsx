@@ -58,7 +58,7 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
     const dueDate = new Date(reminder.dueAt);
     if (isPast(dueDate)) {
       return { 
-        color: 'text-red-600 dark:text-red-400', 
+        color: 'text-status-danger dark:text-red-400', 
         bgColor: 'bg-red-50 dark:bg-red-900/20',
         label: 'Overdue'
       };

@@ -776,21 +776,21 @@ export default function BusinessCalendar() {
                   onClick={() => handleViewSelect(view)}
                   className={`relative h-9 px-2 text-xs flex items-center gap-1 transition-colors ${
                     selectedViewId === view.id
-                      ? 'text-[#A890D4] font-medium'
+                      ? 'text-primary font-medium'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                   data-testid={`tab-${view.id}`}
                 >
                   <span>{view.name}</span>
                   {selectedViewId === view.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#A890D4] rounded-full" />
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
                   )}
                 </button>
                 {selectedViewId === view.id && !view.isDefault && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
-                        className="h-5 px-0.5 text-[#A890D4] hover:text-[#A890D4]/80 flex items-center"
+                        className="h-5 px-0.5 text-primary hover:text-primary/80 flex items-center"
                         data-testid={`button-view-options-${view.id}`}
                       >
                         <ChevronDown className="h-3 w-3" />
@@ -1257,7 +1257,7 @@ export default function BusinessCalendar() {
                 onClick={() => setCalendarMode(mode.value)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
                   calendarMode === mode.value
-                    ? 'bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90'
+                    ? 'bg-primary text-white border-primary/20 hover:bg-primary/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
                 data-testid={`button-mode-${mode.value}`}
@@ -1269,7 +1269,7 @@ export default function BusinessCalendar() {
 
           {/* Add Event Button */}
           <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90"
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-primary text-white border-primary/20 hover:bg-primary/90"
             onClick={() => {
               // TODO: Open event creation dialog
               toast({ title: "Add Event", description: "Event creation coming soon!" });

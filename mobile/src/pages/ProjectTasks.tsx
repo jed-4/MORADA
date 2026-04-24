@@ -160,7 +160,7 @@ export function ProjectTasks() {
               onClick={() => setStatusFilter(filter.value)}
               className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
                 statusFilter === filter.value
-                  ? "bg-[#A890D4] text-white"
+                  ? "bg-primary text-white"
                   : "border hover-elevate"
               }`}
               data-testid={`filter-${filter.value}`}
@@ -227,8 +227,8 @@ export function ProjectTasks() {
                     </div>
                   </div>
                   <span className={`px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${
-                    task.status === "done" ? "bg-green-500/10 text-green-600" :
-                    task.status === "in-progress" ? "bg-blue-500/10 text-blue-600" :
+                    task.status === "done" ? "bg-status-success-bg text-status-success" :
+                    task.status === "in-progress" ? "bg-status-info-bg text-status-info" :
                     "bg-muted text-muted-foreground"
                   }`}>
                     {task.status === "done" ? "Done" :

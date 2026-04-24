@@ -896,7 +896,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                         isWeekStart ? "border-l border-border/60" : "border-l border-border/15",
                         dayIdx === 0 && "border-l-0",
                         isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
-                        isToday && "bg-[#A890D4]/10"
+                        isToday && "bg-primary/10"
                       )}
                       style={{ flex: '1 1 0' }}
                     >
@@ -916,10 +916,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                         </TooltipContent>
                       </Tooltip>
-                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                       </div>
-                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-[#A890D4]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {format(day, "d")}
                       </div>
                     </div>
@@ -942,7 +942,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 if (todayIdx === -1) return null;
                 return (
                   <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-[#A890D4] pointer-events-none z-10"
+                    className="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-10"
                     style={{ left: pct(todayIdx + 0.5) }}
                   />
                 );
@@ -985,7 +985,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           className={cn(
                             "absolute top-0 h-full border-l border-border/10",
                             isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
-                            isToday && "bg-[#A890D4]/5",
+                            isToday && "bg-primary/5",
                             isOverloadedDay && "bg-red-500/8"
                           )}
                           style={{ left: pct(dayIdx), width: pct(1) }}
@@ -1040,12 +1040,12 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           <TooltipContent side="top" className="bg-gray-900 text-gray-100 border-0 max-w-[240px]">
                             <div className="text-[10px]">
                               <div className="font-medium">{item.name}</div>
-                              <div className="text-gray-400 mt-0.5">{item.projectName}</div>
-                              <div className="text-gray-400 mt-0.5">
+                              <div className="text-muted mt-0.5">{item.projectName}</div>
+                              <div className="text-muted mt-0.5">
                                 {format(new Date(item.startDate), "d MMM")} – {format(new Date(item.endDate), "d MMM yyyy")}
                               </div>
                               {item.progressPercent > 0 && (
-                                <div className="text-gray-400 mt-0.5">{item.progressPercent}% complete</div>
+                                <div className="text-muted mt-0.5">{item.progressPercent}% complete</div>
                               )}
                             </div>
                           </TooltipContent>

@@ -291,19 +291,19 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
       label: "Active", 
       value: activeTasks.length, 
       icon: CheckCircle,
-      color: "text-blue-600 dark:text-blue-400" 
+      color: "text-status-info dark:text-blue-400" 
     },
     { 
       label: "Overdue", 
       value: overdueTasks.length, 
       icon: AlertCircle,
-      color: overdueTasks.length > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"
+      color: overdueTasks.length > 0 ? "text-status-danger dark:text-red-400" : "text-muted-foreground"
     },
     { 
       label: "Done", 
       value: completedThisWeek.length, 
       icon: TrendingUp,
-      color: "text-green-600 dark:text-green-400" 
+      color: "text-status-success dark:text-green-400" 
     },
   ];
 
@@ -355,11 +355,11 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
           <div className="py-2 px-3 rounded-md border-l-3 border-l-red-500 bg-red-50/50 dark:bg-red-950/20">
             <div className="flex items-center gap-1.5 mb-1">
               <AlertTriangle className="h-3 w-3 text-red-500" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-red-700 dark:text-red-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-status-danger dark:text-red-400">
                 Needs Attention
               </span>
             </div>
-            <p className="text-[11px] text-red-600 dark:text-red-400">
+            <p className="text-[11px] text-status-danger dark:text-red-400">
               {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} requiring immediate action
             </p>
           </div>

@@ -402,7 +402,7 @@ export default function UserProfile() {
                     <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
                       Sync Features
                     </h4>
-                    <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                    <ul className="text-sm text-status-info dark:text-blue-300 space-y-1">
                       <li>• Tasks with due dates sync to Google Calendar</li>
                       <li>• Schedule items appear as calendar events</li>
                       <li>• Changes in BuildPro update your Google Calendar</li>
@@ -433,7 +433,7 @@ export default function UserProfile() {
                     </div>
                     {user?.useGmailForSending && (
                       <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
-                        <p className="text-sm text-green-700 dark:text-green-300">
+                        <p className="text-sm text-status-success dark:text-green-300">
                           <Check className="h-4 w-4 inline mr-1" />
                           Emails sent by BuildPro will come from your Gmail. Replies go straight to your inbox.
                         </p>

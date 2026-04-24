@@ -30,15 +30,15 @@ import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 const dashboardBackgroundOptions = [
   { id: "default", name: "Default", value: "bg-background", preview: "bg-slate-100 dark:bg-slate-900" },
   { id: "white", name: "White", value: "bg-white dark:bg-slate-950", preview: "bg-white" },
-  { id: "slate", name: "Slate", value: "bg-slate-50 dark:bg-slate-900", preview: "bg-slate-100" },
+  { id: "slate", name: "Slate", value: "bg-muted dark:bg-slate-900", preview: "bg-slate-100" },
   { id: "zinc", name: "Zinc", value: "bg-zinc-50 dark:bg-zinc-900", preview: "bg-zinc-100" },
   { id: "stone", name: "Stone", value: "bg-stone-50 dark:bg-stone-900", preview: "bg-stone-100" },
   { id: "gradient-blue", name: "Blue Gradient", value: "bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950 dark:to-indigo-950", preview: "bg-gradient-to-br from-blue-100 to-indigo-200" },
   { id: "gradient-purple", name: "Purple Gradient", value: "bg-gradient-to-br from-purple-50 to-pink-100 dark:from-purple-950 dark:to-pink-950", preview: "bg-gradient-to-br from-purple-100 to-pink-200" },
   { id: "gradient-green", name: "Green Gradient", value: "bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-950", preview: "bg-gradient-to-br from-green-100 to-emerald-200" },
   { id: "gradient-warm", name: "Warm Gradient", value: "bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-950 dark:to-amber-950", preview: "bg-gradient-to-br from-orange-100 to-amber-200" },
-  { id: "dots", name: "Subtle Dots", value: "bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:16px_16px] bg-slate-50 dark:bg-slate-900", preview: "bg-slate-200" },
-  { id: "grid", name: "Grid", value: "bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] [background-size:24px_24px] bg-white dark:bg-slate-950", preview: "bg-gray-200" },
+  { id: "dots", name: "Subtle Dots", value: "bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:16px_16px] bg-muted dark:bg-slate-900", preview: "bg-border" },
+  { id: "grid", name: "Grid", value: "bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] [background-size:24px_24px] bg-white dark:bg-slate-950", preview: "bg-border" },
 ];
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1260,7 +1260,7 @@ export default function ProjectSettings() {
                             disabled={addTeamMemberMutation.isPending || removeTeamMemberMutation.isPending}
                           />
                           <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-[10px] bg-[#A890D4]/10 text-[#A890D4]">
+                            <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
                               {getUserInitials(user)}
                             </AvatarFallback>
                           </Avatar>
@@ -1303,7 +1303,7 @@ export default function ProjectSettings() {
                     <TableCell>
                       <div className="flex items-center gap-2.5">
                         <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
+                          <AvatarFallback className="text-xs bg-primary/10 text-primary">
                             {getUserInitials(member)}
                           </AvatarFallback>
                         </Avatar>

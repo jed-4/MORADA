@@ -236,13 +236,13 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     const dueDate = new Date(task.dueDate);
     
     if (isBefore(dueDate, today)) {
-      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
+      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-status-danger dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
     }
     if (isToday(dueDate)) {
       return { label: 'Today', color: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' };
     }
     if (isTomorrow(dueDate)) {
-      return { label: 'Tomorrow', color: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' };
+      return { label: 'Tomorrow', color: 'text-status-info dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' };
     }
     return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-muted-foreground bg-muted' };
   };

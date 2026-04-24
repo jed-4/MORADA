@@ -82,7 +82,7 @@ export default function VariationsSummaryWidget({ widget, onUpdate, isConfigurin
       {/* Summary Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <FileEdit className="h-4 w-4 text-[#A890D4]" />
+          <FileEdit className="h-4 w-4 text-primary" />
           <span className="font-medium text-sm">Variations</span>
         </div>
         <Badge variant="secondary" className="text-xs">
@@ -99,7 +99,7 @@ export default function VariationsSummaryWidget({ widget, onUpdate, isConfigurin
           ) : (
             <TrendingDown className="h-5 w-5 text-red-500" />
           )}
-          <span className={`text-xl font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+          <span className={`text-xl font-bold ${isPositive ? 'text-status-success' : 'text-status-danger'}`}>
             {isPositive ? '+' : ''}{formatCurrency(netChange)}
           </span>
         </div>

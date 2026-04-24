@@ -100,16 +100,16 @@ interface RouteParams {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" },
-  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-300" },
-  pending_approval: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-300" },
+  draft: { bg: "bg-muted dark:bg-gray-800", text: "text-secondary dark:text-gray-300" },
+  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-300" },
+  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-300" },
+  pending_approval: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-status-warning dark:text-yellow-300" },
   acknowledged: { bg: "bg-teal-100 dark:bg-teal-900/30", text: "text-teal-700 dark:text-teal-300" },
-  partially_delivered: { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-300" },
+  partially_delivered: { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-status-warning dark:text-orange-300" },
   delivered: { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300" },
   invoiced: { bg: "bg-indigo-100 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300" },
-  closed: { bg: "bg-gray-200 dark:bg-gray-700", text: "text-gray-600 dark:text-gray-400" },
-  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-300" },
+  closed: { bg: "bg-border dark:bg-gray-700", text: "text-secondary dark:text-muted" },
+  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-status-danger dark:text-red-300" },
 };
 
 function formatCurrency(cents: number): string {
@@ -776,7 +776,7 @@ export default function PurchaseOrderDetail() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => setIsDeleteDialogOpen(true)}
-                      className="text-red-600 dark:text-red-400"
+                      className="text-status-danger dark:text-red-400"
                       data-testid="action-delete-po"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
@@ -790,7 +790,7 @@ export default function PurchaseOrderDetail() {
             {purchaseOrder.status === "draft" && (
               <Button
                 size="sm"
-                className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+                className="bg-primary hover:bg-primary/90 text-white"
                 onClick={() => setIsSendDialogOpen(true)}
                 data-testid="button-send-po"
               >
@@ -1197,7 +1197,7 @@ export default function PurchaseOrderDetail() {
             <Button
               onClick={() => sendPoMutation.mutate()}
               disabled={sendPoMutation.isPending}
-              className="bg-[#A890D4] hover:bg-[#A890D4]/90 text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {sendPoMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />

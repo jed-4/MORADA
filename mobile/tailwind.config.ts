@@ -72,6 +72,36 @@ export default {
         "coral-light": "hsl(var(--coral-light))",
         "rose-accent": "hsl(var(--rose))",
         "rose-light": "hsl(var(--rose-light))",
+        "status-success": {
+          DEFAULT: "hsl(var(--status-success-fg))",
+          bg: "hsl(var(--status-success-bg))",
+        },
+        "status-warning": {
+          DEFAULT: "hsl(var(--status-warning-fg))",
+          bg: "hsl(var(--status-warning-bg))",
+        },
+        "status-info": {
+          DEFAULT: "hsl(var(--status-info-fg))",
+          bg: "hsl(var(--status-info-bg))",
+        },
+        "status-danger": {
+          DEFAULT: "hsl(var(--status-danger-fg))",
+          bg: "hsl(var(--status-danger-bg))",
+        },
+        "status-action": {
+          DEFAULT: "hsl(var(--status-action-fg))",
+          bg: "hsl(var(--status-action-bg))",
+        },
+      },
+      textColor: {
+        secondary: {
+          DEFAULT: "hsl(var(--text-secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--text-muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],

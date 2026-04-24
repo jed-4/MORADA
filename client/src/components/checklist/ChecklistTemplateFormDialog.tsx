@@ -298,7 +298,7 @@ export function ChecklistTemplateFormDialog({
                       onClick={() => field.onChange("everyone")}
                       className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
                         field.value === "everyone"
-                          ? "border-[#A890D4] bg-[#A890D4]/10 text-foreground"
+                          ? "border-primary bg-primary/10 text-foreground"
                           : "border-border text-muted-foreground hover-elevate"
                       }`}
                       data-testid="default-visibility-everyone"
@@ -314,7 +314,7 @@ export function ChecklistTemplateFormDialog({
                       onClick={() => field.onChange("assignee_only")}
                       className={`flex-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
                         field.value === "assignee_only"
-                          ? "border-[#A890D4] bg-[#A890D4]/10 text-foreground"
+                          ? "border-primary bg-primary/10 text-foreground"
                           : "border-border text-muted-foreground hover-elevate"
                       }`}
                       data-testid="default-visibility-assignee-only"

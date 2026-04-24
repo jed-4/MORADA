@@ -39,10 +39,10 @@ export default function BusinessProjectsWidget({ widget }: WidgetProps) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "active": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "on-hold": return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-      case "completed": return "bg-blue-500/10 text-blue-700 dark:text-blue-400";
-      default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+      case "active": return "bg-status-success-bg text-status-success dark:text-green-400";
+      case "on-hold": return "bg-status-warning-bg text-status-warning dark:text-yellow-400";
+      case "completed": return "bg-status-info-bg text-status-info dark:text-blue-400";
+      default: return "bg-muted text-secondary dark:text-muted";
     }
   };
 

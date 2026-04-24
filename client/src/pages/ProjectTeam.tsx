@@ -108,7 +108,7 @@ export default function ProjectTeam() {
         cell: ({ row }) => (
           <div className="flex items-center gap-3" data-testid={`cell-user-${row.original.id}`}>
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="text-xs bg-[#A890D4]/10 text-[#A890D4]">
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
                 {getUserInitials(row.original)}
               </AvatarFallback>
             </Avatar>
@@ -189,7 +189,7 @@ export default function ProjectTeam() {
         </div>
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
-          className="h-6 px-2 text-xs bg-[#A890D4] hover:bg-[#A890D4]/90"
+          className="h-6 px-2 text-xs bg-primary hover:bg-primary/90"
           data-testid="button-assign-user"
         >
           <UserPlus className="h-3 w-3 mr-1" />
@@ -219,7 +219,7 @@ export default function ProjectTeam() {
           <Card className="border-2">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-4 py-3 border-b">
-                <Users className="h-4 w-4 text-[#A890D4]" />
+                <Users className="h-4 w-4 text-primary" />
                 <h2 className="text-sm font-semibold">Team Members</h2>
               </div>
               {isLoading ? (
@@ -251,7 +251,7 @@ export default function ProjectTeam() {
           <Card className="border-2">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-4 py-3 border-b">
-                <Building2 className="h-4 w-4 text-[#A890D4]" />
+                <Building2 className="h-4 w-4 text-primary" />
                 <h2 className="text-sm font-semibold">Suppliers</h2>
               </div>
               {isLoading ? (

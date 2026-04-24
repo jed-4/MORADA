@@ -162,12 +162,12 @@ function DroppableColumn({
     <div
       ref={setNodeRef}
       className={`rounded-xl border transition-all duration-200 ${
-        isHighlighted ? 'border-2 border-[#A890D4] border-dashed bg-[#A890D4]/10' : 'border-border/50'
+        isHighlighted ? 'border-2 border-primary border-dashed bg-primary/10' : 'border-border/50'
       }`}
       style={!isHighlighted ? bgStyle : undefined}
     >
       {/* Column Header - ClickUp style */}
-      <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isHighlighted ? 'bg-[#A890D4]/5' : ''}`}>
+      <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isHighlighted ? 'bg-primary/5' : ''}`}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-foreground">{column.title}</h3>
         </div>

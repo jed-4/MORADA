@@ -31,10 +31,10 @@ const priorityColors: Record<string, string> = {
 };
 
 const roleColors: Record<string, string> = {
-  admin: "bg-purple-100 text-purple-700",
+  admin: "bg-status-info-bg text-status-info",
   manager: "bg-indigo-100 text-indigo-700",
-  member: "bg-blue-100 text-blue-700",
-  viewer: "bg-gray-100 text-gray-600",
+  member: "bg-blue-100 text-status-info",
+  viewer: "bg-muted text-secondary",
 };
 
 export function ColorChip({ type, value, className, fieldCategoryKey }: ColorChipProps) {
@@ -59,7 +59,7 @@ export function ColorChip({ type, value, className, fieldCategoryKey }: ColorChi
     displayLabel = priorityOption?.name || value;
     colorClass = priorityColors[normalizedValue] || "casva-chip-priority-medium";
   } else if (type === "role") {
-    colorClass = roleColors[normalizedValue] || "bg-gray-100 text-gray-600";
+    colorClass = roleColors[normalizedValue] || "bg-muted text-secondary";
   }
 
   return (

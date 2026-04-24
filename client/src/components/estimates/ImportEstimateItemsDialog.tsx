@@ -610,9 +610,9 @@ export function ImportEstimateItemsDialog({
                               {hasError && !hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-destructive" />}
                               {hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-amber-500" />}
                               {hasTypeWarning && <AlertCircle className="h-4 w-4 text-amber-400" />}
-                              {typeNowFixed && <CheckCircle className="h-4 w-4 text-green-600" />}
+                              {typeNowFixed && <CheckCircle className="h-4 w-4 text-status-success" />}
                               {!hasError && !typeNowFixed && !hasTypeWarning && (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <CheckCircle className="h-4 w-4 text-status-success" />
                               )}
                             </TableCell>
                             {hasError && !hasOnlyFixableErrors && !typeNowFixed ? (
@@ -714,7 +714,7 @@ export function ImportEstimateItemsDialog({
             {parsedResults.length > 0 && (
               <div className="flex items-center gap-4 px-6 py-3 border-b bg-muted/30">
                 <span className="text-sm font-medium text-muted-foreground">Summary:</span>
-                <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                <span className="text-sm font-medium text-status-success flex items-center gap-1">
                   <CheckCircle className="h-4 w-4" />
                   {validCount} valid
                 </span>
@@ -725,7 +725,7 @@ export function ImportEstimateItemsDialog({
                   </span>
                 )}
                 {matchedCostCodes > 0 && (
-                  <span className="text-sm font-medium text-green-600">
+                  <span className="text-sm font-medium text-status-success">
                     {matchedCostCodes} cost code{matchedCostCodes !== 1 ? 's' : ''} matched
                   </span>
                 )}
@@ -735,7 +735,7 @@ export function ImportEstimateItemsDialog({
                   </span>
                 )}
                 {matchedTypes > 0 && (
-                  <span className="text-sm font-medium text-green-600">
+                  <span className="text-sm font-medium text-status-success">
                     {matchedTypes} type{matchedTypes !== 1 ? 's' : ''} matched
                   </span>
                 )}
@@ -745,17 +745,17 @@ export function ImportEstimateItemsDialog({
                   </span>
                 )}
                 {Object.keys(typeCorrections).length > 0 && (
-                  <span className="text-sm font-medium text-blue-600">
+                  <span className="text-sm font-medium text-status-info">
                     {Object.keys(typeCorrections).length} correction{Object.keys(typeCorrections).length !== 1 ? 's' : ''} applied
                   </span>
                 )}
                 {matchedGroups > 0 && (
-                  <span className="text-sm font-medium text-green-600">
+                  <span className="text-sm font-medium text-status-success">
                     {matchedGroups} group{matchedGroups !== 1 ? 's' : ''} matched
                   </span>
                 )}
                 {newGroups > 0 && (
-                  <span className="text-sm font-medium text-blue-600">
+                  <span className="text-sm font-medium text-status-info">
                     {newGroups} new group{newGroups !== 1 ? 's' : ''} to create
                   </span>
                 )}

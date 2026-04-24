@@ -19,8 +19,8 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     color: "#6B7280",
     icon: FileEdit,
     description: "Selection is being prepared, not visible to clients",
-    bgClass: "bg-gray-100 dark:bg-gray-800",
-    textClass: "text-gray-600 dark:text-gray-300"
+    bgClass: "bg-muted dark:bg-gray-800",
+    textClass: "text-secondary dark:text-gray-300"
   },
   pending: {
     key: "pending",
@@ -29,7 +29,7 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     icon: Eye,
     description: "Selection is open for client to view and choose",
     bgClass: "bg-blue-100 dark:bg-blue-900/30",
-    textClass: "text-blue-600 dark:text-blue-400"
+    textClass: "text-status-info dark:text-blue-400"
   },
   approved: {
     key: "approved",
@@ -38,7 +38,7 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     icon: CheckCircle2,
     description: "Client has approved their selection",
     bgClass: "bg-green-100 dark:bg-green-900/30",
-    textClass: "text-green-600 dark:text-green-400"
+    textClass: "text-status-success dark:text-green-400"
   },
   completed: {
     key: "completed",

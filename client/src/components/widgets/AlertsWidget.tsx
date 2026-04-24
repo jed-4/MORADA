@@ -189,11 +189,11 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
   const getAlertStyle = (type: Alert["type"]) => {
     switch (type) {
       case "error":
-        return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300";
+        return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-status-danger dark:text-red-300";
       case "warning":
         return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300";
       case "info":
-        return "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300";
+        return "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-status-info dark:text-blue-300";
     }
   };
 
@@ -212,7 +212,7 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center">
         <CheckCircle className="h-8 w-8 text-green-500 mb-2" />
-        <p className="text-sm font-medium text-green-700 dark:text-green-300">All Clear</p>
+        <p className="text-sm font-medium text-status-success dark:text-green-300">All Clear</p>
         <p className="text-xs text-muted-foreground">No alerts at this time</p>
       </div>
     );

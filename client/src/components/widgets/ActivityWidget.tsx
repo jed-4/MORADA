@@ -169,11 +169,11 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
   const getActivityColor = (type: string) => {
     switch (type) {
       case "task":
-        return "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950";
+        return "text-status-info bg-blue-50 dark:text-blue-400 dark:bg-blue-950";
       case "estimate":
-        return "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950";
+        return "text-status-success bg-green-50 dark:text-green-400 dark:bg-green-950";
       case "bill":
-        return "text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-950";
+        return "text-status-warning bg-orange-50 dark:text-orange-400 dark:bg-orange-950";
       case "variation":
         return "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950";
       case "invoice":
@@ -185,7 +185,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
       case "site_diary":
         return "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950";
       default:
-        return "text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-950";
+        return "text-secondary bg-muted dark:text-muted dark:bg-gray-950";
     }
   };
 

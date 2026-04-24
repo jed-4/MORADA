@@ -202,7 +202,7 @@ export function Tasks() {
                   )}
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                      task.status === "done" ? "bg-green-500/10 text-green-600" :
+                      task.status === "done" ? "bg-status-success-bg text-status-success" :
                       task.status === "in-progress" ? "bg-primary/10 text-primary" :
                       "bg-muted text-muted-foreground"
                     }`}>
@@ -231,7 +231,7 @@ export function Tasks() {
             {(["todo", "in-progress", "done"] as const).map((status) => (
               <div key={status} className="flex-shrink-0 w-72 flex flex-col">
                 <div className={`px-3 py-2 rounded-t-lg font-medium text-sm ${
-                  status === "done" ? "bg-green-500/10 text-green-700" :
+                  status === "done" ? "bg-status-success-bg text-status-success" :
                   status === "in-progress" ? "bg-primary/10 text-primary" :
                   "bg-muted text-muted-foreground"
                 }`}>

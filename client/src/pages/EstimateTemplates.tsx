@@ -875,10 +875,10 @@ export default function EstimateTemplates() {
 
   const getCategoryColor = (category: string | null) => {
     switch (category?.toLowerCase()) {
-      case "residential": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "commercial": return "bg-blue-500/10 text-blue-700 dark:text-blue-400";
-      case "renovation": return "bg-orange-500/10 text-orange-700 dark:text-orange-400";
-      default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+      case "residential": return "bg-status-success-bg text-status-success dark:text-green-400";
+      case "commercial": return "bg-status-info-bg text-status-info dark:text-blue-400";
+      case "renovation": return "bg-status-warning-bg text-status-warning dark:text-orange-400";
+      default: return "bg-muted text-secondary dark:text-muted";
     }
   };
 
@@ -900,7 +900,7 @@ export default function EstimateTemplates() {
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`h-9 px-4 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-              activeTab === tab ? 'border-[#A890D4] text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === tab ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab === 'items' && <Calculator className="w-3 h-3" />}
@@ -945,7 +945,7 @@ export default function EstimateTemplates() {
               <span>Import</span>
             </button>
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 active-elevate-2 flex items-center gap-0.5"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 active-elevate-2 flex items-center gap-0.5"
               onClick={handleOpenAdd}
               data-testid="button-add-template"
             >
@@ -975,12 +975,12 @@ export default function EstimateTemplates() {
                 const hasEnotes = !labourOnlyGroups.has(group);
                 return (
                   <button key={group} onClick={() => setSelectedGroup(group)}
-                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-[#A890D4]/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     <span className="text-xs font-medium truncate w-full">{group}</span>
                     <div className="flex items-center gap-1.5">
                       {labourCount > 0 && <span className="text-[10px] text-muted-foreground">{labourCount} item{labourCount !== 1 ? 's' : ''}</span>}
                       {hasEnotes && isRequired !== undefined && (
-                        <span className={`text-[9px] px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-green-700 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                        <span className={`text-[9px] px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-status-success dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
                           {isRequired ? 'Required' : 'Not req.'}
                         </span>
                       )}
@@ -1191,7 +1191,7 @@ export default function EstimateTemplates() {
                 const hasEnotes = !labourOnlyGroups.has(group);
                 return (
                   <button key={group} onClick={() => setSelectedGroup(group)}
-                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-[#A890D4]/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     <div className="flex items-center justify-between gap-1 w-full">
                       <span className="text-xs font-medium truncate">{group}</span>
                       {hasEnotes && (
@@ -1202,7 +1202,7 @@ export default function EstimateTemplates() {
                           }}
                           className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 border transition-colors ${
                             isRequired !== false
-                              ? 'bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20'
+                              ? 'bg-green-500/15 text-status-success dark:text-green-400 border-green-500/20'
                               : 'bg-muted text-muted-foreground border-border'
                           }`}
                           title="Click to toggle Required/Not Required"
@@ -1408,7 +1408,7 @@ export default function EstimateTemplates() {
                   </button>
                   <button
                     onClick={handleOpenAdd}
-                    className="h-6 px-2 text-xs border rounded-md bg-[#A890D4] text-white border-[#A890D4]/20 hover:bg-[#A890D4]/90 active-elevate-2 flex items-center gap-0.5"
+                    className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
                     data-testid="button-create-first-template"
                   >
                     <Plus className="h-3 w-3" />
