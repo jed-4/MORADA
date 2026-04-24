@@ -24,7 +24,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme, typeColors as themeTypeColors } from '../theme';
 interface ScheduleItem {
   id: string;
   scheduleId: string;
@@ -134,19 +134,19 @@ function getSortedProjectItems(projects: Project[]): { id: string; label: string
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  task: '#3b82f6',
-  milestone: '#f59e0b',
-  inspection: '#8b5cf6',
-  delivery: '#10b981',
-  meeting: '#ef4444',
+  task: themeTypeColors.task,
+  milestone: themeTypeColors.milestone,
+  inspection: themeTypeColors.inspection,
+  delivery: themeTypeColors.delivery,
+  meeting: themeTypeColors.meeting,
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  not_started: '#94a3b8',
-  in_progress: '#3b82f6',
-  completed: '#10b981',
-  on_hold: '#f59e0b',
-  cancelled: '#ef4444',
+  not_started: lightTheme.textMuted,
+  in_progress: lightTheme.statusInfo,
+  completed: lightTheme.statusSuccess,
+  on_hold: lightTheme.statusWarning,
+  cancelled: lightTheme.statusDanger,
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -199,7 +199,7 @@ function formatNoteDate(dateStr: string): string {
 }
 
 function getItemColor(item: ScheduleItem): string {
-  return item.color || item.assignedToColor || '#9ca3af';
+  return item.color || item.assignedToColor || lightTheme.textMuted;
 }
 
 function isFutureDate(dateStr: string): boolean {
@@ -574,10 +574,10 @@ const colors = {
   };
 
   const PRIORITY_COLORS: Record<string, string> = {
-    low: '#94a3b8',
-    medium: '#3b82f6',
-    high: '#f59e0b',
-    urgent: '#ef4444',
+    low: theme.textMuted,
+    medium: theme.statusInfo,
+    high: theme.statusWarning,
+    urgent: theme.statusDanger,
   };
 
   const resetAddForm = () => {

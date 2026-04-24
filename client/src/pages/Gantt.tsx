@@ -2289,13 +2289,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
       bspProject.itemEndDate ? bspProject.itemEndDate : null;
 
     if (buildStartRaw) {
-      lines.push({ pos: pos(parseLocalMidnight(buildStartRaw)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
+      lines.push({ pos: pos(parseLocalMidnight(buildStartRaw)), label: "Build Start", solid: true, color: bspProject.color || "hsl(var(--primary))" });
     }
     if (buildEndRaw) {
       // Build End marker: position on day AFTER end so line sits at the right edge of the bar
       const endDay = parseLocalMidnight(buildEndRaw);
       const endPlusOne = addDays(endDay, 1);
-      lines.push({ pos: pos(endPlusOne), label: "Build End", solid: true, color: bspProject.color || "#3b82f6" });
+      lines.push({ pos: pos(endPlusOne), label: "Build End", solid: true, color: bspProject.color || "hsl(var(--primary))" });
     }
     return lines;
   }, [bspProject, timelineStart, pixelsPerDay]);
@@ -2906,7 +2906,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         <div
                           key={`${week.weekLabel}-${dayIdx}`}
                           className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
-                            day.isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''
+                            day.isWeekend ? 'bg-muted/30' : ''
                           } ${isToday ? 'text-primary font-semibold' : 'text-foreground'}`}
                           style={{ width: `${day.widthPx}px` }}
                         >
@@ -2949,7 +2949,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       return (
                         <div
                           key={`weekend-${week.weekLabel}-${dayIdx}`}
-                          className="absolute top-0 bg-[#f3f4f6] dark:bg-muted/50"
+                          className="absolute top-0 bg-muted/30"
                           style={{
                             left: `${previousDays * pixelsPerDay}px`,
                             width: `${pixelsPerDay}px`,
@@ -3058,7 +3058,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     }}
                     data-testid="ghost-preview-bar"
                   >
-                    <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-[#7c5fb3]">
+                    <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-primary">
                       {Math.max(1, Math.round(previewWidth / pixelsPerDay))}d
                     </div>
                   </div>
@@ -3111,14 +3111,14 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         title="Drag to create dependency from start"
                         data-testid={`dependency-start-${item.id}`}
                       >
-                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                        <div className="w-2 h-2 rounded-full bg-primary hover:scale-150 transition-transform" />
                       </div>
                       )}
                       
                       <div
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-primary' : 'hover:shadow-md'}
-                          ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
+                          ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-primary shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
                         `}
                         style={{
@@ -3245,7 +3245,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         title="Drag to create dependency from end"
                         data-testid={`dependency-end-${item.id}`}
                       >
-                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                        <div className="w-2 h-2 rounded-full bg-primary hover:scale-150 transition-transform" />
                       </div>
                       )}
                     </div>
@@ -3445,7 +3445,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         {/* Visible dependency line */}
                         <path
                           d={path}
-                          stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                          stroke="hsl(var(--primary))"
                           strokeWidth={isHovered || isSelected ? 2.5 : 1.5}
                           fill="none"
                           strokeLinecap="square"
@@ -3474,7 +3474,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     <path 
                       d="M 1 1 L 7 4 L 1 7" 
                       fill="none"
-                      stroke="#9b7fc7"
+                      stroke="hsl(var(--primary))"
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -3493,7 +3493,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     <path 
                       d="M 1 1 L 7 4 L 1 7" 
                       fill="none"
-                      stroke="#9b7fc7"
+                      stroke="hsl(var(--primary))"
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -3551,7 +3551,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   return (
                     <path
                       d={dragPath}
-                      stroke="#9b7fc7"
+                      stroke="hsl(var(--primary))"
                       strokeWidth="1.5"
                       strokeDasharray="4,3"
                       strokeLinecap="square"

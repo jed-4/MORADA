@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme } from '../theme';
 interface Project {
   id: string;
   name: string;
@@ -105,10 +105,10 @@ const colors = {
 };
 
   const statusColors: Record<string, string> = {
-    active: '#94a3b8',
-    in_progress: '#3b82f6',
-    completed: '#22c55e',
-    cancelled: '#ef4444',
+    active: theme.textMuted,
+    in_progress: theme.statusInfo,
+    completed: theme.statusSuccess,
+    cancelled: theme.statusDanger,
   };
 
   const statusLabels: Record<string, string> = {
@@ -239,7 +239,7 @@ const colors = {
 
   const getCheckboxColor = (status: string) => {
     switch (status) {
-      case 'completed': return '#22c55e';
+      case 'completed': return theme.statusSuccess;
       case 'na': return colors.muted;
       default: return colors.secondary;
     }
@@ -532,7 +532,7 @@ const colors = {
   const renderInstance = (instance: ChecklistInstance) => {
     const isExpanded = expandedId === instance.id;
     const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
-    const statusColor = statusColors[instance.status] || '#94a3b8';
+    const statusColor = statusColors[instance.status] || theme.textMuted;
 
     const items = itemsByInstance[instance.id] || [];
     const { groups: instanceGroups } = groupItems(items);

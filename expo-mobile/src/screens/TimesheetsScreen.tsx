@@ -23,7 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
-import { useTheme } from '../theme';
+import { useTheme, lightTheme, darkTheme } from '../theme';
 
 interface Timesheet {
   id: string;
@@ -269,29 +269,32 @@ function WeeklyTimeGrid({
   );
 
   function getStatusBg(status: string, dark: boolean): string {
+    const t = dark ? darkTheme : lightTheme;
     switch (status) {
-      case 'approved': return dark ? '#14532d' : '#dcfce7';
-      case 'submitted': return dark ? '#451a03' : '#fef3c7';
-      case 'rejected': return dark ? '#7f1d1d' : '#fee2e2';
-      default: return dark ? '#374151' : '#f3f4f6';
+      case 'approved': return t.statusSuccessBg;
+      case 'submitted': return t.statusWarningBg;
+      case 'rejected': return t.statusDangerBg;
+      default: return t.border;
     }
   }
 
   function getStatusBorder(status: string, dark: boolean): string {
+    const t = dark ? darkTheme : lightTheme;
     switch (status) {
-      case 'approved': return dark ? '#22c55e' : '#16a34a';
-      case 'submitted': return dark ? '#f59e0b' : '#d97706';
-      case 'rejected': return dark ? '#fca5a5' : '#b91c1c';
-      default: return dark ? '#6b7280' : '#9ca3af';
+      case 'approved': return t.statusSuccess;
+      case 'submitted': return t.statusWarning;
+      case 'rejected': return t.statusDanger;
+      default: return t.textMuted;
     }
   }
 
   function getStatusText(status: string, dark: boolean): string {
+    const t = dark ? darkTheme : lightTheme;
     switch (status) {
-      case 'approved': return dark ? '#86efac' : '#15803d';
-      case 'submitted': return dark ? '#fcd34d' : '#92400e';
-      case 'rejected': return dark ? '#fca5a5' : '#b91c1c';
-      default: return dark ? '#d1d5db' : '#4b5563';
+      case 'approved': return t.statusSuccess;
+      case 'submitted': return t.statusWarning;
+      case 'rejected': return t.statusDanger;
+      default: return t.textSecondary;
     }
   }
 
@@ -1086,11 +1089,12 @@ export default function TimesheetsScreen() {
   }, [costCodes]);
 
   const getStatusColor = useCallback((status: string) => {
+    const t = isDark ? darkTheme : lightTheme;
     switch (status) {
-      case 'draft': return { bg: isDark ? '#374151' : '#f3f4f6', text: isDark ? '#d1d5db' : '#4b5563' };
-      case 'submitted': return { bg: isDark ? '#1e3a5f' : '#dbeafe', text: isDark ? '#93c5fd' : '#1d4ed8' };
-      case 'approved': return { bg: isDark ? '#14532d' : '#dcfce7', text: isDark ? '#86efac' : '#15803d' };
-      case 'rejected': return { bg: isDark ? '#7f1d1d' : '#fee2e2', text: isDark ? '#fca5a5' : '#b91c1c' };
+      case 'draft': return { bg: t.border, text: t.textSecondary };
+      case 'submitted': return { bg: t.statusInfoBg, text: t.statusInfo };
+      case 'approved': return { bg: t.statusSuccessBg, text: t.statusSuccess };
+      case 'rejected': return { bg: t.statusDangerBg, text: t.statusDanger };
       default: return { bg: colors.border, text: colors.secondary };
     }
   }, [isDark, colors.border, colors.secondary]);
@@ -1190,7 +1194,7 @@ export default function TimesheetsScreen() {
             renderItem={({ item }) => {
               if (item.isHeader) {
                 return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                  <View style={[styles.pickerSectionHeader, { backgroundColor: theme.subtle }]}>
                     <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
                   </View>
                 );
@@ -1235,9 +1239,9 @@ export default function TimesheetsScreen() {
       </View>
 
       {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: '#fef3c7' }]}>
-          <Ionicons name="cloud-offline" size={16} color="#92400e" />
-          <Text style={{ color: '#92400e', fontSize: 13, marginLeft: 6, flex: 1 }}>
+        <View style={[styles.offlineBanner, { backgroundColor: theme.amberLight }]}>
+          <Ionicons name="cloud-offline" size={16} color={theme.amber} />
+          <Text style={{ color: theme.amber, fontSize: 13, marginLeft: 6, flex: 1 }}>
             You're offline. Actions will be saved and synced when connected.
           </Text>
         </View>

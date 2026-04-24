@@ -23,7 +23,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme } from '../theme';
 interface Task {
   id: string;
   title: string;
@@ -62,22 +62,22 @@ const PRIORITY_LABELS: Record<string, string> = {
 
 function getPriorityColor(priority?: string): string {
   switch (priority) {
-    case 'urgent': return '#ef4444';
-    case 'high': return '#f97316';
-    case 'medium': return '#eab308';
-    case 'low': return '#22c55e';
-    default: return '#94a3b8';
+    case 'urgent': return lightTheme.statusDanger;
+    case 'high': return lightTheme.coral;
+    case 'medium': return lightTheme.statusWarning;
+    case 'low': return lightTheme.statusSuccess;
+    default: return lightTheme.textMuted;
   }
 }
 
 function getStatusColorFallback(status?: string): string {
   switch (status) {
-    case 'todo': return '#94a3b8';
+    case 'todo': return lightTheme.textMuted;
     case 'in_progress':
-    case 'in-progress': return '#3b82f6';
+    case 'in-progress': return lightTheme.statusInfo;
     case 'done':
-    case 'completed': return '#22c55e';
-    default: return '#94a3b8';
+    case 'completed': return lightTheme.statusSuccess;
+    default: return lightTheme.textMuted;
   }
 }
 

@@ -2753,7 +2753,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#b196d2',
+    backgroundColor: '#A890D4',
   },
   calendarTodayBtn: {
     flexDirection: 'row',

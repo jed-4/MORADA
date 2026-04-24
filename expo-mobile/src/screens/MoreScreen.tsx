@@ -40,19 +40,19 @@ interface QuickAddItem {
 }
 
 const quickAddItems: QuickAddItem[] = [
-  { id: 'note', label: 'Notes', icon: 'document-text-outline', color: '#10b981' },
-  { id: 'task', label: 'Tasks', icon: 'checkbox-outline', color: '#8b5cf6' },
-  { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#b196d2' },
+  { id: 'note', label: 'Notes', icon: 'document-text-outline', color: '#82C8A2' },
+  { id: 'task', label: 'Tasks', icon: 'checkbox-outline', color: '#A890D4' },
+  { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#A890D4' },
 ];
 
 const moreItems: MoreItem[] = [
-  { id: 'notes', label: 'Notes', icon: 'document-text', color: '#10b981', action: 'navigate', screen: 'Notes' },
-  { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#b196d2', action: 'navigate', screen: 'SiteDiaryList' },
-  { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'navigate', screen: 'Tasks' },
-  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#22c55e', action: 'navigate', screen: 'Checklists' },
-  { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#10b981', action: 'coming-soon' },
-  { id: 'contacts', label: 'Contacts', icon: 'people', color: '#f59e0b', action: 'coming-soon' },
-  { id: 'settings', label: 'Settings', icon: 'settings', color: '#6b7280', action: 'coming-soon' },
+  { id: 'notes', label: 'Notes', icon: 'document-text', color: '#82C8A2', action: 'navigate', screen: 'Notes' },
+  { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#A890D4', action: 'navigate', screen: 'SiteDiaryList' },
+  { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#A890D4', action: 'navigate', screen: 'Tasks' },
+  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#82C8A2', action: 'navigate', screen: 'Checklists' },
+  { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#70CAD0', action: 'coming-soon' },
+  { id: 'contacts', label: 'Contacts', icon: 'people', color: '#D4B670', action: 'coming-soon' },
+  { id: 'settings', label: 'Settings', icon: 'settings', color: '#8A8680', action: 'coming-soon' },
 ];
 
 const SHEET_HEIGHT = 440;

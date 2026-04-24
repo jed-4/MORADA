@@ -914,7 +914,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   <div className="flex items-center gap-1.5">
                     <span className="text-data text-muted-foreground">{done}/{catAll.length} done</span>
                     {reqCount > 0 && (
-                      <span className="text-label px-1 rounded font-medium bg-green-500/15 text-status-success dark:text-green-400">
+                      <span className="text-label px-1 rounded font-medium bg-status-success-bg text-status-success">
                         {reqCount} req.
                       </span>
                     )}

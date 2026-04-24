@@ -581,7 +581,7 @@ export default function Bills() {
           <div className="flex items-center gap-1 font-medium">
             {row.original.billNumber}
             {row.original.billType === "credit" && (
-              <Badge variant="outline" className="text-data px-1 py-0 text-status-success dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
+              <Badge variant="outline" className="text-data px-1 py-0 text-status-success border-status-success/40">Credit</Badge>
             )}
           </div>
         ),
@@ -651,7 +651,7 @@ export default function Bills() {
         header: "Total",
         accessorFn: (b) => (b.billType === "credit" ? -b.total : b.total),
         cell: ({ row }) => (
-          <span className={cn("font-medium", row.original.billType === "credit" && "text-status-success dark:text-green-400")}>
+          <span className={cn("font-medium", row.original.billType === "credit" && "text-status-success")}>
             {row.original.billType === "credit"
               ? `-${formatCurrency(row.original.total)}`
               : formatCurrency(row.original.total)}

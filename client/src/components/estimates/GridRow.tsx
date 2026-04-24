@@ -119,7 +119,7 @@ export const GridHeaderRow = React.memo(({
         display: 'grid', 
         gridTemplateColumns: gridTemplate 
       }}
-      className={`bg-muted/30 border-b-2 border-border dark:border-gray-700 ${className}`}
+      className={`bg-muted/30 border-b-2 border-border ${className}`}
     >
       {/* Empty drag handle column */}
       <div className="h-10 px-1 flex items-center" role="columnheader" />

@@ -466,9 +466,9 @@ export default function HBCFTracker() {
               <div className="text-xs flex items-center gap-1.5">
                 <span className="text-muted-foreground">Peak {year}:</span>
                 <span className={`font-semibold tabular-nums ${
-                  peakTotal > limit ? "text-status-danger dark:text-red-400" :
-                  peakTotal / limit >= 0.8 ? "text-status-warning dark:text-orange-400" :
-                  peakTotal > 0 ? "text-status-success dark:text-green-400" : "text-muted-foreground"
+                  peakTotal > limit ? "text-status-danger" :
+                  peakTotal / limit >= 0.8 ? "text-status-warning" :
+                  peakTotal > 0 ? "text-status-success" : "text-muted-foreground"
                 }`}>{fmtFull(peakTotal)}</span>
               </div>
               <div className="w-28 h-1.5 bg-muted rounded-full overflow-hidden">

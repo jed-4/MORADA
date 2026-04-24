@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme } from '../theme';
 interface Project {
   id: string;
   name: string;
@@ -101,7 +101,7 @@ const colors = {
     setRefreshing(false);
   }, [fetchProjects]);
 
-  const GREY = '#94a3b8';
+  const GREY = lightTheme.textMuted;
   const getProjectColor = (project: Project): string => project.color || GREY;
   const mutedColor = (hex: string): string => hex + '45';
 
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#d6d3d1',
+    borderColor: lightTheme.borderStrong,
     height: 50,
   },
   colorSquare: {

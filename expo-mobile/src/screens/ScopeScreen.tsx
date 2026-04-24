@@ -15,7 +15,7 @@ import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme } from '../theme';
+import { useTheme, lightTheme, darkTheme } from '../theme';
 interface ScopeStage {
   id: string;
   name: string;
@@ -72,14 +72,15 @@ function stripHtml(html?: string): string {
 }
 
 function getTypeBadgeColor(type: string, isDark: boolean): { bg: string; text: string } {
+  const th = isDark ? darkTheme : lightTheme;
   const t = type.toLowerCase();
-  if (t === 'e-note') return { bg: isDark ? '#7c3aed33' : '#ede9fe', text: isDark ? '#c4b5fd' : '#7c3aed' };
-  if (t === 'note') return { bg: isDark ? '#0284c733' : '#e0f2fe', text: isDark ? '#7dd3fc' : '#0284c7' };
-  if (t === 'material') return { bg: isDark ? '#d9770633' : '#ffedd5', text: isDark ? '#fdba74' : '#c2410c' };
-  if (t === 'tool') return { bg: isDark ? '#15803d33' : '#dcfce7', text: isDark ? '#86efac' : '#15803d' };
-  if (t === 'proposal') return { bg: isDark ? '#b4530033' : '#fef3c7', text: isDark ? '#fcd34d' : '#92400e' };
-  if (t === 'checklist') return { bg: isDark ? '#0f766e33' : '#ccfbf1', text: isDark ? '#5eead4' : '#0f766e' };
-  return { bg: isDark ? '#33415533' : '#f1f5f9', text: isDark ? '#94a3b8' : '#475569' };
+  if (t === 'e-note') return { bg: th.primaryLight, text: th.primary };
+  if (t === 'note') return { bg: th.statusInfoBg, text: th.statusInfo };
+  if (t === 'material') return { bg: th.coralLight, text: th.coral };
+  if (t === 'tool') return { bg: th.statusSuccessBg, text: th.statusSuccess };
+  if (t === 'proposal') return { bg: th.statusWarningBg, text: th.statusWarning };
+  if (t === 'checklist') return { bg: th.tealLight, text: th.teal };
+  return { bg: th.subtle, text: th.textSecondary };
 }
 
 type Props = {

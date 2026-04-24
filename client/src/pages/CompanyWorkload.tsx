@@ -895,7 +895,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                         "flex flex-col items-center justify-end pb-0.5 min-w-0",
                         isWeekStart ? "border-l border-border/60" : "border-l border-border/15",
                         dayIdx === 0 && "border-l-0",
-                        isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
+                        isWkend && "bg-muted/30",
                         isToday && "bg-primary/10"
                       )}
                       style={{ flex: '1 1 0' }}
@@ -984,7 +984,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           key={key}
                           className={cn(
                             "absolute top-0 h-full border-l border-border/10",
-                            isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
+                            isWkend && "bg-muted/30",
                             isToday && "bg-primary/5",
                             isOverloadedDay && "bg-red-500/8"
                           )}

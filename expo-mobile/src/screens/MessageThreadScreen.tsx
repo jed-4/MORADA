@@ -237,7 +237,7 @@ const colors = {
               ? [styles.bubbleMe, { backgroundColor: colors.myBubble }]
               : [styles.bubbleOther, { backgroundColor: colors.otherBubble, borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth }],
           ]}>
-            <Text style={[styles.bubbleText, { color: isMe && !isDark ? '#3b1f6e' : colors.text }]}>{msg.content}</Text>
+            <Text style={[styles.bubbleText, { color: colors.text }]}>{msg.content}</Text>
           </View>
           {isMe && (
             <Text style={[styles.messageTimeMe, { color: colors.muted }]}>{formatTime(msg.createdAt)}</Text>

@@ -57,7 +57,7 @@ export default function VariationPortal() {
   }
 
   const companySettings = data.company
-    ? { brandColor: (data.company as any).brandColor || "#6d28d9" }
+    ? { brandColor: (data.company as any).brandColor || "#A890D4" }
     : null;
 
   return (

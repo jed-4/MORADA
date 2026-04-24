@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { API_BASE_URL, getSessionId } from '../services/api';
+import { lightTheme } from '../theme';
 
 interface VoiceToTextButtonProps {
   onTranscription: (text: string) => void;
@@ -139,7 +140,7 @@ export default function VoiceToTextButton({ onTranscription, style }: VoiceToTex
   if (state === 'transcribing') {
     return (
       <TouchableOpacity style={[styles.button, style]} disabled>
-        <ActivityIndicator size={16} color="#3b82f6" />
+        <ActivityIndicator size={16} color={lightTheme.statusInfo} />
       </TouchableOpacity>
     );
   }
@@ -148,7 +149,7 @@ export default function VoiceToTextButton({ onTranscription, style }: VoiceToTex
     return (
       <Animated.View style={[styles.button, style, { transform: [{ scale: pulseAnim }] }]}>
         <TouchableOpacity onPress={handlePress} activeOpacity={0.7} style={styles.innerButton}>
-          <Ionicons name="mic" size={18} color="#ef4444" />
+          <Ionicons name="mic" size={18} color={lightTheme.statusDanger} />
         </TouchableOpacity>
       </Animated.View>
     );
@@ -156,7 +157,7 @@ export default function VoiceToTextButton({ onTranscription, style }: VoiceToTex
 
   return (
     <TouchableOpacity style={[styles.button, style]} onPress={handlePress} activeOpacity={0.7}>
-      <Ionicons name="mic-outline" size={18} color="#3b82f6" />
+      <Ionicons name="mic-outline" size={18} color={lightTheme.statusInfo} />
     </TouchableOpacity>
   );
 }

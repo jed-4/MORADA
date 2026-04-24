@@ -626,7 +626,7 @@ export default function ChecklistInstanceDetail() {
               Completed
             </Badge>
           ) : checklist.status === "in_progress" || progress > 0 ? (
-            <Badge className="bg-primary/20 text-[#8b6bb8] dark:bg-primary/10 dark:text-primary">
+            <Badge className="bg-primary/20 text-primary dark:bg-primary/10">
               In Progress
             </Badge>
           ) : (
@@ -1345,7 +1345,7 @@ export default function ChecklistInstanceDetail() {
                 />
                 <Button
                   size="icon"
-                  className="h-8 w-8 shrink-0 self-end bg-primary hover:bg-[#a896c9]"
+                  className="h-8 w-8 shrink-0 self-end bg-primary hover:bg-primary/90"
                   onClick={handleAddNote}
                   disabled={!newNoteText.trim() || updateItemMutation.isPending}
                 >
