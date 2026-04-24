@@ -16,82 +16,97 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
 
-  --background: 261 53% 98%; /* Lilac-tinted white */
-  
-  --page-background: 220 14% 96%; /* Soft gray outer background #f1f5f9 */
+  /* Hybrid Notion Canvas — light palette */
+  --background: 60 20% 98%; /* Warm off-white #FAFAF8 */
 
-  --foreground: 215 25% 17%; /* Slate-800 #1e293b */
+  --page-background: 36 16% 95%; /* Soft warm outer #F4F2EE */
 
-  --border: 214 32% 91%; /* Light slate border */
+  --foreground: 30 8% 10%; /* Deep warm ink #1C1B19 */
 
-  --card: 0 0% 100%; /* Pure white cards */
+  --border: 36 13% 90%; /* Warm hairline #E8E5E0 */
 
-  --card-foreground: 215 25% 17%;
+  --card: 0 0% 100%; /* Pure white cards #FFFFFF */
 
-  --card-border: 214 32% 91%;
+  --card-foreground: 30 8% 10%;
 
-  --sidebar: 0 0% 100%; /* Pure white sidebar */
+  --card-border: 36 13% 90%;
 
-  --sidebar-foreground: 215 25% 17%;
+  --sidebar: 0 0% 100%; /* White sidebar */
 
-  --sidebar-border: 214 32% 91%;
+  --sidebar-foreground: 30 8% 10%;
 
-  --sidebar-primary: 265 44% 76%; /* Lilac Purple #A890D4 */
+  --sidebar-border: 36 13% 90%;
+
+  --sidebar-primary: 261 44% 70%; /* Lavender #A890D4 */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 265 100% 98%;
+  --sidebar-accent: 36 16% 95%; /* Warm tint #F4F2EE */
 
-  --sidebar-accent-foreground: 215 25% 17%;
+  --sidebar-accent-foreground: 30 8% 10%;
 
-  --sidebar-ring: 265 44% 76%; /* Lilac accent */
+  --sidebar-ring: 261 44% 70%;
 
   --popover: 0 0% 100%;
 
-  --popover-foreground: 215 25% 17%;
+  --popover-foreground: 30 8% 10%;
 
-  --popover-border: 214 32% 91%;
+  --popover-border: 36 13% 90%;
 
-  /* Casva Lilac Purple Palette */
-  --primary: 261 44% 70%; /* Lilac Purple #A890D4 */
+  /* Casva Lavender Brand */
+  --primary: 261 44% 70%; /* #A890D4 */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 265 100% 98%; /* Light lilac background */
+  --secondary: 265 70% 95%; /* Light lavender wash #EEE9FA */
 
-  --secondary-foreground: 215 25% 17%;
+  --secondary-foreground: 30 8% 10%;
 
-  --muted: 214 32% 96%;
+  --muted: 36 16% 93%; /* Warm muted #F2F0EC */
 
-  --muted-foreground: 215 16% 47%; /* Slate-600 */
+  --muted-foreground: 36 9% 33%; /* #5A554D */
 
-  --accent: 265 44% 76%; /* Lilac accent */
+  --accent: 261 44% 70%; /* Match primary lavender */
 
   --accent-foreground: 0 0% 100%;
 
-  /* Construction-specific colors */
-  --success: 142 76% 36%; /* Keep success green consistent */
-  
-  --warning: 265 44% 76%; /* Lilac purple */
-  
+  /* Status colors */
+  --success: 142 76% 36%;
+
+  --warning: 39 50% 64%; /* Amber */
+
   --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 98%;
-  
-  /* Additional construction colors */
-  --construction-sand: 43 74% 66%;
-  --construction-steel: 210 11% 71%;
-  --construction-safety: 60 100% 50%;
 
-  --input: 220 8% 90%;
-  --ring: 240 50% 65%;
+  /* Helper tokens */
+  --border-strong: 36 13% 81%; /* #D4CFC7 */
+  --text-secondary: 36 9% 33%; /* #5A554D */
+  --text-muted: 36 7% 51%; /* #8A857C */
+  --primary-hover: 261 38% 61%; /* #9478C0 */
+  --primary-light: 265 70% 95%; /* #EEE9FA */
+
+  /* Organic accent palette */
+  --teal: 170 30% 51%;        /* #5BA89B */
+  --teal-light: 167 38% 90%;  /* #DEF0EC */
+  --sage: 145 40% 65%;        /* #82C8A2 */
+  --sage-light: 145 60% 94%;  /* #E8F8EE */
+  --amber: 39 50% 64%;        /* #D4B670 */
+  --amber-light: 43 80% 93%;  /* #FCF4E0 */
+  --coral: 11 53% 70%;        /* #DA988A */
+  --coral-light: 4 86% 95%;   /* #FDE9E8 */
+  --rose: 333 26% 70%;        /* #C49DB6 */
+  --rose-light: 325 50% 93%;  /* #F5E5EE */
+
+  --input: 36 13% 90%;
+  --ring: 261 44% 70%;
   --chart-1: 210 40% 50%;
   --chart-2: 142 70% 40%;
   --chart-3: 38 85% 50%;
   --chart-4: 280 50% 50%;
   --chart-5: 15 75% 50%;
 
-  --font-sans: 'Lato', sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, monospace;
   --radius: .5rem; /* 8px */
@@ -174,76 +189,90 @@
   --elevate-1: rgba(255,255,255, .03);
   --elevate-2: rgba(255,255,255, .07);
 
-  /* Soft Charcoal Theme - Professional & Easy on Eyes */
-  --background: 220 12% 16%; /* Soft charcoal - not too dark */
-  
-  --page-background: 220 12% 10%; /* Dark outer background */
+  /* Claude Dark Canvas — warm dark palette */
+  --background: 36 11% 14%; /* Warm charcoal #252320 */
 
-  --foreground: 220 10% 92%; /* Slightly warmer white */
+  --page-background: 30 8% 10%; /* Deep warm ink #1C1B19 */
 
-  --border: 220 10% 24%; /* Subtle border */
+  --foreground: 40 18% 91%; /* Warm cream #ECE9E2 */
 
-  --card: 220 12% 20%; /* Elevated card surface */
+  --border: 30 7% 21%; /* Warm hairline #3A3733 */
 
-  --card-foreground: 220 10% 92%;
+  --card: 30 9% 16%; /* Elevated warm surface #2D2A26 */
 
-  --card-border: 220 10% 26%;
+  --card-foreground: 40 18% 91%;
 
-  --sidebar: 220 12% 18%; /* Slightly darker than card for depth */
+  --card-border: 30 7% 21%;
 
-  --sidebar-foreground: 220 10% 92%;
+  --sidebar: 30 9% 7%; /* Deepest warm shadow #141312 */
 
-  --sidebar-border: 220 10% 24%;
+  --sidebar-foreground: 40 18% 91%;
 
-  --sidebar-primary: 265 55% 72%; /* Brighter lilac for dark mode */
+  --sidebar-border: 30 8% 15%;
 
-  --sidebar-primary-foreground: 220 12% 16%;
+  --sidebar-primary: 261 44% 70%; /* Lavender #A890D4 */
 
-  --sidebar-accent: 220 12% 24%;
+  --sidebar-primary-foreground: 30 9% 7%;
 
-  --sidebar-accent-foreground: 220 10% 92%;
+  --sidebar-accent: 36 11% 14%;
 
-  --sidebar-ring: 265 55% 72%;
+  --sidebar-accent-foreground: 40 18% 91%;
 
-  --popover: 220 12% 22%;
+  --sidebar-ring: 261 44% 70%;
 
-  --popover-foreground: 220 10% 92%;
+  --popover: 30 9% 16%;
 
-  --popover-border: 220 10% 28%;
+  --popover-foreground: 40 18% 91%;
 
-  /* Brighter Lilac Accent for Dark Mode */
-  --primary: 261 44% 70%; /* Lilac Purple #A890D4 */
+  --popover-border: 30 7% 21%;
 
-  --primary-foreground: 220 12% 16%;
+  /* Lavender Brand */
+  --primary: 261 44% 70%; /* #A890D4 */
 
-  --secondary: 265 30% 28%; /* Muted lilac background */
+  --primary-foreground: 30 9% 7%;
 
-  --secondary-foreground: 220 10% 92%;
+  --secondary: 30 7% 18%; /* Warm muted #322F2B */
 
-  --muted: 220 10% 22%;
+  --secondary-foreground: 40 18% 91%;
 
-  --muted-foreground: 220 10% 60%;
+  --muted: 30 7% 18%;
 
-  --accent: 265 55% 72%; /* Match primary lilac */
+  --muted-foreground: 36 8% 60%; /* Warm grey #A29C92 */
 
-  --accent-foreground: 220 12% 16%;
+  --accent: 261 44% 70%;
 
-  /* Construction-specific colors - Dark Mode (brighter for visibility) */
-  --success: 142 70% 48%; /* Brighter green */
-  
-  --warning: 38 92% 55%; /* Warm amber warning */
-  
-  --destructive: 0 75% 60%; /* Softer red */
+  --accent-foreground: 30 9% 7%;
+
+  /* Status colors - Dark Mode */
+  --success: 142 70% 48%;
+
+  --warning: 39 55% 70%;
+
+  --destructive: 0 75% 60%;
 
   --destructive-foreground: 0 0% 98%;
-  
-  /* Additional construction colors - Dark Mode */
-  --construction-sand: 43 70% 65%;
-  --construction-steel: 210 15% 70%;
-  --construction-safety: 48 95% 55%;
 
-  --input: 220 10% 28%;
-  --ring: 265 55% 72%;
+  /* Helper tokens */
+  --border-strong: 30 8% 27%; /* #4A4640 */
+  --text-secondary: 36 12% 73%; /* #C4BEB4 */
+  --text-muted: 36 8% 60%; /* #A29C92 */
+  --primary-hover: 261 53% 77%; /* #B8A6E3 */
+  --primary-light: 265 25% 24%; /* #3A2F4D */
+
+  /* Organic accent palette */
+  --teal: 170 35% 60%;
+  --teal-light: 170 25% 22%;
+  --sage: 145 45% 70%;
+  --sage-light: 145 25% 22%;
+  --amber: 39 55% 70%;
+  --amber-light: 39 25% 22%;
+  --coral: 11 58% 75%;
+  --coral-light: 11 25% 22%;
+  --rose: 333 30% 75%;
+  --rose-light: 333 25% 22%;
+
+  --input: 30 7% 21%;
+  --ring: 261 44% 70%;
   --chart-1: 210 80% 60%;
   --chart-2: 142 65% 55%;
   --chart-3: 38 85% 60%;
@@ -920,15 +949,6 @@
   
   .status-warning {
     background-color: hsl(var(--warning));
-    color: white;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-  
-  .status-inactive {
-    background-color: hsl(var(--construction-steel));
     color: white;
     padding: 2px 8px;
     border-radius: 12px;

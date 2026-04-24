@@ -55,7 +55,7 @@ type TableRow = HbcfRow & { __isTotal?: boolean };
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ROW_COLORS = [
-  "#bba7db", "#60a5fa", "#34d399", "#fbbf24", "#f87171",
+  "#A890D4", "#60a5fa", "#34d399", "#fbbf24", "#f87171",
   "#a78bfa", "#38bdf8", "#4ade80", "#fb923c", "#e879f9",
 ];
 
@@ -324,7 +324,7 @@ export default function HBCFTracker() {
             <div className="flex items-start gap-1.5 min-w-0 group/row">
               <div
                 className="w-2 h-full min-h-[28px] rounded-sm flex-shrink-0 mt-0.5"
-                style={{ background: r.color ?? "#bba7db" }}
+                style={{ background: r.color ?? "#A890D4" }}
               />
               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                 <InlineName
@@ -364,7 +364,7 @@ export default function HBCFTracker() {
           <div className={cn("flex flex-col items-center leading-none gap-0.5", isNow && "text-[#7c5cbf]")}>
             <span className="text-[9px] uppercase">{monthLabel}</span>
             <span className="text-[9px]">{dayLabel}</span>
-            {isNow && <span className="w-1 h-1 rounded-full bg-[#bba7db]" />}
+            {isNow && <span className="w-1 h-1 rounded-full bg-primary" />}
           </div>
         ),
         enableSorting: false,
@@ -377,7 +377,7 @@ export default function HBCFTracker() {
               <div
                 className={cn(
                   "w-full h-full flex items-center justify-center text-[9px] font-bold tabular-nums",
-                  isNow && "ring-1 ring-inset ring-[#bba7db]/40",
+                  isNow && "ring-1 ring-inset ring-primary/40",
                 )}
                 style={{ background: bg, color: text }}
               >
@@ -387,7 +387,7 @@ export default function HBCFTracker() {
           }
           const isActive = !!r.statuses[key];
           return (
-            <div className={cn("w-full", isNow && "bg-[#bba7db]/5")}>
+            <div className={cn("w-full", isNow && "bg-primary/5")}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -400,7 +400,7 @@ export default function HBCFTracker() {
                     ? "text-white"
                     : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50",
                 )}
-                style={isActive ? { background: r.color ?? "#bba7db" } : undefined}
+                style={isActive ? { background: r.color ?? "#A890D4" } : undefined}
               >
                 {isActive ? "ON" : "·"}
               </button>
@@ -473,7 +473,7 @@ export default function HBCFTracker() {
               </div>
               <div className="w-28 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-orange-500" : "bg-[#bba7db]"}`}
+                  className={`h-full rounded-full ${peakTotal > limit ? "bg-destructive" : peakTotal / limit >= 0.8 ? "bg-orange-500" : "bg-primary"}`}
                   style={{ width: `${Math.min((peakTotal / limit) * 100, 100)}%` }}
                 />
               </div>
