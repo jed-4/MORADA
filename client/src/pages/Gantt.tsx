@@ -242,7 +242,7 @@ function useGanttRowDrag(
           ghost.style.borderRadius = '4px';
           ghost.style.overflow = 'hidden';
           ghost.style.background = 'var(--background)';
-          ghost.style.border = '2px solid #A890D4';
+          ghost.style.border = '2px solid hsl(var(--primary))';
 
           const clone = rowEl.cloneNode(true) as HTMLElement;
           clone.style.opacity = '1';
@@ -2691,7 +2691,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                   </PopoverTrigger>
                                 </TooltipTrigger>
                                 {item.assignedToName && !assigneePopoverItemId && (
-                                  <TooltipContent side="bottom" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
+                                  <TooltipContent side="bottom" className="bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 border">
                                     {item.assignedToName}
                                   </TooltipContent>
                                 )}
@@ -4021,7 +4021,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             left: rowDragIndicator.left,
             width: rowDragIndicator.width,
             height: '2px',
-            backgroundColor: '#A890D4',
+            backgroundColor: 'hsl(var(--primary))',
             zIndex: 99998,
             pointerEvents: 'none',
             boxShadow: '0 0 4px rgba(168, 144, 212, 0.5)',
@@ -4035,7 +4035,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#A890D4',
+              backgroundColor: 'hsl(var(--primary))',
             }}
           />
           <div
@@ -4046,7 +4046,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#A890D4',
+              backgroundColor: 'hsl(var(--primary))',
             }}
           />
         </div>,

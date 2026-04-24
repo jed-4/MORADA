@@ -681,7 +681,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </HoverCardTrigger>
               {item.description && (
                 <HoverCardContent 
-                  className="w-80 p-3 z-[9999] bg-white dark:bg-zinc-900 shadow-xl border border-border" 
+                  className="w-80 p-3 z-[9999] bg-popover shadow-xl border border-border" 
                   align="start" 
                   side="bottom" 
                   sideOffset={8}
@@ -1644,7 +1644,7 @@ function DroppableStage({
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : cl.status === 'in_progress'
                                   ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-muted text-secondary dark:bg-gray-800 dark:text-muted'
+                                  : 'bg-muted text-secondary '
                             }`}>
                               {cl.status.replace('_', ' ')}
                             </span>
@@ -1725,7 +1725,7 @@ function DroppableStage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{task.title}</span>
                             {task.statusName && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-secondary dark:bg-gray-800 dark:text-muted shrink-0">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-secondary shrink-0">
                                 {task.statusName}
                               </span>
                             )}

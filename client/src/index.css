@@ -1228,7 +1228,7 @@
   }
 
   .rbc-current-time-indicator {
-    background-color: #A890D4;
+    background-color: hsl(var(--primary));
   }
 }
 

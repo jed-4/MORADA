@@ -633,7 +633,7 @@ export default function BusinessSchedule() {
 
   if (viewMode === "workload") {
     return (
-      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+      <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
           <ViewModeTabs active="workload" />
         </div>
@@ -644,7 +644,7 @@ export default function BusinessSchedule() {
 
   if (viewMode === "schedules") {
     return (
-      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+      <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
           <ViewModeTabs active="schedules" />
         </div>
@@ -670,7 +670,7 @@ export default function BusinessSchedule() {
     });
 
     return (
-      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+      <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
         {/* Toolbar */}
         <div className="min-h-10 flex items-center justify-between flex-wrap px-3 py-1 border-b border-border flex-shrink-0 gap-2">
           <div className="flex items-center flex-wrap gap-2">
@@ -853,7 +853,7 @@ export default function BusinessSchedule() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+    <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">

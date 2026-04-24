@@ -370,7 +370,7 @@ export default function Variations() {
             checked={filteredVariations.length > 0 && selectedIds.size === filteredVariations.length}
             ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredVariations.length; }}
             onChange={toggleSelectAll}
-            className="w-3 h-3 accent-[#A890D4] cursor-pointer"
+            className="w-3 h-3 accent-primary cursor-pointer"
             aria-label="Select all"
             data-testid="checkbox-select-all"
           />
@@ -383,7 +383,7 @@ export default function Variations() {
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => {}}
-                className="w-3 h-3 accent-[#A890D4] cursor-pointer"
+                className="w-3 h-3 accent-primary cursor-pointer"
                 data-testid={`checkbox-${row.original.id}`}
               />
             </span>

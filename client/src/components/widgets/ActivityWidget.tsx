@@ -185,7 +185,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
       case "site_diary":
         return "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950";
       default:
-        return "text-secondary bg-muted dark:text-muted dark:bg-gray-950";
+        return "text-secondary bg-muted";
     }
   };
 

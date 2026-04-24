@@ -792,7 +792,7 @@ export default function ProjectChecklists() {
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
-      low: "bg-muted text-secondary dark:bg-gray-800 dark:text-gray-300",
+      low: "bg-muted text-secondary ",
       medium: "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400",
       high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
       urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
@@ -815,7 +815,7 @@ export default function ProjectChecklists() {
       case "in_progress":
         return "bg-primary/20 text-primary";
       default:
-        return "bg-muted text-secondary dark:bg-gray-800 dark:text-muted";
+        return "bg-muted text-secondary ";
     }
   };
 

@@ -937,7 +937,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     switch (priority) {
       case 'high': return 'text-status-danger bg-red-50 dark:bg-red-900/20';
       case 'medium': return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
-      case 'low': return 'text-muted bg-muted dark:bg-slate-900/20';
+      case 'low': return 'text-muted bg-muted';
       default: return 'text-muted-foreground';
     }
   };

@@ -175,7 +175,7 @@ function DraggableFieldRow({
       <label
         htmlFor={field.id}
         className="flex-1 text-sm font-medium cursor-pointer"
-        style={{ color: field.visible ? "#A890D4" : "inherit" }}
+        style={{ color: field.visible ? "hsl(var(--primary))" : "inherit" }}
       >
         {field.label}
       </label>
@@ -1214,7 +1214,7 @@ export function ProjectBoard({
                         <Checkbox checked={activeField.visible} />
                         <label
                           className="flex-1 text-sm font-medium"
-                          style={{ color: activeField.visible ? "#A890D4" : "inherit" }}
+                          style={{ color: activeField.visible ? "hsl(var(--primary))" : "inherit" }}
                         >
                           {activeField.label}
                         </label>
@@ -1238,7 +1238,7 @@ export function ProjectBoard({
                     onClick={handleSaveCardFields}
                     className="flex-1"
                     data-testid="button-save-card-fields"
-                    style={{ backgroundColor: "#A890D4", color: "white" }}
+                    style={{ backgroundColor: "hsl(var(--primary))", color: "white" }}
                   >
                     Save
                   </Button>

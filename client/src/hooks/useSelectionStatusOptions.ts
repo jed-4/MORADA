@@ -19,8 +19,8 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     color: "#6B7280",
     icon: FileEdit,
     description: "Selection is being prepared, not visible to clients",
-    bgClass: "bg-muted dark:bg-gray-800",
-    textClass: "text-secondary dark:text-gray-300"
+    bgClass: "bg-muted",
+    textClass: "text-secondary"
   },
   pending: {
     key: "pending",

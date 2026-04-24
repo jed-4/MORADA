@@ -154,7 +154,7 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
       case "manual":
         return "text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950";
       default:
-        return "text-secondary bg-muted dark:text-muted dark:bg-gray-950";
+        return "text-secondary bg-muted";
     }
   };
 

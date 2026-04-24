@@ -671,7 +671,7 @@ export default function Timesheets() {
         cell: ({ row }) => {
           const s = row.original.status;
           if (s === "approved") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
-          if (s === "submitted") return <Badge variant="outline" className="text-[10px] font-medium bg-muted dark:bg-slate-900/20 text-secondary dark:text-muted border-border dark:border-slate-800">Submitted</Badge>;
+          if (s === "submitted") return <Badge variant="outline" className="text-[10px] font-medium bg-muted text-secondary border-border">Submitted</Badge>;
           if (s === "rejected") return <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-status-danger dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
           return <Badge variant="secondary" className="text-[10px] font-medium">{s}</Badge>;
         },
@@ -1832,7 +1832,7 @@ export default function Timesheets() {
             <div className="flex items-center justify-end gap-4 px-3 py-2">
               {(() => {
                 const statusGroups = [
-                  { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-secondary dark:text-slate-300" },
+                  { key: "submitted", label: "Submitted", bgClass: "bg-muted", textClass: "text-secondary" },
                   { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-status-success dark:text-green-300" },
                   { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-status-danger dark:text-red-300" },
                 ];

@@ -445,7 +445,7 @@ export function ImportScheduleDialog({
               isDragging
                 ? "border-primary bg-primary/5"
                 : selectedFile
-                ? "border-green-500 bg-green-500/5"
+                ? "border-status-success-fg bg-status-success-bg/50"
                 : "border-muted-foreground/25 hover:border-muted-foreground/50"
             }`}
             data-testid="dropzone-file-upload"

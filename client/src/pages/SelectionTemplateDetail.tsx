@@ -49,7 +49,7 @@ import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, Pointer
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const CASVA_LILAC = '#A890D4';
+const CASVA_LILAC = 'hsl(var(--primary))';
 
 interface SelectionOption {
   id: string;

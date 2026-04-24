@@ -138,9 +138,9 @@ export default function ProjectTeam() {
           <Badge
             className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
             style={{
-              backgroundColor: "#A890D415",
-              color: "#A890D4",
-              borderColor: "#A890D430",
+              backgroundColor: "hsl(var(--primary) / 0.08)",
+              color: "hsl(var(--primary))",
+              borderColor: "hsl(var(--primary) / 0.19)",
             }}
             data-testid={`cell-role-${row.original.id}`}
           >

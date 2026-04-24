@@ -100,7 +100,7 @@ interface RouteParams {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-muted dark:bg-gray-800", text: "text-secondary dark:text-gray-300" },
+  draft: { bg: "bg-muted", text: "text-secondary" },
   sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-300" },
   approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-300" },
   pending_approval: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-status-warning dark:text-yellow-300" },
@@ -108,7 +108,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   partially_delivered: { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-status-warning dark:text-orange-300" },
   delivered: { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300" },
   invoiced: { bg: "bg-indigo-100 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300" },
-  closed: { bg: "bg-border dark:bg-gray-700", text: "text-secondary dark:text-muted" },
+  closed: { bg: "bg-border", text: "text-secondary" },
   cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-status-danger dark:text-red-300" },
 };
 

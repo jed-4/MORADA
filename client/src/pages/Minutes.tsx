@@ -420,9 +420,9 @@ function MinuteCard({
               <Badge 
                 className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
-                  backgroundColor: '#A890D415',
-                  color: '#A890D4',
-                  borderColor: '#A890D430'
+                  backgroundColor: 'hsl(var(--primary) / 0.08)',
+                  color: 'hsl(var(--primary))',
+                  borderColor: 'hsl(var(--primary) / 0.19)'
                 }}
               >
                 <CalendarIcon className="h-2 w-2 mr-0.5" />

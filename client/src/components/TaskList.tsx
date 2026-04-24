@@ -130,7 +130,7 @@ function DraggableGridRow({
     <div
       ref={setNodeRef}
       className={cn(
-        "grid items-center gap-4 px-4 h-10 border-b border-gray-100 hover:bg-muted transition-colors cursor-pointer",
+        "grid items-center gap-4 px-4 h-10 border-b border-border hover:bg-muted transition-colors cursor-pointer",
         isDragging && "relative z-50 shadow-lg",
         isSelected && "bg-blue-50"
       )}

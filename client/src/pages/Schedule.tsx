@@ -1589,7 +1589,7 @@ export default function Schedule() {
   const eventStyleGetter = (event: any) => {
     return {
       style: {
-        backgroundColor: "#A890D4",
+        backgroundColor: "hsl(var(--primary))",
         borderRadius: "4px",
         opacity: 0.9,
         color: "white",

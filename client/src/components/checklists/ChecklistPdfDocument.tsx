@@ -1,6 +1,8 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ChecklistInstance, ChecklistInstanceItem } from "@shared/schema";
 
+const PDF_PRIMARY = "#A890D4";
+
 const styles = StyleSheet.create({
   page: {
     padding: 40,
@@ -9,7 +11,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
-    borderBottom: "2 solid #A890D4",
+    borderBottom: `2 solid ${PDF_PRIMARY}`,
     paddingBottom: 10,
   },
   title: {
@@ -35,7 +37,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
     borderRadius: 3,
-    borderLeft: "3 solid #A890D4",
+    borderLeft: `3 solid ${PDF_PRIMARY}`,
   },
   groupTitle: {
     fontSize: 12,
@@ -149,7 +151,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: 6,
-    backgroundColor: "#A890D4",
+    backgroundColor: PDF_PRIMARY,
     borderRadius: 3,
   },
   footer: {

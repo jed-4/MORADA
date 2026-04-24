@@ -81,7 +81,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
       case "high": return "bg-orange-500 text-white";
       case "medium": return "bg-yellow-500 text-white";
       case "low": return "bg-green-500 text-white";
-      default: return "bg-gray-500 text-white";
+      default: return "bg-muted-foreground text-background";
     }
   };
 
@@ -326,7 +326,7 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
       case "high": return "bg-orange-500 text-white";
       case "medium": return "bg-yellow-500 text-white";
       case "low": return "bg-green-500 text-white";
-      default: return "bg-gray-500 text-white";
+      default: return "bg-muted-foreground text-background";
     }
   };
 

@@ -85,7 +85,7 @@ import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, Pointer
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const CASVA_LILAC = '#A890D4';
+const CASVA_LILAC = 'hsl(var(--primary))';
 
 interface TemplateStage {
   id: string;
@@ -923,7 +923,7 @@ export default function ScopeTemplateDetail() {
                             className="text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg flex items-center justify-center"
                             style={{ 
                               height: '60px',
-                              borderColor: CASVA_LILAC + '40'
+                              borderColor: 'hsl(var(--primary) / 0.25)'
                             }}
                           >
                             <div className="flex flex-col items-center gap-1">

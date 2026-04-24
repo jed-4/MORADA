@@ -64,7 +64,7 @@ export default function BusinessActivityWidget({ widget }: WidgetProps) {
     if (action.includes("updated")) return "bg-blue-500";
     if (action.includes("deleted")) return "bg-red-500";
     if (action.includes("completed")) return "bg-emerald-500";
-    return "bg-gray-500";
+    return "bg-muted-foreground";
   };
 
   if (recentActivities.length === 0) {

@@ -888,8 +888,8 @@ export default function Bills() {
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
+            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
+            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
               <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : "Approve"}
             </Button>
@@ -923,7 +923,7 @@ export default function Bills() {
           </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeProjectDialogOpen(false); setSelectedProjectId(""); }}>Cancel</Button>
-            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}>
+            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}>
               {bulkChangeProjectMutation.isPending ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>
@@ -939,7 +939,7 @@ export default function Bills() {
           </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeSupplierDialogOpen(false); setSelectedSupplierId(""); }}>Cancel</Button>
-            <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "#A890D4", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
+            <Button disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}>
               {bulkChangeSupplierMutation.isPending ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>

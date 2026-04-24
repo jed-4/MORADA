@@ -55,7 +55,7 @@ import {
 } from "lucide-react";
 import type { SelectionTemplate, FieldCategory } from "@shared/schema";
 
-const CASVA_LILAC = '#A890D4';
+const CASVA_LILAC = 'hsl(var(--primary))';
 
 interface SelectionOption {
   id: string;

@@ -447,7 +447,7 @@ export function VariationPreviewContent({
                       return (
                         <div
                           key={item.id}
-                          className="grid px-3 py-2 border-t border-gray-100 text-sm"
+                          className="grid px-3 py-2 border-t border-border text-sm"
                           style={{
                             backgroundColor: isAlt ? "#f9fafb" : "#ffffff",
                             gridTemplateColumns: "1fr 80px 90px 70px 90px",
@@ -491,7 +491,7 @@ export function VariationPreviewContent({
                 return (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between px-3 py-2 border-t border-gray-100 text-sm"
+                    className="flex items-center justify-between px-3 py-2 border-t border-border text-sm"
                     style={{ backgroundColor: isAlt ? "#f9fafb" : "#ffffff" }}
                   >
                     <span className="text-foreground">{item.description}</span>
@@ -526,7 +526,7 @@ export function VariationPreviewContent({
                 return (
                   <div
                     key={bill.id}
-                    className="grid px-3 py-2 text-sm border-t border-gray-100"
+                    className="grid px-3 py-2 text-sm border-t border-border"
                     style={{
                       backgroundColor: isAlt ? "#f9fafb" : "#ffffff",
                       gridTemplateColumns: "100px 1fr 100px 100px",
@@ -574,14 +574,14 @@ export function VariationPreviewContent({
 
         {/* Closing text */}
         {variation.closingText && (
-          <div className="text-sm text-secondary leading-relaxed whitespace-pre-wrap border-t border-gray-100 pt-6">
+          <div className="text-sm text-secondary leading-relaxed whitespace-pre-wrap border-t border-border pt-6">
             {variation.closingText}
           </div>
         )}
 
         {/* Terms & Conditions */}
         {variation.termsAndConditions && (
-          <div className="border-t border-gray-100 pt-4">
+          <div className="border-t border-border pt-4">
             <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Terms &amp; Conditions</p>
             <p className="text-xs text-muted leading-relaxed whitespace-pre-wrap">
               {variation.termsAndConditions}
@@ -617,7 +617,7 @@ export function VariationPreviewContent({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-100 px-8 py-4 text-center">
+      <div className="border-t border-border px-8 py-4 text-center">
         <p className="text-xs text-muted">Powered by BuildPro</p>
       </div>
     </div>

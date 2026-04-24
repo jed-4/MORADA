@@ -1231,7 +1231,7 @@ export default function EstimateDetail() {
         alignItems: 'center',
         padding: '0 12px',
         background: 'rgba(168, 144, 212,0.25)',
-        borderLeft: '2px solid #A890D4',
+        borderLeft: '2px solid hsl(var(--primary))',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         cursor: 'grabbing',
         overflow: 'hidden',

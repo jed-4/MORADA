@@ -1053,7 +1053,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       key={row.id}
                       className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
                         row.required === false ? "opacity-40" : ""
-                      } ${row.completed ? "bg-green-500/5" : ""}`}
+                      } ${row.completed ? "bg-status-success-bg/50" : ""}`}
                       style={{ gridTemplateColumns: gridTemplate, minHeight: "34px" }}
                     >
                       {/* Fixed: Item name + attachment badge */}

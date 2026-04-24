@@ -907,7 +907,7 @@ export default function CustomizableProjectOverview() {
               className={`text-xs ${
                 currentProject.status === 'active'
                   ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-muted text-secondary dark:bg-gray-800 dark:text-gray-300'
+                  : 'bg-muted text-secondary '
               }`}
             >
               {currentProject.status === 'active' ? 'Active' : 'Inactive'}

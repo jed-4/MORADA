@@ -2,6 +2,8 @@ import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer
 import { format } from 'date-fns';
 import type { GanttStage, GanttSubtask } from '@shared/schema';
 
+const PDF_PRIMARY = '#A890D4';
+
 // PDF Styles matching Gantt design
 const styles = StyleSheet.create({
   page: {
@@ -17,7 +19,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     borderBottomWidth: 2,
-    borderBottomColor: '#A890D4',
+    borderBottomColor: PDF_PRIMARY,
     paddingBottom: 10,
     marginBottom: 15,
   },
@@ -62,7 +64,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   badge: {
-    backgroundColor: '#A890D4',
+    backgroundColor: PDF_PRIMARY,
     color: '#ffffff',
     paddingHorizontal: 6,
     paddingVertical: 2,

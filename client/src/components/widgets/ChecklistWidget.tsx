@@ -188,7 +188,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       'active': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
       'in_progress': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
       'completed': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-      'cancelled': 'bg-muted text-foreground dark:bg-gray-900/30 dark:text-muted',
+      'cancelled': 'bg-muted text-foreground',
     };
     return colors[status] || colors.active;
   };

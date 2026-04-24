@@ -1557,7 +1557,7 @@ export function EnhancedCalendar({
                 className={cn(
                   "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
                   showTasks 
-                    ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/30" 
+                    ? "bg-status-warning-bg text-status-warning hover:bg-status-warning-bg/80" 
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 onClick={() => setShowTasks(!showTasks)}
@@ -1572,7 +1572,7 @@ export function EnhancedCalendar({
                 className={cn(
                   "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
                   showSchedule 
-                    ? "bg-blue-500/20 text-status-info dark:text-blue-400 hover:bg-blue-500/30" 
+                    ? "bg-status-info-bg text-status-info hover:bg-status-info-bg/80" 
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 onClick={() => setShowSchedule(!showSchedule)}
@@ -1602,7 +1602,7 @@ export function EnhancedCalendar({
                 className={cn(
                   "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
                   showGoogleCalendar 
-                    ? "bg-green-500/20 text-status-success dark:text-green-400 hover:bg-green-500/30" 
+                    ? "bg-status-success-bg text-status-success hover:bg-status-success-bg/80" 
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 onClick={() => setShowGoogleCalendar(!showGoogleCalendar)}

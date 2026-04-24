@@ -587,7 +587,7 @@ export default function ChecklistInstanceDetail() {
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
-      low: "bg-muted text-secondary dark:bg-gray-800 dark:text-gray-300",
+      low: "bg-muted text-secondary ",
       medium: "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400",
       high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
       urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
@@ -810,12 +810,12 @@ export default function ChecklistInstanceDetail() {
                           <div
                             className={`flex items-center gap-2 px-3 py-1.5 ${
                               item.status === "completed" ? "bg-green-50/50 dark:bg-green-900/10" :
-                              item.status === "na" ? "bg-muted/50 dark:bg-gray-900/10" : ""
+                              item.status === "na" ? "bg-muted/50" : ""
                             }`}
                           >
                             {/* Checkbox */}
                             {item.status === "na" ? (
-                              <div className="h-4 w-4 rounded bg-border dark:bg-gray-700 flex items-center justify-center shrink-0">
+                              <div className="h-4 w-4 rounded bg-border flex items-center justify-center shrink-0">
                                 <Ban className="h-2.5 w-2.5 text-muted" />
                               </div>
                             ) : (
