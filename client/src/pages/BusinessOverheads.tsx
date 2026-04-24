@@ -260,7 +260,7 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSyn
         <DialogHeader><DialogTitle>{title || "Add Overhead Item"}</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground">Item Name{xeroSynced && <span className="ml-1 text-[10px] text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Label className="text-xs text-muted-foreground">Item Name{xeroSynced && <span className="ml-1 text-data text-[#00B9D7]">(managed by Xero)</span>}</Label>
             <Input autoFocus={!xeroSynced} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Office Rent" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div>
@@ -287,7 +287,7 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSyn
             <Input type="number" value={form.budgetCents} onChange={e => setForm(f => ({ ...f, budgetCents: e.target.value }))} placeholder="0" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground">Xero Account Code{xeroSynced && <span className="ml-1 text-[10px] text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Label className="text-xs text-muted-foreground">Xero Account Code{xeroSynced && <span className="ml-1 text-data text-[#00B9D7]">(managed by Xero)</span>}</Label>
             <Input value={form.xeroAccountCode} onChange={e => setForm(f => ({ ...f, xeroAccountCode: e.target.value }))} placeholder="e.g. 420" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div className="col-span-2">
@@ -469,7 +469,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
               </button>
             )}
             {item.xeroSynced && (
-              <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
+              <span className="text-label font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
             )}
           </div>
         );
@@ -498,7 +498,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
         ) : (
           <div className="flex justify-end h-full items-center">
             <button onClick={(e) => { e.stopPropagation(); activate(item.id, "frequency"); }}>
-              <Badge className={`text-[10px] no-default-active-elevate ${FREQ_COLORS[item.frequency]}`}>{item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)}</Badge>
+              <Badge className={`text-data no-default-active-elevate ${FREQ_COLORS[item.frequency]}`}>{item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)}</Badge>
             </button>
           </div>
         );
@@ -525,7 +525,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                 {item.budgetCents > 0
                   ? fmtDollars(item.budgetCents)
                   : item.xeroSynced
-                    ? <span className="text-amber-500 dark:text-amber-400 text-[10px]">Set budget</span>
+                    ? <span className="text-amber-500 dark:text-amber-400 text-data">Set budget</span>
                     : <span className="text-muted-foreground/40">—</span>}
               </button>
             )}
@@ -574,7 +574,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
         return (
           <div className="h-full flex items-center justify-end px-1">
             {item.xeroAccountType ? (
-              <Badge className={`text-[10px] no-default-active-elevate ${
+              <Badge className={`text-data no-default-active-elevate ${
                 item.xeroAccountType === "DIRECTCOSTS" ? "bg-status-warning-bg text-status-warning dark:text-orange-400" :
                 item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
                 "bg-muted text-muted-foreground"
@@ -772,7 +772,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                       ) : (
                         <CardTitle className="text-sm font-semibold">{cat.name}</CardTitle>
                       )}
-                      <Badge variant="secondary" className="text-[10px] no-default-active-elevate">{catItems.length}</Badge>
+                      <Badge variant="secondary" className="text-data no-default-active-elevate">{catItems.length}</Badge>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground tabular-nums">
@@ -1045,13 +1045,13 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     const prevOH = prevM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
 
     function MoMArrow({ cur, prev, invert = false }: { cur: number; prev: number; invert?: boolean }) {
-      if (!prev) return <span className="text-muted-foreground/30 text-[10px]">—</span>;
+      if (!prev) return <span className="text-muted-foreground/30 text-data">—</span>;
       const diff = cur - prev;
       const pct = Math.abs((diff / prev) * 100).toFixed(0);
       const up = diff > 0;
       const good = invert ? !up : up;
       return (
-        <span className={`inline-flex items-center gap-0.5 text-[10px] tabular-nums ${good ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
+        <span className={`inline-flex items-center gap-0.5 text-data tabular-nums ${good ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
           {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           {pct}%
         </span>
@@ -1085,11 +1085,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           <div style={{ minWidth: 560 }}>
             {/* Header */}
             <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
-              <div className="flex-1 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Total (12m)</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Avg / Month</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">% of Income</div>
-              <div className="w-20 flex-shrink-0 text-right px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">MoM</div>
+              <div className="flex-1 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Total (12m)</div>
+              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Avg / Month</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">% of Income</div>
+              <div className="w-20 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">MoM</div>
             </div>
 
             {/* Income row */}
@@ -1110,7 +1110,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 </div>
                 <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-status-success dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
                 <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
-                <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">100%</div>
+                <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">100%</div>
                 <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
               </div>
               {/* Income breakdown sub-rows */}
@@ -1121,7 +1121,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                       <div className="flex-1 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
                       <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/70 dark:text-green-400/70 tabular-nums">{fmtK(cents)}</div>
                       <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-muted-foreground/50 tabular-nums">{fmtK(Math.round(cents / 12))}</div>
-                      <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground/50 tabular-nums">{totalIncome12 > 0 ? `${((cents / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
+                      <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground/50 tabular-nums">{totalIncome12 > 0 ? `${((cents / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
                       <div className="w-20 flex-shrink-0" />
                     </div>
                   ))}
@@ -1134,7 +1134,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5"><TrendingDown className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />Direct Costs</div>
               <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-orange-500 dark:text-orange-400 tabular-nums">{totalDC12 > 0 ? fmtK(totalDC12) : "—"}</div>
               <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-orange-500/80 dark:text-orange-400/80 tabular-nums">{avgDC > 0 ? fmtK(avgDC) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{dcPct > 0 ? `${dcPct.toFixed(1)}%` : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{dcPct > 0 ? `${dcPct.toFixed(1)}%` : "—"}</div>
               <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastDC} prev={prevDC} invert /></div>
             </div>
 
@@ -1146,7 +1146,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               </div>
               <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${grossProfit12 >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(grossProfit12) : "—"}</div>
               <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${grossProfit12 >= 0 ? "text-status-success/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(avgGrossProfit) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{totalIncome12 > 0 ? `${gpPct.toFixed(1)}%` : "—"}</div>
+              <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{totalIncome12 > 0 ? `${gpPct.toFixed(1)}%` : "—"}</div>
               <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome - lastDC} prev={prevIncome - prevDC} /></div>
             </div>
 
@@ -1163,10 +1163,10 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               return (
                 <div key={group.label}>
                   <div className="flex items-center bg-muted/20 border-b border-border/40" style={{ height: 28 }}>
-                    <div className="flex-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                    <div className="flex-1 px-3 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
                     <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums font-medium">{catTotal > 0 ? fmtK(catTotal) : "—"}</div>
                     <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{catAvg > 0 ? fmtK(catAvg) : "—"}</div>
-                    <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{catPct > 0 ? `${catPct.toFixed(1)}%` : "—"}</div>
+                    <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{catPct > 0 ? `${catPct.toFixed(1)}%` : "—"}</div>
                     <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastCat} prev={prevCat} invert /></div>
                   </div>
                   {catItems.map(item => {
@@ -1180,7 +1180,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                         <div className="flex-1 px-3 pl-6 text-xs truncate text-muted-foreground">{item.name}</div>
                         <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums">{itemTotal > 0 ? fmtK(itemTotal) : "—"}</div>
                         <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{itemAvg > 0 ? fmtK(itemAvg) : "—"}</div>
-                        <div className="w-24 flex-shrink-0 text-right px-3 text-[10px] text-muted-foreground">{itemPct > 0 ? `${itemPct.toFixed(1)}%` : "—"}</div>
+                        <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{itemPct > 0 ? `${itemPct.toFixed(1)}%` : "—"}</div>
                         <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastItem} prev={prevItem} invert /></div>
                       </div>
                     );
@@ -1249,7 +1249,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         <div style={{ minWidth: 960 }}>
           {/* Column headers */}
           <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
-            <div className="w-44 flex-shrink-0 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
+            <div className="w-44 flex-shrink-0 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
             {rolling12.map(({ year, month }) => {
               const key = `${year}__${month}`;
               const isConfirmed = statusSet.has(key);
@@ -1269,8 +1269,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 : "No actuals entered — click to confirm";
               return (
                 <div key={`${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-1">
-                  <p className="text-[10px] font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
-                  <p className="text-[9px] text-muted-foreground/40">{year}</p>
+                  <p className="text-data font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
+                  <p className="text-label text-muted-foreground/40">{year}</p>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1285,7 +1285,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 </div>
               );
             })}
-            <div className="w-32 flex-shrink-0 text-center px-1 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">OH vs Budget</div>
+            <div className="w-32 flex-shrink-0 text-center px-1 py-2 text-data uppercase tracking-wide text-muted-foreground">OH vs Budget</div>
           </div>
 
           {/* Income row */}
@@ -1304,7 +1304,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-[10px] tabular-nums text-status-success dark:text-green-400 flex items-center gap-0.5">
+                          <span className="text-data tabular-nums text-status-success dark:text-green-400 flex items-center gap-0.5">
                             <Lock className="w-2.5 h-2.5 opacity-50" />
                             {cents > 0 ? fmtK(cents) : "—"}
                           </span>
@@ -1315,7 +1315,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   ) : isEditing ? (
                     <input
                       autoFocus
-                      className="w-full text-[10px] text-right bg-transparent outline-none border-b border-primary tabular-nums"
+                      className="w-full text-data text-right bg-transparent outline-none border-b border-primary tabular-nums"
                       value={incomeInput}
                       onChange={e => setIncomeInput(e.target.value)}
                       onBlur={() => {
@@ -1333,7 +1333,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   ) : (
                     <button
                       onClick={() => { setEditingIncome(key); setIncomeInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
-                      className="w-full text-[10px] tabular-nums text-right text-status-success dark:text-green-400 hover:opacity-80 transition-opacity">
+                      className="w-full text-data tabular-nums text-right text-status-success dark:text-green-400 hover:opacity-80 transition-opacity">
                       {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
                     </button>
                   )}
@@ -1359,7 +1359,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-[10px] tabular-nums text-orange-500 dark:text-orange-400 flex items-center gap-0.5">
+                          <span className="text-data tabular-nums text-orange-500 dark:text-orange-400 flex items-center gap-0.5">
                             <Lock className="w-2.5 h-2.5 opacity-50" />
                             {cents > 0 ? fmtK(cents) : "—"}
                           </span>
@@ -1370,7 +1370,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   ) : isEditing ? (
                     <input
                       autoFocus
-                      className="w-full text-[10px] text-right bg-transparent outline-none border-b border-primary tabular-nums"
+                      className="w-full text-data text-right bg-transparent outline-none border-b border-primary tabular-nums"
                       value={directCostInput}
                       onChange={e => setDirectCostInput(e.target.value)}
                       onBlur={() => {
@@ -1388,7 +1388,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   ) : (
                     <button
                       onClick={() => { setEditingDirectCost(key); setDirectCostInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
-                      className="w-full text-[10px] tabular-nums text-right text-orange-500 dark:text-orange-400 hover:opacity-80 transition-opacity">
+                      className="w-full text-data tabular-nums text-right text-orange-500 dark:text-orange-400 hover:opacity-80 transition-opacity">
                       {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
                     </button>
                   )}
@@ -1409,7 +1409,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   const income = incomeMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
                   const dc = directCostMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
                   return (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
+                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
                       {income || dc ? fmtK(gp) : "—"}
                     </div>
                   );
@@ -1426,7 +1426,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             return (
               <div key={group.label}>
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
-                  <div className="w-44 flex-shrink-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                  <div className="w-44 flex-shrink-0 px-3 py-1.5 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
                   {rolling12.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
                   <div className="w-32 flex-shrink-0 h-5" />
                 </div>
@@ -1451,16 +1451,16 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                         );
                       })}
                       <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                        {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
+                        {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                       </div>
                     </div>
                   );
                 })}
                 <div className="flex items-center border-b border-border/40 bg-muted/10" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</div>
+                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Subtotal</div>
                   {rolling12.map(({ year, month }) => {
                     const total = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0);
-                    return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
+                    return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
                   })}
                   <div className="w-32 flex-shrink-0" />
                 </div>
@@ -1493,19 +1493,19 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > grandBudgets[idx] * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{actual > 0 ? fmtK(actual) : "—"}</div>
                   ))}
                   <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                    {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-[10px] opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
+                    {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
                   </div>
                 </div>
                 <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">OH Budget</div>
-                  {grandBudgets.map((b, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-[10px] text-muted-foreground tabular-nums">{fmtK(b)}</div>)}
+                  <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground">OH Budget</div>
+                  {grandBudgets.map((b, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data text-muted-foreground tabular-nums">{fmtK(b)}</div>)}
                   <div className="w-32 flex-shrink-0" />
                 </div>
                 {/* OH% row */}
                 <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
+                  <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
                   {ohPcts.map((pct, idx) => (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-[10px] tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
+                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
                       {pct !== null ? `${pct.toFixed(0)}%` : "—"}
                     </div>
                   ))}
@@ -1606,7 +1606,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           <Card key={k.label}><CardContent className="pt-4 pb-4 px-4">
             <p className="text-xs text-muted-foreground">{k.label}</p>
             <p className={`text-xl font-bold tabular-nums mt-0.5 ${k.highlight ? "text-destructive" : ""}`}>{k.value}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">{k.sub}</p>
+            <p className="text-data text-muted-foreground mt-0.5">{k.sub}</p>
           </CardContent></Card>
         ))}
       </div>
@@ -1630,7 +1630,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
           return (
             <div key={cat.id} className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">{cat.name}:</span>
-              <Badge variant="secondary" className={`text-[10px] no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-status-success dark:text-green-400" : ""}`}>
+              <Badge variant="secondary" className={`text-data no-default-active-elevate ${rate > 0 ? "text-destructive" : rate < 0 ? "text-status-success dark:text-green-400" : ""}`}>
                 {rate > 0 ? "+" : ""}{(rate * 100).toFixed(1)}% YoY
               </Badge>
             </div>
@@ -1643,26 +1643,26 @@ function ForecastTab({ data }: { data: OverheadsData }) {
         <div style={{ minWidth: 1100 }}>
           {/* Column headers */}
           <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
-            <div className="w-44 flex-shrink-0 px-3 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">Item</div>
+            <div className="w-44 flex-shrink-0 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
             {last12.map(({ year, month }) => (
               <div key={`a-${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-2">
-                <p className="text-[10px] text-muted-foreground/60">{MONTH_NAMES[month - 1]}</p>
-                <p className="text-[9px] text-muted-foreground/40">{year}</p>
+                <p className="text-data text-muted-foreground/60">{MONTH_NAMES[month - 1]}</p>
+                <p className="text-label text-muted-foreground/40">{year}</p>
               </div>
             ))}
             <div className="w-px bg-primary/40 self-stretch mx-0.5" />
             {next12.map(({ year, month }) => (
               <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-2">
-                <p className="text-[10px] text-primary font-medium">{MONTH_NAMES[month - 1]}</p>
-                <p className="text-[9px] text-muted-foreground/40">{year}</p>
+                <p className="text-data text-primary font-medium">{MONTH_NAMES[month - 1]}</p>
+                <p className="text-label text-muted-foreground/40">{year}</p>
               </div>
             ))}
           </div>
           <div className="flex border-b border-border/30 bg-muted/10">
             <div className="w-44 flex-shrink-0" />
-            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-muted-foreground/50 py-0.5">← Actuals (last 12 months, readonly)</div>
+            <div className="flex-1 text-center text-label uppercase tracking-wide text-muted-foreground/50 py-0.5">← Actuals (last 12 months, readonly)</div>
             <div className="w-px bg-primary/40" />
-            <div className="flex-1 text-center text-[9px] uppercase tracking-wide text-primary/60 py-0.5">Forecast — next 12 months (click to override) →</div>
+            <div className="flex-1 text-center text-label uppercase tracking-wide text-primary/60 py-0.5">Forecast — next 12 months (click to override) →</div>
           </div>
 
           {data.categories.map(cat => {
@@ -1671,7 +1671,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
             return (
               <div key={cat.id}>
                 <div className="flex items-center bg-muted/20 border-b border-border/40">
-                  <div className="w-44 flex-shrink-0 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
+                  <div className="w-44 flex-shrink-0 px-3 py-1 text-data font-semibold uppercase tracking-wide text-muted-foreground">{cat.name}</div>
                   {last12.map(({ year, month }) => <div key={`a-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
                   <div className="w-px bg-primary/40 self-stretch" />
                   {next12.map(({ year, month }) => <div key={`f-${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
@@ -1703,10 +1703,10 @@ function ForecastTab({ data }: { data: OverheadsData }) {
 
                 {/* Category subtotals */}
                 <div className="flex items-center border-b border-border/30 bg-muted/10" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-[10px] text-muted-foreground">Subtotal</div>
-                  {last12.map(({ year, month }) => { const t = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0); return <div key={`a-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-muted-foreground">{t > 0 ? fmtK(t) : "—"}</div>; })}
+                  <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground">Subtotal</div>
+                  {last12.map(({ year, month }) => { const t = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0); return <div key={`a-${year}-${month}`} className="flex-1 min-w-0 text-right text-data px-0.5 tabular-nums text-muted-foreground">{t > 0 ? fmtK(t) : "—"}</div>; })}
                   <div className="w-px bg-primary/30 self-stretch" />
-                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-[10px] px-0.5 tabular-nums text-primary/70">{fmtK(t)}</div>; })}
+                  {next12.map(({ year, month }, idx) => { const t = catItems.reduce((s, i) => s + getForecastCents(i, year, month, idx), 0); return <div key={`f-${year}-${month}`} className="flex-1 min-w-0 text-right text-data px-0.5 tabular-nums text-primary/70">{fmtK(t)}</div>; })}
                 </div>
               </div>
             );
@@ -1727,7 +1727,7 @@ function ForecastTab({ data }: { data: OverheadsData }) {
         </div>
       </div>
 
-      <p className="text-[10px] text-muted-foreground">Purple columns = forecast. Click any to override the projected value. Auto YoY growth computes per-category growth from last 12 months vs previous 12 months of actuals.</p>
+      <p className="text-data text-muted-foreground">Purple columns = forecast. Click any to override the projected value. Auto YoY growth computes per-category growth from last 12 months vs previous 12 months of actuals.</p>
     </div>
   );
 }
@@ -1829,7 +1829,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <div>
                 <p className="text-xs text-muted-foreground">Breakeven Revenue</p>
                 <p className="text-xl font-bold tabular-nums">{fmtDollars(breakevenCents)}</p>
-                <p className="text-[10px] text-muted-foreground">To fully recover OH at {ohPct}%</p>
+                <p className="text-data text-muted-foreground">To fully recover OH at {ohPct}%</p>
               </div>
             </div>
           </CardContent>
@@ -1840,7 +1840,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
             <div className="flex items-center gap-2">
               <TrafficIcon className={`w-4 h-4 ${trafficColor}`} />
               <CardTitle className="text-sm font-semibold">Coverage Status</CardTitle>
-              <Badge className={`text-[10px] no-default-active-elevate ${isCovered ? "bg-status-success-bg text-status-success dark:text-green-400" : isAmber ? "bg-status-warning-bg text-status-warning dark:text-yellow-400" : "bg-destructive/10 text-destructive"}`}>
+              <Badge className={`text-data no-default-active-elevate ${isCovered ? "bg-status-success-bg text-status-success dark:text-green-400" : isAmber ? "bg-status-warning-bg text-status-warning dark:text-yellow-400" : "bg-destructive/10 text-destructive"}`}>
                 {isCovered ? "Fully Covered" : isAmber ? "Close to Target" : "Under-Recovered"}
               </Badge>
             </div>
@@ -1850,12 +1850,12 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <div>
                 <p className="text-xs text-muted-foreground">Total Projected Revenue</p>
                 <p className="text-xl font-bold tabular-nums">{fmtDollars(totalProjectedCents)}</p>
-                <p className="text-[10px] text-muted-foreground">Contracted + Weighted Pipeline</p>
+                <p className="text-data text-muted-foreground">Contracted + Weighted Pipeline</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">OH Recovered @ {ohPct}%</p>
                 <p className={`text-xl font-bold tabular-nums ${trafficColor}`}>{fmtDollars(recoveredOhCents)}</p>
-                <p className={`text-[10px] font-medium ${trafficColor}`}>
+                <p className={`text-data font-medium ${trafficColor}`}>
                   {isCovered ? `${fmtDollars(-shortfallCents)} surplus` : `${fmtDollars(shortfallCents)} shortfall`}
                 </p>
               </div>
@@ -1864,7 +1864,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <div className="h-3 bg-muted rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${isCovered ? "bg-green-500" : isAmber ? "bg-yellow-500" : "bg-destructive"}`} style={{ width: `${Math.min(coveragePct, 100)}%` }} />
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">{coveragePct.toFixed(0)}% of breakeven revenue ({fmtDollars(breakevenCents)})</p>
+              <p className="text-data text-muted-foreground mt-1">{coveragePct.toFixed(0)}% of breakeven revenue ({fmtDollars(breakevenCents)})</p>
             </div>
             {!isCovered && revenueGapCents > 0 && (
               <div className={`text-xs font-medium rounded-md px-3 py-2 ${isAmber ? "bg-status-warning-bg text-yellow-800 dark:text-yellow-300" : "bg-destructive/10 text-destructive"}`}>
@@ -1892,7 +1892,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <p className="px-4 pb-4 text-xs text-muted-foreground italic">No active (construction / pre-construction) projects with a locked contract price.</p>
             ) : (
               <div>
-                <div className="grid px-4 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 95px 95px" }}>
+                <div className="grid px-4 py-1.5 text-data uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 95px 95px" }}>
                   <span>Project</span><span>Status</span><span className="text-right">Contract</span><span className="text-right">Remaining</span>
                 </div>
                 {contractedProjects.map(p => (
@@ -1900,10 +1900,10 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
                     <div>
                       <p className="text-xs font-medium truncate">{p.name}</p>
                       {p.projectStatus === "construction" && (p.percentComplete || 0) > 0 && (
-                        <p className="text-[10px] text-muted-foreground">{p.percentComplete}% complete</p>
+                        <p className="text-data text-muted-foreground">{p.percentComplete}% complete</p>
                       )}
                     </div>
-                    <Badge variant="secondary" className="text-[10px] no-default-active-elevate capitalize w-fit">{p.projectStatus}</Badge>
+                    <Badge variant="secondary" className="text-data no-default-active-elevate capitalize w-fit">{p.projectStatus}</Badge>
                     <span className="text-xs text-right tabular-nums text-muted-foreground">
                       {p.lockedContractPrice ? fmtDollars(p.lockedContractPrice) : <span className="opacity-40">—</span>}
                     </span>
@@ -1914,7 +1914,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
                   <span className="text-xs">Total Remaining</span><span /><span />
                   <span className="text-xs text-right tabular-nums">{fmtDollars(totalContractedCents)}</span>
                 </div>
-                <p className="px-4 py-2 text-[10px] text-muted-foreground/60 italic">
+                <p className="px-4 py-2 text-data text-muted-foreground/60 italic">
                   Remaining = contract × (1 − % complete). Update % complete on each project to refine this figure.
                 </p>
               </div>
@@ -1940,14 +1940,14 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
               <p className="px-4 pb-4 text-xs text-muted-foreground italic">No pipeline jobs yet. Add prospective work to model OH recovery.</p>
             ) : (
               <div>
-                <div className="grid px-4 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 55px 85px 28px" }}>
+                <div className="grid px-4 py-1.5 text-data uppercase tracking-wide text-muted-foreground border-b border-border/50" style={{ gridTemplateColumns: "1fr 90px 55px 85px 28px" }}>
                   <span>Job</span><span className="text-right">Value</span><span className="text-right">Win%</span><span className="text-right">Weighted</span><span />
                 </div>
                 {jobs.map(job => (
                   <div key={job.id} className="grid items-center px-4 py-2 border-b border-border/30 hover-elevate group" style={{ gridTemplateColumns: "1fr 90px 55px 85px 28px" }}>
                     <div>
                       <p className="text-xs font-medium truncate">{job.name}</p>
-                      {job.expectedStartDate && <p className="text-[10px] text-muted-foreground">Start: {new Date(job.expectedStartDate).toLocaleDateString("en-AU")}</p>}
+                      {job.expectedStartDate && <p className="text-data text-muted-foreground">Start: {new Date(job.expectedStartDate).toLocaleDateString("en-AU")}</p>}
                     </div>
                     <span className="text-xs text-right tabular-nums">{fmtDollars(job.estimatedValue)}</span>
                     <span className="text-xs text-right tabular-nums">{job.probabilityPercent}%</span>
@@ -1986,7 +1986,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
             <div>
               <p className="text-xs text-muted-foreground">OH Recovery @ {ohPct}%</p>
               <p className={`text-lg font-bold tabular-nums ${trafficColor}`}>{fmtDollars(recoveredOhCents)}</p>
-              <p className={`text-[10px] font-medium ${trafficColor}`}>{isCovered ? `${fmtDollars(-shortfallCents)} surplus` : `${fmtDollars(shortfallCents)} shortfall`}</p>
+              <p className={`text-data font-medium ${trafficColor}`}>{isCovered ? `${fmtDollars(-shortfallCents)} surplus` : `${fmtDollars(shortfallCents)} shortfall`}</p>
             </div>
           </div>
         </CardContent>

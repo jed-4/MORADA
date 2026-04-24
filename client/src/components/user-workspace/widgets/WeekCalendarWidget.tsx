@@ -120,7 +120,7 @@ function TimelineEvent({
   
   return (
     <div
-      className={`absolute left-0 right-1 rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-[9px] ${
+      className={`absolute left-0 right-1 rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-label ${
         isPast ? 'opacity-50' : ''
       }`}
       style={{
@@ -168,7 +168,7 @@ function AllDayEventChip({ event, colorMode, onClick }: { event: CalendarItem; c
   
   return (
     <div
-      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate mb-0.5"
+      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-label cursor-pointer hover-elevate mb-0.5"
       style={{
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
@@ -215,7 +215,7 @@ function StackedEventChip({ event, colorMode, onClick }: { event: CalendarItem; 
   
   return (
     <div
-      className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
+      className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-label cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
       style={{
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
@@ -240,7 +240,7 @@ function StackedEventChip({ event, colorMode, onClick }: { event: CalendarItem; 
         </span>
         {event.startTime && (
           <span 
-            className="flex-shrink-0 text-[8px] opacity-70"
+            className="flex-shrink-0 text-2xs opacity-70"
             style={{ color: notionColors.darkText }}
           >
             {event.startTime}
@@ -426,7 +426,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               <SelectItem value="stacked">Stacked (list)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-data text-muted-foreground">
             {configState.viewMode === "timeline" && "Events positioned by time on hourly grid"}
             {configState.viewMode === "stacked" && "Events stacked as a list under each day"}
           </p>
@@ -473,7 +473,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               <SelectItem value="priority">Priority (Tasks)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-data text-muted-foreground">
             {configState.colorMode === "project" && "Events colored by their project"}
             {configState.colorMode === "type" && "Events colored by type (task, schedule, etc.)"}
             {configState.colorMode === "priority" && "Tasks colored by priority; other items by type"}
@@ -523,7 +523,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         <div className="text-xs font-medium flex items-center gap-1.5">
           {weekLabel}
           {events.length > 0 && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0">{events.length}</Badge>
+            <Badge variant="secondary" className="text-data px-1 py-0">{events.length}</Badge>
           )}
         </div>
       </div>
@@ -539,7 +539,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               key={day.toISOString()} 
               className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-primary/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
             >
-              <div className="text-[10px] text-muted-foreground uppercase">
+              <div className="text-data text-muted-foreground uppercase">
                 {formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}
               </div>
               <div className={`text-sm font-medium ${isCurrentDay ? 'text-primary' : ''}`}>
@@ -555,7 +555,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         <div className={`flex-shrink-0 grid border-b bg-muted/10 max-h-20 overflow-y-auto ${viewMode === "timeline" ? "grid-cols-[40px_repeat(7,1fr)]" : "grid-cols-7"}`}>
           {viewMode === "timeline" && (
             <div className="border-r border-border/30 flex items-start justify-center py-1">
-              <span className="text-[9px] text-muted-foreground uppercase">All Day</span>
+              <span className="text-label text-muted-foreground uppercase">All Day</span>
             </div>
           )}
           {weekDays.map((day) => {
@@ -574,7 +574,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                   />
                 ))}
                 {dayAllDayEvents.length > 3 && (
-                  <div className="text-[8px] text-muted-foreground text-center">
+                  <div className="text-2xs text-muted-foreground text-center">
                     +{dayAllDayEvents.length - 3} more
                   </div>
                 )}
@@ -615,7 +615,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                       />
                     ))}
                     {dayTimedEvents.length === 0 && (
-                      <div className="text-[9px] text-muted-foreground/50 text-center py-2">
+                      <div className="text-label text-muted-foreground/50 text-center py-2">
                         No events
                       </div>
                     )}
@@ -635,7 +635,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                   className="absolute left-0 right-0"
                   style={{ top: `${(hour - 6) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                 >
-                  <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
+                  <span className="absolute left-1 top-1 text-label text-muted-foreground">
                     {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                   </span>
                 </div>

@@ -869,7 +869,7 @@ export default function BusinessCalendar() {
                 >
                   <span>Projects</span>
                   {filters.projects && filters.projects.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.projects.length}
                     </Badge>
                   )}
@@ -920,7 +920,7 @@ export default function BusinessCalendar() {
                 >
                   <span>Status</span>
                   {filters.status && filters.status.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.status.length}
                     </Badge>
                   )}
@@ -971,7 +971,7 @@ export default function BusinessCalendar() {
                 >
                   <span>Assignees</span>
                   {filters.assignees && filters.assignees.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.assignees.length}
                     </Badge>
                   )}
@@ -1021,7 +1021,7 @@ export default function BusinessCalendar() {
               >
                 <span>Event Types</span>
                 {filters.eventTypes && filters.eventTypes.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     {filters.eventTypes.length}
                   </Badge>
                 )}
@@ -1083,7 +1083,7 @@ export default function BusinessCalendar() {
               >
                 <span>Date Range</span>
                 {(filters.dateFrom || filters.dateTo) && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}

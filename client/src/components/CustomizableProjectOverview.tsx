@@ -1057,7 +1057,7 @@ export default function CustomizableProjectOverview() {
                         )}
                       </button>
                       {view.isCompanyDefault && (
-                        <span className="text-[10px] px-1 py-0.5 bg-primary/20 text-primary rounded" title="Company Default">
+                        <span className="text-data px-1 py-0.5 bg-primary/20 text-primary rounded" title="Company Default">
                           Default
                         </span>
                       )}

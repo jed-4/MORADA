@@ -239,7 +239,7 @@ export default function SavedViews({
                   : u.email}
               </span>
               {u.role && (
-                <Badge variant="secondary" className="text-[10px]">{u.role.name || u.role}</Badge>
+                <Badge variant="secondary" className="text-data">{u.role.name || u.role}</Badge>
               )}
             </label>
           ))}
@@ -274,7 +274,7 @@ export default function SavedViews({
                   {view.isDefault && <Star className="h-3 w-3 fill-current" />}
                   {isShared && <Users className="h-3 w-3 text-muted-foreground" />}
                   {view.name}
-                  {isShared && <span className="text-[10px] text-muted-foreground">(shared)</span>}
+                  {isShared && <span className="text-data text-muted-foreground">(shared)</span>}
                 </div>
               </SelectItem>
             );

@@ -73,7 +73,7 @@ export default function BusinessProjectsWidget({ widget }: WidgetProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-medium truncate">{project.name}</h4>
-                    <Badge className={`text-[10px] px-1.5 py-0 ${getStatusColor(project.status)}`}>
+                    <Badge className={`text-data px-1.5 py-0 ${getStatusColor(project.status)}`}>
                       {project.status}
                     </Badge>
                   </div>
@@ -89,7 +89,7 @@ export default function BusinessProjectsWidget({ widget }: WidgetProps) {
               <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                 <span>{taskCounts.completed}/{taskCounts.total} tasks</span>
                 {taskCounts.overdue > 0 && (
-                  <Badge variant="destructive" className="text-[10px] px-1 py-0">
+                  <Badge variant="destructive" className="text-data px-1 py-0">
                     {taskCounts.overdue} overdue
                   </Badge>
                 )}

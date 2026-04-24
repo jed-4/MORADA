@@ -171,7 +171,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
             data-testid={`quick-action-${action.id}`}
           >
             <Icon className={`h-4 w-4 ${action.color}`} />
-            <span className={`text-[10px] font-medium ${action.color}`}>
+            <span className={`text-data font-medium ${action.color}`}>
               {action.loading ? 'Loading...' : action.label}
             </span>
           </button>

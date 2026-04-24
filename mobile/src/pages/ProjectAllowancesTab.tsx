@@ -288,7 +288,7 @@ export function ProjectAllowancesTab() {
                       {/* Name and Type Badge */}
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-medium text-sm truncate">{allowance.item.name}</h3>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        <span className={`px-1.5 py-0.5 rounded text-data font-medium ${
                           isPC 
                             ? "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400" 
                             : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"

@@ -199,13 +199,13 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
                 }}
               >
                 {showLeftArrow && (
-                  <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-[8px] text-white/80 font-bold">◀</span>
+                  <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-white/80 font-bold">◀</span>
                 )}
                 {showRightArrow && (
-                  <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-[8px] text-white/80 font-bold">▶</span>
+                  <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-white/80 font-bold">▶</span>
                 )}
                 <span
-                  className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium whitespace-nowrap overflow-hidden"
+                  className="absolute inset-0 flex items-center px-1.5 text-data font-medium whitespace-nowrap overflow-hidden"
                   style={{ color: barBorder }}
                 >
                   {item.name}
@@ -213,7 +213,7 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center px-2">
-                <span className="text-[9px] text-muted-foreground/40 italic">No date</span>
+                <span className="text-label text-muted-foreground/40 italic">No date</span>
               </div>
             )}
           </div>
@@ -253,10 +253,10 @@ function ProjectItemsLeft({ projectId, project, windowStart, windowEnd }: {
           className="flex items-center px-3 border-b border-border/10 gap-1.5"
         >
           <div className="w-3 shrink-0" />
-          <span className="text-[10px] text-muted-foreground truncate pl-2">{item.name}</span>
+          <span className="text-data text-muted-foreground truncate pl-2">{item.name}</span>
           {item.assignedToName && (
             <span
-              className="text-[9px] ml-auto shrink-0 truncate max-w-[60px]"
+              className="text-label ml-auto shrink-0 truncate max-w-[60px]"
               style={{ color: item.assignedToColor || undefined }}
             >
               {item.assignedToName}
@@ -266,7 +266,7 @@ function ProjectItemsLeft({ projectId, project, windowStart, windowEnd }: {
       ))}
       {items.length === 0 && (
         <div style={{ height: ITEM_ROW_HEIGHT }} className="flex items-center px-4 border-b border-border/10">
-          <span className="text-[10px] text-muted-foreground/50 italic">No items in this window</span>
+          <span className="text-data text-muted-foreground/50 italic">No items in this window</span>
         </div>
       )}
     </>
@@ -516,7 +516,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               <Button variant="ghost" size="icon" className="h-7 w-7 relative">
                 <Filter className="w-3.5 h-3.5" />
                 {hiddenCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-label rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
                     {hiddenCount}
                   </span>
                 )}
@@ -550,7 +550,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
         >
           <div className="flex-shrink-0 border-b border-border" style={{ height: 52 }}>
             <div className="h-full flex items-end pb-1 px-3">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Project / Item</span>
+              <span className="text-data font-medium text-muted-foreground uppercase tracking-wide">Project / Item</span>
             </div>
           </div>
           <div ref={leftRef} className="overflow-y-hidden flex-1">
@@ -592,7 +592,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                     className="border-l border-border/30 flex items-center px-1.5"
                     style={{ width: 7 * pixelsPerDay, minWidth: 7 * pixelsPerDay }}
                   >
-                    <span className="text-[10px] text-muted-foreground font-medium">
+                    <span className="text-data text-muted-foreground font-medium">
                       {format(weekStart, "d MMM")}
                     </span>
                   </div>
@@ -607,7 +607,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                       className={`border-l border-border/20 flex items-center justify-center ${isWeekend ? "bg-[#f3f4f6] dark:bg-muted/50" : ""}`}
                       style={{ width: pixelsPerDay, minWidth: pixelsPerDay }}
                     >
-                      <span className="text-[9px] text-muted-foreground/70">{format(day, "EEE")[0]}</span>
+                      <span className="text-label text-muted-foreground/70">{format(day, "EEE")[0]}</span>
                     </div>
                   );
                 })}
@@ -707,7 +707,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                         }}
                       >
                         <span
-                          className="absolute top-0.5 left-1 text-[8px] font-semibold whitespace-nowrap"
+                          className="absolute top-0.5 left-1 text-2xs font-semibold whitespace-nowrap"
                           style={{ color }}
                         >
                           {line.label}
@@ -734,14 +734,14 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                           }}
                         >
                           {showLeftArrow && (
-                            <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-[8px] font-bold" style={{ color }}>◀</span>
+                            <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold" style={{ color }}>◀</span>
                           )}
                           {showRightArrow && (
-                            <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-[8px] font-bold" style={{ color }}>▶</span>
+                            <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold" style={{ color }}>▶</span>
                           )}
                           {projectBarWidth > 80 && !showLeftArrow && (
                             <span
-                              className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold truncate pointer-events-none"
+                              className="absolute left-1.5 top-1/2 -translate-y-1/2 text-label font-semibold truncate pointer-events-none"
                               style={{ color, maxWidth: projectBarWidth - 20 }}
                             >
                               {project.name}
@@ -750,7 +750,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                         </div>
                       ) : (
                         <div className="absolute inset-0 flex items-center px-2">
-                          <span className="text-[9px] text-muted-foreground/40 italic">No dates</span>
+                          <span className="text-label text-muted-foreground/40 italic">No dates</span>
                         </div>
                       )}
                     </div>

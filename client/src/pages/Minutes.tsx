@@ -418,7 +418,7 @@ function MinuteCard({
               
               {/* Date badge */}
               <Badge 
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
                   backgroundColor: 'hsl(var(--primary) / 0.08)',
                   color: 'hsl(var(--primary))',
@@ -431,7 +431,7 @@ function MinuteCard({
             </div>
 
             {/* Metadata line below title */}
-            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-data text-muted-foreground">
               {minute.location && (
                 <span className="flex items-center gap-0.5 truncate">
                   <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
@@ -459,7 +459,7 @@ function MinuteCard({
           {!contextProjectId && (
             <Badge 
               variant="outline" 
-              className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate truncate max-w-[180px]"
+              className="text-data px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate truncate max-w-[180px]"
             >
               <Building2 className="h-2 w-2 mr-0.5" />
               <span className="truncate">{getProjectName(minute.projectId)}</span>

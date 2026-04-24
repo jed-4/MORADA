@@ -790,7 +790,7 @@ export function CasvaScheduleList({
         </Table>
       </ScrollArea>
       
-      <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
+      <div className="px-2 h-8 border-t bg-background text-data text-muted-foreground flex items-center justify-between">
         <span>
           {selectedItems.size > 0 
             ? `${selectedItems.size} of ${items.length} selected`

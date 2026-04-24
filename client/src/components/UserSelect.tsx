@@ -59,7 +59,7 @@ export function UserSelect({
         icon: showAvatar ? (
           <Avatar className="h-5 w-5">
             <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
-            <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
+            <AvatarFallback className="text-data">{initials}</AvatarFallback>
           </Avatar>
         ) : undefined,
       });

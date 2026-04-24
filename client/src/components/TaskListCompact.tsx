@@ -188,7 +188,7 @@ function SortableHeaderColumn({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-medium text-muted-foreground hover:text-foreground relative flex-shrink-0"
+      className="flex items-center gap-0.5 cursor-pointer select-none text-data font-medium text-muted-foreground hover:text-foreground relative flex-shrink-0"
       onClick={() => onSort(columnKey)}
       {...attributes}
       {...listeners}
@@ -458,7 +458,7 @@ function SortableTaskRow({
                       className="cursor-pointer hover:opacity-80 flex items-center gap-1"
                     >
                       <Avatar className="h-5 w-5">
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                        <AvatarFallback className="text-data bg-primary/10 text-primary">
                           {getInitials(task.assigneeName)}
                         </AvatarFallback>
                       </Avatar>
@@ -488,7 +488,7 @@ function SortableTaskRow({
                         }}
                       >
                         <Avatar className="h-4 w-4">
-                          <AvatarFallback className="text-[8px]">
+                          <AvatarFallback className="text-2xs">
                             {getInitials(user.firstName && user.lastName 
                               ? `${user.firstName} ${user.lastName}` 
                               : user.firstName || user.email || '')}
@@ -1025,7 +1025,7 @@ export default function TaskListCompact({
       )}
       <div className="w-3" /> {/* Drag handle spacer */}
       <div className="w-4" /> {/* Complete checkbox spacer */}
-      <div className="flex-1 text-[10px] font-medium text-muted-foreground">Title</div>
+      <div className="flex-1 text-data font-medium text-muted-foreground">Title</div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
         <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
           {columnOrder.map((col) => {
@@ -1152,7 +1152,7 @@ export default function TaskListCompact({
           <div key={groupName}>
             <div className="h-7 px-2 flex items-center bg-muted/30 border-b border-border/50">
               <span className="text-xs font-medium text-muted-foreground">{groupName}</span>
-              <span className="ml-1.5 text-[10px] text-muted-foreground/70">({groupTasks.length})</span>
+              <span className="ml-1.5 text-data text-muted-foreground/70">({groupTasks.length})</span>
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={groupTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
@@ -1382,8 +1382,8 @@ export default function TaskListCompact({
         )
       )}
       <div className="h-6 px-2 flex items-center justify-between bg-muted/20 border-t border-border/50">
-        <span className="text-[10px] text-muted-foreground">{orderedTasks.length} tasks</span>
-        <span className="text-[10px] text-muted-foreground/70">↑↓ Navigate • Enter Open • Space Toggle</span>
+        <span className="text-data text-muted-foreground">{orderedTasks.length} tasks</span>
+        <span className="text-data text-muted-foreground/70">↑↓ Navigate • Enter Open • Space Toggle</span>
       </div>
     </div>
   );

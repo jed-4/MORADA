@@ -77,13 +77,13 @@ export default function BusinessProfitabilityWidget({ widget }: WidgetProps) {
       <div className="grid grid-cols-2 gap-3">
         <div className="p-2 rounded-md bg-muted/50 text-center">
           <p className="text-lg font-bold">{formatCurrency(totalMargin)}</p>
-          <p className="text-[10px] text-muted-foreground">Total Gross Margin</p>
+          <p className="text-data text-muted-foreground">Total Gross Margin</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50 text-center">
           <p className={`text-lg font-bold ${avgMarginPercent >= 20 ? 'text-status-success' : avgMarginPercent >= 10 ? 'text-status-warning' : 'text-status-danger'}`}>
             {avgMarginPercent.toFixed(1)}%
           </p>
-          <p className="text-[10px] text-muted-foreground">Avg Margin</p>
+          <p className="text-data text-muted-foreground">Avg Margin</p>
         </div>
       </div>
 
@@ -118,7 +118,7 @@ export default function BusinessProfitabilityWidget({ widget }: WidgetProps) {
                   value={Math.min(100, costPercent)} 
                   className={`h-1.5 ${costPercent > 100 ? '[&>div]:bg-red-500' : '[&>div]:bg-blue-500'}`}
                 />
-                <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+                <div className="flex items-center justify-between mt-1 text-data text-muted-foreground">
                   <span>Cost: {formatCurrency(actualCosts)}</span>
                   <span>Budget: {formatCurrency(estimatedRevenue)}</span>
                 </div>

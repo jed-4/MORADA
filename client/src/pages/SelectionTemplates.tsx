@@ -275,7 +275,7 @@ export default function SelectionTemplates() {
         row.original.category ? (
           <Badge
             variant="secondary"
-            className={cn("h-4 px-1.5 text-[10px]", getCategoryColor(row.original.category))}
+            className={cn("h-4 px-1.5 text-data", getCategoryColor(row.original.category))}
             data-testid={`cell-category-${row.original.id}`}
           >
             {row.original.category}

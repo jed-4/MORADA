@@ -52,12 +52,12 @@ export function SummaryBar({ items, className, ...rest }: SummaryBarProps) {
           className="flex items-baseline gap-2"
           data-testid={item.testid}
         >
-          <span className="text-[9px] uppercase tracking-wide text-table-header-foreground">
+          <span className="text-label uppercase tracking-wide text-table-header-foreground">
             {item.label}
           </span>
           <span
             className={cn(
-              "text-[13px] font-bold leading-none",
+              "text-body-sm font-bold leading-none",
               TONE_CLASS[item.tone ?? "default"],
             )}
           >

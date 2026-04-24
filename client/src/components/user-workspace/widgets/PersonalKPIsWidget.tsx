@@ -50,7 +50,7 @@ export default function PersonalKPIsWidget({ widget, onUpdate, isConfiguring, on
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{widget.title || "Personal KPIs"}</span>
-          <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+          <Badge variant="secondary" className="text-data bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
             Coming Soon
           </Badge>
         </div>

@@ -90,7 +90,7 @@ export function LineItemTable<T>({
   selectAllTestId,
   fixedLayout = false,
 }: LineItemTableProps<T>) {
-  const textSize = size === "sm" ? "text-xs" : "text-[11px]";
+  const textSize = size === "sm" ? "text-xs" : "text-table";
   const cellPad = "px-2 py-1";
 
   const allSelectableKeys = selection

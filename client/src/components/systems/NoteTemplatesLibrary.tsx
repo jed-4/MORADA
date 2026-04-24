@@ -61,11 +61,11 @@ function SortableFieldRow({ field, fieldId, onEdit, onRemove }: SortableFieldRow
       </div>
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium truncate">{field.label || 'Untitled'}</span>
-        <Badge variant="outline" className="ml-2 h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
+        <Badge variant="outline" className="ml-2 h-5 text-data no-default-hover-elevate no-default-active-elevate">
           {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
         </Badge>
         {field.required && (
-          <Badge variant="secondary" className="ml-1 h-5 text-[10px]">
+          <Badge variant="secondary" className="ml-1 h-5 text-data">
             Required
           </Badge>
         )}
@@ -485,7 +485,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                                 <Badge 
                                   key={roleId} 
                                   variant="outline" 
-                                  className="h-4 px-1.5 text-[10px] bg-primary/10 border-primary/30 text-[#8b7ab3]"
+                                  className="h-4 px-1.5 text-data bg-primary/10 border-primary/30 text-[#8b7ab3]"
                                 >
                                   {role.name}
                                 </Badge>
@@ -497,29 +497,29 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                       
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {template.isFormBased ? (
-                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                          <Badge variant="secondary" className="h-4 px-1.5 text-data">
                             <FormInput className="h-3 w-3 mr-0.5" />
                             Form
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                          <Badge variant="secondary" className="h-4 px-1.5 text-data">
                             <FileSpreadsheet className="h-3 w-3 mr-0.5" />
                             Content
                           </Badge>
                         )}
 
                         {template.isActive ? (
-                          <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-status-success">
+                          <Badge variant="outline" className="h-4 px-1.5 text-data text-status-success">
                             Active
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-muted-foreground">
+                          <Badge variant="outline" className="h-4 px-1.5 text-data text-muted-foreground">
                             Inactive
                           </Badge>
                         )}
 
                         {template.updatedAt && (
-                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <div className="flex items-center gap-1 text-data text-muted-foreground">
                             <span>
                               {format(new Date(template.updatedAt), "MMM d, yyyy")}
                             </span>
@@ -859,11 +859,11 @@ function TemplateFieldsList({ templateId }: { templateId: string }) {
       {fields.map((field) => (
         <div key={field.id} className="flex items-center gap-2 text-sm">
           <span className="font-medium">{field.label}</span>
-          <Badge variant="outline" className="h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
+          <Badge variant="outline" className="h-5 text-data no-default-hover-elevate no-default-active-elevate">
             {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
           </Badge>
           {field.required && (
-            <Badge variant="secondary" className="h-5 text-[10px]">Required</Badge>
+            <Badge variant="secondary" className="h-5 text-data">Required</Badge>
           )}
         </div>
       ))}

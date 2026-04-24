@@ -126,7 +126,7 @@ function SortableChecklistItem({
         value={item.text}
         onChange={(e) => onUpdate(index, e.target.value)}
         placeholder="Checklist item"
-        className="h-6 text-[11px] flex-1"
+        className="h-6 text-table flex-1"
         data-testid={`input-checklist-${index}`}
       />
       <Button
@@ -1123,14 +1123,14 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
           <div className="flex flex-col gap-2 max-h-[calc(90vh-120px)] overflow-y-auto pr-1">
             {/* Title */}
             <div>
-              <Label className="text-[10px] text-muted-foreground">
+              <Label className="text-data text-muted-foreground">
                 Title <span className="text-destructive">*</span>
               </Label>
               <Input
                 value={templateForm.title}
                 onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })}
                 placeholder="Operational task title"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 data-testid="input-template-title"
                 required
               />
@@ -1138,36 +1138,36 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
             {/* Goal */}
             <div>
-              <Label className="text-[10px] text-muted-foreground">Goal</Label>
+              <Label className="text-data text-muted-foreground">Goal</Label>
               <Input
                 value={templateForm.goal}
                 onChange={(e) => setTemplateForm({ ...templateForm, goal: e.target.value })}
                 placeholder="Brief, to-the-point goal"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 data-testid="input-template-goal"
               />
             </div>
 
             {/* Description */}
             <div>
-              <Label className="text-[10px] text-muted-foreground">Description</Label>
+              <Label className="text-data text-muted-foreground">Description</Label>
               <Textarea
                 value={templateForm.description}
                 onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
                 placeholder="Detailed description"
-                className="min-h-[60px] text-[11px]"
+                className="min-h-[60px] text-table"
                 data-testid="input-template-description"
               />
             </div>
 
             {/* Scope Selection */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] text-muted-foreground">Scope</Label>
+              <Label className="text-data text-muted-foreground">Scope</Label>
               <div className="flex gap-1.5">
                 <Button
                   type="button"
                   variant={templateForm.scope === "business" ? "default" : "outline"}
-                  className="flex-1 h-7 text-[11px]"
+                  className="flex-1 h-7 text-table"
                   onClick={() => setTemplateForm({ ...templateForm, scope: "business", projectId: "" })}
                   data-testid="button-scope-business"
                 >
@@ -1176,7 +1176,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 <Button
                   type="button"
                   variant={templateForm.scope === "project" ? "default" : "outline"}
-                  className="flex-1 h-7 text-[11px]"
+                  className="flex-1 h-7 text-table"
                   onClick={() => setTemplateForm({ ...templateForm, scope: "project" })}
                   data-testid="button-scope-project"
                 >
@@ -1188,12 +1188,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   value={templateForm.projectId}
                   onValueChange={(value) => setTemplateForm({ ...templateForm, projectId: value })}
                 >
-                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-template-project">
+                  <SelectTrigger className="h-7 text-table" data-testid="select-template-project">
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map((project: any) => (
-                      <SelectItem key={project.id} value={project.id} className="text-[11px]">
+                      <SelectItem key={project.id} value={project.id} className="text-table">
                         {project.name}
                       </SelectItem>
                     ))}
@@ -1205,33 +1205,33 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             {/* Status, Category, Duration - 3 column grid */}
             <div className="grid grid-cols-3 gap-1.5">
               <div>
-                <Label className="text-[10px] text-muted-foreground">Status</Label>
+                <Label className="text-data text-muted-foreground">Status</Label>
                 <Select
                   value={templateForm.status}
                   onValueChange={(value: "published" | "draft" | "archived") => setTemplateForm({ ...templateForm, status: value })}
                 >
-                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-template-status">
+                  <SelectTrigger className="h-7 text-table" data-testid="select-template-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="published" className="text-[11px]">Published</SelectItem>
-                    <SelectItem value="draft" className="text-[11px]">Draft</SelectItem>
-                    <SelectItem value="archived" className="text-[11px]">Archived</SelectItem>
+                    <SelectItem value="published" className="text-table">Published</SelectItem>
+                    <SelectItem value="draft" className="text-table">Draft</SelectItem>
+                    <SelectItem value="archived" className="text-table">Archived</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-[10px] text-muted-foreground">Category</Label>
+                <Label className="text-data text-muted-foreground">Category</Label>
                 <Select
                   value={templateForm.category}
                   onValueChange={(value) => setTemplateForm({ ...templateForm, category: value })}
                 >
-                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-template-category">
+                  <SelectTrigger className="h-7 text-table" data-testid="select-template-category">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
                     {categoryOptions.map((option) => (
-                      <SelectItem key={option.key} value={option.key} className="text-[11px]">
+                      <SelectItem key={option.key} value={option.key} className="text-table">
                         {option.name}
                       </SelectItem>
                     ))}
@@ -1239,7 +1239,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 </Select>
               </div>
               <div>
-                <Label className="text-[10px] text-muted-foreground">Duration (min)</Label>
+                <Label className="text-data text-muted-foreground">Duration (min)</Label>
                 <Input
                   type="number"
                   value={templateForm.estimatedDuration ?? ""}
@@ -1247,7 +1247,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   onBlur={(e) => setTemplateForm({ ...templateForm, estimatedDuration: parseInt(e.target.value) || 0 })}
                   onFocus={(e) => e.target.select()}
                   placeholder="60"
-                  className="h-7 text-[11px]"
+                  className="h-7 text-table"
                   data-testid="input-template-duration"
                 />
               </div>
@@ -1264,12 +1264,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   }
                   data-testid="checkbox-recurring-template"
                 />
-                <Label htmlFor="recurring-template" className="text-[11px] cursor-pointer">
+                <Label htmlFor="recurring-template" className="text-table cursor-pointer">
                   Recurring Template
                 </Label>
               </div>
               <div className="flex items-center gap-2">
-                <Label className="text-[11px] text-muted-foreground">Active</Label>
+                <Label className="text-table text-muted-foreground">Active</Label>
                 <Switch
                   checked={templateForm.isActive}
                   onCheckedChange={(checked) => setTemplateForm({ ...templateForm, isActive: checked })}
@@ -1282,12 +1282,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               <div className="space-y-2 p-2 bg-muted/20 rounded border">
                 {/* Assignee Selection */}
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">Assign To</Label>
+                  <Label className="text-data text-muted-foreground">Assign To</Label>
                   <div className="flex gap-1.5">
                     <Button
                       type="button"
                       variant={templateForm.assigneeType === "role" ? "default" : "outline"}
-                      className="flex-1 h-6 text-[11px]"
+                      className="flex-1 h-6 text-table"
                       onClick={() => setTemplateForm({ ...templateForm, assigneeType: "role" })}
                       data-testid="button-assign-role"
                     >
@@ -1296,7 +1296,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     <Button
                       type="button"
                       variant={templateForm.assigneeType === "user" ? "default" : "outline"}
-                      className="flex-1 h-6 text-[11px]"
+                      className="flex-1 h-6 text-table"
                       onClick={() => setTemplateForm({ ...templateForm, assigneeType: "user" })}
                       data-testid="button-assign-user"
                     >
@@ -1309,12 +1309,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       value={templateForm.defaultRoleId}
                       onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
                     >
-                      <SelectTrigger className="h-7 text-[11px]" data-testid="select-recurring-role">
+                      <SelectTrigger className="h-7 text-table" data-testid="select-recurring-role">
                         <SelectValue placeholder="Select a role" />
                       </SelectTrigger>
                       <SelectContent>
                         {roles.map((role) => (
-                          <SelectItem key={role.id} value={role.id} className="text-[11px]">
+                          <SelectItem key={role.id} value={role.id} className="text-table">
                             {role.name}
                           </SelectItem>
                         ))}
@@ -1333,41 +1333,41 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
                 {/* Default Task Status */}
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Default Task Status</Label>
+                  <Label className="text-data text-muted-foreground">Default Task Status</Label>
                   <Select
                     value={templateForm.defaultTaskStatus}
                     onValueChange={(value) => setTemplateForm({ ...templateForm, defaultTaskStatus: value })}
                   >
-                    <SelectTrigger className="h-7 text-[11px]" data-testid="select-default-task-status">
+                    <SelectTrigger className="h-7 text-table" data-testid="select-default-task-status">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
                       {taskStatusOptions.map((option) => (
-                        <SelectItem key={option.key} value={option.key} className="text-[11px]">
+                        <SelectItem key={option.key} value={option.key} className="text-table">
                           {option.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                  <p className="text-label text-muted-foreground mt-0.5">
                     Tasks will be created with this status
                   </p>
                 </div>
 
                 {/* Frequency */}
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Frequency</Label>
+                  <Label className="text-data text-muted-foreground">Frequency</Label>
                   <Select
                     value={templateForm.frequency}
                     onValueChange={(value) => setTemplateForm({ ...templateForm, frequency: value })}
                   >
-                    <SelectTrigger className="h-7 text-[11px]" data-testid="select-template-frequency">
+                    <SelectTrigger className="h-7 text-table" data-testid="select-template-frequency">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="daily" className="text-[11px]">Daily</SelectItem>
-                      <SelectItem value="weekly" className="text-[11px]">Weekly</SelectItem>
-                      <SelectItem value="monthly" className="text-[11px]">Monthly</SelectItem>
+                      <SelectItem value="daily" className="text-table">Daily</SelectItem>
+                      <SelectItem value="weekly" className="text-table">Weekly</SelectItem>
+                      <SelectItem value="monthly" className="text-table">Monthly</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1376,13 +1376,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {templateForm.frequency === "daily" && (
                   <div className="flex items-end gap-4">
                     <div>
-                      <Label className="text-[10px] text-muted-foreground">Time</Label>
+                      <Label className="text-data text-muted-foreground">Time</Label>
                       <Input
                         type="time"
                         step="900"
                         value={templateForm.dueTime}
                         onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
-                        className="h-7 text-[11px] w-28"
+                        className="h-7 text-table w-28"
                         data-testid="input-template-time"
                       />
                     </div>
@@ -1394,7 +1394,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                           onCheckedChange={(checked) => setTemplateForm({ ...templateForm, includeSaturday: !!checked })}
                           data-testid="checkbox-include-saturday-template"
                         />
-                        <Label htmlFor="include-saturday-template" className="text-[10px] text-muted-foreground cursor-pointer">
+                        <Label htmlFor="include-saturday-template" className="text-data text-muted-foreground cursor-pointer">
                           Inc. Saturday
                         </Label>
                       </div>
@@ -1405,7 +1405,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                           onCheckedChange={(checked) => setTemplateForm({ ...templateForm, includeSunday: !!checked })}
                           data-testid="checkbox-include-sunday-template"
                         />
-                        <Label htmlFor="include-sunday-template" className="text-[10px] text-muted-foreground cursor-pointer">
+                        <Label htmlFor="include-sunday-template" className="text-data text-muted-foreground cursor-pointer">
                           Inc. Sunday
                         </Label>
                       </div>
@@ -1417,13 +1417,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {templateForm.frequency === "weekly" && (
                   <>
                     <div>
-                      <Label className="text-[10px] text-muted-foreground">Days of Week</Label>
+                      <Label className="text-data text-muted-foreground">Days of Week</Label>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {DAYS_OF_WEEK.map((day) => (
                           <Badge
                             key={day.value}
                             variant={templateForm.dueDayOfWeek.includes(day.value) ? "default" : "outline"}
-                            className="cursor-pointer hover-elevate active-elevate-2 text-[10px] px-1.5 py-0 h-5"
+                            className="cursor-pointer hover-elevate active-elevate-2 text-data px-1.5 py-0 h-5"
                             onClick={() => toggleDayOfWeek(day.value)}
                             data-testid={`button-day-${day.label.toLowerCase()}`}
                           >
@@ -1435,7 +1435,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
                     {templateForm.dueDayOfWeek.length > 0 && (
                       <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground">Start Times</Label>
+                        <Label className="text-data text-muted-foreground">Start Times</Label>
                         <div className="grid grid-cols-2 gap-1.5">
                           {templateForm.dueDayOfWeek.map((dayValue) => {
                             const day = DAYS_OF_WEEK.find(d => d.value === dayValue);
@@ -1443,12 +1443,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                             
                             return (
                               <div key={dayValue} className="flex items-center gap-1.5 px-2 py-1 bg-background rounded border">
-                                <span className="text-[10px] font-medium w-12">{day?.label}</span>
+                                <span className="text-data font-medium w-12">{day?.label}</span>
                                 <Select
                                   value={schedule?.startTime || ""}
                                   onValueChange={(value) => updateDaySchedule(dayValue, value, templateForm.estimatedDuration || 60)}
                                 >
-                                  <SelectTrigger className="h-6 text-[10px] w-16" data-testid={`select-recurring-time-${day?.label.toLowerCase()}`}>
+                                  <SelectTrigger className="h-6 text-data w-16" data-testid={`select-recurring-time-${day?.label.toLowerCase()}`}>
                                     <SelectValue placeholder="--:--" />
                                   </SelectTrigger>
                                   <SelectContent className="max-h-[200px]">
@@ -1457,7 +1457,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                                       const minutes = (i % 4) * 15;
                                       const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
                                       return (
-                                        <SelectItem key={time} value={time} className="text-[10px]">
+                                        <SelectItem key={time} value={time} className="text-data">
                                           {time}
                                         </SelectItem>
                                       );
@@ -1476,7 +1476,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {/* Monthly - Day */}
                 {templateForm.frequency === "monthly" && (
                   <div>
-                    <Label className="text-[10px] text-muted-foreground">Day of Month</Label>
+                    <Label className="text-data text-muted-foreground">Day of Month</Label>
                     <Input
                       type="number"
                       min="1"
@@ -1484,7 +1484,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       value={templateForm.dueDayOfMonth}
                       onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: parseInt(e.target.value) || 1 })}
                       placeholder="1-31"
-                      className="h-7 text-[11px] w-20"
+                      className="h-7 text-table w-20"
                       data-testid="input-template-day-of-month"
                     />
                   </div>
@@ -1495,8 +1495,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             {/* Checklist */}
             <div>
               <div className="flex items-center justify-between mb-0.5">
-                <Label className="text-[10px] text-muted-foreground">Checklist</Label>
-                <Button type="button" variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-0.5" onClick={addChecklistItem} data-testid="button-add-checklist">
+                <Label className="text-data text-muted-foreground">Checklist</Label>
+                <Button type="button" variant="ghost" size="sm" className="h-5 px-1.5 text-data gap-0.5" onClick={addChecklistItem} data-testid="button-add-checklist">
                   <Plus className="h-2.5 w-2.5" />
                   Add
                 </Button>
@@ -1526,15 +1526,15 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   </SortableContext>
                 </DndContext>
               ) : (
-                <div className="text-[10px] text-muted-foreground px-2 py-1 bg-muted/30 rounded">No items</div>
+                <div className="text-data text-muted-foreground px-2 py-1 bg-muted/30 rounded">No items</div>
               )}
             </div>
 
             {/* External Links */}
             <div>
               <div className="flex items-center justify-between mb-0.5">
-                <Label className="text-[10px] text-muted-foreground">External Links</Label>
-                <Button type="button" variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-0.5" onClick={addExternalLink} data-testid="button-add-link">
+                <Label className="text-data text-muted-foreground">External Links</Label>
+                <Button type="button" variant="ghost" size="sm" className="h-5 px-1.5 text-data gap-0.5" onClick={addExternalLink} data-testid="button-add-link">
                   <Plus className="h-2.5 w-2.5" />
                   Add
                 </Button>
@@ -1548,7 +1548,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                         onChange={(e) => updateExternalLink(index, e.target.value)}
                         placeholder="https://example.com"
                         type="url"
-                        className="h-6 text-[11px]"
+                        className="h-6 text-table"
                         data-testid={`input-link-${index}`}
                       />
                       <Button
@@ -1565,15 +1565,15 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   ))}
                 </div>
               ) : (
-                <div className="text-[10px] text-muted-foreground px-2 py-1 bg-muted/30 rounded">No links</div>
+                <div className="text-data text-muted-foreground px-2 py-1 bg-muted/30 rounded">No links</div>
               )}
             </div>
           </div>
           <DialogFooter className="pt-2">
-            <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => setShowDialog(false)} data-testid="button-cancel-template">
+            <Button variant="outline" size="sm" className="h-7 text-table" onClick={() => setShowDialog(false)} data-testid="button-cancel-template">
               Cancel
             </Button>
-            <Button size="sm" className="h-7 text-[11px]" onClick={handleSaveTemplate} data-testid="button-save-template">
+            <Button size="sm" className="h-7 text-table" onClick={handleSaveTemplate} data-testid="button-save-template">
               {editingTemplate ? "Update" : "Create"}
             </Button>
           </DialogFooter>
@@ -1588,33 +1588,33 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div>
-              <Label className="text-[10px] text-muted-foreground">Title *</Label>
+              <Label className="text-data text-muted-foreground">Title *</Label>
               <Input
                 value={createTaskFormData.title}
                 onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, title: e.target.value }))}
                 placeholder="Task title"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 data-testid="input-create-task-title"
               />
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Description</Label>
+              <Label className="text-data text-muted-foreground">Description</Label>
               <Textarea
                 value={createTaskFormData.content}
                 onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, content: e.target.value }))}
                 placeholder="Task description..."
                 rows={3}
-                className="text-[11px]"
+                className="text-table"
                 data-testid="input-create-task-content"
               />
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Assignee</Label>
+              <Label className="text-data text-muted-foreground">Assignee</Label>
               <Select
                 value={createTaskFormData.assigneeId || "none"}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, assigneeId: v === "none" ? undefined : v }))}
               >
-                <SelectTrigger className="h-7 text-[11px]" data-testid="select-create-task-assignee">
+                <SelectTrigger className="h-7 text-table" data-testid="select-create-task-assignee">
                   <SelectValue placeholder="Select assignee" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1628,12 +1628,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               </Select>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Due Date</Label>
+              <Label className="text-data text-muted-foreground">Due Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className="w-full justify-start text-left font-normal h-7 text-[11px]"
+                    className="w-full justify-start text-left font-normal h-7 text-table"
                     data-testid="button-create-task-due-date"
                   >
                     <CalendarIcon className="mr-2 h-3.5 w-3.5" />
@@ -1653,12 +1653,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               </Popover>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Status</Label>
+              <Label className="text-data text-muted-foreground">Status</Label>
               <Select
                 value={createTaskFormData.status}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, status: v }))}
               >
-                <SelectTrigger className="h-7 text-[11px]" data-testid="select-create-task-status">
+                <SelectTrigger className="h-7 text-table" data-testid="select-create-task-status">
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1670,10 +1670,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             </div>
           </div>
           <DialogFooter className="pt-2">
-            <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => setIsCreateTaskDialogOpen(false)} data-testid="button-cancel-create-task">
+            <Button variant="outline" size="sm" className="h-7 text-table" onClick={() => setIsCreateTaskDialogOpen(false)} data-testid="button-cancel-create-task">
               Cancel
             </Button>
-            <Button size="sm" className="h-7 text-[11px]" onClick={handleCreateTaskFromTemplate} disabled={createTaskMutation.isPending} data-testid="button-submit-create-task">
+            <Button size="sm" className="h-7 text-table" onClick={handleCreateTaskFromTemplate} disabled={createTaskMutation.isPending} data-testid="button-submit-create-task">
               {createTaskMutation.isPending ? "Creating..." : "Create Task"}
             </Button>
           </DialogFooter>

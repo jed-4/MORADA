@@ -118,7 +118,7 @@ type AllowanceLine = {
   sortOrder: number;
 };
 
-const labelCls = "h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium";
+const labelCls = "h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium";
 
 export default function VariationDetail() {
   const { id, variationId, projectId: projectIdFromParams } = useParams<{ 
@@ -1317,7 +1317,7 @@ export default function VariationDetail() {
                                   cell: (line, index) => (
                                     <Select value={line.type} onValueChange={(val) => updateCostLine(index, "type", val)}>
                                       <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
-                                        <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium", typeColors[line.type] || typeColors.Material)}>{line.type}</span>
+                                        <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-data font-medium", typeColors[line.type] || typeColors.Material)}>{line.type}</span>
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="Material">Material</SelectItem>
@@ -1447,10 +1447,10 @@ export default function VariationDetail() {
                         <Table>
                           <TableHeader>
                             <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
                               <TableHead className="w-8 py-0" />
                             </TableRow>
                           </TableHeader>
@@ -1503,10 +1503,10 @@ export default function VariationDetail() {
                         <Table>
                           <TableHeader>
                             <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
                               <TableHead className="w-8 py-0" />
                             </TableRow>
                           </TableHeader>
@@ -1582,8 +1582,8 @@ export default function VariationDetail() {
                           <Table>
                             <TableHeader>
                               <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                                <TableHead className="w-36 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($)</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                                <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($)</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -1831,7 +1831,7 @@ export default function VariationDetail() {
                           type="button"
                           onClick={() => attachmentInputRef.current?.click()}
                           disabled={uploadingAttachment}
-                          className="ml-auto h-5 px-1.5 text-[10px] border rounded flex items-center gap-1 hover-elevate active-elevate-2 text-muted-foreground"
+                          className="ml-auto h-5 px-1.5 text-data border rounded flex items-center gap-1 hover-elevate active-elevate-2 text-muted-foreground"
                           data-testid="button-upload-attachment"
                         >
                           {uploadingAttachment ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5" />}
@@ -1947,10 +1947,10 @@ export default function VariationDetail() {
                 <TableHeader>
                   <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
                     <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2018,11 +2018,11 @@ export default function VariationDetail() {
                 <TableHeader>
                   <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
                     <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
+                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2136,7 +2136,7 @@ export default function VariationDetail() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium truncate">{item.name}</span>
-                          <Badge variant="outline" className="text-[10px] flex-shrink-0">{item.allowance}</Badge>
+                          <Badge variant="outline" className="text-data flex-shrink-0">{item.allowance}</Badge>
                         </div>
                         {item.description && (
                           <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>

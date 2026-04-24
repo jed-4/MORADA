@@ -340,7 +340,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
               <div key={i} className="text-center p-2 rounded-md bg-muted/50">
                 <stat.icon className={`h-3.5 w-3.5 mx-auto mb-0.5 ${stat.color}`} />
                 <div className="text-base font-semibold">{stat.value}</div>
-                <div className="text-[9px] text-muted-foreground">{stat.label}</div>
+                <div className="text-label text-muted-foreground">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -348,18 +348,18 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
 
         <div className="p-3 rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
           <p className="text-xs font-medium mb-0.5">{getGreeting()}!</p>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">{getOverviewMessage()}</p>
+          <p className="text-table text-muted-foreground leading-relaxed">{getOverviewMessage()}</p>
         </div>
 
         {overdueTasks.length > 0 && (
           <div className="py-2 px-3 rounded-md border-l-3 border-l-red-500 bg-red-50/50 dark:bg-red-950/20">
             <div className="flex items-center gap-1.5 mb-1">
               <AlertTriangle className="h-3 w-3 text-red-500" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-status-danger dark:text-red-400">
+              <span className="text-data font-semibold uppercase tracking-wide text-status-danger dark:text-red-400">
                 Needs Attention
               </span>
             </div>
-            <p className="text-[11px] text-status-danger dark:text-red-400">
+            <p className="text-table text-status-danger dark:text-red-400">
               {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} requiring immediate action
             </p>
           </div>
@@ -369,7 +369,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
               <Zap className="h-3 w-3 text-amber-500" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <span className="text-data font-semibold uppercase tracking-wide text-muted-foreground">
                 Suggested Actions
               </span>
             </div>
@@ -391,7 +391,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
                   {action.type === 'task' && <Target className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                   {action.type === 'schedule' && <Clock className="h-3 w-3 text-blue-500 flex-shrink-0" />}
                   {action.type === 'follow-up' && <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
-                  <span className="text-[11px] flex-1 truncate">{action.text}</span>
+                  <span className="text-table flex-1 truncate">{action.text}</span>
                   {action.link && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                 </div>
               ))}
@@ -403,18 +403,18 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
           <div className="space-y-2 pt-2 border-t">
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-3 w-3 text-purple-500" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">
+              <span className="text-data font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">
                 AI Insights
               </span>
             </div>
             <div className="p-2 rounded-md bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
-              <p className="text-[11px] leading-relaxed">{summary.summary}</p>
+              <p className="text-table leading-relaxed">{summary.summary}</p>
             </div>
 
             {summary.suggestions?.length > 0 && (
               <div className="space-y-1">
                 {summary.suggestions.map((s, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[11px] pl-1">
+                  <div key={i} className="flex items-start gap-2 text-table pl-1">
                     <span className="text-purple-500 mt-0.5">*</span>
                     <span>{s}</span>
                   </div>
@@ -429,7 +429,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
             <Button
               size="sm"
               variant="outline"
-              className="h-6 text-[11px]"
+              className="h-6 text-table"
               onClick={() => generateMutation.mutate()}
               disabled={isGenerating}
               data-testid="generate-first-summary"

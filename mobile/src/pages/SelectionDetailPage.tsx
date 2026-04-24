@@ -430,7 +430,7 @@ export function SelectionDetailPage({ selectionId, onBack }: SelectionDetailPage
                     >
                       <Icon className="w-5 h-5" />
                       <span className="text-sm font-medium">{status.name}</span>
-                      <span className={`text-[10px] text-center ${isSelected ? "text-white/80" : "text-muted-foreground"}`}>
+                      <span className={`text-data text-center ${isSelected ? "text-white/80" : "text-muted-foreground"}`}>
                         {status.description}
                       </span>
                     </button>

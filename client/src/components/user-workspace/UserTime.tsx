@@ -271,7 +271,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
               </button>
               <button
                 onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: weekStartDay }))}
-                className="h-6 px-2 text-[10px] border rounded-md hover-elevate active-elevate-2"
+                className="h-6 px-2 text-data border rounded-md hover-elevate active-elevate-2"
                 data-testid="button-today"
               >
                 Today
@@ -305,14 +305,14 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   <div
                     key={day.toISOString()}
                     style={{ flex }}
-                    className={`text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium min-w-0 ${
+                    className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
                       today ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                     }`}
                   >
                     <div className={today ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
                       {format(day, "EEE")}
                     </div>
-                    <div className={`text-[13px] font-semibold ${today ? "text-status-info dark:text-blue-400" : ""}`}>
+                    <div className={`text-body-sm font-semibold ${today ? "text-status-info dark:text-blue-400" : ""}`}>
                       {format(day, "d")}
                     </div>
                   </div>
@@ -327,7 +327,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   style={{ width: GUTTER_W, minWidth: GUTTER_W }}
                   className="border-r border-border flex-shrink-0 flex items-center justify-end pr-1"
                 >
-                  <span className="text-[9px] text-muted-foreground/60">all day</span>
+                  <span className="text-label text-muted-foreground/60">all day</span>
                 </div>
                 {daysOfWeek.map(day => {
                   const dk = format(day, "yyyy-MM-dd");
@@ -346,7 +346,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                           <div
                             key={ts.id}
                             onClick={() => setSelectedTimesheet(ts)}
-                            className="text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground"
+                            className="text-label px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground"
                             style={projColor
                               ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` }
                               : { backgroundColor: "hsl(var(--muted))", borderLeft: "2px solid hsl(var(--border))" }
@@ -376,7 +376,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   return (
                     <div
                       key={h}
-                      className="absolute right-0 pr-1 text-[10px] text-muted-foreground leading-none"
+                      className="absolute right-0 pr-1 text-data text-muted-foreground leading-none"
                       style={{ top: i * HOUR_PX - 6 }}
                     >
                       {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
@@ -442,7 +442,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                           <div
                             key={ts.id}
                             onClick={() => setSelectedTimesheet(ts)}
-                            className="absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground"
+                            className="absolute rounded text-label px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground"
                             style={projColor ? {
                               top,
                               height,
@@ -524,7 +524,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                         <td className="p-2 font-medium">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</td>
                         <td className="p-2 max-w-[160px] truncate text-muted-foreground">{ts.description || "—"}</td>
                         <td className="p-2">
-                          <Badge variant="outline" className={`text-[10px] ${statusBadgeClass(ts.status)}`}>
+                          <Badge variant="outline" className={`text-data ${statusBadgeClass(ts.status)}`}>
                             {ts.status}
                           </Badge>
                         </td>
@@ -605,7 +605,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-xs text-muted-foreground">Status</span>
-                <Badge variant="outline" className={`text-[10px] ${statusBadgeClass(selectedTimesheet.status)}`}>
+                <Badge variant="outline" className={`text-data ${statusBadgeClass(selectedTimesheet.status)}`}>
                   {selectedTimesheet.status}
                 </Badge>
               </div>

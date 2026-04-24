@@ -95,7 +95,7 @@ export default function BusinessActivityWidget({ widget }: WidgetProps) {
                   {projectName && (
                     <>
                       <span>•</span>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">
+                      <Badge variant="outline" className="text-data px-1 py-0">
                         {projectName}
                       </Badge>
                     </>

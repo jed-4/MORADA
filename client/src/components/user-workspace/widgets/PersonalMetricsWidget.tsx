@@ -132,7 +132,7 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
             <CheckSquare className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground">Active</span>
+            <span className="text-data text-muted-foreground">Active</span>
           </div>
           <p className="text-lg font-bold" data-testid="metric-active-tasks">{activeTasks.length}</p>
         </div>
@@ -140,7 +140,7 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
             <TrendingUp className="h-3 w-3 text-status-success" />
-            <span className="text-[10px] text-muted-foreground">Done This Week</span>
+            <span className="text-data text-muted-foreground">Done This Week</span>
           </div>
           <p className="text-lg font-bold text-status-success" data-testid="metric-completed-week">{completedThisWeek.length}</p>
         </div>
@@ -148,7 +148,7 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
             <Target className="h-3 w-3 text-status-danger" />
-            <span className="text-[10px] text-muted-foreground">Overdue</span>
+            <span className="text-data text-muted-foreground">Overdue</span>
           </div>
           <p className={`text-lg font-bold ${overdueTasks.length > 0 ? 'text-status-danger' : ''}`} data-testid="metric-overdue">
             {overdueTasks.length}
@@ -158,14 +158,14 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
         <div className="p-2 border rounded-md bg-card/50">
           <div className="flex items-center gap-1 mb-1">
             <Clock className="h-3 w-3 text-status-info" />
-            <span className="text-[10px] text-muted-foreground">Hours</span>
+            <span className="text-data text-muted-foreground">Hours</span>
           </div>
           <p className="text-lg font-bold text-status-info" data-testid="metric-hours">{hoursThisWeek.toFixed(1)}</p>
         </div>
       </div>
 
       <div className="space-y-1">
-        <div className="flex items-center justify-between text-[10px]">
+        <div className="flex items-center justify-between text-data">
           <span className="text-muted-foreground">Weekly hours progress</span>
           <span className="font-medium">{hoursThisWeek.toFixed(1)}/{weeklyHoursTarget}h</span>
         </div>

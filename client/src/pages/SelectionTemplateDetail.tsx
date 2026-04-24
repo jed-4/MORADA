@@ -121,12 +121,12 @@ function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: Sortab
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">{item.itemName}</span>
           {item.categoryName && (
-            <Badge variant="secondary" className="h-4 text-[10px]">
+            <Badge variant="secondary" className="h-4 text-data">
               {item.categoryName}
             </Badge>
           )}
           {item.allowanceType && (
-            <Badge variant="outline" className="h-4 text-[10px]">
+            <Badge variant="outline" className="h-4 text-data">
               {item.allowanceType}
             </Badge>
           )}
@@ -137,7 +137,7 @@ function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: Sortab
       </div>
 
       {optionCount > 0 && (
-        <Badge variant="outline" className="h-4 text-[10px]">
+        <Badge variant="outline" className="h-4 text-data">
           {optionCount} {optionCount === 1 ? 'option' : 'options'}
         </Badge>
       )}
@@ -542,7 +542,7 @@ export default function SelectionTemplateDetail() {
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       )}
                       <span className="font-medium text-sm">{category}</span>
-                      <Badge variant="outline" className="h-4 text-[10px]">
+                      <Badge variant="outline" className="h-4 text-data">
                         {categoryItems.length}
                       </Badge>
                     </div>

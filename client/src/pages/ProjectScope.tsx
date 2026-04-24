@@ -343,7 +343,7 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
                     </div>
                   )}
                   {template.category && (
-                    <Badge variant="secondary" className="mt-1 h-4 text-[10px]">
+                    <Badge variant="secondary" className="mt-1 h-4 text-data">
                       {template.category}
                     </Badge>
                   )}
@@ -641,7 +641,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <div className="flex items-center">
           {getTypeLabel && (
             <span 
-              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20 truncate"
+              className="h-4 px-1.5 text-data font-semibold rounded bg-primary/10 text-primary border border-primary/20 truncate"
               data-testid={`badge-type-${item.id}`}
             >
               {getTypeLabel(item.itemType)}
@@ -705,7 +705,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           {gearList.length > 0 && (
             <button
               onClick={() => setShowGearList(true)}
-              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-green-100 text-green-800 border border-green-200 hover-elevate flex items-center gap-0.5"
+              className="h-4 px-1.5 text-data font-semibold rounded bg-green-100 text-green-800 border border-green-200 hover-elevate flex items-center gap-0.5"
               title={`${gearList.filter(g => g.checked).length}/${gearList.length} gear items checked`}
               data-testid={`button-gear-${item.id}`}
             >
@@ -1295,12 +1295,12 @@ function DroppableStage({
                 </span>
               )}
               {stageData.isCompleted && (
-                <span className="text-[10px] text-status-success dark:text-green-400 font-medium">✓ Complete</span>
+                <span className="text-data text-status-success dark:text-green-400 font-medium">✓ Complete</span>
               )}
 
               {/* Item Count Badge */}
               {items.length > 0 && (
-                <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20">
+                <span className="h-4 px-1.5 text-data font-semibold rounded bg-primary/10 text-primary border border-primary/20">
                   {items.length}
                 </span>
               )}
@@ -1308,7 +1308,7 @@ function DroppableStage({
               {/* Linked Checklists Badge */}
               {checklistCount > 0 && (
                 <button
-                  className="h-4 px-1.5 text-[10px] font-semibold rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/40 flex items-center gap-0.5 hover-elevate"
+                  className="h-4 px-1.5 text-data font-semibold rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/40 flex items-center gap-0.5 hover-elevate"
                   onClick={(e) => {
                     e.stopPropagation();
                     onNavigateToChecklists?.(stageData.id);
@@ -1323,7 +1323,7 @@ function DroppableStage({
 
               {/* Total Value */}
               {stageTotal > 0 && (
-                <span className="text-[10px] text-muted-foreground font-medium">
+                <span className="text-data text-muted-foreground font-medium">
                   ${stageTotal.toLocaleString()}
                 </span>
               )}
@@ -1347,7 +1347,7 @@ function DroppableStage({
 
               {/* Add Item */}
               <button
-                className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
+                className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddItem(stageData.name);
@@ -1446,7 +1446,7 @@ function DroppableStage({
                 return (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center justify-between px-2">
-                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                      <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">
                         Purchase Orders
                       </div>
                       {linkablePOs.length > 0 && (
@@ -1460,7 +1460,7 @@ function DroppableStage({
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-72 p-1" align="end">
-                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                            <div className="text-table font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
                               Link a PO to this stage
                             </div>
                             <div className="max-h-56 overflow-y-auto space-y-0.5">
@@ -1474,7 +1474,7 @@ function DroppableStage({
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">{po.poNumber}</div>
                                     {(po.title || po.supplierName) && (
-                                      <div className="text-[10px] text-muted-foreground truncate">
+                                      <div className="text-data text-muted-foreground truncate">
                                         {po.title || po.supplierName}
                                       </div>
                                     )}
@@ -1500,7 +1500,7 @@ function DroppableStage({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">{po.poNumber}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            <span className={`text-data px-1.5 py-0.5 rounded ${
                               po.status === 'completed' || po.status === 'billed'
                                 ? 'bg-green-100 text-green-800'
                                 : po.status === 'draft'
@@ -1537,7 +1537,7 @@ function DroppableStage({
               {/* Linked Schedule Items */}
               {linkedScheduleItems.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
+                  <div className="text-data font-medium text-muted-foreground uppercase tracking-wide px-2">
                     Linked Schedule Items
                   </div>
                   {linkedScheduleItems.map((item) => (
@@ -1551,7 +1551,7 @@ function DroppableStage({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium truncate">{item.name}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          <span className={`text-data px-1.5 py-0.5 rounded ${
                             item.status === 'completed' 
                               ? 'bg-green-100 text-green-800' 
                               : item.status === 'in_progress' 
@@ -1583,7 +1583,7 @@ function DroppableStage({
                 return (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center justify-between px-2">
-                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                      <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">
                         Checklists
                       </div>
                       {linkableChecklists.length > 0 && (
@@ -1597,7 +1597,7 @@ function DroppableStage({
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-72 p-1" align="end">
-                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                            <div className="text-table font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
                               Link a checklist to this stage
                             </div>
                             <div className="max-h-56 overflow-y-auto space-y-0.5">
@@ -1611,12 +1611,12 @@ function DroppableStage({
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">{cl.name}</div>
                                     {(cl.totalCount ?? 0) > 0 && (
-                                      <div className="text-[10px] text-muted-foreground">
+                                      <div className="text-data text-muted-foreground">
                                         {cl.completedCount ?? 0}/{cl.totalCount} items
                                       </div>
                                     )}
                                   </div>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                                  <span className={`text-data px-1.5 py-0.5 rounded shrink-0 ${
                                     cl.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-muted text-secondary'
                                   }`}>
                                     {cl.status.replace('_', ' ')}
@@ -1639,7 +1639,7 @@ function DroppableStage({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{cl.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            <span className={`text-data px-1.5 py-0.5 rounded ${
                               cl.status === 'completed'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : cl.status === 'in_progress'
@@ -1677,7 +1677,7 @@ function DroppableStage({
                 return (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center justify-between px-2">
-                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                      <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">
                         Tasks
                       </div>
                       {linkableTasks.length > 0 && (
@@ -1691,7 +1691,7 @@ function DroppableStage({
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-72 p-1" align="end">
-                            <div className="text-[11px] font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
+                            <div className="text-table font-medium text-muted-foreground px-2 py-1.5 border-b border-border mb-1">
                               Link a task to this stage
                             </div>
                             <div className="max-h-56 overflow-y-auto space-y-0.5">
@@ -1705,7 +1705,7 @@ function DroppableStage({
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">{task.title}</div>
                                     {task.statusName && (
-                                      <div className="text-[10px] text-muted-foreground truncate">{task.statusName}</div>
+                                      <div className="text-data text-muted-foreground truncate">{task.statusName}</div>
                                     )}
                                   </div>
                                 </button>
@@ -1725,7 +1725,7 @@ function DroppableStage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{task.title}</span>
                             {task.statusName && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-secondary shrink-0">
+                              <span className="text-data px-1.5 py-0.5 rounded bg-muted text-secondary shrink-0">
                                 {task.statusName}
                               </span>
                             )}
@@ -1747,7 +1747,7 @@ function DroppableStage({
               {/* Stage Attachments */}
               <div className="mt-2 space-y-1">
                 <div className="flex items-center justify-between px-2">
-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">
                     Attachments
                   </div>
                   <button
@@ -1783,7 +1783,7 @@ function DroppableStage({
                     >
                       {att.name}
                     </a>
-                    <span className="text-[10px] text-muted-foreground shrink-0">
+                    <span className="text-data text-muted-foreground shrink-0">
                       {att.size < 1024 * 1024
                         ? `${Math.round(att.size / 1024)}KB`
                         : `${(att.size / (1024 * 1024)).toFixed(1)}MB`}
@@ -3314,7 +3314,7 @@ export default function ProjectScope() {
               <button
                 key={def.id || def.name}
                 onClick={() => toggleTypeFilter(type)}
-                className={`h-6 px-2 text-[10px] font-medium rounded-md border transition-all hover-elevate active-elevate-2 ${
+                className={`h-6 px-2 text-data font-medium rounded-md border transition-all hover-elevate active-elevate-2 ${
                   isActive 
                     ? 'bg-primary/10 text-primary border-primary/20' 
                     : 'bg-background text-muted-foreground border-border/50'
@@ -3364,7 +3364,7 @@ export default function ProjectScope() {
                 data-testid="button-toggle-description-inline"
               >
                 <AlignLeft className="h-3 w-3" />
-                <span className="text-[10px] font-medium">Desc</span>
+                <span className="text-data font-medium">Desc</span>
               </button>
             </TooltipTrigger>
             <TooltipContent>
@@ -3480,7 +3480,7 @@ export default function ProjectScope() {
               <TooltipTrigger asChild>
                 <button 
                   onClick={() => setIsImportFromEstimateOpen(true)}
-                  className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" 
+                  className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" 
                   data-testid="button-import-from-estimate"
                 >
                   <FileText className="h-3 w-3" />
@@ -3497,7 +3497,7 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && estimates.length > 0 && (
             <Dialog open={isPushDialogOpen} onOpenChange={setIsPushDialogOpen}>
               <DialogTrigger asChild>
-                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-push-to-estimate">
+                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-push-to-estimate">
                   <DollarSign className="h-3 w-3" />
                   <span>Push ({selectedItems.size})</span>
                 </button>
@@ -3545,7 +3545,7 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && (
             <Dialog open={isRfqDialogOpen} onOpenChange={setIsRfqDialogOpen}>
               <DialogTrigger asChild>
-                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-rfq">
+                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-rfq">
                   <Send className="h-3 w-3" />
                   <span>RFQ</span>
                 </button>
@@ -3573,7 +3573,7 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && (
             <Dialog open={isPoDialogOpen} onOpenChange={setIsPoDialogOpen}>
               <DialogTrigger asChild>
-                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-po">
+                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-po">
                   <Package className="h-3 w-3" />
                   <span>PO</span>
                 </button>
@@ -4115,11 +4115,11 @@ export default function ProjectScope() {
                               )}
                             </div>
                             {match.matched ? (
-                              <Badge variant="outline" className="shrink-0 bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
+                              <Badge variant="outline" className="shrink-0 bg-amber-100 text-amber-800 border-amber-200 text-data">
                                 Matches: {match.existingStage}
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="shrink-0 bg-green-100 text-green-800 border-green-200 text-[10px]">
+                              <Badge variant="outline" className="shrink-0 bg-green-100 text-green-800 border-green-200 text-data">
                                 New
                               </Badge>
                             )}

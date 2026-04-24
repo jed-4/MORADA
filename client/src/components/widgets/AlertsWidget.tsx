@@ -229,7 +229,7 @@ export default function AlertsWidget({ widget, onUpdate, isConfiguring, onCloseC
           <alert.icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${getIconStyle(alert.type)}`} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+              <Badge variant="outline" className="text-data px-1 py-0 h-4">
                 {alert.category}
               </Badge>
             </div>

@@ -300,7 +300,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
             <Pin className="h-3 w-3" />
             Pinned
             {showPinnedOnly && (
-              <Badge className="h-4 ml-0.5 px-1 text-[10px]">
+              <Badge className="h-4 ml-0.5 px-1 text-data">
                 {notes.filter(n => n.pinned).length}
               </Badge>
             )}
@@ -319,7 +319,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                   <Tag className="h-3 w-3" />
                   Tags
                   {selectedTags.length > 0 && (
-                    <Badge className="h-4 ml-0.5 px-1 text-[10px]">
+                    <Badge className="h-4 ml-0.5 px-1 text-data">
                       {selectedTags.length}
                     </Badge>
                   )}
@@ -437,7 +437,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                 {/* Tags & Pin Badge */}
                 <div className="flex items-center gap-1 mt-2 flex-wrap">
                   {note.pinned && (
-                    <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                    <Badge variant="secondary" className="h-4 px-1.5 text-data">
                       <Pin className="h-2.5 w-2.5 mr-0.5" />
                       Pinned
                     </Badge>
@@ -446,7 +446,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                     <Badge 
                       key={tag} 
                       variant="outline" 
-                      className="h-4 px-1.5 text-[10px]"
+                      className="h-4 px-1.5 text-data"
                     >
                       {tag}
                     </Badge>

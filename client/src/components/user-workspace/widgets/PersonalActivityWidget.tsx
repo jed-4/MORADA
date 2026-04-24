@@ -182,7 +182,7 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
           <div className="text-center py-4 text-xs text-muted-foreground">
             <Activity className="h-6 w-6 mx-auto mb-1 opacity-30" />
             <p>No recent activity</p>
-            <p className="text-[10px]">Activity on your tasks and watched items will appear here</p>
+            <p className="text-data">Activity on your tasks and watched items will appear here</p>
           </div>
         ) : (
           displayActivities.map((activity) => {
@@ -209,16 +209,16 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
                       {activity.description}
                     </p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-data text-muted-foreground">
                         {getUserName(activity.userId)}
                       </span>
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <span className="text-data text-muted-foreground flex items-center gap-1">
                         <Clock className="h-2.5 w-2.5" />
                         {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                       </span>
                       {projectName && (
                         <span 
-                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                          className="inline-flex items-center gap-1 text-data px-1.5 py-0.5 rounded-full text-white font-medium"
                           style={{ backgroundColor: projectColor }}
                         >
                           <Briefcase className="h-2.5 w-2.5" />

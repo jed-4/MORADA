@@ -278,7 +278,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
             {project.name}
           </span>
           {project.isBusiness && (
-            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
+            <Badge variant="secondary" className="text-label px-1 py-0 h-3.5">
               Biz
             </Badge>
           )}
@@ -352,7 +352,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
               >
                 <ChevronLeft className="h-3 w-3" />
               </Button>
-              <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+              <span className="text-data text-muted-foreground font-medium min-w-[70px] text-center">
                 {selectedPhase.label}
               </span>
               <Button
@@ -391,10 +391,10 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
                     {searchFilteredGrouped.map((group) => (
                       <div key={group.phase.id}>
                         <div className="px-2 pt-1.5 pb-0.5">
-                          <span className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">
+                          <span className="text-label font-medium text-muted-foreground uppercase tracking-wider">
                             {group.phase.label}
                           </span>
-                          <span className="text-[9px] text-muted-foreground ml-1">
+                          <span className="text-label text-muted-foreground ml-1">
                             ({group.projects.length})
                           </span>
                         </div>

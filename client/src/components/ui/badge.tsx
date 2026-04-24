@@ -23,15 +23,15 @@ const badgeVariants = cva(
         //   soft pastel tint backgrounds matching --status-* tokens.
         // Override the default rounded-md / border-2 / px / py from the base.
         "status-success":
-          "border-0 bg-status-success-bg text-status-success rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium",
+          "border-0 bg-status-success-bg text-status-success rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
         "status-warning":
-          "border-0 bg-status-warning-bg text-status-warning rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium",
+          "border-0 bg-status-warning-bg text-status-warning rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
         "status-info":
-          "border-0 bg-status-info-bg text-status-info rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium",
+          "border-0 bg-status-info-bg text-status-info rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
         "status-danger":
-          "border-0 bg-status-danger-bg text-status-danger rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium",
+          "border-0 bg-status-danger-bg text-status-danger rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
         "status-action":
-          "border-0 bg-status-action-bg text-status-action rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium",
+          "border-0 bg-status-action-bg text-status-action rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium",
       },
     },
     defaultVariants: {

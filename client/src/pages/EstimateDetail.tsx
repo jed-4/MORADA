@@ -4158,7 +4158,7 @@ export default function EstimateDetail() {
                 </Button>
               )}
               <span 
-                className="font-medium truncate max-w-[180px] block text-[12px]"
+                className="font-medium truncate max-w-[180px] block text-xs"
                 title={isLocked ? item.name : 'Click to edit'}
               >
                 {item.name}
@@ -4942,7 +4942,7 @@ export default function EstimateDetail() {
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" align="end">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
+              <p className="text-table font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
               <MultiUserSelect
                 value={estimate?.assigneeIds || []}
                 onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
@@ -4952,10 +4952,10 @@ export default function EstimateDetail() {
                 data-testid="select-estimate-assignees"
               />
               <div className="flex items-center justify-between mt-3 mb-1.5">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Revisions</p>
+                <p className="text-table font-medium text-muted-foreground uppercase tracking-wide">Revisions</p>
                 {estimate?.isLocked && (
                   <button
-                    className="flex items-center gap-1 px-2 h-6 text-[11px] rounded border hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1 px-2 h-6 text-table rounded border hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     onClick={() => createVersionMutation.mutate()}
                     disabled={createVersionMutation.isPending}
                     data-testid="button-new-revision"
@@ -5002,9 +5002,9 @@ export default function EstimateDetail() {
                         >
                           <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           <span className="truncate flex-1">{getRevLabel(v.version)}{v.name && v.name !== estimate?.name ? ` — ${v.name}` : ''}</span>
-                          {isContract && <Badge className="text-[9px] px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
+                          {isContract && <Badge className="text-label px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
                           {!isContract && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
-                          {!v.isLocked && isCurrent && <span className="text-[9px] text-primary flex-shrink-0">working</span>}
+                          {!v.isLocked && isCurrent && <span className="text-label text-primary flex-shrink-0">working</span>}
                         </button>
                       )}
                       <DropdownMenu>
@@ -5128,10 +5128,10 @@ export default function EstimateDetail() {
       {/* Finance summary — collapsible */}
       {summary && !isSummaryExpanded && (
         <div className="bg-primary/10 flex items-center justify-between px-5 py-1.5 border-b border-primary/20">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Summary</span>
+          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Summary</span>
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-bold tabular-nums text-primary">{formatCurrency(summary.total)}</span>
-            <span className="text-[11px] text-muted-foreground">inc. GST</span>
+            <span className="text-table text-muted-foreground">inc. GST</span>
           </div>
         </div>
       )}
@@ -5217,7 +5217,7 @@ export default function EstimateDetail() {
             <span className="text-2xl font-bold tabular-nums leading-tight" data-testid="text-total-inc-tax">
               {formatCurrency(summary.total)}
             </span>
-            <span className="text-[11px] text-muted-foreground mt-0.5">Total (inc. GST)</span>
+            <span className="text-table text-muted-foreground mt-0.5">Total (inc. GST)</span>
           </div>
 
         </div>
@@ -5252,7 +5252,7 @@ export default function EstimateDetail() {
                 <div className="bg-primary h-full rounded-full transition-all"
                   style={{ width: `${(enotesStats.filter((r: any) => r.completed).length / enotesStats.length) * 100}%` }} />
               </div>
-              <span className="text-[10px]">reviewed</span>
+              <span className="text-data">reviewed</span>
             </div>
           )}
           {effectiveEstimateId && project?.id && (
@@ -5706,22 +5706,22 @@ export default function EstimateDetail() {
       {/* Quick Totals Footer - Fixed at bottom outside scroll area */}
       <div className="h-10 bg-muted/30 border-t border-border flex items-center justify-end px-4 gap-5 text-xs flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Builder Cost</span>
+          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Builder Cost</span>
           <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.builderCostTotal ?? summary?.subtotal ?? 0)}</span>
         </div>
         {((summary as any)?.globalMarkupAmount ?? 0) !== 0 && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Builder Margin</span>
+            <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Builder Margin</span>
             <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.globalMarkupAmount ?? 0)}</span>
           </div>
         )}
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Subtotal</span>
+          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Subtotal</span>
           <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.totalExTax ?? summary?.subtotalWithMarkup ?? 0)}</span>
         </div>
         <div className="w-px self-stretch bg-border/60 my-2" />
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total</span>
+          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Total</span>
           <span className="tabular-nums font-semibold text-primary">{formatCurrency(summary?.total || 0)}</span>
         </div>
       </div>

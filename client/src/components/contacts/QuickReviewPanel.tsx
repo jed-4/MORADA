@@ -398,7 +398,7 @@ export default function QuickReviewPanel({
               <DialogTitle className="text-sm font-semibold">Quick Review</DialogTitle>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-table text-muted-foreground">
                     {reviewedCount}/{totalEligible}
                   </span>
                   <Progress value={progressPercent} className="h-1.5 w-20" />
@@ -410,7 +410,7 @@ export default function QuickReviewPanel({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
-                    <div className="space-y-0.5 text-[10px]">
+                    <div className="space-y-0.5 text-data">
                       <p><kbd className="px-1 bg-muted rounded">←</kbd> <kbd className="px-1 bg-muted rounded">→</kbd> Navigate</p>
                       <p><kbd className="px-1 bg-muted rounded">Esc</kbd> Close</p>
                     </div>
@@ -418,7 +418,7 @@ export default function QuickReviewPanel({
                 </Tooltip>
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-table text-muted-foreground">
               {currentIndex + 1} of {unreviewedCount} remaining
             </p>
           </DialogHeader>
@@ -430,7 +430,7 @@ export default function QuickReviewPanel({
                 name="contactType"
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <SelectTrigger className="h-7 w-auto min-w-[100px] text-[11px] gap-1" data-testid="select-contact-type">
+                    <SelectTrigger className="h-7 w-auto min-w-[100px] text-table gap-1" data-testid="select-contact-type">
                       {field.value === "supplier" && <Building2 className="h-3 w-3" />}
                       {field.value === "trade" && <Briefcase className="h-3 w-3" />}
                       {field.value === "client" && <User className="h-3 w-3" />}
@@ -449,7 +449,7 @@ export default function QuickReviewPanel({
               {currentContact?.labels && (currentContact.labels as string[]).length > 0 && (
                 <div className="flex gap-1">
                   {(currentContact.labels as string[]).slice(0, 3).map(label => (
-                    <Badge key={label} variant="outline" className="text-[10px] h-5 bg-primary/10 text-primary border-primary/20">
+                    <Badge key={label} variant="outline" className="text-data h-5 bg-primary/10 text-primary border-primary/20">
                       {label}
                     </Badge>
                   ))}
@@ -465,17 +465,17 @@ export default function QuickReviewPanel({
                   name="name"
                   render={({ field }) => (
                     <FormItem className="space-y-1">
-                      <FormLabel className="text-[11px]">Name *</FormLabel>
+                      <FormLabel className="text-table">Name *</FormLabel>
                       <FormControl>
                         <Input 
                           {...field} 
                           value={field.value || ""} 
-                          className="h-7 text-[11px]"
+                          className="h-7 text-table"
                           autoFocus
                           data-testid="input-name"
                         />
                       </FormControl>
-                      <FormMessage className="text-[10px]" />
+                      <FormMessage className="text-data" />
                     </FormItem>
                   )}
                 />
@@ -488,11 +488,11 @@ export default function QuickReviewPanel({
                         name="firstName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Key Person First Name</FormLabel>
+                            <FormLabel className="text-table">Key Person First Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-first-name" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-first-name" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -501,11 +501,11 @@ export default function QuickReviewPanel({
                         name="lastName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Key Person Last Name</FormLabel>
+                            <FormLabel className="text-table">Key Person Last Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-last-name" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-last-name" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -517,11 +517,11 @@ export default function QuickReviewPanel({
                         name="mobile"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Phone</FormLabel>
+                            <FormLabel className="text-table">Phone</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-phone" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -530,11 +530,11 @@ export default function QuickReviewPanel({
                         name="email"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Email</FormLabel>
+                            <FormLabel className="text-table">Email</FormLabel>
                             <FormControl>
-                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
+                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-email" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -551,11 +551,11 @@ export default function QuickReviewPanel({
                         name="firstName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">First Name *</FormLabel>
+                            <FormLabel className="text-table">First Name *</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-first-name" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-first-name" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -564,11 +564,11 @@ export default function QuickReviewPanel({
                         name="lastName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Last Name</FormLabel>
+                            <FormLabel className="text-table">Last Name</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-last-name" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-last-name" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -580,11 +580,11 @@ export default function QuickReviewPanel({
                         name="mobile"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Phone</FormLabel>
+                            <FormLabel className="text-table">Phone</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-phone" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -593,11 +593,11 @@ export default function QuickReviewPanel({
                         name="email"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Email</FormLabel>
+                            <FormLabel className="text-table">Email</FormLabel>
                             <FormControl>
-                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
+                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-email" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -609,11 +609,11 @@ export default function QuickReviewPanel({
                         name="role"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Role / Position</FormLabel>
+                            <FormLabel className="text-table">Role / Position</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-role" />
+                              <Input {...field} value={field.value || ""} className="h-7 text-table" data-testid="input-role" />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -623,7 +623,7 @@ export default function QuickReviewPanel({
 
                 {showDefaults && (
                   <div className="border-t pt-3 space-y-2">
-                    <h3 className="text-[11px] font-medium text-muted-foreground">Defaults</h3>
+                    <h3 className="text-table font-medium text-muted-foreground">Defaults</h3>
                     
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
@@ -631,18 +631,18 @@ export default function QuickReviewPanel({
                         name="defaultCostCodeId"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
+                            <FormLabel className="text-table">Default Cost Code</FormLabel>
                             <FormControl>
                               <CostCodeSelect
                                 value={field.value || ""}
                                 onValueChange={field.onChange}
                                 placeholder="Select cost code..."
                                 allowNone={true}
-                                triggerClassName="h-7 text-[11px]"
+                                triggerClassName="h-7 text-table"
                                 data-testid="select-cost-code"
                               />
                             </FormControl>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -652,10 +652,10 @@ export default function QuickReviewPanel({
                         name="paymentTerms"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Payment Terms</FormLabel>
+                            <FormLabel className="text-table">Payment Terms</FormLabel>
                             <Select onValueChange={field.onChange} value={field.value || "__none__"}>
                               <FormControl>
-                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-payment-terms">
+                                <SelectTrigger className="h-7 text-table" data-testid="select-payment-terms">
                                   <SelectValue placeholder="Select terms" />
                                 </SelectTrigger>
                               </FormControl>
@@ -669,7 +669,7 @@ export default function QuickReviewPanel({
                                 <SelectItem value="EOM">EOM</SelectItem>
                               </SelectContent>
                             </Select>
-                            <FormMessage className="text-[10px]" />
+                            <FormMessage className="text-data" />
                           </FormItem>
                         )}
                       />
@@ -684,7 +684,7 @@ export default function QuickReviewPanel({
               <div className="border-t pt-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Users className="h-3.5 w-3.5 text-amber-500" />
-                  <h3 className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  <h3 className="text-table font-medium text-amber-600 dark:text-amber-400">
                     Possible Duplicates ({similarContacts.length})
                   </h3>
                 </div>
@@ -695,10 +695,10 @@ export default function QuickReviewPanel({
                       className="flex items-center justify-between p-2 bg-muted/50 rounded-md"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium truncate">
+                        <p className="text-table font-medium truncate">
                           {similar.name || similar.company || "Unnamed"}
                         </p>
-                        <p className="text-[10px] text-muted-foreground truncate">
+                        <p className="text-data text-muted-foreground truncate">
                           {similar.email || similar.phone || "No contact info"}
                         </p>
                       </div>
@@ -706,7 +706,7 @@ export default function QuickReviewPanel({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-6 px-2 text-[10px] ml-2"
+                        className="h-6 px-2 text-data ml-2"
                         onClick={() => setMergeTargetId(similar.id)}
                         disabled={mergeMutation.isPending}
                         data-testid={`button-merge-${similar.id}`}
@@ -743,7 +743,7 @@ export default function QuickReviewPanel({
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
-              <span className="text-[11px] text-muted-foreground ml-1">
+              <span className="text-table text-muted-foreground ml-1">
                 {currentIndex + 1} / {unreviewedCount}
               </span>
             </div>
@@ -752,7 +752,7 @@ export default function QuickReviewPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="h-7 text-table text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={() => setDeleteDialogOpen(true)}
                 data-testid="button-delete"
               >
@@ -763,7 +763,7 @@ export default function QuickReviewPanel({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 onClick={handleSkip}
                 disabled={skipMutation.isPending}
                 data-testid="button-skip"
@@ -774,7 +774,7 @@ export default function QuickReviewPanel({
               
               <Button
                 size="sm"
-                className="h-7 text-[11px] bg-primary hover:bg-primary/90 text-white"
+                className="h-7 text-table bg-primary hover:bg-primary/90 text-white"
                 onClick={form.handleSubmit(onSubmit)}
                 disabled={updateMutation.isPending}
                 data-testid="button-save-next"

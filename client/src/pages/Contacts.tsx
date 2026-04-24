@@ -515,7 +515,7 @@ export default function Contacts() {
             >
               <Zap className="w-3 h-3 mr-0.5" />
               Quick Review
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px] bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-data bg-amber-500/20 text-amber-600 dark:text-amber-400">
                 {unreviewedCount}
               </Badge>
             </Button>

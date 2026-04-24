@@ -141,7 +141,7 @@ export function Projects() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-sm truncate">{project.name}</h3>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap flex-shrink-0 ${
+                      <span className={`px-1.5 py-0.5 rounded text-data font-medium whitespace-nowrap flex-shrink-0 ${
                         project.status === "active" ? "bg-status-success-bg text-status-success" :
                         project.status === "on_hold" ? "bg-status-warning-bg text-status-warning" :
                         "bg-muted text-muted-foreground"
@@ -151,7 +151,7 @@ export function Projects() {
                          project.status === "completed" ? "Done" : project.status}
                       </span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground truncate">
+                    <p className="text-table text-muted-foreground truncate">
                       {project.clientName || project.address || (project.currentSystemPhase ? PHASE_LABELS[project.currentSystemPhase] : "")}
                     </p>
                   </div>

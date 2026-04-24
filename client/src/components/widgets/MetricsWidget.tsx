@@ -214,7 +214,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
                   <SelectContent>
                     {metricDefinitions.map(def => (
                       <SelectItem key={def.id} value={def.id} className="text-xs">
-                        <span className="text-muted-foreground text-[10px]">{def.group}:</span> {def.name}
+                        <span className="text-muted-foreground text-data">{def.group}:</span> {def.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -356,8 +356,8 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
       case "ultra-compact":
         return (
           <div key={index} className="flex items-center justify-between py-0.5" data-testid={`metric-${config.metricId}`}>
-            <span className="text-[10px] text-muted-foreground truncate">{def.name}</span>
-            <span className="text-[10px] font-medium ml-1">{formattedValue}</span>
+            <span className="text-data text-muted-foreground truncate">{def.name}</span>
+            <span className="text-data font-medium ml-1">{formattedValue}</span>
           </div>
         );
 
@@ -384,7 +384,7 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         {/* View All Metrics link */}
         <button
           onClick={() => setShowAllMetrics(true)}
-          className="w-full text-[10px] text-primary hover:text-primary/80 flex items-center justify-center gap-1 pt-1"
+          className="w-full text-data text-primary hover:text-primary/80 flex items-center justify-center gap-1 pt-1"
           data-testid="button-view-all-metrics"
         >
           <ExternalLink className="h-2.5 w-2.5" />

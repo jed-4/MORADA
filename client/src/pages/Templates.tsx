@@ -186,12 +186,12 @@ export default function Templates() {
                       {template.implemented ? (
                         <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
                       ) : (
-                        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0" data-testid={`badge-coming-soon-${template.id}`}>
+                        <Badge variant="secondary" className="text-data px-1 py-0 h-4 shrink-0" data-testid={`badge-coming-soon-${template.id}`}>
                           Soon
                         </Badge>
                       )}
                     </div>
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className="text-data text-muted-foreground truncate">
                       {template.description}
                     </p>
                   </div>

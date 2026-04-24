@@ -461,12 +461,12 @@ export default function ChecklistTemplateDetail() {
                                   <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   <span className="flex-1 text-sm">{item.description}</span>
                                   {item.assignedRoleId && roleMap[item.assignedRoleId] && (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                    <Badge variant="secondary" className="text-data px-1.5 py-0">
                                       {roleMap[item.assignedRoleId]}
                                     </Badge>
                                   )}
                                   {responseType !== "checkbox" && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                                    <Badge variant="outline" className="text-data px-1.5 py-0 text-muted-foreground">
                                       {responseType === "text" ? "Text" : responseType === "single_choice" ? "Single" : "Multiple"}
                                     </Badge>
                                   )}
@@ -497,7 +497,7 @@ export default function ChecklistTemplateDetail() {
                                 {responseOptions.length > 0 && (
                                   <div className="ml-6 mt-1 flex flex-wrap gap-1">
                                     {responseOptions.map((opt, i) => (
-                                      <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                      <Badge key={i} variant="secondary" className="text-data px-1.5 py-0">
                                         {opt}
                                       </Badge>
                                     ))}

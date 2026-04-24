@@ -378,13 +378,13 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1">
                       {reminder.sendPush && (
-                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Push</Badge>
+                        <Badge variant="secondary" className="h-5 px-1.5 text-data">Push</Badge>
                       )}
                       {reminder.sendEmail && (
-                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Email</Badge>
+                        <Badge variant="secondary" className="h-5 px-1.5 text-data">Email</Badge>
                       )}
                       {reminder.sendInApp && (
-                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">In-App</Badge>
+                        <Badge variant="secondary" className="h-5 px-1.5 text-data">In-App</Badge>
                       )}
                     </div>
                     

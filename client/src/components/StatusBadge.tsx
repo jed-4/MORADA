@@ -136,7 +136,7 @@ export function StatusBadge({
     return (
       <Badge
         variant="secondary"
-        className={cn("rounded-[9px] h-[18px] px-[7px] py-0 text-[10px] font-medium", className)}
+        className={cn("rounded-[9px] h-[18px] px-[7px] py-0 text-data font-medium", className)}
         data-testid={rest["data-testid"] ?? `badge-status-${normalize(status)}`}
       >
         {label ?? humanize(status)}

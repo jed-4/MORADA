@@ -361,7 +361,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                           {isAutoRole && (
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           )}
-                          <span className="ml-auto text-[10px]">{users.length}</span>
+                          <span className="ml-auto text-data">{users.length}</span>
                         </button>
                         <div className="space-y-0.5 pl-2">
                           {users.map(user => {
@@ -380,12 +380,12 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                                 />
                                 <Avatar className="h-6 w-6">
                                   <AvatarImage src={user.profileImageUrl || undefined} alt={user.displayName} />
-                                  <AvatarFallback className="text-[10px]">{getUserInitials(user)}</AvatarFallback>
+                                  <AvatarFallback className="text-data">{getUserInitials(user)}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-medium truncate">{user.displayName}</div>
                                   {user.email && (
-                                    <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
+                                    <div className="text-data text-muted-foreground truncate">{user.email}</div>
                                   )}
                                 </div>
                               </button>

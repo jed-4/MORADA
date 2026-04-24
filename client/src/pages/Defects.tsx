@@ -212,7 +212,7 @@ export default function Defects() {
               >
                 <span>Status</span>
                 {selectedStatus !== "All" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -254,7 +254,7 @@ export default function Defects() {
               >
                 <span>Priority</span>
                 {selectedPriority !== "All" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -343,7 +343,7 @@ export default function Defects() {
                     {/* Status Column */}
                     <div className="w-20 flex-shrink-0">
                       <Badge 
-                        className="h-5 px-1.5 text-[10px] w-full justify-center"
+                        className="h-5 px-1.5 text-data w-full justify-center"
                         style={{
                           backgroundColor: `#${statusInfo.color}`,
                           color: "#fff",
@@ -357,7 +357,7 @@ export default function Defects() {
                     {/* Priority Column - color coded, no icon */}
                     <div className="w-16 flex-shrink-0">
                       <Badge 
-                        className="h-5 px-1.5 text-[10px] w-full justify-center"
+                        className="h-5 px-1.5 text-data w-full justify-center"
                         style={{
                           backgroundColor: `#${priorityInfo.color}`,
                           color: "#fff",
@@ -370,7 +370,7 @@ export default function Defects() {
 
                     {/* Type Column */}
                     <div className="w-24 flex-shrink-0">
-                      <Badge variant="secondary" className="h-5 px-1.5 text-[10px] w-full justify-center" data-testid={`defect-type-${defect.id}`}>
+                      <Badge variant="secondary" className="h-5 px-1.5 text-data w-full justify-center" data-testid={`defect-type-${defect.id}`}>
                         {getTypeLabel(defect.type)}
                       </Badge>
                     </div>
@@ -378,31 +378,31 @@ export default function Defects() {
                     {/* Trade Column */}
                     <div className="w-24 flex-shrink-0">
                       {tradeLabel ? (
-                        <Badge variant="outline" className="h-5 px-1.5 text-[10px] w-full justify-center" data-testid={`defect-trade-${defect.id}`}>
+                        <Badge variant="outline" className="h-5 px-1.5 text-data w-full justify-center" data-testid={`defect-trade-${defect.id}`}>
                           <Wrench className="w-2.5 h-2.5 mr-0.5" />
                           {tradeLabel}
                         </Badge>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
+                        <span className="text-data text-muted-foreground">—</span>
                       )}
                     </div>
 
                     {/* Location Column */}
                     <div className="w-24 flex-shrink-0">
                       {defect.location ? (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`defect-location-${defect.id}`}>
+                        <div className="flex items-center gap-1 text-data text-muted-foreground" data-testid={`defect-location-${defect.id}`}>
                           <MapPin className="h-3 w-3 flex-shrink-0" />
                           <span className="truncate">{defect.location}</span>
                         </div>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
+                        <span className="text-data text-muted-foreground">—</span>
                       )}
                     </div>
 
                     {/* Date Column */}
                     <div className="w-16 flex-shrink-0">
                       {defect.createdAt && (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-1 text-data text-muted-foreground">
                           <Clock className="h-3 w-3 flex-shrink-0" />
                           <span>{format(new Date(defect.createdAt), "MMM d")}</span>
                         </div>

@@ -503,7 +503,7 @@ export default function RFIDetail() {
                 <CheckCircle2 className="w-4 h-4 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-xs">Created</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-data text-muted-foreground">
                     {rfi.createdByName} - {formatDate(rfi.createdAt)}
                   </p>
                 </div>
@@ -513,7 +513,7 @@ export default function RFIDetail() {
                   <Send className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-xs">Sent</p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       To {rfi.directedToName} - {formatDate(rfi.sentAt)}
                     </p>
                   </div>
@@ -524,7 +524,7 @@ export default function RFIDetail() {
                   <MessageSquare className="w-4 h-4 text-green-500 mt-0.5" />
                   <div>
                     <p className="text-xs">Response received</p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       {rfi.respondedByName} - {formatDate(rfi.respondedAt)}
                     </p>
                   </div>

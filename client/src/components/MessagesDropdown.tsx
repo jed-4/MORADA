@@ -55,7 +55,7 @@ function renderDropdownMessageContent(content: string, currentUserId?: string): 
     while ((bm = broadcastRegex.exec(text)) !== null) {
       if (bm.index > last) result.push(text.substring(last, bm.index));
       result.push(
-        <span key={`${keyPrefix}-bc-${bm.index}`} className="inline-flex items-center px-1 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-foreground">
+        <span key={`${keyPrefix}-bc-${bm.index}`} className="inline-flex items-center px-1 py-0.5 rounded text-table font-medium bg-muted/60 text-foreground">
           @{bm[1]}
         </span>
       );
@@ -76,7 +76,7 @@ function renderDropdownMessageContent(content: string, currentUserId?: string): 
     parts.push(
       <span
         key={`user-${match.index}`}
-        className={`inline-flex items-center px-1 py-0.5 rounded text-[11px] font-medium ${
+        className={`inline-flex items-center px-1 py-0.5 rounded text-table font-medium ${
           isCurrentUser
             ? 'bg-primary/20 text-primary border border-primary/20'
             : 'bg-muted/60 text-foreground'
@@ -225,7 +225,7 @@ export function MessagesDropdown() {
           {totalUnread > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5" data-testid="badge-unread-count">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-[9px] font-bold text-white">
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-label font-bold text-white">
                 {totalUnread > 9 ? "9+" : totalUnread}
               </span>
             </span>
@@ -270,7 +270,7 @@ export function MessagesDropdown() {
                         data-testid={`channel-row-${channel.id}`}
                       >
                         <Avatar className="h-7 w-7 shrink-0">
-                          <AvatarFallback className="text-[11px]">
+                          <AvatarFallback className="text-table">
                             {isDm ? initials : <Hash className="h-3 w-3" />}
                           </AvatarFallback>
                         </Avatar>
@@ -279,7 +279,7 @@ export function MessagesDropdown() {
                             {isDm ? displayName : `#${displayName}`}
                           </span>
                           {channel.lastMessageAt && (
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-table text-muted-foreground">
                               {formatDistanceToNow(new Date(channel.lastMessageAt), { addSuffix: true })}
                             </span>
                           )}
@@ -287,7 +287,7 @@ export function MessagesDropdown() {
                         {unread > 0 && (
                           <Badge
                             variant="destructive"
-                            className="shrink-0 text-[10px] h-5 min-w-[1.25rem] flex items-center justify-center px-1"
+                            className="shrink-0 text-data h-5 min-w-[1.25rem] flex items-center justify-center px-1"
                           >
                             {unread > 99 ? "99+" : unread}
                           </Badge>
@@ -351,14 +351,14 @@ export function MessagesDropdown() {
                       >
                         {!isOwn && (
                           <Avatar className="h-6 w-6 shrink-0 mt-0.5">
-                            <AvatarFallback className="text-[10px]">
+                            <AvatarFallback className="text-data">
                               {getInitials(sender?.firstName, sender?.lastName, sender?.email)}
                             </AvatarFallback>
                           </Avatar>
                         )}
                         <div className={`flex flex-col gap-0.5 max-w-[75%] ${isOwn ? "items-end" : "items-start"}`}>
                           {!isOwn && (
-                            <span className="text-[10px] text-muted-foreground font-medium">
+                            <span className="text-data text-muted-foreground font-medium">
                               {senderName}
                             </span>
                           )}
@@ -371,7 +371,7 @@ export function MessagesDropdown() {
                           >
                             {renderDropdownMessageContent(msg.content, user?.id)}
                           </div>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-data text-muted-foreground">
                             {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
                           </span>
                         </div>

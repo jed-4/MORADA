@@ -698,7 +698,7 @@ export default function Variations() {
                 {status.label}
                 {status.key !== "all" && count > 0 && (
                   <span className={cn(
-                    "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
+                    "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
                     isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                   )}>
                     {count}

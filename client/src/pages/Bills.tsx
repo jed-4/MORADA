@@ -298,9 +298,9 @@ function ImportFromXeroDialog({
                     <TableCell className="text-xs">{formatDate(b.date)}</TableCell>
                     <TableCell>
                       {b.alreadyImported ? (
-                        <Badge variant="outline" className="text-[10px]">Already imported</Badge>
+                        <Badge variant="outline" className="text-data">Already imported</Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px]">{b.status}</Badge>
+                        <Badge variant="secondary" className="text-data">{b.status}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-right">{formatMoney(b.total)}</TableCell>
@@ -581,7 +581,7 @@ export default function Bills() {
           <div className="flex items-center gap-1 font-medium">
             {row.original.billNumber}
             {row.original.billType === "credit" && (
-              <Badge variant="outline" className="text-[10px] px-1 py-0 text-status-success dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
+              <Badge variant="outline" className="text-data px-1 py-0 text-status-success dark:text-green-400 border-green-300 dark:border-green-600">Credit</Badge>
             )}
           </div>
         ),
@@ -850,7 +850,7 @@ export default function Bills() {
                 {status.label}
                 {showCount && count > 0 && (
                   <span className={cn(
-                    "inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1",
+                    "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
                     isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                   )}>
                     {count}
@@ -863,7 +863,7 @@ export default function Bills() {
 
         {/* Row 3 — Lilac summary strip (no Paid) */}
         <div className="bg-primary/10 flex items-center px-5 py-2">
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground ml-auto">
+          <div className="flex items-center gap-4 text-data text-muted-foreground ml-auto">
             <span data-testid="text-total-draft">
               Draft <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.draft * 100)}</span>
             </span>

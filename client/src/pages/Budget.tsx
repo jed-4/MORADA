@@ -213,7 +213,7 @@ export default function BudgetPage() {
                 <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
               )}
               <span>{r.categoryTitle}</span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{r.count}</Badge>
+              <Badge variant="secondary" className="h-4 px-1.5 text-data">{r.count}</Badge>
             </div>
           );
         }
@@ -294,7 +294,7 @@ export default function BudgetPage() {
         const r = row.original;
         const value = r.kind === "category" ? r.variance : r.item.variance;
         return (
-          <Badge variant={getVarianceBadgeVariant(value)} className="h-4 px-1.5 text-[10px]">
+          <Badge variant={getVarianceBadgeVariant(value)} className="h-4 px-1.5 text-data">
             {value > 0 ? "Under" : value < 0 ? "Over" : "On Track"}
           </Badge>
         );
@@ -544,14 +544,14 @@ export default function BudgetPage() {
 
         {/* Summary stats in header */}
         {activeTab === "costs" && (
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-4 text-data text-muted-foreground">
             <span>Budget: <span className="font-medium text-foreground">{formatCurrency(budgetData.revisedAmount)}</span></span>
             <span>Spent: <span className="font-medium text-foreground">{formatCurrency(budgetData.actualAmount)}</span></span>
             <span className={getVarianceColor(remaining)}>Remaining: <span className="font-medium">{formatCurrency(remaining)}</span></span>
           </div>
         )}
         {activeTab === "hours" && (
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-4 text-data text-muted-foreground">
             <span>Budget: <span className="font-medium text-foreground">{formatHours(totalBudgetedHours)}</span></span>
             <span>Used: <span className="font-medium text-foreground">{formatHours(totalActualHours)}</span></span>
             <span className={getVarianceColor(hoursRemaining)}>Remaining: <span className="font-medium">{formatHours(hoursRemaining)}</span></span>
@@ -568,11 +568,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Total Budget</p>
+                    <p className="text-data text-muted-foreground">Total Budget</p>
                     <p className="text-base font-bold" data-testid="text-total-budget">
                       {formatCurrency(budgetData.revisedAmount)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       Baseline: {formatCurrency(budgetData.baselineAmount)}
                     </p>
                   </div>
@@ -583,11 +583,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Actual Spent</p>
+                    <p className="text-data text-muted-foreground">Actual Spent</p>
                     <p className="text-base font-bold" data-testid="text-actual-spent">
                       {formatCurrency(budgetData.actualAmount)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{percentSpent}% of budget</p>
+                    <p className="text-data text-muted-foreground">{percentSpent}% of budget</p>
                   </div>
                   <TrendingDown className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -596,11 +596,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Remaining</p>
+                    <p className="text-data text-muted-foreground">Remaining</p>
                     <p className={`text-base font-bold ${getVarianceColor(remaining)}`} data-testid="text-remaining">
                       {formatCurrency(remaining)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{100 - percentSpent}% remaining</p>
+                    <p className="text-data text-muted-foreground">{100 - percentSpent}% remaining</p>
                   </div>
                   <Target className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -609,11 +609,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Forecast</p>
+                    <p className="text-data text-muted-foreground">Forecast</p>
                     <p className="text-base font-bold" data-testid="text-forecast">
                       {formatCurrency(budgetData.forecastAmount)}
                     </p>
-                    <p className={`text-[10px] ${getVarianceColor(budgetData.varianceAmount)}`}>
+                    <p className={`text-data ${getVarianceColor(budgetData.varianceAmount)}`}>
                       Variance: {formatCurrency(budgetData.varianceAmount)}
                     </p>
                   </div>
@@ -677,11 +677,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Budgeted Hours</p>
+                    <p className="text-data text-muted-foreground">Budgeted Hours</p>
                     <p className="text-base font-bold" data-testid="text-budgeted-hours">
                       {formatHours(totalBudgetedHours)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">From estimates</p>
+                    <p className="text-data text-muted-foreground">From estimates</p>
                   </div>
                   <Clock className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -690,11 +690,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Pending Hours</p>
+                    <p className="text-data text-muted-foreground">Pending Hours</p>
                     <p className="text-base font-bold text-amber-600 dark:text-amber-400" data-testid="text-pending-hours">
                       {formatHours(totalPendingHours)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">Awaiting approval</p>
+                    <p className="text-data text-muted-foreground">Awaiting approval</p>
                   </div>
                   <AlertCircle className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -703,11 +703,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Approved Hours</p>
+                    <p className="text-data text-muted-foreground">Approved Hours</p>
                     <p className="text-base font-bold" data-testid="text-approved-hours">
                       {formatHours(totalApprovedHours)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{hoursPercentUsed}% of budget</p>
+                    <p className="text-data text-muted-foreground">{hoursPercentUsed}% of budget</p>
                   </div>
                   <TrendingDown className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -716,11 +716,11 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Remaining</p>
+                    <p className="text-data text-muted-foreground">Remaining</p>
                     <p className={`text-base font-bold ${getVarianceColor(hoursRemaining)}`} data-testid="text-remaining-hours">
                       {formatHours(hoursRemaining)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{100 - hoursPercentUsed}% remaining</p>
+                    <p className="text-data text-muted-foreground">{100 - hoursPercentUsed}% remaining</p>
                   </div>
                   <Target className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -729,7 +729,7 @@ export default function BudgetPage() {
               <Card className="p-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Efficiency</p>
+                    <p className="text-data text-muted-foreground">Efficiency</p>
                     <p className="text-base font-bold" data-testid="text-efficiency">
                       {hoursPercentUsed}%
                     </p>

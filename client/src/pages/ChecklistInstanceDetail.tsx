@@ -151,7 +151,7 @@ function ChecklistActivityLog({ instanceId }: { instanceId: string }) {
               <span className="text-muted-foreground block truncate">{entry.details}</span>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground/60 shrink-0">
+          <span className="text-data text-muted-foreground/60 shrink-0">
             {format(new Date(entry.createdAt), "MMM d, h:mm a")}
           </span>
         </div>
@@ -842,7 +842,7 @@ export default function ChecklistInstanceDetail() {
                                     <TooltipTrigger asChild>
                                       <div className="flex items-center gap-0.5 text-status-success shrink-0 ml-auto">
                                         <CheckCircle2 className="h-3 w-3" />
-                                        <span className="text-[10px]">{item.completedByName}</span>
+                                        <span className="text-data">{item.completedByName}</span>
                                       </div>
                                     </TooltipTrigger>
                                     <TooltipContent side="top">
@@ -864,7 +864,7 @@ export default function ChecklistInstanceDetail() {
                                   <Button variant="ghost" size="icon" className="h-5 w-5" data-testid={`button-assign-item-${item.id}`}>
                                     {item.assigneeName ? (
                                       <Avatar className="h-4 w-4">
-                                        <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                                        <AvatarFallback className="text-2xs bg-primary/20 text-primary">
                                           {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                         </AvatarFallback>
                                       </Avatar>
@@ -913,7 +913,7 @@ export default function ChecklistInstanceDetail() {
                                           }}
                                         >
                                           <Avatar className="h-4 w-4 mr-2">
-                                            <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                                            <AvatarFallback className="text-2xs bg-primary/20 text-primary">
                                               {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                             </AvatarFallback>
                                           </Avatar>
@@ -1002,7 +1002,7 @@ export default function ChecklistInstanceDetail() {
                           {itemAttachments.length > 0 && (
                             <div className="px-3 py-1 bg-muted/20 flex items-center gap-2 flex-wrap">
                               {itemAttachments.map((att: any, idx: number) => (
-                                <div key={idx} className="flex items-center gap-1 bg-card border rounded px-1.5 py-0.5 text-[10px] group/att">
+                                <div key={idx} className="flex items-center gap-1 bg-card border rounded px-1.5 py-0.5 text-data group/att">
                                   {isImageType(att.contentType) ? (
                                     <ImageIcon className="h-3 w-3 text-blue-500 shrink-0" />
                                   ) : (
@@ -1308,14 +1308,14 @@ export default function ChecklistInstanceDetail() {
                     {noteEntries.map((entry, idx) => (
                       <div key={idx} className="flex gap-2">
                         <Avatar className="h-6 w-6 shrink-0">
-                          <AvatarFallback className="text-[9px] bg-primary/20 text-primary">
+                          <AvatarFallback className="text-label bg-primary/20 text-primary">
                             {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2">
                             <span className="text-xs font-medium">{entry.author}</span>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-data text-muted-foreground">
                               {format(new Date(entry.date), "MMM d 'at' h:mm a")}
                             </span>
                           </div>
@@ -1356,7 +1356,7 @@ export default function ChecklistInstanceDetail() {
                   )}
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Press Cmd+Enter to send</p>
+              <p className="text-data text-muted-foreground mt-1">Press Cmd+Enter to send</p>
             </div>
           </div>
         </DialogContent>

@@ -200,7 +200,7 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
           <Bell className="w-3.5 h-3.5" />
           {unreadCount > 0 && (
             <span
-              className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold flex items-center justify-center"
+              className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-data font-semibold flex items-center justify-center"
               data-testid="badge-activity-feed-unread"
             >
               {unreadCount > 9 ? "9+" : unreadCount}
@@ -235,7 +235,7 @@ export function ScheduleActivityFeedPopover({ scheduleId, onSelectItem }: Props)
             ) : (
               grouped.map(([dayKey, items]) => (
                 <div key={dayKey} className="mb-3 last:mb-0">
-                  <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <div className="px-2 py-1 text-table uppercase tracking-wide text-muted-foreground">
                     {dayLabel(new Date(dayKey))}
                   </div>
                   <div className="flex flex-col gap-0.5">
@@ -278,7 +278,7 @@ function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectI
       data-testid={`feed-item-${entry.id}`}
     >
       <Avatar className="h-6 w-6 mt-0.5 flex-shrink-0">
-        <AvatarFallback className="text-[10px]">
+        <AvatarFallback className="text-data">
           {entry.authorType === "user" ? initials(entry.userName) : <Icon className="w-3 h-3" />}
         </AvatarFallback>
       </Avatar>
@@ -288,16 +288,16 @@ function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectI
             {entry.authorType === "ai" ? "AI" : (entry.userName || "System")}
           </span>
           {entry.authorType === "ai" && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">AI</Badge>
+            <Badge variant="secondary" className="text-data px-1 py-0 h-4">AI</Badge>
           )}
           {entry.authorType === "system" && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">System</Badge>
+            <Badge variant="secondary" className="text-data px-1 py-0 h-4">System</Badge>
           )}
           {entry.source === "change" && entry.authorType === "user" && (
-            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">Change</Badge>
+            <Badge variant="outline" className="text-data px-1 py-0 h-4">Change</Badge>
           )}
           <span
-            className="text-muted-foreground text-[11px] ml-auto flex-shrink-0"
+            className="text-muted-foreground text-table ml-auto flex-shrink-0"
             title={format(new Date(entry.createdAt), "PPpp")}
           >
             {formatDistanceToNowStrict(new Date(entry.createdAt), { addSuffix: true })}
@@ -309,12 +309,12 @@ function FeedItem({ entry, onSelectItem }: { entry: ActivityFeedEntry; onSelectI
         {details.length > 0 && (
           <div className="mt-0.5 space-y-0.5">
             {details.map((d, i) => (
-              <div key={i} className="text-[11px] text-muted-foreground font-mono">{d}</div>
+              <div key={i} className="text-table text-muted-foreground font-mono">{d}</div>
             ))}
           </div>
         )}
         {entry.scheduleItemName && (
-          <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+          <div className="text-table text-muted-foreground mt-0.5 truncate">
             on {entry.scheduleItemName}
           </div>
         )}

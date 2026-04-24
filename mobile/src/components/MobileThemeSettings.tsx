@@ -227,7 +227,7 @@ export function MobileThemeSettings({ isOpen, onClose, dashboardType }: MobileTh
                       <Check className="w-5 h-5 text-white drop-shadow-md" />
                     </div>
                   )}
-                  <span className="absolute bottom-1 left-2 text-[10px] text-white/80 font-medium drop-shadow">
+                  <span className="absolute bottom-1 left-2 text-data text-white/80 font-medium drop-shadow">
                     {preset.name}
                   </span>
                 </button>

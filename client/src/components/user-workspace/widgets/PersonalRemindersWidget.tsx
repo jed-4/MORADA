@@ -179,7 +179,7 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
                     <div className="flex-1 min-w-0">
                       <p className="text-xs truncate leading-tight font-medium">{reminder.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-[10px] ${status.color || 'text-muted-foreground'}`}>
+                        <span className={`text-data ${status.color || 'text-muted-foreground'}`}>
                           {reminder.dueAt ? formatDistanceToNow(new Date(reminder.dueAt), { addSuffix: true }) : 'No date'}
                         </span>
                       </div>

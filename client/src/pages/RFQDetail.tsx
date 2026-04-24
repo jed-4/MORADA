@@ -991,7 +991,7 @@ export default function RFQDetail() {
               </div>
             )}
             {!formData.isExternal && (
-              <p className="text-[10px] text-muted-foreground px-3 py-2">
+              <p className="text-data text-muted-foreground px-3 py-2">
                 Track RFQ sent outside BuildPro
               </p>
             )}
@@ -1027,14 +1027,14 @@ export default function RFQDetail() {
                   </SelectContent>
                 </Select>
                 {rfq.followUpSentAt && (
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <p className="text-data text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
                   </p>
                 )}
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground px-3 py-2">
+              <p className="text-data text-muted-foreground px-3 py-2">
                 Send reminder before due date
               </p>
             )}
@@ -1047,7 +1047,7 @@ export default function RFQDetail() {
               <span className="text-xs font-medium">Internal Notes</span>
             </div>
             <div className="p-3">
-              <p className="text-[10px] text-muted-foreground mb-2">
+              <p className="text-data text-muted-foreground mb-2">
                 Only visible to your team
               </p>
               <Textarea
@@ -1071,7 +1071,7 @@ export default function RFQDetail() {
                 <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-xs">Created</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-data text-muted-foreground">
                     {rfq.createdByName} · {formatDate(rfq.createdAt)}
                   </p>
                 </div>
@@ -1081,7 +1081,7 @@ export default function RFQDetail() {
                   <Send className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-xs">Sent to suppliers</p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       {formatDate(rfq.sentAt)}
                     </p>
                   </div>

@@ -105,11 +105,11 @@ export function MultiUserSelect({
                     <Badge 
                       key={user.id} 
                       variant="secondary" 
-                      className="h-5 px-1.5 gap-1 text-[10px] shrink-0"
+                      className="h-5 px-1.5 gap-1 text-data shrink-0"
                     >
                       <Avatar className="h-3.5 w-3.5">
                         <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
-                        <AvatarFallback className="text-[8px]">{initials}</AvatarFallback>
+                        <AvatarFallback className="text-2xs">{initials}</AvatarFallback>
                       </Avatar>
                       <span className="truncate max-w-[60px]">{displayName.split(' ')[0]}</span>
                       <X 
@@ -120,7 +120,7 @@ export function MultiUserSelect({
                   );
                 })}
                 {selectedUsers.length > maxDisplayed && (
-                  <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  <Badge variant="secondary" className="h-5 px-1.5 text-data">
                     +{selectedUsers.length - maxDisplayed}
                   </Badge>
                 )}
@@ -160,12 +160,12 @@ export function MultiUserSelect({
                 >
                   <Avatar className="h-5 w-5">
                     <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
-                    <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
+                    <AvatarFallback className="text-label">{initials}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{displayName}</div>
                     {user.email && (
-                      <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
+                      <div className="text-data text-muted-foreground truncate">{user.email}</div>
                     )}
                   </div>
                   {isSelected && (

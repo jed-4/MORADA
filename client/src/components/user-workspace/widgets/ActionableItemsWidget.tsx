@@ -303,7 +303,7 @@ export default function ActionableItemsWidget({
             />
             <div>
               <span className="text-xs font-medium">Only show my items</span>
-              <p className="text-[10px] text-muted-foreground">Filter to items where you are assigned</p>
+              <p className="text-data text-muted-foreground">Filter to items where you are assigned</p>
             </div>
           </label>
 
@@ -351,7 +351,7 @@ export default function ActionableItemsWidget({
           No statuses marked as actionable.
         </p>
         <Link href="/settings/fields">
-          <Button variant="link" size="sm" className="h-6 text-[10px] mt-1">
+          <Button variant="link" size="sm" className="h-6 text-data mt-1">
             Configure in Field Settings
           </Button>
         </Link>
@@ -392,25 +392,25 @@ export default function ActionableItemsWidget({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-medium truncate">{item.name}</span>
-                      <Badge variant="outline" className="text-[9px] px-1 py-0 flex-shrink-0">
+                      <Badge variant="outline" className="text-label px-1 py-0 flex-shrink-0">
                         {ITEM_TYPE_LABELS[item.type]}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {item.dueDate ? (
-                        <span className={`text-[10px] flex items-center gap-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                        <span className={`text-data flex items-center gap-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
                           <Calendar className="h-2.5 w-2.5" />
                           {formatDueDate(item.dueDate)}
                         </span>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span className="text-data text-muted-foreground flex items-center gap-1">
                           <Clock className="h-2.5 w-2.5" />
                           {formatDistanceToNow(item.updatedAt, { addSuffix: true })}
                         </span>
                       )}
                       {item.projectName && (
                         <span 
-                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                          className="inline-flex items-center gap-1 text-data px-1.5 py-0.5 rounded-full text-white font-medium"
                           style={{ backgroundColor: item.projectColor || '#6b7280' }}
                         >
                           {item.projectName}

@@ -402,12 +402,12 @@ export default function SiteDiaryTemplates() {
                 {/* Metadata */}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {/* Fields count */}
-                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                  <Badge variant="outline" className="h-4 px-1.5 text-data">
                     {(template.fields as any[]).length} {(template.fields as any[]).length === 1 ? 'field' : 'fields'}
                   </Badge>
                   
                   {/* Date */}
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <div className="flex items-center gap-1 text-data text-muted-foreground">
                     <span>
                       {format(new Date(template.updatedAt), "MMM d, yyyy")}
                     </span>

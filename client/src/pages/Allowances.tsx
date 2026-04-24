@@ -563,7 +563,7 @@ export default function Allowances() {
             data-testid="button-filter-all"
           >
             <span>All</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            <Badge variant="secondary" className="h-4 px-1 text-data">
               {pcCount + psCount}
             </Badge>
           </Button>
@@ -577,7 +577,7 @@ export default function Allowances() {
             data-testid="button-filter-pc"
           >
             <span>Prime Cost</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            <Badge variant="secondary" className="h-4 px-1 text-data">
               {pcCount}
             </Badge>
           </Button>
@@ -591,7 +591,7 @@ export default function Allowances() {
             data-testid="button-filter-ps"
           >
             <span>Prov Sum</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            <Badge variant="secondary" className="h-4 px-1 text-data">
               {psCount}
             </Badge>
           </Button>

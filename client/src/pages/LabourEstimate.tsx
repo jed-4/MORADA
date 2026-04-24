@@ -806,7 +806,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
               {Object.entries(STATUS_CONFIG).map(([status, { label, icon: Icon, color }]) => {
                 const count = categories.filter(c => c.status === status).length;
                 return count > 0 ? (
-                  <div key={status} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div key={status} className="flex items-center gap-1.5 text-data text-muted-foreground">
                     <Icon className={`w-3 h-3 ${color}`} />
                     <span>{count} {label}</span>
                   </div>
@@ -825,7 +825,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-semibold truncate">{selectedCat.name}</span>
                 {mode === 'template' && (
-                  <span className="text-[10px] text-muted-foreground border border-border/50 rounded px-1.5 py-0.5">Template</span>
+                  <span className="text-data text-muted-foreground border border-border/50 rounded px-1.5 py-0.5">Template</span>
                 )}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -861,7 +861,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
           {/* Column headers */}
           <div
-            className="grid text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
+            className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
             style={{ gridTemplateColumns: "20px 1fr 70px 80px 80px 32px" }}
           >
             <span />

@@ -70,15 +70,15 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-semibold">{totalHoursThisWeek.toFixed(1)}h</p>
-          <p className="text-[10px] text-muted-foreground">This Week</p>
+          <p className="text-data text-muted-foreground">This Week</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-semibold">{pendingTimesheets.length}</p>
-          <p className="text-[10px] text-muted-foreground">Pending</p>
+          <p className="text-data text-muted-foreground">Pending</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-semibold">{approvedThisWeek.length}</p>
-          <p className="text-[10px] text-muted-foreground">Approved</p>
+          <p className="text-data text-muted-foreground">Approved</p>
         </div>
       </div>
 
@@ -91,14 +91,14 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
                 {getStatusIcon(entry.status)}
                 <div className="min-w-0">
                   <p className="truncate text-sm">{getUserName(entry.userId)}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">
+                  <p className="text-data text-muted-foreground truncate">
                     {getProjectName(entry.projectId)} • {format(new Date(entry.date), "MMM d")}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{Number(entry.hours).toFixed(1)}h</span>
-                <Badge className={`text-[10px] px-1 py-0 ${getStatusColor(entry.status)}`}>
+                <Badge className={`text-data px-1 py-0 ${getStatusColor(entry.status)}`}>
                   {entry.status}
                 </Badge>
               </div>

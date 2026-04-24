@@ -784,7 +784,7 @@ export default function EstimateTemplates() {
       cell: ({ row }) => row.original.category ? (
         <Badge
           variant="secondary"
-          className={`h-4 px-1.5 text-[10px] ${getCategoryColor(row.original.category)}`}
+          className={`h-4 px-1.5 text-data ${getCategoryColor(row.original.category)}`}
           data-testid={`cell-category-${row.original.id}`}
         >
           {row.original.category}
@@ -962,7 +962,7 @@ export default function EstimateTemplates() {
           {/* LEFT: Groups panel */}
           <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
             <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between flex-shrink-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
+              <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               {allGroups.length === 0 && (
@@ -978,9 +978,9 @@ export default function EstimateTemplates() {
                     className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-b border-border/20 transition-colors hover-elevate ${isSelected ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     <span className="text-xs font-medium truncate w-full">{group}</span>
                     <div className="flex items-center gap-1.5">
-                      {labourCount > 0 && <span className="text-[10px] text-muted-foreground">{labourCount} item{labourCount !== 1 ? 's' : ''}</span>}
+                      {labourCount > 0 && <span className="text-data text-muted-foreground">{labourCount} item{labourCount !== 1 ? 's' : ''}</span>}
                       {hasEnotes && isRequired !== undefined && (
-                        <span className={`text-[9px] px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-status-success dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                        <span className={`text-label px-1 rounded font-medium ${isRequired ? 'bg-green-500/15 text-status-success dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
                           {isRequired ? 'Required' : 'Not req.'}
                         </span>
                       )}
@@ -1025,7 +1025,7 @@ export default function EstimateTemplates() {
             ) : (
               <>
                 {/* Column headers */}
-                <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
+                <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
                   style={{ gridTemplateColumns: "1fr 90px 70px 80px 32px" }}>
                   <span>Description</span>
                   <span>Sub-Heading</span>
@@ -1072,7 +1072,7 @@ export default function EstimateTemplates() {
                                   }}
                                   className="h-5 text-xs focus-visible:ring-0 border-primary flex-1" />
                               ) : (
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground"
+                                <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground"
                                   onClick={() => { setEditingLabourCell({ id: `sh-${sh}`, field: 'subHeading' }); setLabourEditValue(sh); }}>
                                   {sh}
                                 </span>
@@ -1108,7 +1108,7 @@ export default function EstimateTemplates() {
                             ) : (
                               <span className="text-xs cursor-pointer text-muted-foreground hover:text-foreground truncate block"
                                 onClick={() => { setEditingLabourCell({ id: t.id, field: 'subHeading' }); setLabourEditValue(t.subHeading || ""); }}>
-                                {t.subHeading || <span className="italic text-[10px]">—</span>}
+                                {t.subHeading || <span className="italic text-data">—</span>}
                               </span>
                             )}
                           </div>
@@ -1178,7 +1178,7 @@ export default function EstimateTemplates() {
           {/* LEFT: Groups panel */}
           <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
             <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between flex-shrink-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
+              <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Groups</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               {allGroups.length === 0 && (
@@ -1200,7 +1200,7 @@ export default function EstimateTemplates() {
                             e.stopPropagation();
                             toggleGroupRequiredMutation.mutate({ groupName: group, isRequired: !(isRequired !== false) });
                           }}
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 border transition-colors ${
+                          className={`text-label px-1.5 py-0.5 rounded font-medium flex-shrink-0 border transition-colors ${
                             isRequired !== false
                               ? 'bg-green-500/15 text-status-success dark:text-green-400 border-green-500/20'
                               : 'bg-muted text-muted-foreground border-border'
@@ -1211,7 +1211,7 @@ export default function EstimateTemplates() {
                         </button>
                       )}
                     </div>
-                    {enoteCount > 0 && <span className="text-[10px] text-muted-foreground">{enoteCount} categor{enoteCount !== 1 ? 'ies' : 'y'}</span>}
+                    {enoteCount > 0 && <span className="text-data text-muted-foreground">{enoteCount} categor{enoteCount !== 1 ? 'ies' : 'y'}</span>}
                   </button>
                 );
               })}
@@ -1252,7 +1252,7 @@ export default function EstimateTemplates() {
             ) : (
               <>
                 {/* Column headers */}
-                <div className="grid px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
+                <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
                   style={{ gridTemplateColumns: "1fr 1fr 32px" }}>
                   <span>Category</span>
                   <span>Default Notes</span>
@@ -1324,8 +1324,8 @@ export default function EstimateTemplates() {
           {enoteTemplateSets.length > 0 && (
             <div className="flex-shrink-0 border-t border-border bg-muted/10">
               <div className="px-4 py-2 flex items-center gap-2 border-b border-border/50">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Saved Templates</span>
-                <span className="text-[10px] text-muted-foreground">({enoteTemplateSets.length})</span>
+                <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Saved Templates</span>
+                <span className="text-data text-muted-foreground">({enoteTemplateSets.length})</span>
               </div>
               <div className="max-h-48 overflow-y-auto divide-y divide-border/10">
                 {enoteTemplateSets.map(set => (
@@ -1359,7 +1359,7 @@ export default function EstimateTemplates() {
                         {set.name}
                       </span>
                     )}
-                    <span className="text-[10px] text-muted-foreground opacity-0 group-hover/setrow:opacity-100 flex-shrink-0">
+                    <span className="text-data text-muted-foreground opacity-0 group-hover/setrow:opacity-100 flex-shrink-0">
                       {format(new Date(set.createdAt), "d MMM yyyy")}
                     </span>
                     <button
@@ -1749,11 +1749,11 @@ export default function EstimateTemplates() {
                     >
                       <div className="flex items-center space-x-1">
                         <RadioGroupItem value="ex" id="gst-ex" className="h-3 w-3" />
-                        <Label htmlFor="gst-ex" className="text-[10px] text-muted-foreground cursor-pointer">Ex GST</Label>
+                        <Label htmlFor="gst-ex" className="text-data text-muted-foreground cursor-pointer">Ex GST</Label>
                       </div>
                       <div className="flex items-center space-x-1">
                         <RadioGroupItem value="inc" id="gst-inc" className="h-3 w-3" />
-                        <Label htmlFor="gst-inc" className="text-[10px] text-muted-foreground cursor-pointer">Inc GST</Label>
+                        <Label htmlFor="gst-inc" className="text-data text-muted-foreground cursor-pointer">Inc GST</Label>
                       </div>
                     </RadioGroup>
                   </div>

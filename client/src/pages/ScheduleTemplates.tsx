@@ -501,7 +501,7 @@ export default function ScheduleTemplates() {
       cell: ({ row }) => row.original.category ? (
         <Badge
           variant="secondary"
-          className={`h-4 px-1.5 text-[10px] ${getCategoryColor(row.original.category)}`}
+          className={`h-4 px-1.5 text-data ${getCategoryColor(row.original.category)}`}
           data-testid={`cell-category-${row.original.id}`}
         >
           {row.original.category}

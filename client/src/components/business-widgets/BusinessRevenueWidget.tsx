@@ -100,12 +100,12 @@ export default function BusinessRevenueWidget({ widget }: WidgetProps) {
                     title={`Expenses: ${formatCurrency(data.expenses)}`}
                   />
                 </div>
-                <span className="text-[9px] text-muted-foreground">{data.label}</span>
+                <span className="text-label text-muted-foreground">{data.label}</span>
               </div>
             );
           })}
         </div>
-        <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-center gap-4 text-data text-muted-foreground">
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 bg-green-500/70 rounded-sm" />
             Revenue
@@ -120,17 +120,17 @@ export default function BusinessRevenueWidget({ widget }: WidgetProps) {
       <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t">
         <div>
           <p className="text-sm font-semibold text-status-success">{formatCurrency(currentMonth.revenue)}</p>
-          <p className="text-[10px] text-muted-foreground">Revenue</p>
+          <p className="text-data text-muted-foreground">Revenue</p>
         </div>
         <div>
           <p className="text-sm font-semibold text-status-warning">{formatCurrency(currentMonth.expenses)}</p>
-          <p className="text-[10px] text-muted-foreground">Expenses</p>
+          <p className="text-data text-muted-foreground">Expenses</p>
         </div>
         <div>
           <p className={`text-sm font-semibold ${currentMonth.profit >= 0 ? 'text-emerald-600' : 'text-status-danger'}`}>
             {formatCurrency(currentMonth.profit)}
           </p>
-          <p className="text-[10px] text-muted-foreground">Profit</p>
+          <p className="text-data text-muted-foreground">Profit</p>
         </div>
       </div>
     </div>

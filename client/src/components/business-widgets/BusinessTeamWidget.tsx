@@ -87,7 +87,7 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
                     {user.firstName} {user.lastName}
                   </span>
                   {getRoleName(user.roleId) && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0">
+                    <Badge variant="outline" className="text-data px-1 py-0">
                       {getRoleName(user.roleId)}
                     </Badge>
                   )}
@@ -96,7 +96,7 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <span>{workload.activeTasks} tasks</span>
                     {workload.overdueTasks > 0 && (
-                      <Badge variant="destructive" className="text-[10px] px-1 py-0">
+                      <Badge variant="destructive" className="text-data px-1 py-0">
                         {workload.overdueTasks} overdue
                       </Badge>
                     )}

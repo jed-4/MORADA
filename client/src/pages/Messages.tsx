@@ -218,7 +218,7 @@ function TaskLinkPreview({ taskId }: { taskId: string }) {
         <ListTodo className="h-3.5 w-3.5 shrink-0 text-primary mt-0.5" />
         <span className="text-xs font-medium text-foreground leading-tight line-clamp-2">{title}</span>
       </div>
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 text-table text-muted-foreground">
         <span className={`capitalize font-medium ${statusColor}`}>{status.replace("-", " ")}</span>
         {assigneeName && (
           <>
@@ -1839,7 +1839,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {unreadCount > 0 && !isActive && (
-                          <Badge variant="default" className="h-4 text-[10px] px-1.5" data-testid={`unread-${channel.id}`}>
+                          <Badge variant="default" className="h-4 text-data px-1.5" data-testid={`unread-${channel.id}`}>
                             {unreadCount}
                           </Badge>
                         )}
@@ -1883,7 +1883,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   <Hash className="h-4 w-4 text-primary shrink-0" />
                   <span className="text-base font-semibold truncate">{selectedChannel.name}</span>
                   {selectedChannel.isClientFacing && (
-                    <Badge variant="secondary" className="h-5 text-[10px] shrink-0">
+                    <Badge variant="secondary" className="h-5 text-data shrink-0">
                       <Eye className="h-3 w-3 mr-1" />
                       Client
                     </Badge>
@@ -2024,7 +2024,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                           <div className="flex flex-col min-w-0">
                                             <span className="text-xs font-medium truncate">{att.fileName}</span>
                                             {att.fileSize && (
-                                              <span className="text-[10px] text-muted-foreground">
+                                              <span className="text-data text-muted-foreground">
                                                 {att.fileSize < 1024 * 1024
                                                   ? `${Math.round(att.fileSize / 1024)} KB`
                                                   : `${(att.fileSize / (1024 * 1024)).toFixed(1)} MB`}
@@ -2039,7 +2039,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 )}
                                 {/* Pinned indicator inside bubble */}
                                 {message.isPinned && (
-                                  <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
+                                  <div className="flex items-center gap-1 mt-1 text-data text-muted-foreground">
                                     <Pin className="h-2.5 w-2.5" />
                                     <span>Pinned</span>
                                   </div>
@@ -2198,7 +2198,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             {threadOpen && (
                               <div className="mt-1 ml-2 border-l-2 border-border pl-3 w-full space-y-2">
                                 {/* "Replying to [name]" context header */}
-                                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                <div className="text-table text-muted-foreground flex items-center gap-1">
                                   <MessageSquare className="h-3 w-3" />
                                   <span>
                                     Replying to{" "}
@@ -2220,12 +2220,12 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                     return (
                                       <div key={reply.id} className="flex gap-2 items-start">
                                         <Avatar className="h-6 w-6 shrink-0">
-                                          <AvatarFallback className="text-[10px] bg-muted/60">
+                                          <AvatarFallback className="text-data bg-muted/60">
                                             {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
                                           </AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col gap-0.5 flex-1">
-                                          <span className="text-[11px] font-medium text-foreground">
+                                          <span className="text-table font-medium text-foreground">
                                             {reply.userFirstName && reply.userLastName
                                               ? `${reply.userFirstName} ${reply.userLastName}`
                                               : reply.userEmail || 'Unknown'}
@@ -2238,7 +2238,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                             }
                                           `}>
                                             {/* "Reply to [name]" label inside each reply bubble */}
-                                            <div className="text-[10px] text-muted-foreground mb-1">
+                                            <div className="text-data text-muted-foreground mb-1">
                                               Replying to <span className="font-medium text-foreground/70">{parentName}</span>
                                             </div>
                                             {reply.content && (
@@ -2277,7 +2277,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                                       <div className="flex flex-col min-w-0">
                                                         <span className="text-xs font-medium truncate">{att.fileName}</span>
                                                         {att.fileSize && (
-                                                          <span className="text-[10px] text-muted-foreground">
+                                                          <span className="text-data text-muted-foreground">
                                                             {att.fileSize < 1024 * 1024
                                                               ? `${Math.round(att.fileSize / 1024)} KB`
                                                               : `${(att.fileSize / (1024 * 1024)).toFixed(1)} MB`}
@@ -2292,7 +2292,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                             )}
                                           </div>
                                           <span
-                                            className="text-[10px] text-muted-foreground"
+                                            className="text-data text-muted-foreground"
                                             title={format(new Date(reply.createdAt), "EEE d MMM yyyy, h:mm a")}
                                           >
                                             {formatMessageTime(reply.createdAt)}
@@ -2310,7 +2310,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                       {(threadPendingAttachments[message.id] || []).map(pa => (
                                         <div
                                           key={pa.id}
-                                          className="flex flex-col gap-0.5 px-1.5 py-0.5 rounded border bg-muted/30 text-[10px] max-w-[140px]"
+                                          className="flex flex-col gap-0.5 px-1.5 py-0.5 rounded border bg-muted/30 text-data max-w-[140px]"
                                         >
                                           <div className="flex items-center gap-1">
                                             {pa.error ? (
@@ -2398,7 +2398,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             )}
 
                             <span
-                              className="text-[10px] text-muted-foreground"
+                              className="text-data text-muted-foreground"
                               title={format(new Date(message.createdAt), "EEE d MMM yyyy, h:mm a")}
                             >
                               {formatMessageTime(message.createdAt)}
@@ -2499,7 +2499,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   <p className="text-foreground text-xs leading-snug line-clamp-2 break-words">
                                     {msg.content}
                                   </p>
-                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                  <p className="text-table text-muted-foreground mt-0.5">
                                     Scheduled for {msg.scheduledAt ? new Date(msg.scheduledAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                                   </p>
                                 </div>
@@ -2591,7 +2591,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           </div>
                         )}
                         {pa.error && (
-                          <span className="text-[10px] text-destructive">Upload failed</span>
+                          <span className="text-data text-destructive">Upload failed</span>
                         )}
                       </div>
                     ))}
@@ -3077,7 +3077,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 onClick={() => scrollToMessage(pm.id)}
                               >
                                 <Avatar className="h-6 w-6 shrink-0 mt-0.5">
-                                  <AvatarFallback className="text-[10px]">
+                                  <AvatarFallback className="text-data">
                                     {getInitials(pm.userFirstName, pm.userLastName, pm.userEmail)}
                                   </AvatarFallback>
                                 </Avatar>
@@ -3133,13 +3133,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <Avatar className="h-7 w-7 shrink-0">
-                            <AvatarFallback className="text-[11px]">
+                            <AvatarFallback className="text-table">
                               {getInitials(memberUser?.firstName, memberUser?.lastName, memberUser?.email)}
                             </AvatarFallback>
                           </Avatar>
                           <span className="text-sm truncate">{displayName}</span>
                           {isOwner && (
-                            <Badge variant="secondary" className="text-[10px] shrink-0 px-1.5">
+                            <Badge variant="secondary" className="text-data shrink-0 px-1.5">
                               owner
                             </Badge>
                           )}
@@ -3181,7 +3181,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <Avatar className="h-7 w-7 shrink-0">
-                                <AvatarFallback className="text-[11px]">
+                                <AvatarFallback className="text-table">
                                   {getInitials(u.firstName, u.lastName, u.email)}
                                 </AvatarFallback>
                               </Avatar>

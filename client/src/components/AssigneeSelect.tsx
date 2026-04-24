@@ -207,7 +207,7 @@ export function AssigneeSelect({
                   }
                   {section.icon}
                   {section.label}
-                  <span className="ml-auto text-[10px] font-normal normal-case tracking-normal opacity-60">
+                  <span className="ml-auto text-data font-normal normal-case tracking-normal opacity-60">
                     {section.items.length}
                   </span>
                 </button>
@@ -225,7 +225,7 @@ export function AssigneeSelect({
                     <div className="flex flex-col min-w-0">
                       <span className="truncate">{item.label}</span>
                       {item.description && (
-                        <span className="text-[10px] text-muted-foreground truncate">{item.description}</span>
+                        <span className="text-data text-muted-foreground truncate">{item.description}</span>
                       )}
                     </div>
                   </button>

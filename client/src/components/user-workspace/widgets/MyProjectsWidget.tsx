@@ -105,7 +105,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
         <div className="flex items-center gap-2">
           <FolderOpen className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{widget.title || "My Projects"}</span>
-          <Badge variant="secondary" className="text-[10px]">
+          <Badge variant="secondary" className="text-data">
             {myProjects.length}
           </Badge>
         </div>
@@ -153,7 +153,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
                     {project.currentSystemPhase && (
                       <Badge 
                         variant="secondary" 
-                        className={`text-[9px] px-1 py-0 ${PHASE_COLORS[project.currentSystemPhase] || ''}`}
+                        className={`text-label px-1 py-0 ${PHASE_COLORS[project.currentSystemPhase] || ''}`}
                       >
                         {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
                       </Badge>
@@ -162,7 +162,7 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
                   {project.address && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                      <span className="text-[11px] text-muted-foreground truncate">
+                      <span className="text-table text-muted-foreground truncate">
                         {project.address}
                       </span>
                     </div>

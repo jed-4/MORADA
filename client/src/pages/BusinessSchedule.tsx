@@ -230,7 +230,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
                       }}
                       data-testid={`week-item-${item.id}`}
                     >
-                      <span className="text-[11px] text-white font-medium truncate leading-none">{item.name}</span>
+                      <span className="text-table text-white font-medium truncate leading-none">{item.name}</span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
@@ -747,7 +747,7 @@ export default function BusinessSchedule() {
                     />
                     <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
                     <span className="text-xs truncate">{p.name}</span>
-                    <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1 capitalize shrink-0">
+                    <Badge variant="outline" className="ml-auto text-label h-4 px-1 capitalize shrink-0">
                       {p.category}
                     </Badge>
                   </label>
@@ -782,17 +782,17 @@ export default function BusinessSchedule() {
 
         {/* What's On strip */}
         <div className="h-8 flex items-center px-3 gap-3 border-b border-border/50 bg-muted/30 flex-shrink-0 overflow-hidden">
-          <span className="text-[10px] font-semibold text-muted-foreground shrink-0">
+          <span className="text-data font-semibold text-muted-foreground shrink-0">
             {activeProjectsThisWeek.length} project{activeProjectsThisWeek.length !== 1 ? 's' : ''} active this week
           </span>
           {activeProjectsThisWeek.slice(0, 6).map(p => (
             <div key={p.id} className="flex items-center gap-1 shrink-0">
               <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
-              <span className="text-[10px] text-muted-foreground truncate max-w-[90px]">{p.name}</span>
+              <span className="text-data text-muted-foreground truncate max-w-[90px]">{p.name}</span>
             </div>
           ))}
           {activeProjectsThisWeek.length > 6 && (
-            <span className="text-[10px] text-muted-foreground shrink-0">+{activeProjectsThisWeek.length - 6} more</span>
+            <span className="text-data text-muted-foreground shrink-0">+{activeProjectsThisWeek.length - 6} more</span>
           )}
         </div>
 
@@ -817,11 +817,11 @@ export default function BusinessSchedule() {
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                 return (
                   <div key={colIdx} className={cn(
-                    "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-[10px] font-medium",
+                    "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-data font-medium",
                     isToday ? "bg-primary/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
                   )}>
                     <span>{format(day, 'EEE')}</span>
-                    <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
+                    <span className={cn("text-table font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
                   </div>
                 );
               })}
@@ -923,7 +923,7 @@ export default function BusinessSchedule() {
                   />
                   <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
                   <span className="text-xs truncate">{p.name}</span>
-                  <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1 capitalize shrink-0">
+                  <Badge variant="outline" className="ml-auto text-label h-4 px-1 capitalize shrink-0">
                     {p.category}
                   </Badge>
                 </label>
@@ -961,7 +961,7 @@ export default function BusinessSchedule() {
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
               <div className="w-5 h-3 rounded-sm bg-blue-500" />
-              <span className="text-[10px] text-muted-foreground">Online</span>
+              <span className="text-data text-muted-foreground">Online</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -972,7 +972,7 @@ export default function BusinessSchedule() {
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
               <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
-              <span className="text-[10px] text-muted-foreground">Offline</span>
+              <span className="text-data text-muted-foreground">Offline</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -983,7 +983,7 @@ export default function BusinessSchedule() {
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 cursor-default">
               <div className="w-5 h-3 rounded-sm border-2 border-dotted border-border-strong" />
-              <span className="text-[10px] text-muted-foreground">Prospective</span>
+              <span className="text-data text-muted-foreground">Prospective</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -1045,7 +1045,7 @@ export default function BusinessSchedule() {
                   return (
                     <div
                       key={i}
-                      className="absolute top-0 h-full flex items-center px-3 text-[11px] font-medium text-muted-foreground border-l border-border/50"
+                      className="absolute top-0 h-full flex items-center px-3 text-table font-medium text-muted-foreground border-l border-border/50"
                       style={{ left, width }}
                     >
                       {format(monthStart, 'MMMM yyyy')}
@@ -1064,7 +1064,7 @@ export default function BusinessSchedule() {
                     <div
                       key={i}
                       className={cn(
-                        "absolute top-0 h-full flex items-center justify-center text-[9px] border-l border-border/30",
+                        "absolute top-0 h-full flex items-center justify-center text-label border-l border-border/30",
                         (isWeekend || isHol) ? "bg-muted/30 text-muted-foreground/50" : "text-muted-foreground"
                       )}
                       style={{ left, width: pixelsPerDay }}
@@ -1080,7 +1080,7 @@ export default function BusinessSchedule() {
                     return (
                       <div
                         key={i}
-                        className="absolute top-0 h-full flex items-center justify-center text-[9px] text-muted-foreground border-l border-border/30"
+                        className="absolute top-0 h-full flex items-center justify-center text-label text-muted-foreground border-l border-border/30"
                         style={{ left, width: pixelsPerDay }}
                       >
                         {format(day, 'EEE')}
@@ -1146,7 +1146,7 @@ export default function BusinessSchedule() {
                   return (
                     <div key={project.id} style={{ height: ROW_HEIGHT }} className="relative border-b border-border/10">
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-[10px] text-muted-foreground/50 italic">No dates set</span>
+                        <span className="text-data text-muted-foreground/50 italic">No dates set</span>
                       </div>
                     </div>
                   );
@@ -1173,7 +1173,7 @@ export default function BusinessSchedule() {
                       {project.category === "online" && (
                         <div className="absolute inset-0 flex items-center px-2 overflow-hidden">
                           {nameFitsInBar && (
-                            <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
+                            <span className="text-data font-medium text-white truncate drop-shadow-sm">
                               {project.name}
                             </span>
                           )}
@@ -1182,7 +1182,7 @@ export default function BusinessSchedule() {
                       {project.category !== "online" && (
                         <div className="absolute inset-0 flex items-center px-2 overflow-hidden">
                           {nameFitsInBar && (
-                            <span className="text-[10px] font-medium text-muted-foreground truncate">
+                            <span className="text-data font-medium text-muted-foreground truncate">
                               {project.name}
                             </span>
                           )}
@@ -1292,7 +1292,7 @@ export default function BusinessSchedule() {
                 </>
               )}
 
-              <div className="text-[10px] text-muted-foreground space-y-1 mt-2">
+              <div className="text-data text-muted-foreground space-y-1 mt-2">
                 {settingsProject.milestoneStartDate && (
                   <div className="text-emerald-600 dark:text-emerald-400">Build Start: {format(new Date(settingsProject.milestoneStartDate), 'MMM d, yyyy')}{settingsProject.milestoneEndDate ? ` — Build End: ${format(new Date(settingsProject.milestoneEndDate), 'MMM d, yyyy')}` : ''}</div>
                 )}

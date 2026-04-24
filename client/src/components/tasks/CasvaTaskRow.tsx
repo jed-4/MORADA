@@ -288,7 +288,7 @@ export function CasvaTaskRow({
                     onClick={(e) => e.stopPropagation()}
                   >
                     {task.assigneeName && (
-                      <div className="text-[13px] text-secondary truncate" data-testid="task-assignee">
+                      <div className="text-body-sm text-secondary truncate" data-testid="task-assignee">
                         {task.assigneeName}
                       </div>
                     )}
@@ -334,11 +334,11 @@ export function CasvaTaskRow({
                     onClick={(e) => e.stopPropagation()}
                   >
                     {task.dueDate ? (
-                      <div className="text-[13px] text-secondary" data-testid="task-due-date">
+                      <div className="text-body-sm text-secondary" data-testid="task-due-date">
                         {format(new Date(task.dueDate), 'MMM d, h:mm a')}
                       </div>
                     ) : (
-                      <div className="text-[13px] text-muted">Optional</div>
+                      <div className="text-body-sm text-muted">Optional</div>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -446,7 +446,7 @@ export function CasvaTaskRow({
                     {task.priority ? (
                       <ColorChip type="priority" value={task.priority} />
                     ) : (
-                      <span className="text-[13px] text-muted">-</span>
+                      <span className="text-body-sm text-muted">-</span>
                     )}
                   </button>
                 </PopoverTrigger>

@@ -228,7 +228,7 @@ function DayTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns 
             {event.title}
           </p>
           {height >= 36 && (
-            <p className="text-[10px] truncate opacity-80" style={{ color: notionColors.darkText }}>
+            <p className="text-data truncate opacity-80" style={{ color: notionColors.darkText }}>
               {event.startTime} - {event.endTime || 'No end'}
               {event.projectName && ` | ${event.projectName}`}
             </p>
@@ -286,7 +286,7 @@ function WeekTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns
 
   return (
     <div
-      className={`absolute rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-[9px] ${isPast ? 'opacity-50' : ''}`}
+      className={`absolute rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-label ${isPast ? 'opacity-50' : ''}`}
       style={{
         top: `${top}px`,
         height: `${height}px`,
@@ -328,7 +328,7 @@ function WeekAllDayChip({ event, colorMode, onClick }: { event: CalendarItem; co
 
   return (
     <div
-      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate mb-0.5"
+      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-label cursor-pointer hover-elevate mb-0.5"
       style={{
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
@@ -358,7 +358,7 @@ function WeekStackedChip({ event, colorMode, onClick }: { event: CalendarItem; c
 
   return (
     <div
-      className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
+      className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-label cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
       style={{
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
@@ -379,7 +379,7 @@ function WeekStackedChip({ event, colorMode, onClick }: { event: CalendarItem; c
           {event.title}
         </span>
         {event.startTime && (
-          <span className="flex-shrink-0 text-[8px] opacity-70" style={{ color: notionColors.darkText }}>
+          <span className="flex-shrink-0 text-2xs opacity-70" style={{ color: notionColors.darkText }}>
             {event.startTime}
           </span>
         )}
@@ -651,7 +651,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
               <SelectItem value="stacked">Stacked (list)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-data text-muted-foreground">
             {configState.weekViewMode === "timeline" && "Events positioned by time on hourly grid"}
             {configState.weekViewMode === "stacked" && "Events stacked as a list under each day"}
           </p>
@@ -698,7 +698,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
               <SelectItem value="priority">Priority (Tasks)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-data text-muted-foreground">
             {configState.colorMode === "project" && "Events colored by their project"}
             {configState.colorMode === "type" && "Events colored by type (task, schedule, etc.)"}
             {configState.colorMode === "priority" && "Tasks colored by priority; other items by type"}
@@ -773,10 +773,10 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
         <span className="text-xs font-medium ml-1">
           {getDateLabel()}
           {viewMode === "day" && isTodayInTimezone(selectedDate, effectiveTimezone) && (
-            <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">Today</Badge>
+            <Badge variant="secondary" className="ml-1.5 text-data px-1 py-0">Today</Badge>
           )}
           {viewMode !== "list" && events.length > 0 && (
-            <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">{events.length}</Badge>
+            <Badge variant="secondary" className="ml-1 text-data px-1 py-0">{events.length}</Badge>
           )}
         </span>
       </div>
@@ -887,7 +887,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                     <Badge
                       variant="outline"
-                      className="text-[10px] px-1 py-0 h-4"
+                      className="text-data px-1 py-0 h-4"
                       style={{
                         backgroundColor: 'rgba(255,255,255,0.5)',
                         color: notionColors.darkText,
@@ -897,14 +897,14 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                       {getDayLabel(event.startDate)}
                     </Badge>
                     <span
-                      className="text-[10px] flex items-center gap-0.5"
+                      className="text-data flex items-center gap-0.5"
                       style={{ color: notionColors.darkText, opacity: 0.7 }}
                     >
                       <Clock className="h-2 w-2" />
                       {getTimeLabel(event)}
                     </span>
                     {event.projectName && (
-                      <span className="text-[10px] opacity-60 truncate" style={{ color: notionColors.darkText }}>
+                      <span className="text-data opacity-60 truncate" style={{ color: notionColors.darkText }}>
                         {event.projectName}
                       </span>
                     )}
@@ -925,7 +925,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
       <>
         {allDayEvents.length > 0 && (
           <div className="flex-shrink-0 px-3 py-1.5 border-b space-y-1 bg-muted/10 max-h-24 overflow-y-auto">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wide sticky top-0 bg-muted/10">All Day</div>
+            <div className="text-data text-muted-foreground uppercase tracking-wide sticky top-0 bg-muted/10">All Day</div>
             <div className="flex flex-wrap gap-1">
               {allDayEvents.map(event => (
                 <DayAllDayEvent
@@ -947,7 +947,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                 className="absolute left-0 right-0 border-b border-border/50"
                 style={{ top: `${hour * DAY_HOUR_HEIGHT}px`, height: `${DAY_HOUR_HEIGHT}px` }}
               >
-                <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
+                <span className="absolute left-2 top-1 text-data text-muted-foreground">
                   {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
                 </span>
               </div>
@@ -1002,7 +1002,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                 key={day.toISOString()}
                 className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-primary/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
               >
-                <div className="text-[10px] text-muted-foreground uppercase">
+                <div className="text-data text-muted-foreground uppercase">
                   {formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}
                 </div>
                 <div className={`text-sm font-medium ${isCurrentDay ? 'text-primary' : ''}`}>
@@ -1017,7 +1017,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
           <div className={`flex-shrink-0 grid border-b bg-muted/10 max-h-20 overflow-y-auto ${gridCols}`}>
             {isTimeline && (
               <div className="border-r border-border/30 flex items-start justify-center py-1">
-                <span className="text-[9px] text-muted-foreground uppercase">All Day</span>
+                <span className="text-label text-muted-foreground uppercase">All Day</span>
               </div>
             )}
             {weekDays.map((day) => {
@@ -1033,7 +1033,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                     />
                   ))}
                   {dayAllDayEvents.length > 3 && (
-                    <div className="text-[8px] text-muted-foreground text-center">
+                    <div className="text-2xs text-muted-foreground text-center">
                       +{dayAllDayEvents.length - 3} more
                     </div>
                   )}
@@ -1053,7 +1053,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                     className="absolute left-0 right-0"
                     style={{ top: `${(hour - 6) * WEEK_HOUR_HEIGHT}px`, height: `${WEEK_HOUR_HEIGHT}px` }}
                   >
-                    <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
+                    <span className="absolute left-1 top-1 text-label text-muted-foreground">
                       {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                     </span>
                   </div>
@@ -1126,7 +1126,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                         />
                       ))}
                       {dayTimedEvents.length === 0 && (
-                        <div className="text-[9px] text-muted-foreground/50 text-center py-2">
+                        <div className="text-label text-muted-foreground/50 text-center py-2">
                           No events
                         </div>
                       )}

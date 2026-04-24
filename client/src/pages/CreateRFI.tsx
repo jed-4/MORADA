@@ -358,7 +358,7 @@ export default function CreateRFI() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-xs font-medium">Track Only Mode</Label>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   Track RFI sent outside BuildPro
                 </p>
               </div>
@@ -382,7 +382,7 @@ export default function CreateRFI() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-xs font-medium">Auto Follow-up</Label>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   Send reminder before due date
                 </p>
               </div>
@@ -415,7 +415,7 @@ export default function CreateRFI() {
           {/* Internal Notes */}
           <Card className="p-3 space-y-2">
             <Label className="text-xs font-medium">Internal Notes</Label>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-data text-muted-foreground">
               Only visible to your team
             </p>
             <Textarea

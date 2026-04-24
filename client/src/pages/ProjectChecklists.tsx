@@ -202,7 +202,7 @@ function ActivityLogContent({ instanceId }: { instanceId: string }) {
                 <span className="text-muted-foreground block truncate">{entry.details}</span>
               )}
             </div>
-            <span className="text-[10px] text-muted-foreground/60 shrink-0">
+            <span className="text-data text-muted-foreground/60 shrink-0">
               {format(new Date(entry.createdAt), "MMM d, h:mm a")}
             </span>
           </div>
@@ -797,7 +797,7 @@ export default function ProjectChecklists() {
       high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
       urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
     };
-    return <Badge className={`${styles[priority] || styles.medium} text-[10px] px-1.5 py-0`}>{priority}</Badge>;
+    return <Badge className={`${styles[priority] || styles.medium} text-data px-1.5 py-0`}>{priority}</Badge>;
   };
 
   const getStatusLabel = (status: string) => {
@@ -912,7 +912,7 @@ export default function ProjectChecklists() {
             data-testid="tab-all"
           >
             All
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{allCount}</Badge>
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{allCount}</Badge>
           </button>
           <button
             onClick={() => setActiveTab("upcoming")}
@@ -924,7 +924,7 @@ export default function ProjectChecklists() {
             data-testid="tab-upcoming"
           >
             Upcoming
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{upcomingCount}</Badge>
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{upcomingCount}</Badge>
           </button>
           <button
             onClick={() => setActiveTab("action")}
@@ -936,7 +936,7 @@ export default function ProjectChecklists() {
             data-testid="tab-action"
           >
             Action
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{actionCount}</Badge>
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{actionCount}</Badge>
           </button>
           <button
             onClick={() => setActiveTab("done")}
@@ -948,7 +948,7 @@ export default function ProjectChecklists() {
             data-testid="tab-done"
           >
             Done
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{doneCount}</Badge>
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{doneCount}</Badge>
           </button>
         </div>
       </div>
@@ -1072,12 +1072,12 @@ export default function ProjectChecklists() {
                       )}
                     </span>
                     {instance.scopeStageId && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0" data-testid={`stage-badge-${instance.id}`}>
+                      <Badge variant="secondary" className="text-data px-1.5 py-0 flex-shrink-0" data-testid={`stage-badge-${instance.id}`}>
                         <Layers className="h-2.5 w-2.5 mr-1" />
                         {scopeStages.find(s => s.id === instance.scopeStageId)?.name ?? 'Stage'}
                       </Badge>
                     )}
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    <Badge variant="secondary" className="text-data px-1.5 py-0">
                       {groups.length} checklists
                     </Badge>
                     <DropdownMenu>
@@ -1205,7 +1205,7 @@ export default function ProjectChecklists() {
                               {/* Right: Chips + Assignee */}
                               <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <Badge 
-                                  className={`${getStatusBadgeClass(group.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
+                                  className={`${getStatusBadgeClass(group.status)} text-data px-1.5 py-0 cursor-pointer hover:opacity-80`}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const { status, completionData } = getNextStatus(group.status);
@@ -1232,7 +1232,7 @@ export default function ProjectChecklists() {
                                         <Tooltip>
                                           <TooltipTrigger asChild>
                                             <Avatar className="h-5 w-5">
-                                              <AvatarFallback className="text-[10px] bg-primary/20 text-primary">
+                                              <AvatarFallback className="text-data bg-primary/20 text-primary">
                                                 {group.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                               </AvatarFallback>
                                             </Avatar>
@@ -1284,7 +1284,7 @@ export default function ProjectChecklists() {
                                             }}
                                           >
                                             <Avatar className="h-4 w-4 mr-2">
-                                              <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                                              <AvatarFallback className="text-2xs bg-primary/20 text-primary">
                                                 {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                               </AvatarFallback>
                                             </Avatar>
@@ -1327,7 +1327,7 @@ export default function ProjectChecklists() {
                                         
                                         {projectTasks.length > 0 && (
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
+                                            <p className="text-data font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
                                             <ScrollArea className="max-h-32">
                                               <div className="space-y-0.5">
                                                 {projectTasks.map((task) => (
@@ -1360,7 +1360,7 @@ export default function ProjectChecklists() {
                                         
                                         {scheduleItems.length > 0 && (
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
+                                            <p className="text-data font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
                                             <ScrollArea className="max-h-32">
                                               <div className="space-y-0.5">
                                                 {scheduleItems.map((schedItem) => (
@@ -1433,7 +1433,7 @@ export default function ProjectChecklists() {
                                               key={p}
                                               variant={group.priority === p ? "default" : "outline"}
                                               size="sm"
-                                              className={`text-[10px] px-2 h-6 ${group.priority === p ? '' : ''}`}
+                                              className={`text-data px-2 h-6 ${group.priority === p ? '' : ''}`}
                                               onClick={() => {
                                                 updateGroupMutation.mutate({
                                                   groupId: group.id,
@@ -1612,7 +1612,7 @@ export default function ProjectChecklists() {
                                                   </Tooltip>
                                                 )}
                                                 {item.isRequired && (
-                                                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-status-warning border-orange-300">
+                                                  <Badge variant="outline" className="text-label px-1 py-0 text-status-warning border-orange-300">
                                                     Required
                                                   </Badge>
                                                 )}
@@ -1635,7 +1635,7 @@ export default function ProjectChecklists() {
                                                       <button className="p-0.5 rounded hover:bg-muted/60 transition-colors" onClick={(e) => e.stopPropagation()}>
                                                         {item.assigneeName ? (
                                                           <Avatar className="h-5 w-5">
-                                                            <AvatarFallback className="text-[9px] bg-primary/20 text-primary">
+                                                            <AvatarFallback className="text-label bg-primary/20 text-primary">
                                                               {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                                             </AvatarFallback>
                                                           </Avatar>
@@ -1667,7 +1667,7 @@ export default function ProjectChecklists() {
                                                             }}
                                                           >
                                                             <Avatar className="h-4 w-4">
-                                                              <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                                                              <AvatarFallback className="text-2xs bg-primary/20 text-primary">
                                                                 {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                                               </AvatarFallback>
                                                             </Avatar>
@@ -1724,9 +1724,9 @@ export default function ProjectChecklists() {
                                                             ))}
                                                           </div>
                                                         ) : (
-                                                          <p className="text-[11px] text-muted-foreground text-center py-2">No attachments</p>
+                                                          <p className="text-table text-muted-foreground text-center py-2">No attachments</p>
                                                         )}
-                                                        <p className="text-[10px] text-muted-foreground">Max 3 files, 10MB each</p>
+                                                        <p className="text-data text-muted-foreground">Max 3 files, 10MB each</p>
                                                       </div>
                                                     </PopoverContent>
                                                   </Popover>
@@ -1735,7 +1735,7 @@ export default function ProjectChecklists() {
                                                       <TooltipTrigger asChild>
                                                         <div className="flex items-center gap-1 text-status-success">
                                                           <CheckCircle2 className="h-3.5 w-3.5" />
-                                                          <span className="text-[10px]">{item.completedByName}</span>
+                                                          <span className="text-data">{item.completedByName}</span>
                                                         </div>
                                                       </TooltipTrigger>
                                                       <TooltipContent side="top">
@@ -2202,22 +2202,22 @@ export default function ProjectChecklists() {
                       entry.system ? (
                         <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-muted/40">
                           <CheckCircle2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                          <span className="text-[11px] text-muted-foreground italic">{entry.text}</span>
-                          <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
+                          <span className="text-table text-muted-foreground italic">{entry.text}</span>
+                          <span className="text-data text-muted-foreground/60 ml-auto shrink-0">
                             {format(new Date(entry.date), "MMM d 'at' h:mm a")}
                           </span>
                         </div>
                       ) : (
                         <div key={idx} className="flex gap-2">
                           <Avatar className="h-6 w-6 shrink-0">
-                            <AvatarFallback className="text-[9px] bg-primary/20 text-primary">
+                            <AvatarFallback className="text-label bg-primary/20 text-primary">
                               {entry.author.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline gap-2 flex-wrap">
                               <span className="text-xs font-medium">{entry.author}</span>
-                              <span className="text-[10px] text-muted-foreground">
+                              <span className="text-data text-muted-foreground">
                                 {format(new Date(entry.date), "MMM d 'at' h:mm a")}
                               </span>
                             </div>
@@ -2258,7 +2258,7 @@ export default function ProjectChecklists() {
                   )}
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Press Cmd+Enter to send</p>
+              <p className="text-data text-muted-foreground mt-1">Press Cmd+Enter to send</p>
             </div>
           </div>
         </DialogContent>

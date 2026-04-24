@@ -131,7 +131,7 @@ function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) =>
 
   if (editing) return (
     <div className="flex items-center gap-0.5 w-full">
-      <span className="text-[10px] text-muted-foreground">$</span>
+      <span className="text-data text-muted-foreground">$</span>
       <Input
         autoFocus type="number" value={draft}
         onChange={e => setDraft(e.target.value)}
@@ -140,7 +140,7 @@ function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) =>
           if (e.key === "Enter") { onSave(parseFloat(draft) || 0); setEditing(false); }
           if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
         }}
-        className="h-5 text-[10px] px-1 w-full"
+        className="h-5 text-data px-1 w-full"
       />
     </div>
   );
@@ -148,7 +148,7 @@ function InlineAmount({ value, onSave }: { value: number; onSave: (v: number) =>
   return (
     <button
       onClick={() => { setDraft(String(value)); setEditing(true); }}
-      className="flex items-center gap-0.5 group/ia text-[10px] text-muted-foreground hover:text-foreground w-full"
+      className="flex items-center gap-0.5 group/ia text-data text-muted-foreground hover:text-foreground w-full"
     >
       <span className="tabular-nums">{value > 0 ? fmt(value) : "Set amount…"}</span>
       <Pencil className="w-2 h-2 opacity-0 group-hover/ia:opacity-40 flex-shrink-0" />
@@ -314,7 +314,7 @@ export default function HBCFTracker() {
           const r = row.original;
           if (r.__isTotal) {
             return (
-              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span className="text-data font-bold uppercase tracking-wide text-muted-foreground">
                 HBCF Exposure
               </span>
             );
@@ -362,8 +362,8 @@ export default function HBCFTracker() {
         id: `w-${key}`,
         header: () => (
           <div className={cn("flex flex-col items-center leading-none gap-0.5", isNow && "text-[#7c5cbf]")}>
-            <span className="text-[9px] uppercase">{monthLabel}</span>
-            <span className="text-[9px]">{dayLabel}</span>
+            <span className="text-label uppercase">{monthLabel}</span>
+            <span className="text-label">{dayLabel}</span>
             {isNow && <span className="w-1 h-1 rounded-full bg-primary" />}
           </div>
         ),
@@ -376,7 +376,7 @@ export default function HBCFTracker() {
             return (
               <div
                 className={cn(
-                  "w-full h-full flex items-center justify-center text-[9px] font-bold tabular-nums",
+                  "w-full h-full flex items-center justify-center text-label font-bold tabular-nums",
                   isNow && "ring-1 ring-inset ring-primary/40",
                 )}
                 style={{ background: bg, color: text }}
@@ -395,7 +395,7 @@ export default function HBCFTracker() {
                 }}
                 title={isActive ? "Click to mark INACTIVE" : "Click to mark ACTIVE"}
                 className={cn(
-                  "w-full rounded-sm text-[9px] font-bold py-0.5 leading-4 transition-all",
+                  "w-full rounded-sm text-label font-bold py-0.5 leading-4 transition-all",
                   isActive
                     ? "text-white"
                     : "text-muted-foreground/25 hover:text-muted-foreground/60 hover:bg-muted/50",

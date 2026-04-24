@@ -642,7 +642,7 @@ export default function TaskTemplates() {
                   </div>
                   <div className="w-24">
                     {statusName !== "—" ? (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-full">
+                      <Badge variant="outline" className="text-data px-1.5 py-0 truncate max-w-full">
                         {statusName}
                       </Badge>
                     ) : (
@@ -917,7 +917,7 @@ export default function TaskTemplates() {
                         </Button>
                       )}
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">Color used in calendar/diary views</p>
+                    <p className="text-data text-muted-foreground mt-1">Color used in calendar/diary views</p>
                   </div>
                 </div>
               )}
@@ -986,7 +986,7 @@ export default function TaskTemplates() {
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
             <div>
-              <Label className="text-[10px] text-muted-foreground">Title *</Label>
+              <Label className="text-data text-muted-foreground">Title *</Label>
               <Input
                 value={createTaskFormData.title}
                 onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, title: e.target.value }))}
@@ -996,7 +996,7 @@ export default function TaskTemplates() {
               />
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Description</Label>
+              <Label className="text-data text-muted-foreground">Description</Label>
               <Textarea
                 value={createTaskFormData.content}
                 onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, content: e.target.value }))}
@@ -1007,7 +1007,7 @@ export default function TaskTemplates() {
               />
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Assignee</Label>
+              <Label className="text-data text-muted-foreground">Assignee</Label>
               <Select
                 value={createTaskFormData.assigneeId || "none"}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, assigneeId: v === "none" ? undefined : v }))}
@@ -1026,7 +1026,7 @@ export default function TaskTemplates() {
               </Select>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Due Date</Label>
+              <Label className="text-data text-muted-foreground">Due Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -1051,7 +1051,7 @@ export default function TaskTemplates() {
               </Popover>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Status</Label>
+              <Label className="text-data text-muted-foreground">Status</Label>
               <Select
                 value={createTaskFormData.status}
                 onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, status: v }))}

@@ -235,7 +235,7 @@ export function FocusBlockPanel({ block, onClose }: FocusBlockPanelProps) {
                         {task.title}
                       </span>
                       {isPinned && (
-                        <span className="text-[9px] text-muted-foreground">pinned</span>
+                        <span className="text-label text-muted-foreground">pinned</span>
                       )}
                       <button
                         onClick={() => togglePin(task.id)}

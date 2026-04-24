@@ -576,7 +576,7 @@ export default function CreateRFQ() {
                 />
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground px-3 py-2">
+              <p className="text-data text-muted-foreground px-3 py-2">
                 Track RFQ sent outside BuildPro
               </p>
             )}
@@ -613,7 +613,7 @@ export default function CreateRFQ() {
                 </Select>
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground px-3 py-2">
+              <p className="text-data text-muted-foreground px-3 py-2">
                 Send reminder before due date
               </p>
             )}
@@ -626,7 +626,7 @@ export default function CreateRFQ() {
               <span className="text-xs font-medium">Internal Notes</span>
             </div>
             <div className="p-3">
-              <p className="text-[10px] text-muted-foreground mb-2">
+              <p className="text-data text-muted-foreground mb-2">
                 Only visible to your team
               </p>
               <Textarea

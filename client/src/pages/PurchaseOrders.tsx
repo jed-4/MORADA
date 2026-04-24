@@ -287,7 +287,7 @@ export default function PurchaseOrders() {
         cell: ({ row }) => (
           <Badge
             variant="outline"
-            className={`text-[10px] uppercase font-medium ${
+            className={`text-data uppercase font-medium ${
               row.original.poType === "site"
                 ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400"
                 : "bg-blue-50 border-blue-200 text-status-info dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
@@ -350,7 +350,7 @@ export default function PurchaseOrders() {
           return (
             <Badge
               variant="secondary"
-              className={`text-[10px] uppercase font-medium ${statusStyle.bg} ${statusStyle.text}`}
+              className={`text-data uppercase font-medium ${statusStyle.bg} ${statusStyle.text}`}
             >
               {row.original.status}
             </Badge>
@@ -442,7 +442,7 @@ export default function PurchaseOrders() {
           >
             <LayoutList className="w-3 h-3" />
             <span>All</span>
-            <Badge variant="secondary" className="h-4 text-[10px] px-1">{typeCounts.all}</Badge>
+            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.all}</Badge>
           </button>
           <button
             onClick={() => setSelectedType("main")}
@@ -455,7 +455,7 @@ export default function PurchaseOrders() {
           >
             <Building2 className="w-3 h-3" />
             <span>Standard</span>
-            <Badge variant="secondary" className="h-4 text-[10px] px-1">{typeCounts.main}</Badge>
+            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.main}</Badge>
           </button>
           <button
             onClick={() => setSelectedType("site")}
@@ -468,7 +468,7 @@ export default function PurchaseOrders() {
           >
             <Hammer className="w-3 h-3" />
             <span>Site</span>
-            <Badge variant="secondary" className="h-4 text-[10px] px-1">{typeCounts.site}</Badge>
+            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.site}</Badge>
           </button>
         </div>
 

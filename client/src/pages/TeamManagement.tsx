@@ -241,7 +241,7 @@ function TeamMemberCard({
             </h3>
             
             <Badge 
-              className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+              className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
               style={{
                 backgroundColor: 'hsl(var(--primary) / 0.08)',
                 color: 'hsl(var(--primary))',
@@ -252,7 +252,7 @@ function TeamMemberCard({
             </Badge>
             {user.isSubcontractor && (
               <Badge 
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
                   backgroundColor: '#f59e0b15',
                   color: '#f59e0b',
@@ -265,12 +265,12 @@ function TeamMemberCard({
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-data text-muted-foreground">
             <Mail className="h-2.5 w-2.5 shrink-0" />
             <span className="truncate flex-1">{user.email}</span>
             
             <Badge 
-              className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+              className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
               style={{
                 backgroundColor: statusColor.bg,
                 color: statusColor.text,
@@ -348,7 +348,7 @@ function PendingInvitationCard({
             </h3>
             
             <Badge 
-              className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+              className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
               style={{
                 backgroundColor: isExpired ? '#ef444415' : '#f59e0b15',
                 color: isExpired ? '#ef4444' : '#f59e0b',
@@ -359,7 +359,7 @@ function PendingInvitationCard({
             </Badge>
           </div>
 
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-data text-muted-foreground">
             <Mail className="h-2.5 w-2.5 shrink-0" />
             <span className="truncate flex-1">{invitation.email}</span>
             

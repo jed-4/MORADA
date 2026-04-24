@@ -253,7 +253,7 @@ export function NotificationBell() {
           {totalCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-[9px] font-bold text-white">
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-label font-bold text-white">
                 {totalCount > 9 ? "9+" : totalCount}
               </span>
             </span>

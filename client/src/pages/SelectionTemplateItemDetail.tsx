@@ -636,12 +636,12 @@ export default function SelectionTemplateItemDetail() {
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       {option.sku && (
-                        <Badge variant="outline" className="h-4 text-[10px]">
+                        <Badge variant="outline" className="h-4 text-data">
                           {option.sku}
                         </Badge>
                       )}
                       {!option.visibleToClient && (
-                        <Badge variant="secondary" className="h-4 text-[10px]">
+                        <Badge variant="secondary" className="h-4 text-data">
                           <EyeOff className="h-2.5 w-2.5 mr-0.5" />
                           Hidden
                         </Badge>

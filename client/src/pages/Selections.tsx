@@ -230,7 +230,7 @@ function SelectionCardCompact({
               
               {/* Status badge */}
               <Badge 
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
                   backgroundColor: statusBg,
                   color: statusColor,
@@ -242,7 +242,7 @@ function SelectionCardCompact({
             </div>
 
             {/* Metadata line below title */}
-            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-data text-muted-foreground">
               {selectionType === 'design' && (
                 <span className="flex items-center gap-0.5 text-purple-600">
                   <Palette className="h-2.5 w-2.5 flex-shrink-0" />
@@ -270,7 +270,7 @@ function SelectionCardCompact({
         {/* Bottom row: Allowance + Actions */}
         <div className="flex items-center justify-between">
           {/* Allowance or deadline */}
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-data text-muted-foreground">
             {selection.allowance && (
               <span className="flex items-center gap-0.5">
                 <DollarSign className="h-2.5 w-2.5" />
@@ -903,7 +903,7 @@ export default function Selections() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Category</span>
                 {categoryFilter && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -931,7 +931,7 @@ export default function Selections() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Location</span>
                 {locationFilter && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}

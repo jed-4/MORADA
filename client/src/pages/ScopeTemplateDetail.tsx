@@ -163,7 +163,7 @@ function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: So
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">{item.title}</span>
           {item.itemType && (
-            <Badge variant="outline" className="h-4 text-[10px]">
+            <Badge variant="outline" className="h-4 text-data">
               {getTypeLabel(item.itemType)}
             </Badge>
           )}
@@ -739,7 +739,7 @@ export default function ScopeTemplateDetail() {
               <Badge
                 key={type}
                 variant={activeTypeFilters.has(type) ? "default" : "outline"}
-                className={`h-5 text-[10px] cursor-pointer ${
+                className={`h-5 text-data cursor-pointer ${
                   activeTypeFilters.has(type) 
                     ? 'bg-primary hover:bg-primary/90 text-white' 
                     : 'hover:bg-muted'
@@ -837,13 +837,13 @@ export default function ScopeTemplateDetail() {
                         )}
 
                         {stageItems.length > 0 && (
-                          <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20">
+                          <span className="h-4 px-1.5 text-data font-semibold rounded bg-primary/10 text-primary border border-primary/20">
                             {stageItems.length}
                           </span>
                         )}
 
                         {stageTotal > 0 && (
-                          <span className="text-[10px] text-muted-foreground font-medium">
+                          <span className="text-data text-muted-foreground font-medium">
                             ${(stageTotal / 100).toLocaleString()}
                           </span>
                         )}
@@ -865,7 +865,7 @@ export default function ScopeTemplateDetail() {
                         )}
 
                         <button
-                          className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
+                          className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
                           onClick={(e) => {
                             e.stopPropagation();
                             openAddItemForStage(stage.id);
@@ -929,7 +929,7 @@ export default function ScopeTemplateDetail() {
                             <div className="flex flex-col items-center gap-1">
                               <span className="text-xs opacity-60">No items in this stage</span>
                               <button
-                                className="text-[10px] text-primary hover:underline"
+                                className="text-data text-primary hover:underline"
                                 onClick={() => openAddItemForStage(stage.id)}
                               >
                                 Add first item
@@ -1304,7 +1304,7 @@ export default function ScopeTemplateDetail() {
                       <Check className="h-3 w-3 text-primary" />
                       <span>{item.title}</span>
                       {item.itemType && (
-                        <Badge variant="outline" className="h-4 text-[10px]">{getTypeLabel(item.itemType)}</Badge>
+                        <Badge variant="outline" className="h-4 text-data">{getTypeLabel(item.itemType)}</Badge>
                       )}
                     </li>
                   ) : null;

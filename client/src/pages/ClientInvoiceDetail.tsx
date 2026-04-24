@@ -1532,22 +1532,22 @@ export default function ClientInvoiceDetail() {
 
   const renderLineTableHeader = (_includeContractCols: boolean = false) => (
     <TableRow className="h-6 bg-muted/30">
-      {isColVisible("name") && <TableHead className="w-40 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-      {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
+      {isColVisible("name") && <TableHead className="w-40 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
+      {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
       {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim %</TableHead>
+        <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim %</TableHead>
       )}
       {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
+        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
       )}
       {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
+        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
       )}
       {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
+        <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
       )}
       {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
+        <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
       )}
       <TableHead className="w-8 py-0" />
     </TableRow>
@@ -1693,7 +1693,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Synced badge with Xero invoice number */}
                 {isEditMode && invoice?.xeroInvoiceId && (
-                  <span className="text-[10px] text-status-success dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
+                  <span className="text-data text-status-success dark:text-green-400 flex items-center gap-1 px-1.5 h-6 border border-green-300 dark:border-green-700 rounded-md bg-green-50 dark:bg-green-950/30" data-testid="badge-synced-to-xero">
                     <SiXero className="w-3 h-3" />
                     {invoice.xeroInvoiceNumber ? `#${invoice.xeroInvoiceNumber}` : "Synced"}
                   </span>
@@ -1764,7 +1764,7 @@ export default function ClientInvoiceDetail() {
                       )}
                       {currentProject && (
                         <div className="min-w-0">
-                          <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Project</div>
+                          <div className="text-data text-muted-foreground/60 uppercase tracking-wide">Project</div>
                           <div className="text-xs font-medium truncate">{(currentProject as any).name}</div>
                           {(currentProject as any).location && (
                             <div className="text-xs text-muted-foreground truncate">{(currentProject as any).location}</div>
@@ -1792,7 +1792,7 @@ export default function ClientInvoiceDetail() {
                           name="name"
                           render={({ field }) => (
                             <FormItem className="col-span-2">
-                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
                               <FormControl>
                                 <Input {...field} className="h-8 text-sm" data-testid="input-name" />
                               </FormControl>
@@ -1806,7 +1806,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">
+                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-table text-muted-foreground/70 uppercase tracking-wide font-medium">
                                 Invoice Number
                                 {!isEditMode && (
                                   <Tooltip>
@@ -1869,7 +1869,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
                               <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -1914,7 +1914,7 @@ export default function ClientInvoiceDetail() {
                           name="dueDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-table text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
                               <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -1977,13 +1977,13 @@ export default function ClientInvoiceDetail() {
 
                       {/* Invoice Type toggle — subtle pill */}
                       <div className="flex items-center gap-1.5 pt-0.5">
-                        <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">Type:</span>
+                        <span className="text-data text-muted-foreground/40 uppercase tracking-wide">Type:</span>
                         <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
                           <button
                             type="button"
                             onClick={() => setInvoiceType("progress_payments")}
                             className={cn(
-                              "px-2.5 py-0.5 text-[11px] leading-none transition-colors",
+                              "px-2.5 py-0.5 text-table leading-none transition-colors",
                               invoiceType === "progress_payments"
                                 ? "bg-muted text-foreground font-medium"
                                 : "text-muted-foreground/50 hover:text-muted-foreground"
@@ -1996,7 +1996,7 @@ export default function ClientInvoiceDetail() {
                             type="button"
                             onClick={() => setInvoiceType("cost_plus")}
                             className={cn(
-                              "px-2.5 py-0.5 text-[11px] leading-none transition-colors",
+                              "px-2.5 py-0.5 text-table leading-none transition-colors",
                               invoiceType === "cost_plus"
                                 ? "bg-muted text-foreground font-medium"
                                 : "text-muted-foreground/50 hover:text-muted-foreground"
@@ -2527,7 +2527,7 @@ export default function ClientInvoiceDetail() {
                                         <TableCell className="text-sm font-medium py-1">
                                           <div className="flex items-center gap-1.5">
                                             {item.name}
-                                            <Badge variant="outline" className="text-[10px]">
+                                            <Badge variant="outline" className="text-data">
                                               {item.allowance}
                                             </Badge>
                                           </div>
@@ -2652,7 +2652,7 @@ export default function ClientInvoiceDetail() {
                           <p className="text-sm text-muted-foreground text-center py-2">No labour entries selected.</p>
                         ) : (() => {
                           const rows = expandByCostCode(getSelectedTimesheets());
-                          const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
+                          const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
                           const showCostCode = labourBreakByCostCode;
 
                           if (labourDisplayMode === "individual") {
@@ -2856,10 +2856,10 @@ export default function ClientInvoiceDetail() {
                           <Table>
                             <TableHeader>
                               <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                                <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -2911,11 +2911,11 @@ export default function ClientInvoiceDetail() {
                           <Table>
                             <TableHeader>
                               <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                                <TableHead className="text-right w-16 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                                <TableHead className="w-16 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                                <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
+                                <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
+                                <TableHead className="text-right w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                                <TableHead className="w-16 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
+                                <TableHead className="text-right w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -3030,22 +3030,22 @@ export default function ClientInvoiceDetail() {
                         <TableHeader>
                           <TableRow className="h-6 bg-muted/30">
                             <TableHead className="w-8 py-0 px-2" />
-                            {isColVisible("name") && <TableHead className="w-32 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
-                            {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
-                            <TableHead className="w-36 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                            <TableHead className="w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
-                            <TableHead className="text-right w-14 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                            <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</TableHead>
-                            <TableHead className="w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
-                            <TableHead className="w-32 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
+                            {isColVisible("name") && <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
+                            {isColVisible("description") && <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
+                            <TableHead className="w-36 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
+                            <TableHead className="w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
+                            <TableHead className="text-right w-14 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                            <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</TableHead>
+                            <TableHead className="w-28 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
+                            <TableHead className="w-32 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
                             {isColVisible("amountExTax") && (
-                              <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
+                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
                             )}
                             {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax $</TableHead>
+                              <TableHead className="text-right w-20 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax $</TableHead>
                             )}
                             {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
+                              <TableHead className="text-right w-24 text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
                             )}
                             <TableHead className="w-8 py-0" />
                           </TableRow>
@@ -3538,10 +3538,10 @@ export default function ClientInvoiceDetail() {
                         <Table>
                           <TableHeader>
                             <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amount</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Method</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Reference</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amount</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Method</TableHead>
+                              <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Reference</TableHead>
                               <TableHead className="w-16 py-0 px-2" />
                             </TableRow>
                           </TableHeader>
@@ -3564,13 +3564,13 @@ export default function ClientInvoiceDetail() {
                                 </TableCell>
                                 <TableCell className="px-2 w-16">
                                   {(payment as any).isVoided ? (
-                                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Voided</Badge>
+                                    <Badge variant="secondary" className="text-data h-4 px-1.5">Voided</Badge>
                                   ) : (
                                     <button
                                       type="button"
                                       onClick={() => voidPaymentMutation.mutate(payment.id)}
                                       disabled={voidPaymentMutation.isPending}
-                                      className="h-5 px-1.5 text-[10px] border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
+                                      className="h-5 px-1.5 text-data border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
                                       data-testid={`button-void-payment-${payment.id}`}
                                     >
                                       Void
@@ -3804,7 +3804,7 @@ export default function ClientInvoiceDetail() {
           {/* Invoice display mode + break by cost code */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/50 flex-shrink-0">Invoice will show labour as</span>
+              <span className="text-data uppercase tracking-wide text-muted-foreground/50 flex-shrink-0">Invoice will show labour as</span>
               <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
                 {(["individual", "by_user", "by_date", "single"] as const).map((mode, i, arr) => (
                   <button
@@ -3812,7 +3812,7 @@ export default function ClientInvoiceDetail() {
                     type="button"
                     onClick={() => setLabourDisplayMode(mode)}
                     className={cn(
-                      "px-2.5 py-1 text-[11px] leading-none transition-colors",
+                      "px-2.5 py-1 text-table leading-none transition-colors",
                       i < arr.length - 1 && "border-r border-border/50",
                       labourDisplayMode === mode
                         ? "bg-muted text-foreground font-medium"
@@ -3831,7 +3831,7 @@ export default function ClientInvoiceDetail() {
                 onCheckedChange={setLabourBreakByCostCode}
                 className="scale-75 origin-left"
               />
-              <label htmlFor="break-by-cost-code" className="text-[11px] text-muted-foreground cursor-pointer select-none">
+              <label htmlFor="break-by-cost-code" className="text-table text-muted-foreground cursor-pointer select-none">
                 Break down by cost code
               </label>
             </div>
@@ -3928,7 +3928,7 @@ export default function ClientInvoiceDetail() {
                     if (av > bv) return labourSortDir === "asc" ? 1 : -1;
                     return 0;
                   });
-                  const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   return (
                     <>
                       <TableHeader>
@@ -4064,7 +4064,7 @@ export default function ClientInvoiceDetail() {
                     return 0;
                   });
                   const colCount = 1 + INVOICE_BILL_COLUMNS.filter((c) => isBillColVisible(c.id)).length;
-                  const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const thCls = "text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   const billStatusBadge = (status: string) => {
                     const map: Record<string, { label: string; cls: string }> = {
                       draft: { label: "Draft", cls: "text-muted-foreground" },
@@ -4183,11 +4183,11 @@ export default function ClientInvoiceDetail() {
                 <TableHeader>
                   <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
                     <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Room</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Room</TableHead>
+                    <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
+                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                    <TableHead className="text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

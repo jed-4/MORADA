@@ -496,20 +496,20 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                     </button>
                     
                     <TaskTooltip content={task.title}>
-                      <span className={`text-[11px] flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
+                      <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
                         {task.title}
                       </span>
                     </TaskTooltip>
                     
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {dueInfo && (
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
+                        <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
                           {dueInfo.label}
                         </span>
                       )}
                       {project && (
                         <span 
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
+                          className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
                           title={project.name}
                         >
                           {project.name}
@@ -517,7 +517,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       )}
                       {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
                         <span 
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
+                          className="text-label px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
                           title={businessLabel}
                         >
                           {businessLabel}
@@ -547,8 +547,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                   {!group.color && groupBy === 'project' && (
                     <Folder className="h-3 w-3 text-muted-foreground" />
                   )}
-                  <span className="text-[11px] font-medium flex-1 text-left">{group.label}</span>
-                  <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                  <span className="text-table font-medium flex-1 text-left">{group.label}</span>
+                  <Badge variant="secondary" className="text-label h-4 px-1">
                     {group.tasks.length}
                   </Badge>
                 </CollapsibleTrigger>
@@ -581,20 +581,20 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                         
                         
                         <TaskTooltip content={task.title}>
-                          <span className={`text-[11px] flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
+                          <span className={`text-table flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
                             {task.title}
                           </span>
                         </TaskTooltip>
                         
                         <div className="flex items-center gap-1 flex-shrink-0">
                           {groupBy !== 'dueDate' && dueInfo && (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
+                            <span className={`text-label px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
                               {dueInfo.label}
                             </span>
                           )}
                           {groupBy !== 'project' && project && (
                             <span 
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
+                              className="text-label px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
                               title={project.name}
                             >
                               {project.name}
@@ -602,7 +602,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           )}
                           {groupBy !== 'project' && (task.scope === 'business' || (!task.scope && !task.projectId)) && (
                             <span 
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
+                              className="text-label px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
                               title={businessLabel}
                             >
                               {businessLabel}

@@ -857,7 +857,7 @@ export function TimesheetDialog({
             </fieldset>
 
             {timesheet?.actualStartTime && (
-              <div className="flex items-center gap-3 px-1 py-2 text-[11px] text-muted-foreground border-t border-dashed border-border mt-3">
+              <div className="flex items-center gap-3 px-1 py-2 text-table text-muted-foreground border-t border-dashed border-border mt-3">
                 <Clock className="h-3 w-3 flex-shrink-0" />
                 <span>
                   Clocked in: <span className="font-medium text-foreground">{timesheet.actualStartTime}</span>
@@ -869,7 +869,7 @@ export function TimesheetDialog({
             )}
 
             {timesheet && (timesheet.status === "approved" || timesheet.status === "rejected") && timesheet.approvedById && (
-              <div className={`flex flex-col gap-1 px-2 py-2 text-[11px] rounded-md mt-3 ${
+              <div className={`flex flex-col gap-1 px-2 py-2 text-table rounded-md mt-3 ${
                 timesheet.status === "approved" 
                   ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800" 
                   : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"

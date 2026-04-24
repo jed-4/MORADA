@@ -195,7 +195,7 @@ function DraggableGridRow({
         {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
           <Badge 
             variant="outline" 
-            className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0"
+            className="text-data px-1.5 py-0 h-4 flex-shrink-0"
           >
             +{task.labels.length}
           </Badge>
@@ -206,7 +206,7 @@ function DraggableGridRow({
       <div className="flex items-center gap-2 min-w-0">
         {task.assigneeName ? (
           <>
-            <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-[10px] font-semibold text-secondary flex-shrink-0">
+            <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-data font-semibold text-secondary flex-shrink-0">
               {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
             </div>
             <span className="text-sm text-secondary truncate" title={task.assigneeName}>

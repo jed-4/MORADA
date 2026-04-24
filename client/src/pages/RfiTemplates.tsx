@@ -395,7 +395,7 @@ export default function RfiTemplates() {
       cell: ({ row }) => {
         const label = getCategoryBreadcrumb(row.original.categoryId);
         return label ? (
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`cell-category-${row.original.id}`}>
+          <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`cell-category-${row.original.id}`}>
             {label}
           </Badge>
         ) : (
@@ -412,7 +412,7 @@ export default function RfiTemplates() {
       cell: ({ row }) => {
         const label = getDirectedToLabel(row.original.defaultDirectedToType);
         return label ? (
-          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`cell-directed-${row.original.id}`}>
+          <Badge variant="secondary" className="h-4 px-1.5 text-data" data-testid={`cell-directed-${row.original.id}`}>
             {label}
           </Badge>
         ) : (
@@ -434,7 +434,7 @@ export default function RfiTemplates() {
         return (
           <Badge
             variant="outline"
-            className={`h-4 px-1.5 text-[10px] ${getPriorityColor(priority)}`}
+            className={`h-4 px-1.5 text-data ${getPriorityColor(priority)}`}
             data-testid={`cell-priority-${row.original.id}`}
           >
             {getPriorityLabel(priority)}
@@ -758,7 +758,7 @@ export default function RfiTemplates() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   This will be the default recipient type when using this template
                 </p>
               </div>
@@ -774,7 +774,7 @@ export default function RfiTemplates() {
                   placeholder="e.g., Clarification Required - [Drawing Reference]"
                   data-testid="input-template-subject"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   Use placeholders like [Drawing Reference], [Area], [Trade] for dynamic content
                 </p>
               </div>
@@ -799,7 +799,7 @@ Response Required By: [Date]"
                   className="font-mono text-sm"
                   data-testid="textarea-template-question"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   Create a structured question template. Use brackets for fields to fill in when using the template.
                 </p>
               </div>
@@ -811,7 +811,7 @@ Response Required By: [Date]"
                     <Badge
                       key={placeholder}
                       variant="secondary"
-                      className="text-[10px] cursor-pointer hover:bg-secondary/80"
+                      className="text-data cursor-pointer hover:bg-secondary/80"
                       onClick={() => {
                         setFormData({
                           ...formData,

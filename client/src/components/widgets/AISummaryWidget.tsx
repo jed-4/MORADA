@@ -144,7 +144,7 @@ export default function AISummaryWidget({ widget }: WidgetProps) {
             <ul className="space-y-1.5">
               {summary.issues.map((item, index) => (
                 <li key={index} className="flex items-start gap-2 text-foreground">
-                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-200">!</Badge>
+                  <Badge variant="outline" className="text-data px-1 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-200">!</Badge>
                   <span>{item}</span>
                 </li>
               ))}

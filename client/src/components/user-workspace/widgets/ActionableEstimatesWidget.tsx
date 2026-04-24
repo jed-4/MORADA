@@ -142,7 +142,7 @@ export default function ActionableEstimatesWidget({
             />
             <div>
               <span className="text-xs font-medium">Only show my estimates</span>
-              <p className="text-[10px] text-muted-foreground">Filter to estimates where you are an owner or assignee</p>
+              <p className="text-data text-muted-foreground">Filter to estimates where you are an owner or assignee</p>
             </div>
           </label>
 
@@ -161,7 +161,7 @@ export default function ActionableEstimatesWidget({
 
           {!isLoading && actionableStatusKeys.size === 0 && (
             <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+              <p className="text-data text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
                 <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
                 No estimate statuses are marked as actionable. Go to Settings &gt; Field Settings to configure.
               </p>
@@ -199,7 +199,7 @@ export default function ActionableEstimatesWidget({
           No statuses marked as actionable.
         </p>
         <Link href="/settings/fields">
-          <Button variant="link" size="sm" className="h-6 text-[10px] mt-1">
+          <Button variant="link" size="sm" className="h-6 text-data mt-1">
             Configure in Field Settings
           </Button>
         </Link>
@@ -241,18 +241,18 @@ export default function ActionableEstimatesWidget({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-medium truncate">{estimate.name}</span>
-                      <Badge variant="secondary" className="text-[9px] px-1 py-0 flex-shrink-0">
+                      <Badge variant="secondary" className="text-label px-1 py-0 flex-shrink-0">
                         v{estimate.version}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <span className="text-data text-muted-foreground flex items-center gap-1">
                         <Clock className="h-2.5 w-2.5" />
                         {formatDistanceToNow(new Date(estimate.updatedAt), { addSuffix: true })}
                       </span>
                       {estimate.projectName && (
                         <span 
-                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                          className="inline-flex items-center gap-1 text-data px-1.5 py-0.5 rounded-full text-white font-medium"
                           style={{ backgroundColor: estimate.projectColor || '#6b7280' }}
                         >
                           {estimate.projectName}
@@ -271,7 +271,7 @@ export default function ActionableEstimatesWidget({
       {estimates.filter(e => actionableStatusKeys.has(e.status)).length > actionableEstimates.length && (
         <div className="pt-1">
           <Link href="/estimates">
-            <Button variant="ghost" size="sm" className="w-full h-6 text-[10px]">
+            <Button variant="ghost" size="sm" className="w-full h-6 text-data">
               View all {estimates.filter(e => actionableStatusKeys.has(e.status)).length} actionable estimates
               <ChevronRight className="h-3 w-3 ml-1" />
             </Button>

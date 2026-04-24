@@ -596,7 +596,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   <definition.icon className="h-4 w-4 text-primary" />
                   <span className="text-xs font-medium">{definition.name}</span>
                 </div>
-                <p className="text-[10px] text-muted-foreground line-clamp-2">
+                <p className="text-data text-muted-foreground line-clamp-2">
                   {definition.description}
                 </p>
               </button>

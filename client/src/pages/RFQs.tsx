@@ -235,7 +235,7 @@ function RfqQuotesPanel({
                   data-testid={`button-attachments-${rfq.id}-${idx}`}
                 >
                   <Paperclip className="w-3 h-3" />
-                  <span className="text-[10px] font-semibold">{files.length}</span>
+                  <span className="text-data font-semibold">{files.length}</span>
                 </button>
               )}
             </div>
@@ -456,7 +456,7 @@ export default function RFQs() {
           return (
             <span className="inline-flex items-center gap-0.5 text-[#8b6bb1]" data-testid={`cell-files-${row.original.id}`}>
               <Paperclip className="w-3 h-3" />
-              <span className="text-[10px] font-semibold">{count}</span>
+              <span className="text-data font-semibold">{count}</span>
             </span>
           );
         },
@@ -588,7 +588,7 @@ export default function RFQs() {
                 {status.label}
                 {status.key !== "all" && count > 0 && (
                   <span className={cn(
-                    "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-[10px] font-semibold",
+                    "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-data font-semibold",
                     isActive
                       ? "bg-primary/20 text-[#8b6bb1]"
                       : "bg-muted text-muted-foreground"
@@ -736,7 +736,7 @@ export default function RFQs() {
                   <div className="flex flex-col min-w-0">
                     <span className="text-xs font-medium truncate">{file.name}</span>
                     {file.size && (
-                      <span className="text-[10px] text-muted-foreground">{formatBytes(file.size)}</span>
+                      <span className="text-data text-muted-foreground">{formatBytes(file.size)}</span>
                     )}
                   </div>
                 </button>

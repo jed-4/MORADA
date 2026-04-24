@@ -330,7 +330,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
       {/* Header with filters and actions */}
       <div className="px-4 py-2 flex items-center gap-2 border-b bg-background">
         <h3 className="text-sm font-semibold">Reminders</h3>
-        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+        <Badge variant="secondary" className="h-4 px-1.5 text-data">
           {filteredReminders.length}
         </Badge>
         
@@ -497,12 +497,12 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                   {/* Status badges */}
                   <div className="flex items-center gap-1 mt-2 flex-wrap">
                     {isDismissed && (
-                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                      <Badge variant="secondary" className="h-4 px-1.5 text-data">
                         Dismissed
                       </Badge>
                     )}
                     {isSnoozed && (
-                      <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-orange-500 border-orange-500/30">
+                      <Badge variant="outline" className="h-4 px-1.5 text-data text-orange-500 border-orange-500/30">
                         <AlarmClockOff className="h-2.5 w-2.5 mr-0.5" />
                         Snoozed
                       </Badge>
@@ -511,7 +511,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-5 px-1.5 text-[10px] text-muted-foreground"
+                        className="h-5 px-1.5 text-data text-muted-foreground"
                         onClick={() => dismissMutation.mutate(reminder.id)}
                         data-testid={`dismiss-${reminder.id}`}
                       >

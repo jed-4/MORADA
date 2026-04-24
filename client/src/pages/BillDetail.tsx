@@ -1691,7 +1691,7 @@ export default function BillDetail() {
                           {selected && (
                             <button
                               type="button"
-                              className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                              className="text-data text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
                               onClick={() => {
                                 setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
                                 setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
@@ -1934,7 +1934,7 @@ export default function BillDetail() {
                         data-testid="dropzone-upload"
                       >
                         <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-data text-muted-foreground">
                           Drop or click to browse (PDF, JPG, PNG)
                         </p>
                         <input
@@ -1953,7 +1953,7 @@ export default function BillDetail() {
                             <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                             <div className="min-w-0">
                               <p className="text-xs font-medium truncate" data-testid="text-filename">{uploadedFile.name}</p>
-                              <p className="text-[10px] text-muted-foreground" data-testid="text-filesize">
+                              <p className="text-data text-muted-foreground" data-testid="text-filesize">
                                 {formatFileSize(uploadedFile.size)}
                               </p>
                             </div>
@@ -2019,7 +2019,7 @@ export default function BillDetail() {
                               </Button>
                             </CollapsibleTrigger>
                             <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
-                              <div className="border rounded-md p-2 space-y-1.5 text-[11px]">
+                              <div className="border rounded-md p-2 space-y-1.5 text-table">
                                 <div className="grid grid-cols-2 gap-1.5">
                                   <div>
                                     <p className="text-muted-foreground">Supplier</p>
@@ -2075,7 +2075,7 @@ export default function BillDetail() {
                                     <p className="font-medium mb-1">Line Items</p>
                                     <div className="space-y-0.5">
                                       {ocrResults.lineItems.map((item: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-[10px]" data-testid={`text-ocr-line-item-${idx}`}>
+                                        <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-data" data-testid={`text-ocr-line-item-${idx}`}>
                                           <span className="truncate mr-2">{item.description || "Unknown"}</span>
                                           <span className="font-medium shrink-0">
                                             {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
@@ -2111,7 +2111,7 @@ export default function BillDetail() {
                           <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-xs font-medium">Attachments</span>
                           {attachmentUrls.length > 0 && (
-                            <Badge variant="secondary" className="text-[10px] px-1">{attachmentUrls.length}</Badge>
+                            <Badge variant="secondary" className="text-data px-1">{attachmentUrls.length}</Badge>
                           )}
                         </div>
                         <label className="cursor-pointer">
@@ -2136,7 +2136,7 @@ export default function BillDetail() {
                           {previewAttachment && (
                             <div className="relative rounded-md border overflow-hidden bg-muted/20 mb-2">
                               <div className="flex items-center justify-between px-2 py-1 border-b bg-muted/30">
-                                <span className="text-[10px] text-muted-foreground truncate">
+                                <span className="text-data text-muted-foreground truncate">
                                   {decodeURIComponent(previewAttachment.split('/').pop() || 'Preview')}
                                 </span>
                                 <div className="flex items-center gap-0.5">
@@ -2168,7 +2168,7 @@ export default function BillDetail() {
                             const canPreview = isImage || isPdf;
                             const isActive = previewAttachment === url;
                             return (
-                              <div key={idx} className={`flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-[11px] ${isActive ? 'border-primary bg-primary/5' : ''}`}>
+                              <div key={idx} className={`flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-table ${isActive ? 'border-primary bg-primary/5' : ''}`}>
                                 <button
                                   type="button"
                                   onClick={() => canPreview ? setPreviewAttachment(isActive ? null : url) : window.open(url, '_blank')}
@@ -2225,7 +2225,7 @@ export default function BillDetail() {
                           })}
                         </div>
                       ) : (
-                        <p className="text-[10px] text-muted-foreground">No attachments</p>
+                        <p className="text-data text-muted-foreground">No attachments</p>
                       )}
                     </div>
 
@@ -2243,7 +2243,7 @@ export default function BillDetail() {
                         />
                       ) : (
                         <div
-                          className="text-[10px] text-muted-foreground"
+                          className="text-data text-muted-foreground"
                           data-testid="text-comments-unavailable"
                         >
                           Available after create
@@ -2271,13 +2271,13 @@ export default function BillDetail() {
                     </Button>
                     {colMenuOpen && (
                       <div data-col-menu className="absolute right-0 top-full mt-1 z-50 bg-popover border rounded-md shadow-md p-2 min-w-[160px]">
-                        <div className="text-[11px] font-medium text-muted-foreground mb-1.5 px-1">Show columns</div>
+                        <div className="text-table font-medium text-muted-foreground mb-1.5 px-1">Show columns</div>
                         {[
                           { key: "exTax" as const, label: "Amount ex Tax" },
                           { key: "tax" as const, label: "Amount Tax" },
                           { key: "incTax" as const, label: "Amount inc Tax" },
                         ].map(({ key, label }) => (
-                          <label key={key} className="flex items-center gap-2 px-1 py-1 text-[11px] cursor-pointer rounded-sm hover-elevate">
+                          <label key={key} className="flex items-center gap-2 px-1 py-1 text-table cursor-pointer rounded-sm hover-elevate">
                             <Checkbox
                               checked={visibleAmountCols[key]}
                               onCheckedChange={(checked) =>
@@ -2292,30 +2292,30 @@ export default function BillDetail() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">Amounts are</span>
+                    <span className="text-table text-muted-foreground">Amounts are</span>
                     <div className="inline-flex rounded-md border bg-muted/30 p-0.5" data-testid="select-tax-mode">
                       <button
                         type="button"
                         onClick={() => setTaxMode("exclusive")}
-                        className={`px-2.5 py-0.5 text-[11px] rounded-sm transition-colors ${taxMode === "exclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
+                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "exclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
                       >
                         Exclusive
                       </button>
                       <button
                         type="button"
                         onClick={() => setTaxMode("inclusive")}
-                        className={`px-2.5 py-0.5 text-[11px] rounded-sm transition-colors ${taxMode === "inclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
+                        className={`px-2.5 py-0.5 text-table rounded-sm transition-colors ${taxMode === "inclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
                       >
                         Inclusive
                       </button>
                     </div>
-                    <span className="text-[11px] text-muted-foreground">of tax</span>
+                    <span className="text-table text-muted-foreground">of tax</span>
                   </div>
                 </div>
               </div>
 
               {showDefaultsPrompt && (
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-[11px]" data-testid="prompt-save-supplier-defaults">
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-save-supplier-defaults">
                   <span className="text-muted-foreground">
                     Save{" "}
                     {suggestedCostCode && (
@@ -2345,7 +2345,7 @@ export default function BillDetail() {
                       type="button"
                       size="sm"
                       variant="default"
-                      className="h-6 text-[11px] px-2"
+                      className="h-6 text-table px-2"
                       disabled={updateSupplierDefaultsMutation.isPending}
                       onClick={() => {
                         if (!currentSupplier) return;
@@ -2370,7 +2370,7 @@ export default function BillDetail() {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="h-6 text-[11px] px-2"
+                      className="h-6 text-table px-2"
                       onClick={() => setDefaultsPromptDismissed(true)}
                       data-testid="button-defer-supplier-defaults"
                     >
@@ -2380,7 +2380,7 @@ export default function BillDetail() {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="h-6 text-[11px] px-2 text-muted-foreground"
+                      className="h-6 text-table px-2 text-muted-foreground"
                       disabled={updateSupplierDefaultsMutation.isPending}
                       onClick={() => {
                         if (!currentSupplier) return;
@@ -2400,13 +2400,13 @@ export default function BillDetail() {
               )}
 
               {selectedLineIndices.size > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-[11px]">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-table">
                   <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-6 text-[11px] px-2"
+                    className="h-6 text-table px-2"
                     onClick={() => setBulkCostCodeOpen(true)}
                     data-testid="button-bulk-change-cost-code"
                   >
@@ -2414,7 +2414,7 @@ export default function BillDetail() {
                   </Button>
                   <button
                     type="button"
-                    className="text-muted-foreground hover:text-foreground ml-auto text-[11px]"
+                    className="text-muted-foreground hover:text-foreground ml-auto text-table"
                     onClick={() => setSelectedLineIndices(new Set())}
                   >
                     Clear selection
@@ -2443,7 +2443,7 @@ export default function BillDetail() {
                             value={item.description}
                             onChange={(e) => updateLineItem(index, "description", e.target.value)}
                             placeholder="Description..."
-                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-description-${index}`}
                           />
                         ),
@@ -2457,12 +2457,12 @@ export default function BillDetail() {
                                 value={item.costCodeId || ""}
                                 onValueChange={(value) => updateLineItem(index, "costCodeId", value)}
                                 placeholder="Select..."
-                                triggerClassName="border-0 shadow-none bg-transparent text-[11px]"
+                                triggerClassName="border-0 shadow-none bg-transparent text-table"
                                 data-testid={`select-cost-code-${index}`}
                               />
                             </div>
                             {supplierDefaultCostCode && item.costCodeId === supplierDefaultCostCode && (
-                              <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-cost-code-default-${index}`}>default</span>
+                              <span className="text-label text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-cost-code-default-${index}`}>default</span>
                             )}
                           </div>
                         ),
@@ -2474,7 +2474,7 @@ export default function BillDetail() {
                             type="number"
                             value={item.quantity}
                             onChange={(e) => updateLineItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                            className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-quantity-${index}`}
                           />
                         ),
@@ -2486,7 +2486,7 @@ export default function BillDetail() {
                             value={item.unit}
                             onChange={(e) => updateLineItem(index, "unit", e.target.value)}
                             placeholder="Unit"
-                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-unit-${index}`}
                           />
                         ),
@@ -2495,7 +2495,7 @@ export default function BillDetail() {
                         key: "tax", header: "Tax", width: getColWidth("tax"), truncate: false,
                         cell: (item, index) => (
                           <Select value={item.tax} onValueChange={(value) => updateLineItem(index, "tax", value)}>
-                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-tax-${index}`}>
+                            <SelectTrigger className="text-table border-0 shadow-none bg-transparent" data-testid={`select-tax-${index}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -2521,7 +2521,7 @@ export default function BillDetail() {
                                   <PopoverTrigger asChild>
                                     <button
                                       type="button"
-                                      className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm text-left truncate hover-elevate"
+                                      className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm text-left truncate hover-elevate"
                                       data-testid={`select-account-${index}`}
                                     >
                                       {(() => {
@@ -2579,13 +2579,13 @@ export default function BillDetail() {
                                   value={item.account}
                                   onChange={(e) => updateLineItem(index, "account", e.target.value)}
                                   placeholder="Account"
-                                  className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                                  className="w-full h-7 px-1.5 text-table bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                                   data-testid={`input-account-${index}`}
                                 />
                               )}
                             </div>
                             {supplierDefaultAccountCode && item.account === supplierDefaultAccountCode && (
-                              <span className="text-[9px] text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-account-default-${index}`}>default</span>
+                              <span className="text-label text-muted-foreground px-1 py-px rounded bg-muted/40 shrink-0" title="Supplier default" data-testid={`badge-account-default-${index}`}>default</span>
                             )}
                           </div>
                         ),
@@ -2599,7 +2599,7 @@ export default function BillDetail() {
                             type="number"
                             value={item.unitPrice}
                             onChange={(e) => updateLineItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                            className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            className="w-full h-7 px-1.5 text-table text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`input-amount-${index}`}
                           />
                         ),
@@ -2641,7 +2641,7 @@ export default function BillDetail() {
                             }
                           }}
                         >
-                          <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-allowance-${index}`}>
+                          <SelectTrigger className="text-table border-0 shadow-none bg-transparent" data-testid={`select-allowance-${index}`}>
                             <SelectValue placeholder="None" />
                           </SelectTrigger>
                           <SelectContent>
@@ -2674,7 +2674,7 @@ export default function BillDetail() {
                 <button
                   type="button"
                   onClick={addLineItem}
-                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-1"
+                  className="flex items-center gap-1 text-table text-muted-foreground hover:text-foreground transition-colors py-1"
                   data-testid="button-add-line"
                 >
                   <Plus className="h-3 w-3" />
@@ -2751,7 +2751,7 @@ export default function BillDetail() {
                                 {approval.approvedById}
                               </span>
                               <span
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-data font-medium ${
                                   approval.status === "approved"
                                     ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                                     : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
@@ -2761,11 +2761,11 @@ export default function BillDetail() {
                               </span>
                             </div>
                             {approval.comments && (
-                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                              <p className="text-table text-muted-foreground mt-0.5">
                                 {approval.comments}
                               </p>
                             )}
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                            <p className="text-data text-muted-foreground mt-0.5">
                               {format(new Date(approval.createdAt), "PPp")}
                             </p>
                           </div>
@@ -2780,7 +2780,7 @@ export default function BillDetail() {
                     {isEditMode && bill?.status === "draft" && (() => {
                       const validation = getSubmitForApprovalValidation();
                       return !validation.isValid ? (
-                        <div className="text-[11px] text-destructive space-y-0.5" data-testid="text-submit-validation-errors">
+                        <div className="text-table text-destructive space-y-0.5" data-testid="text-submit-validation-errors">
                           {validation.errors.map((error, index) => (
                             <div key={index}>{error}</div>
                           ))}
@@ -2790,7 +2790,7 @@ export default function BillDetail() {
                   </div>
                   <div className="flex items-center gap-2">
                     {isEditMode && (bill as any)?.xeroInvoiceId && (
-                      <div className="text-[11px] text-muted-foreground" data-testid="text-xero-sync-status">
+                      <div className="text-table text-muted-foreground" data-testid="text-xero-sync-status">
                         {(bill as any)?.xeroLastSyncStatus === "success" && (bill as any)?.xeroLastSyncAt && (
                           <span>Synced {format(new Date((bill as any).xeroLastSyncAt), "dd MMM HH:mm")}</span>
                         )}
@@ -3287,7 +3287,7 @@ export default function BillDetail() {
           </DialogHeader>
           {ocrSupplierData && (
             <div className="rounded-md border bg-muted/30 p-3 text-xs space-y-1" data-testid="card-ocr-supplier-details">
-              <div className="text-muted-foreground uppercase tracking-wide text-[10px] mb-1">From invoice</div>
+              <div className="text-muted-foreground uppercase tracking-wide text-data mb-1">From invoice</div>
               <div><span className="text-muted-foreground">Name:</span> <span className="font-medium">{ocrSupplierData.name}</span></div>
               {ocrSupplierData.email && (
                 <div><span className="text-muted-foreground">Email:</span> <span>{ocrSupplierData.email}</span></div>
@@ -3343,7 +3343,7 @@ export default function BillDetail() {
                             data-testid="option-unmatched-supplier-suggestion"
                           >
                             <span className="truncate flex-1">{ocrSupplierSuggestion.name}</span>
-                            <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
+                            <span className="ml-2 text-data text-muted-foreground shrink-0">
                               {Math.round(ocrSupplierSuggestion.confidence * 100)}%
                             </span>
                           </CommandItem>

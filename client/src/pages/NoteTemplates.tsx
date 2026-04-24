@@ -84,7 +84,7 @@ export default function NoteTemplates() {
               </>
             )}
             {inactiveCount > 0 && (
-              <Badge variant="outline" className="ml-1 h-4 px-1 text-[10px]">
+              <Badge variant="outline" className="ml-1 h-4 px-1 text-data">
                 {inactiveCount} inactive
               </Badge>
             )}

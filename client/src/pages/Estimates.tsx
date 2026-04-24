@@ -255,7 +255,7 @@ export default function Estimates() {
       return (
         <Badge 
           variant="outline"
-          className="h-4 text-[10px] px-1.5"
+          className="h-4 text-data px-1.5"
           style={{
             backgroundColor: statusOption.color || '#6B7280',
             color: '#FFFFFF',
@@ -268,9 +268,9 @@ export default function Estimates() {
     }
     // Fallback to isLocked for backward compatibility
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 bg-blue-100 text-status-info"><Lock className="w-3 h-3 mr-0.5" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-data px-1.5 bg-blue-100 text-status-info"><Lock className="w-3 h-3 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-data px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
 
@@ -501,7 +501,7 @@ export default function Estimates() {
               >
                 <span>Status</span>
                 {selectedStatus !== "All" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -767,7 +767,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       return (
         <Badge 
           variant="secondary"
-          className="h-4 text-[10px] px-1.5 rounded-full"
+          className="h-4 text-data px-1.5 rounded-full"
           style={{
             backgroundColor: `${statusOption.color}20`,
             color: statusOption.color,
@@ -779,9 +779,9 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       );
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-data px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline" className="h-4 text-[10px] px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-data px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   return (
@@ -802,7 +802,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       </div>
       <div className="flex-1 min-w-0">
         <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
-        <p className="text-[10px] text-muted-foreground mb-2">
+        <p className="text-data text-muted-foreground mb-2">
           {getProjectName(estimate.projectId)}
         </p>
         <div className="flex items-center justify-between gap-2">

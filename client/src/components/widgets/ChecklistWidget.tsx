@@ -618,13 +618,13 @@ function ChecklistAccordionItem({
             </TaskTooltip>
             
             <Badge 
-              className={`${getStatusBadgeColor(checklist.status)} text-[10px] px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+              className={`${getStatusBadgeColor(checklist.status)} text-data px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
             >
               {getStatusLabel(checklist.status)}
             </Badge>
             
             {checklist.dueDate && (
-              <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
+              <div className="flex items-center gap-0.5 text-data text-muted-foreground flex-shrink-0">
                 <Calendar className="h-2.5 w-2.5" />
                 {format(new Date(checklist.dueDate), "MMM d")}
               </div>
@@ -634,7 +634,7 @@ function ChecklistAccordionItem({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Avatar className="h-4 w-4 flex-shrink-0">
-                    <AvatarFallback className="text-[8px] bg-primary/10 text-primary">
+                    <AvatarFallback className="text-2xs bg-primary/10 text-primary">
                       {getInitials(checklist.assigneeName)}
                     </AvatarFallback>
                   </Avatar>
@@ -647,7 +647,7 @@ function ChecklistAccordionItem({
             
             <div className="flex items-center gap-1 flex-shrink-0">
               <Progress value={progressPercent} className="h-1.5 w-12" />
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-data text-muted-foreground">
                 {checklist.completedCount}/{checklist.totalCount}
               </span>
             </div>
@@ -670,7 +670,7 @@ function ChecklistAccordionItem({
         <CollapsibleContent>
           <div className="border-t bg-muted/30 px-2 py-1 space-y-0.5">
             {groups.length === 0 ? (
-              <div className="text-[10px] text-muted-foreground text-center py-1">
+              <div className="text-data text-muted-foreground text-center py-1">
                 No checklists in this group
               </div>
             ) : (
@@ -787,13 +787,13 @@ function ChecklistGroupItem({
           )}
           
           <TaskTooltip content={group.name}>
-            <span className={`text-[10px] flex-1 min-w-0 pt-[1px] pb-[1px] ${wrapText ? '' : 'truncate'}`}>
+            <span className={`text-data flex-1 min-w-0 pt-[1px] pb-[1px] ${wrapText ? '' : 'truncate'}`}>
               {group.name}
             </span>
           </TaskTooltip>
 
           <Badge 
-            className={`${getStatusBadgeColor(group.status)} text-[8px] px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+            className={`${getStatusBadgeColor(group.status)} text-2xs px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
           >
             {getStatusLabel(group.status)}
           </Badge>
@@ -802,7 +802,7 @@ function ChecklistGroupItem({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Avatar className="h-3 w-3 flex-shrink-0">
-                  <AvatarFallback className="text-[6px] bg-primary/10 text-primary">
+                  <AvatarFallback className="text-2xs bg-primary/10 text-primary">
                     {getInitials(group.assigneeName)}
                   </AvatarFallback>
                 </Avatar>
@@ -816,7 +816,7 @@ function ChecklistGroupItem({
           {isExpanded && totalCount > 0 && (
             <div className="flex items-center gap-0.5 flex-shrink-0">
               <Progress value={progressPercent} className="h-0.5 w-8" />
-              <span className="text-[8px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {completedCount}/{totalCount}
               </span>
             </div>
@@ -863,7 +863,7 @@ function ChecklistGroupItem({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Avatar className="h-4 w-4 flex-shrink-0">
-                        <AvatarFallback className="text-[7px] bg-primary/20 text-primary">
+                        <AvatarFallback className="text-2xs bg-primary/20 text-primary">
                           {getInitials(item.assigneeName)}
                         </AvatarFallback>
                       </Avatar>

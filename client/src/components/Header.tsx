@@ -386,7 +386,7 @@ export default function Header() {
                 >
                   <ChevronLeft className="h-3 w-3" />
                 </Button>
-                <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+                <span className="text-data text-muted-foreground font-medium min-w-[70px] text-center">
                   {selectedPhase.label}
                 </span>
                 <Button
@@ -444,10 +444,10 @@ export default function Header() {
                       searchFilteredGrouped.map((group) => (
                         <div key={group.phase.id}>
                           <div className="px-2 pt-[0px] pb-[0px]">
-                            <span className="text-[8px] font-medium text-muted-foreground uppercase tracking-wider leading-none">
+                            <span className="text-2xs font-medium text-muted-foreground uppercase tracking-wider leading-none">
                               {group.phase.label}
                             </span>
-                            <span className="text-[8px] text-muted-foreground ml-0.5 leading-none">
+                            <span className="text-2xs text-muted-foreground ml-0.5 leading-none">
                               ({group.projects.length})
                             </span>
                           </div>
@@ -642,7 +642,7 @@ export default function Header() {
         >
           <Search className="h-3.5 w-3.5" />
           <span>Search...</span>
-          <kbd className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
+          <kbd className="ml-auto text-data bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
       </div>
       <div className="flex items-center gap-1">
@@ -674,7 +674,7 @@ export default function Header() {
           <DropdownMenuTrigger asChild>
             <button
               data-testid="button-new"
-              className="h-5 px-2 text-[11px] rounded-md bg-primary text-primary-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+              className="h-5 px-2 text-table rounded-md bg-primary text-primary-foreground hover-elevate active-elevate-2 flex items-center gap-1"
             >
               <Plus className="w-3 h-3" />
               <span>New</span>

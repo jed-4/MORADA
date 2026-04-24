@@ -112,7 +112,7 @@ function FocusBlockItem({ block }: { block: FocusBlock }) {
       <div className="flex items-center gap-2 px-2 py-1.5">
         <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: block.color }} />
         <span className="text-xs font-medium truncate flex-1">{block.title}</span>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+        <span className="text-data text-muted-foreground flex-shrink-0">
           {block.startTime} – {block.endTime}
         </span>
       </div>
@@ -124,7 +124,7 @@ function FocusBlockItem({ block }: { block: FocusBlock }) {
                 className="w-1 h-1 rounded-full flex-shrink-0"
                 style={{ backgroundColor: PRIORITY_COLORS[task.priority || ""] || "#6b7280" }}
               />
-              <span className="text-[10px] text-muted-foreground truncate">{task.title}</span>
+              <span className="text-data text-muted-foreground truncate">{task.title}</span>
             </div>
           ))}
         </div>
@@ -455,7 +455,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           ) : (
             <ChevronDown className="h-3 w-3 text-muted-foreground" />
           )}
-          <span className={`text-[11px] font-semibold uppercase tracking-wide flex-1 text-left ${
+          <span className={`text-table font-semibold uppercase tracking-wide flex-1 text-left ${
             sectionConfig.id === 'overdue' && count > 0 
               ? 'text-status-danger dark:text-red-400' 
               : sectionConfig.id === 'schedule'
@@ -466,7 +466,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           }`}>
             {sectionDef.label}
           </span>
-          <span className={`text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
+          <span className={`text-data font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
             sectionConfig.id === 'overdue' && count > 0 
               ? 'bg-red-500 text-white' 
               : 'bg-muted text-muted-foreground'
@@ -476,7 +476,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-1 space-y-1">
           {items.length === 0 ? (
-            <div className="text-[10px] text-muted-foreground pl-6 py-1">{emptyMessage}</div>
+            <div className="text-data text-muted-foreground pl-6 py-1">{emptyMessage}</div>
           ) : (
             <>
               {sectionConfig.id === "schedule" && items.map((item: ScheduleItem) => (
@@ -491,7 +491,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                     <span className="text-xs truncate flex-1 cursor-default">{item.title}</span>
                   </TaskTooltip>
                   {item.startTime && (
-                    <span className="text-[10px] text-muted-foreground">{item.startTime}</span>
+                    <span className="text-data text-muted-foreground">{item.startTime}</span>
                   )}
                 </div>
               ))}
@@ -523,7 +523,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                     </TaskTooltip>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {task.dueDate && (
-                        <span className="text-[10px] text-muted-foreground w-12 text-right">
+                        <span className="text-data text-muted-foreground w-12 text-right">
                           {formatInTimezone(new Date(task.dueDate), effectiveTimezone, { month: 'short', day: 'numeric' })}
                         </span>
                       )}
@@ -531,7 +531,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                         const colors = generateNotionColors(project.color);
                         return (
                           <span 
-                            className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                            className="text-label px-1.5 py-0.5 rounded truncate max-w-[80px]"
                             style={{ backgroundColor: colors.pastelBg, color: colors.darkText }}
                             title={project.name}
                           >

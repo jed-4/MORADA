@@ -287,7 +287,7 @@ export default function ProjectEstimates() {
       return (
         <Badge 
           variant="secondary" 
-          className="h-4 text-[10px] px-1.5"
+          className="h-4 text-data px-1.5"
           style={{ 
             backgroundColor: `${statusOption.color}20`,
             color: statusOption.color,
@@ -298,7 +298,7 @@ export default function ProjectEstimates() {
         </Badge>
       );
     }
-    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-data px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   // Filter estimates based on search and filters
@@ -448,12 +448,12 @@ export default function ProjectEstimates() {
         {/* Revision history chips — shown when multiple revisions exist */}
         {versions.length > 1 && (
           <div className="flex gap-1 mt-2 pt-2 border-t border-border/30" onClick={e => e.stopPropagation()}>
-            <span className="text-[10px] text-muted-foreground self-center mr-1">Revisions:</span>
+            <span className="text-data text-muted-foreground self-center mr-1">Revisions:</span>
             {versions.map(v => (
               <button
                 key={v.id}
                 onClick={() => setLocation(`/projects/${projectId}/estimates/${v.id}`)}
-                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                className={`text-data px-1.5 py-0.5 rounded border ${
                   v.id === estimate.id
                     ? 'bg-primary/20 border-primary/50 text-primary font-medium'
                     : 'border-border/50 text-muted-foreground hover-elevate'
@@ -597,7 +597,7 @@ export default function ProjectEstimates() {
               >
                 <span>Status</span>
                 {selectedStatus !== "All" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -879,7 +879,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
       return (
         <Badge 
           variant="secondary"
-          className="h-4 text-[10px] px-1.5 rounded-full"
+          className="h-4 text-data px-1.5 rounded-full"
           style={{
             backgroundColor: `${statusOption.color}20`,
             color: statusOption.color,
@@ -891,9 +891,9 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
       );
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-data px-1.5 rounded-full bg-blue-100 text-status-info"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline" className="h-4 text-[10px] px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-data px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   return (

@@ -452,7 +452,7 @@ export default function Docs() {
           >
             <BookOpen className="h-3.5 w-3.5 shrink-0" />
             <span>All Docs</span>
-            <span className="ml-auto text-[10px] text-muted-foreground">{docs.length}</span>
+            <span className="ml-auto text-data text-muted-foreground">{docs.length}</span>
           </div>
 
           {/* Folders */}
@@ -514,7 +514,7 @@ export default function Docs() {
                   ) : (
                     <span className="text-sm flex-1 truncate">{folder.name}</span>
                   )}
-                  <span className="text-[10px] text-muted-foreground shrink-0">
+                  <span className="text-data text-muted-foreground shrink-0">
                     {folderDocs.length}
                   </span>
                   <div className="invisible group-hover:visible shrink-0">
@@ -593,7 +593,7 @@ export default function Docs() {
           {docsInFolder(null).length > 0 && (
             <div className="mt-1">
               {folders.length > 0 && (
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide px-4 py-1">
+                <p className="text-data text-muted-foreground uppercase tracking-wide px-4 py-1">
                   Unfiled
                 </p>
               )}
@@ -658,10 +658,10 @@ export default function Docs() {
                 )}
               </span>
               {saveState === "saving" && (
-                <span className="text-[11px] text-muted-foreground">Saving…</span>
+                <span className="text-table text-muted-foreground">Saving…</span>
               )}
               {saveState === "saved" && (
-                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <span className="text-table text-muted-foreground flex items-center gap-1">
                   <Check className="h-3 w-3" />
                   Saved
                 </span>

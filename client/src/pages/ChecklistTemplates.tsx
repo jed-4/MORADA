@@ -208,7 +208,7 @@ export default function ChecklistTemplates() {
       cell: ({ row }) => (
         <Badge
           variant="secondary"
-          className={`h-4 px-1.5 text-[10px] ${getTypeColor(row.original.type)}`}
+          className={`h-4 px-1.5 text-data ${getTypeColor(row.original.type)}`}
           data-testid={`badge-type-${row.original.id}`}
         >
           {row.original.type}
@@ -230,7 +230,7 @@ export default function ChecklistTemplates() {
         }
         return (
           <div
-            className="flex items-center gap-1 text-[10px] text-muted-foreground"
+            className="flex items-center gap-1 text-data text-muted-foreground"
             title={`Visible to: ${getRoleNames(roles).join(', ')}`}
             data-testid={`badge-roles-${row.original.id}`}
           >

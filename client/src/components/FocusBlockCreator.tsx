@@ -214,7 +214,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-xs font-medium">Recurring</Label>
-              <p className="text-[10px] text-muted-foreground">Repeat on selected days</p>
+              <p className="text-data text-muted-foreground">Repeat on selected days</p>
             </div>
             <Switch checked={isRecurring} onCheckedChange={setIsRecurring} />
           </div>
@@ -228,7 +228,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
                     key={idx}
                     onClick={() => toggleDay(idx)}
                     className={cn(
-                      "w-8 h-8 rounded-full text-[11px] font-medium border transition-all",
+                      "w-8 h-8 rounded-full text-table font-medium border transition-all",
                       daysOfWeek.includes(idx)
                         ? "text-white border-transparent"
                         : "border-border text-muted-foreground"

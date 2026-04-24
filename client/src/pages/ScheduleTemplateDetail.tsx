@@ -243,7 +243,7 @@ function SortableItem({
         {depth === 2 && <div className="w-5 flex-shrink-0" />}
         <Badge
           variant="outline"
-          className="text-white border-0 h-4 px-1.5 text-[10px] shrink-0"
+          className="text-white border-0 h-4 px-1.5 text-data shrink-0"
           style={{ backgroundColor: barColor }}
         >
           {item.type}
@@ -310,7 +310,7 @@ function SortableItem({
             />
           )}
           {barWidth > 60 && (
-            <span className="text-white text-[10px] px-2 truncate pointer-events-none">
+            <span className="text-white text-data px-2 truncate pointer-events-none">
               {item.name}
             </span>
           )}
@@ -1036,7 +1036,7 @@ export default function ScheduleTemplateDetail() {
                       className="absolute top-0 bottom-0 border-r border-border/50 flex items-center"
                       style={{ left: `${day * dayWidth}px`, width: `${(zoomLevel === 'day' ? 1 : zoomLevel === 'week' ? 7 : 30) * dayWidth}px` }}
                     >
-                      <span className="text-[10px] text-muted-foreground px-1">
+                      <span className="text-data text-muted-foreground px-1">
                         {zoomLevel === 'day' ? `D${day}` : zoomLevel === 'week' ? `W${i + 1}` : `M${i + 1}`}
                       </span>
                     </div>

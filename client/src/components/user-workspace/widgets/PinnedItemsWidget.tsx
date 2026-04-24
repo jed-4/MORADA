@@ -105,7 +105,7 @@ function SortablePinnedItem({
       </button>
       <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
       <span className="text-sm truncate flex-1">{item.itemName}</span>
-      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+      <Badge variant="secondary" className="text-data px-1 py-0">
         {item.itemType}
       </Badge>
       <Button
@@ -286,7 +286,7 @@ export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onC
         <div className="flex items-center gap-2">
           <Pin className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{widget.title || "Pinned Items"}</span>
-          <Badge variant="secondary" className="text-[10px]">
+          <Badge variant="secondary" className="text-data">
             {pinnedItems.length}
           </Badge>
         </div>

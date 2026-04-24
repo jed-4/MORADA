@@ -291,7 +291,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                   <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                     <span>Projects</span>
                     {filters.projects && filters.projects.length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                         {filters.projects.length}
                       </Badge>
                     )}
@@ -333,7 +333,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                   <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                     <span>Status</span>
                     {filters.status && filters.status.length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                         {filters.status.length}
                       </Badge>
                     )}
@@ -374,7 +374,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                 <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                   <span>Event Types</span>
                   {filters.eventTypes && filters.eventTypes.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.eventTypes.length}
                     </Badge>
                   )}
@@ -418,7 +418,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                           />
                           <span className="text-xs">{type.label}</span>
                           {isNotConnected && (
-                            <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                            <span className="text-data text-muted-foreground">(not connected)</span>
                           )}
                         </label>
                       );
@@ -433,7 +433,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
                 <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                   <span>Date Range</span>
                   {(filters.dateFrom || filters.dateTo) && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">1</Badge>
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">1</Badge>
                   )}
                 </button>
               </PopoverTrigger>

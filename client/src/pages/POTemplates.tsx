@@ -275,11 +275,11 @@ export default function POTemplates() {
         accessorFn: (t) => (t.isActive ? "Active" : "Inactive"),
         cell: ({ row }) =>
           row.original.isActive ? (
-            <Badge variant="outline" className="text-[10px]">Active</Badge>
+            <Badge variant="outline" className="text-data">Active</Badge>
           ) : (
             <Badge
               variant="secondary"
-              className="text-[10px] bg-muted text-secondary dark:text-muted"
+              className="text-data bg-muted text-secondary dark:text-muted"
             >
               Inactive
             </Badge>

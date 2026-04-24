@@ -319,14 +319,14 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                       {dayTemplates.length > 0 && (
                         <Badge 
                           variant={isToday ? "default" : "secondary"} 
-                          className="text-[9px] px-1.5 py-0 h-4 min-w-4"
+                          className="text-label px-1.5 py-0 h-4 min-w-4"
                         >
                           {dayTemplates.length}
                         </Badge>
                       )}
                     </div>
                     {isToday && (
-                      <div className="text-[9px] text-primary mt-0.5">Today</div>
+                      <div className="text-label text-primary mt-0.5">Today</div>
                     )}
                   </div>
                 );
@@ -335,7 +335,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
 
             {/* All-Day Tasks Row */}
             <div className="grid grid-cols-8 border-b flex-shrink-0">
-              <div className="p-1 text-[10px] text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
+              <div className="p-1 text-data text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
                 All Day
               </div>
               {DAYS_OF_WEEK.map((_, dayIndex) => {
@@ -353,7 +353,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                         return (
                           <div
                             key={template.id}
-                            className="text-[8px] px-1 rounded truncate border leading-none"
+                            className="text-2xs px-1 rounded truncate border leading-none"
                             style={bgColor ? { 
                               backgroundColor: bgColor, 
                               borderColor: bgColor, 
@@ -366,7 +366,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                         );
                       })}
                       {allDayTemplates.length > 3 && (
-                        <div className="text-[8px] text-muted-foreground px-1">
+                        <div className="text-2xs text-muted-foreground px-1">
                           +{allDayTemplates.length - 3} more
                         </div>
                       )}
@@ -384,7 +384,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                   {Array.from({ length: 24 }, (_, hour) => (
                     <div
                       key={hour}
-                      className="border-b text-[10px] text-muted-foreground pr-2 text-right flex items-start justify-end pt-0.5"
+                      className="border-b text-data text-muted-foreground pr-2 text-right flex items-start justify-end pt-0.5"
                       style={{ height: `${HOUR_HEIGHT}px` }}
                     >
                       {formatHour(hour)}
@@ -450,7 +450,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                                   style={{ color: fb.color }}
                                 />
                                 <div
-                                  className="text-[8px] font-medium truncate leading-tight"
+                                  className="text-2xs font-medium truncate leading-tight"
                                   style={{ color: fb.color }}
                                 >
                                   {fb.title}
@@ -458,7 +458,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                               </div>
                               {heightPx >= 32 && (
                                 <div
-                                  className="text-[7px] px-1 opacity-80 leading-tight"
+                                  className="text-2xs px-1 opacity-80 leading-tight"
                                   style={{ color: fb.color }}
                                 >
                                   {fb.startTime}–{fb.endTime}
@@ -558,7 +558,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                           return (
                             <div
                               key={template.id}
-                              className="absolute rounded text-[9px] px-1.5 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 shadow-sm"
+                              className="absolute rounded text-label px-1.5 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 shadow-sm"
                               style={{ 
                                 top: `${template.top}px`, 
                                 height: `${template.heightPx}px`,
@@ -576,10 +576,10 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium truncate leading-tight">{template.title}</div>
                                   {colInfo.totalCols === 1 && template.heightPx >= 24 && template.timeStr && (
-                                    <div className="opacity-70 text-[8px]">{template.timeStr} ({template.duration}min)</div>
+                                    <div className="opacity-70 text-2xs">{template.timeStr} ({template.duration}min)</div>
                                   )}
                                   {colInfo.totalCols === 1 && template.heightPx >= 36 && assigneeName && (
-                                    <div className="opacity-70 truncate text-[8px]">{assigneeName}</div>
+                                    <div className="opacity-70 truncate text-2xs">{assigneeName}</div>
                                   )}
                                 </div>
                               </div>

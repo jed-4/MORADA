@@ -60,7 +60,7 @@ function TimelineEvent({ event, compact, onClick }: { event: CalendarEvent; comp
   
   return (
     <div
-      className={`absolute left-10 right-1 rounded-md text-[10px] px-1.5 py-0.5 overflow-hidden cursor-pointer hover-elevate ${
+      className={`absolute left-10 right-1 rounded-md text-data px-1.5 py-0.5 overflow-hidden cursor-pointer hover-elevate ${
         isPast ? 'opacity-50' : ''
       }`}
       style={{
@@ -329,7 +329,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
             <Button size="icon" variant="ghost" className="h-5 w-5" onClick={goToPrev}>
               <ChevronLeft className="h-3 w-3" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[10px]" onClick={goToToday}>
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-data" onClick={goToToday}>
               Today
             </Button>
             <Button size="icon" variant="ghost" className="h-5 w-5" onClick={goToNext}>
@@ -419,7 +419,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                   <div className="flex items-center gap-1 mt-0.5">
                     <Badge 
                       variant="outline" 
-                      className="text-[10px] px-1 py-0 h-4"
+                      className="text-data px-1 py-0 h-4"
                       style={{ 
                         backgroundColor: 'rgba(255,255,255,0.5)',
                         color: notionColors.darkText,
@@ -429,7 +429,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                       {getDayLabel(event.start)}
                     </Badge>
                     <span 
-                      className="text-[10px] flex items-center gap-0.5"
+                      className="text-data flex items-center gap-0.5"
                       style={{ color: notionColors.darkText, opacity: 0.7 }}
                     >
                       <Clock className="h-2 w-2" />
@@ -463,7 +463,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
               return (
                 <div
                   key={event.id}
-                  className="rounded-sm text-[10px] px-1.5 py-0.5 cursor-pointer hover-elevate truncate ml-10"
+                  className="rounded-sm text-data px-1.5 py-0.5 cursor-pointer hover-elevate truncate ml-10"
                   style={{
                     backgroundColor: notionColors.pastelBg,
                     borderLeft: `3px solid ${notionColors.originalHex}`,
@@ -487,7 +487,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                 className="absolute left-0 right-0 border-t border-border/30"
                 style={{ top: `${hour * HOUR_HEIGHT}px` }}
               >
-                <span className="absolute left-0 -top-2 text-[9px] text-muted-foreground w-9 text-right pr-1">
+                <span className="absolute left-0 -top-2 text-label text-muted-foreground w-9 text-right pr-1">
                   {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                 </span>
               </div>
@@ -604,7 +604,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                 key={day.toISOString()} 
                 className={`text-center py-1 ${isToday(day) ? 'bg-primary/10' : ''}`}
               >
-                <div className="text-[9px] text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
+                <div className="text-label text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
                 <div className={`text-xs font-medium ${isToday(day) ? 'text-primary' : ''}`}>
                   {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
                 </div>
@@ -623,7 +623,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                       return (
                         <div
                           key={event.id}
-                          className="rounded-sm text-[7px] px-0.5 py-px cursor-pointer hover-elevate truncate"
+                          className="rounded-sm text-2xs px-0.5 py-px cursor-pointer hover-elevate truncate"
                           style={{
                             backgroundColor: nc.pastelBg,
                             borderLeft: `2px solid ${nc.originalHex}`,
@@ -676,7 +676,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                     return (
                       <div
                         key={`${eventPos.event.id}-${idx}`}
-                        className="absolute rounded-sm text-[8px] px-0.5 overflow-hidden cursor-pointer hover-elevate"
+                        className="absolute rounded-sm text-2xs px-0.5 overflow-hidden cursor-pointer hover-elevate"
                         style={{
                           top: `${eventPos.top}px`,
                           height: `${eventPos.height}px`,

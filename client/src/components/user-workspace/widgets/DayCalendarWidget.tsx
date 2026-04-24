@@ -127,7 +127,7 @@ function TimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; col
           </p>
           {height >= 36 && (
             <p 
-              className="text-[10px] truncate opacity-80"
+              className="text-data truncate opacity-80"
               style={{ color: notionColors.darkText }}
             >
               {event.startTime} - {event.endTime || 'No end'}
@@ -329,7 +329,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
               <SelectItem value="priority">Priority (Tasks)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-data text-muted-foreground">
             {configState.colorMode === "project" && "Events colored by their project"}
             {configState.colorMode === "type" && "Events colored by type (task, schedule, etc.)"}
             {configState.colorMode === "priority" && "Tasks colored by priority; other items by type"}
@@ -369,14 +369,14 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         <div className="text-xs font-medium">
           {formatInTimezone(selectedDate, effectiveTimezone, { weekday: 'long', month: 'short', day: 'numeric' })}
           {isTodayInTimezone(selectedDate, effectiveTimezone) && (
-            <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">Today</Badge>
+            <Badge variant="secondary" className="ml-1.5 text-data px-1 py-0">Today</Badge>
           )}
         </div>
       </div>
 
       {allDayEvents.length > 0 && (
         <div className="flex-shrink-0 px-3 py-1.5 border-b space-y-1 bg-muted/10 max-h-24 overflow-y-auto">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide sticky top-0 bg-muted/10">All Day</div>
+          <div className="text-data text-muted-foreground uppercase tracking-wide sticky top-0 bg-muted/10">All Day</div>
           <div className="flex flex-wrap gap-1">
             {allDayEvents.map(event => (
               <AllDayEvent 
@@ -405,7 +405,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
                 className="absolute left-0 right-0 border-b border-border/50"
                 style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
               >
-                <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
+                <span className="absolute left-2 top-1 text-data text-muted-foreground">
                   {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                 </span>
               </div>

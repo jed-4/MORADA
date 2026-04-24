@@ -89,15 +89,15 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-bold">{avgUtilization.toFixed(0)}%</p>
-          <p className="text-[10px] text-muted-foreground">Avg Utilization</p>
+          <p className="text-data text-muted-foreground">Avg Utilization</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-bold">{totalHours.toFixed(0)}h</p>
-          <p className="text-[10px] text-muted-foreground">Logged</p>
+          <p className="text-data text-muted-foreground">Logged</p>
         </div>
         <div className="p-2 rounded-md bg-muted/50">
           <p className="text-lg font-bold">{totalCapacity}h</p>
-          <p className="text-[10px] text-muted-foreground">Capacity</p>
+          <p className="text-data text-muted-foreground">Capacity</p>
         </div>
       </div>
 
@@ -107,7 +107,7 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
           style={{ width: `${Math.min(100, (totalHours / totalCapacity) * 100)}%` }}
         />
       </div>
-      <p className="text-center text-[10px] text-muted-foreground">
+      <p className="text-center text-data text-muted-foreground">
         Week of {format(weekStart, "MMM d")} - {format(weekEnd, "MMM d")}
       </p>
 
@@ -120,7 +120,7 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
               <div key={user.id} className="flex items-center gap-2 p-2 rounded-md border">
                 <Avatar className="h-7 w-7">
                   <AvatarImage src={user.profilePicture || undefined} />
-                  <AvatarFallback className="text-[10px]">
+                  <AvatarFallback className="text-data">
                     {getInitials(user.firstName, user.lastName)}
                   </AvatarFallback>
                 </Avatar>
@@ -129,7 +129,7 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
                     <span className="text-xs font-medium truncate">
                       {user.firstName} {user.lastName}
                     </span>
-                    <Badge className={`text-[9px] px-1 py-0 ${getStatusColor(status)}`}>
+                    <Badge className={`text-label px-1 py-0 ${getStatusColor(status)}`}>
                       {utilizationPercent.toFixed(0)}%
                     </Badge>
                   </div>
@@ -137,7 +137,7 @@ export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
                     value={Math.min(100, utilizationPercent)} 
                     className={`h-1 ${utilizationPercent > 100 ? '[&>div]:bg-orange-500' : ''}`}
                   />
-                  <div className="flex items-center justify-between mt-0.5 text-[9px] text-muted-foreground">
+                  <div className="flex items-center justify-between mt-0.5 text-label text-muted-foreground">
                     <span>{hoursLogged.toFixed(1)}h / {TARGET_HOURS_PER_WEEK}h</span>
                     <span>{activeTasks} tasks</span>
                   </div>

@@ -152,7 +152,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
           {/* Priority Badge - Color coded */}
           <Badge 
-            className={`h-5 text-[10px] px-1.5 ${getPriorityColor(defect.priority)}`}
+            className={`h-5 text-data px-1.5 ${getPriorityColor(defect.priority)}`}
             data-testid={`badge-priority-${defect.id}`}
           >
             {priorityOption?.name || defect.priority}
@@ -161,7 +161,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
           {/* Type Badge */}
           <Badge 
             variant="secondary" 
-            className="h-5 text-[10px] px-1.5"
+            className="h-5 text-data px-1.5"
             data-testid={`badge-type-${defect.id}`}
           >
             {typeOption?.name || defect.type}
@@ -176,7 +176,7 @@ function DefectCard({ defect, onEdit, onDelete, priorityOptions, typeOptions, is
         )}
 
         {/* Metadata Row */}
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-3 text-data text-muted-foreground">
           {defect.location && (
             <div className="flex items-center gap-1" data-testid={`text-location-${defect.id}`}>
               <MapPin className="h-3 w-3" />
@@ -364,7 +364,7 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
                   </div>
                   <Badge
                     variant="secondary"
-                    className="h-5 min-w-[20px] px-1.5 text-[10px] rounded-full"
+                    className="h-5 min-w-[20px] px-1.5 text-data rounded-full"
                     data-testid={`count-${status.key}`}
                   >
                     {statusDefects.length}
@@ -416,16 +416,16 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
               </div>
               <div className="flex items-center gap-1.5 mb-2">
                 <Badge 
-                  className={`h-5 text-[10px] px-1.5 ${getPriorityColor(activeDefect.priority)}`}
+                  className={`h-5 text-data px-1.5 ${getPriorityColor(activeDefect.priority)}`}
                 >
                   {priorityOptions.find(o => o.key === activeDefect.priority)?.name || activeDefect.priority}
                 </Badge>
-                <Badge variant="secondary" className="h-5 text-[10px] px-1.5">
+                <Badge variant="secondary" className="h-5 text-data px-1.5">
                   {typeOptions.find(o => o.key === activeDefect.type)?.name || activeDefect.type}
                 </Badge>
               </div>
               {activeDefect.location && (
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1 text-data text-muted-foreground">
                   <MapPin className="h-3 w-3" />
                   <span>{activeDefect.location}</span>
                 </div>

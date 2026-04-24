@@ -431,11 +431,11 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
                   data-testid="button-upload-photo"
                 >
                   {isUploading ? (
-                    <span className="text-[10px] text-muted-foreground">Uploading...</span>
+                    <span className="text-data text-muted-foreground">Uploading...</span>
                   ) : (
                     <>
                       <Upload className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-[10px] text-muted-foreground">Add Photo</span>
+                      <span className="text-data text-muted-foreground">Add Photo</span>
                     </>
                   )}
                 </button>

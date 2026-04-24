@@ -307,7 +307,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </Select>
           </div>
 
-          <Badge variant="secondary" className="h-5 text-[10px]">
+          <Badge variant="secondary" className="h-5 text-data">
             {items.length} items
           </Badge>
         </div>
@@ -346,7 +346,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                       <ChevronRight className="h-3 w-3" />
                     )}
                     <span>{group.name}</span>
-                    <Badge variant="outline" className="h-4 text-[10px] ml-1">
+                    <Badge variant="outline" className="h-4 text-data ml-1">
                       {group.items.length}
                     </Badge>
                   </button>
@@ -356,18 +356,18 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                   <Table>
                     <TableHeader>
                       <TableRow className="h-7">
-                        <TableHead className="text-[10px] w-[160px]">Name</TableHead>
-                        <TableHead className="text-[10px] w-[100px]">Nickname</TableHead>
-                        <TableHead className="text-[10px] w-[80px]">Code</TableHead>
-                        <TableHead className="text-[10px] w-[100px]">Supplier</TableHead>
-                        <TableHead className="text-[10px] w-[60px]">Unit</TableHead>
-                        <TableHead className="text-[10px] w-[80px] text-right">Cost (ex)</TableHead>
-                        <TableHead className="text-[10px] w-[80px] text-right">Cost (inc)</TableHead>
-                        <TableHead className="text-[10px] w-[80px] text-right">Sell (ex)</TableHead>
-                        <TableHead className="text-[10px] w-[80px] text-right">Sell (inc)</TableHead>
-                        <TableHead className="text-[10px] w-[60px] text-right">Markup</TableHead>
-                        <TableHead className="text-[10px] w-[60px]">Status</TableHead>
-                        <TableHead className="text-[10px] w-[60px]"></TableHead>
+                        <TableHead className="text-data w-[160px]">Name</TableHead>
+                        <TableHead className="text-data w-[100px]">Nickname</TableHead>
+                        <TableHead className="text-data w-[80px]">Code</TableHead>
+                        <TableHead className="text-data w-[100px]">Supplier</TableHead>
+                        <TableHead className="text-data w-[60px]">Unit</TableHead>
+                        <TableHead className="text-data w-[80px] text-right">Cost (ex)</TableHead>
+                        <TableHead className="text-data w-[80px] text-right">Cost (inc)</TableHead>
+                        <TableHead className="text-data w-[80px] text-right">Sell (ex)</TableHead>
+                        <TableHead className="text-data w-[80px] text-right">Sell (inc)</TableHead>
+                        <TableHead className="text-data w-[60px] text-right">Markup</TableHead>
+                        <TableHead className="text-data w-[60px]">Status</TableHead>
+                        <TableHead className="text-data w-[60px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -375,40 +375,40 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                         const supplier = suppliers.find((s) => s.id === item.supplierId);
                         return (
                           <TableRow key={item.id} className="h-7" data-testid={`row-item-${item.id}`}>
-                            <TableCell className="text-[11px] font-medium py-1">
+                            <TableCell className="text-table font-medium py-1">
                               {item.name}
                             </TableCell>
-                            <TableCell className="text-[11px] text-muted-foreground py-1">
+                            <TableCell className="text-table text-muted-foreground py-1">
                               {item.nickname || "-"}
                             </TableCell>
-                            <TableCell className="text-[11px] font-mono py-1">
+                            <TableCell className="text-table font-mono py-1">
                               {item.code || "-"}
                             </TableCell>
-                            <TableCell className="text-[11px] py-1">
+                            <TableCell className="text-table py-1">
                               {supplier?.name || "-"}
                             </TableCell>
-                            <TableCell className="text-[11px] py-1">
+                            <TableCell className="text-table py-1">
                               {item.unitType || "-"}
                             </TableCell>
-                            <TableCell className="text-[11px] text-right py-1 font-mono">
+                            <TableCell className="text-table text-right py-1 font-mono">
                               {formatCurrency(item.costPrice)}
                             </TableCell>
-                            <TableCell className="text-[11px] text-right py-1 font-mono text-muted-foreground">
+                            <TableCell className="text-table text-right py-1 font-mono text-muted-foreground">
                               {formatCurrencyIncGst(item.costPrice)}
                             </TableCell>
-                            <TableCell className="text-[11px] text-right py-1 font-mono">
+                            <TableCell className="text-table text-right py-1 font-mono">
                               {formatCurrency(item.sellPrice)}
                             </TableCell>
-                            <TableCell className="text-[11px] text-right py-1 font-mono text-muted-foreground">
+                            <TableCell className="text-table text-right py-1 font-mono text-muted-foreground">
                               {formatCurrencyIncGst(item.sellPrice)}
                             </TableCell>
-                            <TableCell className="text-[11px] text-right py-1">
+                            <TableCell className="text-table text-right py-1">
                               {getMarkup(item.costPrice, item.sellPrice)}
                             </TableCell>
                             <TableCell className="py-1">
                               <Badge
                                 variant={item.isActive ? "outline" : "secondary"}
-                                className="h-4 text-[9px]"
+                                className="h-4 text-label"
                               >
                                 {item.isActive ? "Active" : "Inactive"}
                               </Badge>
@@ -656,24 +656,24 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
         <form onSubmit={handleSubmit} className="space-y-2">
           {/* Name Row - Most Important */}
           <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <span className="text-[11px] text-muted-foreground w-16">Name *</span>
+            <span className="text-table text-muted-foreground w-16">Name *</span>
             <Input
               value={formData.name}
               onChange={(e) => updateField("name", e.target.value)}
               placeholder="Item name"
-              className="h-7 text-[11px] flex-1 ml-2"
+              className="h-7 text-table flex-1 ml-2"
               data-testid="input-name"
             />
           </div>
 
           {/* Nickname Row */}
           <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <span className="text-[11px] text-muted-foreground w-16">Nickname</span>
+            <span className="text-table text-muted-foreground w-16">Nickname</span>
             <Input
               value={formData.nickname}
               onChange={(e) => updateField("nickname", e.target.value)}
               placeholder="Team terminology"
-              className="h-7 text-[11px] flex-1 ml-2"
+              className="h-7 text-table flex-1 ml-2"
               data-testid="input-nickname"
             />
           </div>
@@ -681,14 +681,14 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           {/* Category, Code, Unit - Compact Grid */}
           <div className="grid grid-cols-3 gap-1.5">
             <div>
-              <Label className="text-[10px] text-muted-foreground">Category</Label>
+              <Label className="text-data text-muted-foreground">Category</Label>
               <Select value={formData.categoryId} onValueChange={(v) => updateField("categoryId", v)}>
-                <SelectTrigger className="h-7 text-[11px]" data-testid="select-category">
+                <SelectTrigger className="h-7 text-table" data-testid="select-category">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id} className="text-[11px]">
+                    <SelectItem key={cat.id} value={cat.id} className="text-table">
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -697,42 +697,42 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             </div>
 
             <div>
-              <Label className="text-[10px] text-muted-foreground">Code</Label>
+              <Label className="text-data text-muted-foreground">Code</Label>
               <Input
                 value={formData.code}
                 onChange={(e) => updateField("code", e.target.value)}
                 placeholder="SKU"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 data-testid="input-code"
               />
             </div>
 
             <div>
-              <Label className="text-[10px] text-muted-foreground">Unit</Label>
+              <Label className="text-data text-muted-foreground">Unit</Label>
               <Select value={formData.unitType} onValueChange={(v) => updateField("unitType", v)}>
-                <SelectTrigger className="h-7 text-[11px]" data-testid="select-unit-type">
+                <SelectTrigger className="h-7 text-table" data-testid="select-unit-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="each" className="text-[11px]">Each</SelectItem>
-                  <SelectItem value="m" className="text-[11px]">m</SelectItem>
-                  <SelectItem value="m2" className="text-[11px]">m2</SelectItem>
-                  <SelectItem value="m3" className="text-[11px]">m3</SelectItem>
-                  <SelectItem value="lm" className="text-[11px]">lm</SelectItem>
-                  <SelectItem value="kg" className="text-[11px]">kg</SelectItem>
-                  <SelectItem value="t" className="text-[11px]">t</SelectItem>
-                  <SelectItem value="l" className="text-[11px]">L</SelectItem>
-                  <SelectItem value="hr" className="text-[11px]">hr</SelectItem>
-                  <SelectItem value="day" className="text-[11px]">day</SelectItem>
-                  <SelectItem value="pack" className="text-[11px]">pack</SelectItem>
-                  <SelectItem value="box" className="text-[11px]">box</SelectItem>
-                  <SelectItem value="roll" className="text-[11px]">roll</SelectItem>
-                  <SelectItem value="sheet" className="text-[11px]">sheet</SelectItem>
-                  <SelectItem value="bag" className="text-[11px]">bag</SelectItem>
-                  <SelectItem value="pallet" className="text-[11px]">pallet</SelectItem>
-                  <SelectItem value="item" className="text-[11px]">item</SelectItem>
-                  <SelectItem value="lot" className="text-[11px]">lot</SelectItem>
-                  <SelectItem value="allowance" className="text-[11px]">allowance</SelectItem>
+                  <SelectItem value="each" className="text-table">Each</SelectItem>
+                  <SelectItem value="m" className="text-table">m</SelectItem>
+                  <SelectItem value="m2" className="text-table">m2</SelectItem>
+                  <SelectItem value="m3" className="text-table">m3</SelectItem>
+                  <SelectItem value="lm" className="text-table">lm</SelectItem>
+                  <SelectItem value="kg" className="text-table">kg</SelectItem>
+                  <SelectItem value="t" className="text-table">t</SelectItem>
+                  <SelectItem value="l" className="text-table">L</SelectItem>
+                  <SelectItem value="hr" className="text-table">hr</SelectItem>
+                  <SelectItem value="day" className="text-table">day</SelectItem>
+                  <SelectItem value="pack" className="text-table">pack</SelectItem>
+                  <SelectItem value="box" className="text-table">box</SelectItem>
+                  <SelectItem value="roll" className="text-table">roll</SelectItem>
+                  <SelectItem value="sheet" className="text-table">sheet</SelectItem>
+                  <SelectItem value="bag" className="text-table">bag</SelectItem>
+                  <SelectItem value="pallet" className="text-table">pallet</SelectItem>
+                  <SelectItem value="item" className="text-table">item</SelectItem>
+                  <SelectItem value="lot" className="text-table">lot</SelectItem>
+                  <SelectItem value="allowance" className="text-table">allowance</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -743,24 +743,24 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <DollarSign className="h-3 w-3 text-primary" />
-                <span className="text-[10px] font-medium text-primary">Pricing</span>
+                <span className="text-data font-medium text-primary">Pricing</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className={`text-[9px] ${!enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Ex GST</span>
+                <span className={`text-label ${!enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Ex GST</span>
                 <Switch
                   checked={enterIncGst}
                   onCheckedChange={setEnterIncGst}
                   className="h-4 w-7 data-[state=checked]:bg-primary"
                   data-testid="switch-gst-mode"
                 />
-                <span className={`text-[9px] ${enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Inc GST</span>
+                <span className={`text-label ${enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Inc GST</span>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="text-[10px] text-muted-foreground">Cost {enterIncGst ? '(inc)' : '(ex)'}</Label>
+                <Label className="text-data text-muted-foreground">Cost {enterIncGst ? '(inc)' : '(ex)'}</Label>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
@@ -774,19 +774,19 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                       }
                     }}
                     placeholder="0.00"
-                    className="h-7 text-[11px] pl-5"
+                    className="h-7 text-table pl-5"
                     data-testid="input-cost-price"
                   />
                 </div>
                 {formData.costPrice && (
-                  <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
+                  <div className="text-label text-muted-foreground mt-0.5 text-right">
                     {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.costPrice : (parseFloat(formData.costPrice) * 1.1).toFixed(2)}
                   </div>
                 )}
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground">Markup</Label>
+                <Label className="text-data text-muted-foreground">Markup</Label>
                 <div className="relative">
                   <Input
                     type="number"
@@ -794,17 +794,17 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                     value={formData.markupPercent}
                     onChange={(e) => updateField("markupPercent", e.target.value)}
                     placeholder="0"
-                    className="h-7 text-[11px] pr-5"
+                    className="h-7 text-table pr-5"
                     data-testid="input-markup"
                   />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">%</span>
                 </div>
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground">Sell {enterIncGst ? '(inc)' : '(ex)'}</Label>
+                <Label className="text-data text-muted-foreground">Sell {enterIncGst ? '(inc)' : '(ex)'}</Label>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
@@ -818,19 +818,19 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                       }
                     }}
                     placeholder="0.00"
-                    className="h-7 text-[11px] pl-5"
+                    className="h-7 text-table pl-5"
                     data-testid="input-sell-price"
                   />
                 </div>
                 {formData.sellPrice && (
-                  <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
+                  <div className="text-label text-muted-foreground mt-0.5 text-right">
                     {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.sellPrice : (parseFloat(formData.sellPrice) * 1.1).toFixed(2)}
                   </div>
                 )}
               </div>
             </div>
             {calculatedMarkup && (
-              <div className="mt-1.5 text-[10px] text-muted-foreground text-right">
+              <div className="mt-1.5 text-data text-muted-foreground text-right">
                 Calculated markup: <span className="font-medium text-foreground">{calculatedMarkup}%</span>
               </div>
             )}
@@ -839,14 +839,14 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           {/* Supplier Row */}
           <div className="grid grid-cols-3 gap-1.5">
             <div>
-              <Label className="text-[10px] text-muted-foreground">Supplier</Label>
+              <Label className="text-data text-muted-foreground">Supplier</Label>
               <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
-                <SelectTrigger className="h-7 text-[11px]" data-testid="select-supplier">
+                <SelectTrigger className="h-7 text-table" data-testid="select-supplier">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
                   {suppliers.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id} className="text-[11px]">
+                    <SelectItem key={sup.id} value={sup.id} className="text-table">
                       {sup.name}
                     </SelectItem>
                   ))}
@@ -855,40 +855,40 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             </div>
 
             <div>
-              <Label className="text-[10px] text-muted-foreground">Supplier Code</Label>
+              <Label className="text-data text-muted-foreground">Supplier Code</Label>
               <Input
                 value={formData.supplierCode}
                 onChange={(e) => updateField("supplierCode", e.target.value)}
                 placeholder="Code"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 data-testid="input-supplier-code"
               />
             </div>
 
             <div>
-              <Label className="text-[10px] text-muted-foreground">Lead Time</Label>
+              <Label className="text-data text-muted-foreground">Lead Time</Label>
               <div className="relative">
                 <Input
                   type="number"
                   value={formData.leadTimeDays}
                   onChange={(e) => updateField("leadTimeDays", e.target.value)}
                   placeholder="0"
-                  className="h-7 text-[11px] pr-8"
+                  className="h-7 text-table pr-8"
                   data-testid="input-lead-time"
                 />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">days</span>
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-data text-muted-foreground">days</span>
               </div>
             </div>
           </div>
 
           {/* Description - 2 line preview like rapid approval */}
           <div>
-            <Label className="text-[10px] text-muted-foreground mb-0.5 block">Description</Label>
+            <Label className="text-data text-muted-foreground mb-0.5 block">Description</Label>
             <Textarea
               value={formData.description}
               onChange={(e) => updateField("description", e.target.value)}
               placeholder="Item description"
-              className="text-[11px] min-h-[40px] resize-none"
+              className="text-table min-h-[40px] resize-none"
               rows={2}
               data-testid="input-description"
             />
@@ -898,7 +898,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           <button
             type="button"
             onClick={() => setShowMore(!showMore)}
-            className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+            className="w-full flex items-center justify-center gap-1 py-1 text-data text-muted-foreground hover:text-foreground"
             data-testid="button-show-more"
           >
             {showMore ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -910,35 +910,35 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
             <div className="space-y-2 pt-1 border-t">
               <div className="grid grid-cols-2 gap-1.5">
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Brand</Label>
+                  <Label className="text-data text-muted-foreground">Brand</Label>
                   <Input
                     value={formData.brand}
                     onChange={(e) => updateField("brand", e.target.value)}
                     placeholder="Brand name"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-table"
                     data-testid="input-brand"
                   />
                 </div>
 
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Tags</Label>
+                  <Label className="text-data text-muted-foreground">Tags</Label>
                   <Input
                     value={formData.tags}
                     onChange={(e) => updateField("tags", e.target.value)}
                     placeholder="tag1, tag2"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-table"
                     data-testid="input-tags"
                   />
                 </div>
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground">Notes</Label>
+                <Label className="text-data text-muted-foreground">Notes</Label>
                 <Textarea
                   value={formData.notes}
                   onChange={(e) => updateField("notes", e.target.value)}
                   placeholder="Internal notes"
-                  className="text-[11px] min-h-[40px] resize-none"
+                  className="text-table min-h-[40px] resize-none"
                   rows={2}
                   data-testid="input-notes"
                 />
@@ -948,7 +948,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
 
           {/* Footer with Active toggle and buttons */}
           <div className="flex items-center justify-between pt-2 border-t">
-            <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+            <label className="flex items-center gap-1.5 text-table cursor-pointer">
               <input
                 type="checkbox"
                 checked={formData.isActive}
@@ -966,7 +966,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                 type="button" 
                 variant="outline" 
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 onClick={() => onOpenChange(false)} 
                 data-testid="button-cancel"
               >
@@ -975,7 +975,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
               <Button
                 type="submit"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-7 text-table"
                 disabled={createMutation.isPending || updateMutation.isPending}
                 data-testid="button-save"
               >

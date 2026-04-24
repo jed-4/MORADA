@@ -684,7 +684,7 @@ export default function SystemTaskTemplates() {
                   <Badge
                     key={tag.id}
                     variant={tagFilter.includes(tag.id) ? "default" : "outline"}
-                    className="cursor-pointer text-[10px] px-1.5 py-0 flex-shrink-0"
+                    className="cursor-pointer text-data px-1.5 py-0 flex-shrink-0"
                     style={tagFilter.includes(tag.id) ? { backgroundColor: tag.color } : { borderColor: tag.color, color: tag.color }}
                     onClick={() => toggleTagFilter(tag.id)}
                     data-testid={`filter-tag-${tag.id}`}

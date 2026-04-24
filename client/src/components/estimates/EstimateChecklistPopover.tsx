@@ -81,7 +81,7 @@ function InstancePanel({ instance, projectId }: { instance: ChecklistInstance; p
           <span className="text-xs font-medium truncate">{instance.name}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-data text-muted-foreground">
             {instance.completedCount}/{instance.totalCount}
           </span>
           <button
@@ -180,7 +180,7 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
   return (
     <div>
       <div className="px-3 py-1.5 bg-muted/20">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+        <span className="text-data font-semibold text-muted-foreground uppercase tracking-wide">
           {group.name}
         </span>
       </div>
@@ -209,7 +209,7 @@ function GroupPanel({ group, instanceId }: { group: ChecklistGroup; instanceId: 
                 >
                   {item.description}
                   {item.tooltip && (
-                    <span className="block text-[10px] text-muted-foreground mt-0.5 no-underline" style={{ textDecoration: "none" }}>
+                    <span className="block text-data text-muted-foreground mt-0.5 no-underline" style={{ textDecoration: "none" }}>
                       {item.tooltip}
                     </span>
                   )}
@@ -256,7 +256,7 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
             <ClipboardList className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
             <span className="text-xs truncate flex-1 text-left text-muted-foreground">{label}</span>
             {hasItems && (
-              <span className="text-[10px] tabular-nums text-muted-foreground flex-shrink-0 bg-muted rounded px-1">
+              <span className="text-data tabular-nums text-muted-foreground flex-shrink-0 bg-muted rounded px-1">
                 {totalCompleted}/{totalItems}
               </span>
             )}
@@ -269,7 +269,7 @@ export function EstimateChecklistPopover({ estimateId: _estimateId, projectId, w
           >
             <ClipboardList className="w-3 h-3" />
             {hasItems && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-[8px] rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-2xs rounded-full flex items-center justify-center">
                 {totalCompleted > 9 ? "9+" : totalCompleted}
               </span>
             )}

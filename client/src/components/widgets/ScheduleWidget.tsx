@@ -519,7 +519,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       </span>
                     </div>
                     {item.priority && (
-                      <span className={`text-[10px] ${priorityColors[item.priority]}`}>
+                      <span className={`text-data ${priorityColors[item.priority]}`}>
                         {item.priority}
                       </span>
                     )}
@@ -527,7 +527,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                 </div>
                 
                 <Badge 
-                  className="text-[10px] font-semibold"
+                  className="text-data font-semibold"
                   style={{
                     backgroundColor: getTypeNotionColors(item.type).pastelBg,
                     color: getTypeNotionColors(item.type).darkText,
@@ -591,7 +591,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               {format(currentDate, "EEEE, MMM d")}
             </span>
             {isTodayInTimezone(currentDate, effectiveTimezone) && (
-              <Badge variant="secondary" className="text-[10px] px-1 py-0">Today</Badge>
+              <Badge variant="secondary" className="text-data px-1 py-0">Today</Badge>
             )}
           </div>
         </div>
@@ -599,14 +599,14 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         {/* All-day items section */}
         {allDayItems.length > 0 && (
           <div className="flex-shrink-0 px-3 py-1.5 border-b space-y-1 bg-muted/10 max-h-20 overflow-y-auto">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wide">All Day</div>
+            <div className="text-data text-muted-foreground uppercase tracking-wide">All Day</div>
             <div className="flex flex-wrap gap-1">
               {allDayItems.map(item => {
                 const notionColors = getTypeNotionColors(item.type);
                 return (
                   <div
                     key={item.id}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] cursor-pointer hover-elevate"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-data cursor-pointer hover-elevate"
                     style={{
                       backgroundColor: item.status === 'overdue' ? '#fee2e2' : notionColors.pastelBg,
                       border: `1px solid rgba(0,0,0,0.08)`,
@@ -643,7 +643,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   className="absolute left-0 right-0 border-b border-border/50"
                   style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                 >
-                  <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
+                  <span className="absolute left-2 top-1 text-data text-muted-foreground">
                     {format(new Date().setHours(hour, 0), "h a")}
                   </span>
                 </div>
@@ -687,14 +687,14 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       />
                       <TaskTooltip content={item.title}>
                         <span 
-                          className="text-[11px] truncate flex-1 font-semibold"
+                          className="text-table truncate flex-1 font-semibold"
                           style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
                         >
                           {item.title}
                         </span>
                       </TaskTooltip>
                       {item.priority && (
-                        <span className={`text-[9px] ${priorityColors[item.priority]}`}>
+                        <span className={`text-label ${priorityColors[item.priority]}`}>
                           {item.priority}
                         </span>
                       )}
@@ -731,10 +731,10 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     <span className="text-sm flex-1 truncate">{item.title}</span>
                   </TaskTooltip>
                   {item.time && (
-                    <span className="text-[10px] text-muted-foreground">{item.time}</span>
+                    <span className="text-data text-muted-foreground">{item.time}</span>
                   )}
                   {item.priority && (
-                    <span className={`text-[10px] ${priorityColors[item.priority]}`}>
+                    <span className={`text-data ${priorityColors[item.priority]}`}>
                       {item.priority}
                     </span>
                   )}
@@ -775,7 +775,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                 key={idx}
                 className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary/10' : ''} ${getDay(day) === 0 || getDay(day) === 6 ? 'bg-muted/30' : ''}`}
               >
-                <div className="text-[9px] text-muted-foreground uppercase">
+                <div className="text-label text-muted-foreground uppercase">
                   {format(day, "EEE")}
                 </div>
                 <div className={`text-xs font-medium ${isTodayDate ? 'text-primary' : ''}`}>
@@ -797,7 +797,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     {dayAllDayItems.slice(0, 2).map(item => (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-[8px] cursor-pointer hover-elevate mb-0.5 ${
+                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-2xs cursor-pointer hover-elevate mb-0.5 ${
                           item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                         }`}
                         title={item.title}
@@ -808,7 +808,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       </div>
                     ))}
                     {dayAllDayItems.length > 2 && (
-                      <div className="text-[7px] text-muted-foreground text-center">+{dayAllDayItems.length - 2}</div>
+                      <div className="text-2xs text-muted-foreground text-center">+{dayAllDayItems.length - 2}</div>
                     )}
                   </div>
                 );
@@ -829,7 +829,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     className="absolute left-0 right-0 border-b border-border/30"
                     style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                   >
-                    <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
+                    <span className="absolute left-1 top-1 text-label text-muted-foreground">
                       {format(new Date().setHours(hour, 0), "ha")}
                     </span>
                   </div>
@@ -885,7 +885,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                           >
                             <div className="flex items-center gap-0.5">
                               <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                              <span className="text-[8px] truncate">{item.title}</span>
+                              <span className="text-2xs truncate">{item.title}</span>
                             </div>
                           </div>
                         );
@@ -912,7 +912,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     {dayItems.slice(0, 5).map(item => (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${
+                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-label cursor-pointer hover-elevate ${
                           item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                         }`}
                         title={item.title}
@@ -923,7 +923,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       </div>
                     ))}
                     {dayItems.length > 5 && (
-                      <div className="text-[8px] text-muted-foreground text-center">
+                      <div className="text-2xs text-muted-foreground text-center">
                         +{dayItems.length - 5} more
                       </div>
                     )}
@@ -965,7 +965,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
         <div className="grid grid-cols-7 border-b">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
-            <div key={d} className="text-center py-1 text-[9px] text-muted-foreground uppercase border-r last:border-r-0">
+            <div key={d} className="text-center py-1 text-label text-muted-foreground uppercase border-r last:border-r-0">
               {d}
             </div>
           ))}
@@ -987,7 +987,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       !isCurrentMonth ? 'bg-muted/30' : ''
                     } ${isPast && isCurrentMonth ? 'opacity-60' : ''} ${isCurrentMonth && (getDay(day) === 0 || getDay(day) === 6) ? 'bg-muted/30' : ''}`}
                   >
-                    <div className={`text-[10px] mb-0.5 ${
+                    <div className={`text-data mb-0.5 ${
                       isTodayDate 
                         ? 'text-primary font-bold' 
                         : !isCurrentMonth 
@@ -1000,7 +1000,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       {dayItems.slice(0, 2).map(item => (
                         <div
                           key={item.id}
-                          className={`flex items-center gap-0.5 px-0.5 rounded text-[8px] cursor-pointer hover-elevate ${
+                          className={`flex items-center gap-0.5 px-0.5 rounded text-2xs cursor-pointer hover-elevate ${
                             item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                           }`}
                           title={item.title}
@@ -1011,7 +1011,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                         </div>
                       ))}
                       {dayItems.length > 2 && (
-                        <div className="text-[7px] text-muted-foreground">
+                        <div className="text-2xs text-muted-foreground">
                           +{dayItems.length - 2}
                         </div>
                       )}

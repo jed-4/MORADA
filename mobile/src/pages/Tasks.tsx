@@ -123,7 +123,7 @@ export function Tasks() {
             >
               <Filter className="w-5 h-5" />
               {activeFiltersCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-data rounded-full flex items-center justify-center">
                   {activeFiltersCount}
                 </span>
               )}
@@ -249,7 +249,7 @@ export function Tasks() {
                       <h4 className="font-medium text-sm mb-1 line-clamp-2">{task.title}</h4>
                       <div className="flex items-center gap-2">
                         {task.priority && (
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          <span className={`px-1.5 py-0.5 rounded text-data font-medium ${
                             task.priority === "high" ? "bg-destructive/10 text-destructive" :
                             task.priority === "medium" ? "bg-primary/10 text-primary" :
                             "bg-muted text-muted-foreground"
@@ -258,7 +258,7 @@ export function Tasks() {
                           </span>
                         )}
                         {task.dueDate && (
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-data text-muted-foreground">
                             {new Date(task.dueDate).toLocaleDateString()}
                           </span>
                         )}

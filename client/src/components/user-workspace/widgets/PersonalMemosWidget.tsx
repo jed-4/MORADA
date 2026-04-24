@@ -165,7 +165,7 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs truncate leading-tight">{truncateContent(memo.content)}</p>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-data text-muted-foreground">
                     {formatInTimezone(new Date(memo.updatedAt || memo.createdAt), effectiveTimezone, { month: 'short', day: 'numeric' })}
                   </span>
                 </div>

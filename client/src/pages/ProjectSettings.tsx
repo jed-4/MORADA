@@ -804,7 +804,7 @@ export default function ProjectSettings() {
                       {(projectScheduleItems as any[]).filter((item: any) => item.startDate).map((item: any) => (
                         <SelectItem key={item.id} value={item.id}>
                           <span className="truncate">{item.name}</span>
-                          <span className="ml-1 text-muted-foreground text-[10px]">
+                          <span className="ml-1 text-muted-foreground text-data">
                             {new Date(item.startDate).toLocaleDateString()}
                           </span>
                         </SelectItem>
@@ -838,7 +838,7 @@ export default function ProjectSettings() {
                       {(projectScheduleItems as any[]).filter((item: any) => item.endDate).map((item: any) => (
                         <SelectItem key={item.id} value={item.id}>
                           <span className="truncate">{item.name}</span>
-                          <span className="ml-1 text-muted-foreground text-[10px]">
+                          <span className="ml-1 text-muted-foreground text-data">
                             {new Date(item.endDate).toLocaleDateString()}
                           </span>
                         </SelectItem>
@@ -1260,7 +1260,7 @@ export default function ProjectSettings() {
                             disabled={addTeamMemberMutation.isPending || removeTeamMemberMutation.isPending}
                           />
                           <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                            <AvatarFallback className="text-data bg-primary/10 text-primary">
                               {getUserInitials(user)}
                             </AvatarFallback>
                           </Avatar>

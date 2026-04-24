@@ -207,7 +207,7 @@ function SortableChecklistItem({
           >
             {item.assigneeId ? (
               <Avatar className="h-5 w-5 border border-border/50">
-                <AvatarFallback className="text-[10px]">
+                <AvatarFallback className="text-data">
                   {getInitials(item.assigneeName || "")}
                 </AvatarFallback>
               </Avatar>
@@ -228,7 +228,7 @@ function SortableChecklistItem({
                 onClick={() => onAssigneeChange(item.id!, user.id, getUserDisplayName(user))}
               >
                 <Avatar className="h-4 w-4 mr-2">
-                  <AvatarFallback className="text-[10px]">
+                  <AvatarFallback className="text-data">
                     {getInitials(getUserDisplayName(user))}
                   </AvatarFallback>
                 </Avatar>
@@ -1512,13 +1512,13 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                           <div className="flex -space-x-2">
                             {assignees.slice(0, 3).map((user) => (
                               <Avatar key={user.id} className="h-5 w-5 border-2 border-background">
-                                <AvatarFallback className="text-[10px]">
+                                <AvatarFallback className="text-data">
                                   {getInitials(getUserDisplayName(user))}
                                 </AvatarFallback>
                               </Avatar>
                             ))}
                             {assignees.length > 3 && (
-                              <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] border-2 border-background">
+                              <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-data border-2 border-background">
                                 +{assignees.length - 3}
                               </div>
                             )}
@@ -1558,7 +1558,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             className="mr-2 pointer-events-none"
                           />
                           <Avatar className="h-5 w-5 mr-2">
-                            <AvatarFallback className="text-[10px]">
+                            <AvatarFallback className="text-data">
                               {getInitials(getUserDisplayName(user))}
                             </AvatarFallback>
                           </Avatar>
@@ -1868,7 +1868,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                           <div className="space-y-2">
                             <div className="flex items-end gap-3">
                               <div className="space-y-1">
-                                <label className="text-[10px] font-medium text-muted-foreground">Time</label>
+                                <label className="text-data font-medium text-muted-foreground">Time</label>
                                 <Controller
                                   name="startTime"
                                   control={form.control}
@@ -1891,7 +1891,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                     onCheckedChange={(checked) => form.setValue("includeSaturday", !!checked, { shouldDirty: true, shouldTouch: true })}
                                     data-testid="checkbox-include-saturday"
                                   />
-                                  <label className="text-[10px] text-muted-foreground">Inc. Sat</label>
+                                  <label className="text-data text-muted-foreground">Inc. Sat</label>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <Checkbox
@@ -1899,7 +1899,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                     onCheckedChange={(checked) => form.setValue("includeSunday", !!checked, { shouldDirty: true, shouldTouch: true })}
                                     data-testid="checkbox-include-sunday"
                                   />
-                                  <label className="text-[10px] text-muted-foreground">Inc. Sun</label>
+                                  <label className="text-data text-muted-foreground">Inc. Sun</label>
                                 </div>
                               </div>
                             </div>
@@ -1910,14 +1910,14 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                         {form.watch("recurringType") === "weekly" && (
                           <div className="space-y-2">
                             <div>
-                              <label className="text-[10px] font-medium text-muted-foreground">Days</label>
+                              <label className="text-data font-medium text-muted-foreground">Days</label>
                               <div className="flex gap-1 mt-1">
                                 {weekDays.map((day) => (
                                   <button
                                     key={day.value}
                                     type="button"
                                     onClick={() => toggleDay(day.value)}
-                                    className={`h-6 w-6 rounded-full text-[10px] font-medium transition-colors ${
+                                    className={`h-6 w-6 rounded-full text-data font-medium transition-colors ${
                                       selectedDays?.includes(day.value)
                                         ? "bg-primary text-primary-foreground"
                                         : "bg-muted hover:bg-muted/80"
@@ -1932,7 +1932,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
 
                             {selectedDays && selectedDays.length > 0 && (
                               <div className="space-y-1">
-                                <label className="text-[10px] font-medium text-muted-foreground">Start Times</label>
+                                <label className="text-data font-medium text-muted-foreground">Start Times</label>
                                 <div className="grid grid-cols-2 gap-1.5">
                                   {selectedDays.sort((a, b) => a - b).map((dayValue) => {
                                     const dayLabel = weekDays.find(d => d.value === dayValue)?.label || "";
@@ -1940,7 +1940,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                     
                                     return (
                                       <div key={dayValue} className="flex items-center gap-1.5 px-2 py-1 bg-muted/30 rounded border">
-                                        <span className="text-[10px] font-medium w-6">{dayLabel}</span>
+                                        <span className="text-data font-medium w-6">{dayLabel}</span>
                                         <TimeSelect
                                           value={schedule?.startTime || ""}
                                           onChange={(value) => {
@@ -1956,7 +1956,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                             form.setValue("recurringSchedule", newSchedule, { shouldDirty: true, shouldTouch: true });
                                           }}
                                           placeholder="Time"
-                                          className="h-7 text-[10px] flex-1"
+                                          className="h-7 text-data flex-1"
                                           showIcon={false}
                                           data-testid={`input-time-${dayLabel.toLowerCase()}`}
                                         />
@@ -1973,7 +1973,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                         {form.watch("recurringType") === "monthly" && (
                           <div className="flex items-end gap-3">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground">Day of Month</label>
+                              <label className="text-data font-medium text-muted-foreground">Day of Month</label>
                               <Select
                                 value={String(form.watch("dueDayOfMonth") || 1)}
                                 onValueChange={(value) => form.setValue("dueDayOfMonth", parseInt(value), { shouldDirty: true, shouldTouch: true })}
@@ -1991,7 +1991,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                               </Select>
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground">Time</label>
+                              <label className="text-data font-medium text-muted-foreground">Time</label>
                               <Controller
                                 name="startTime"
                                 control={form.control}

@@ -866,7 +866,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   <Filter className="w-3 h-3" />
                   <span>Filter</span>
                   {hasActiveFilters && (
-                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 p-0 text-data flex items-center justify-center">
                       {(filters.status?.length || 0) + (filters.priority?.length || 0) + (filters.project?.length || 0) + (filters.dueDatePreset && filters.dueDatePreset !== 'all' ? 1 : 0)}
                     </Badge>
                   )}
@@ -929,8 +929,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     <div className="px-2 py-1 space-y-2">
                       {filters.dueDatePreset && presetRange?.label && (
                         <div className="flex items-center gap-1">
-                          <Badge variant="secondary" className="text-[10px]">{presetRange.label}</Badge>
-                          <span className="text-[10px] text-muted-foreground">(live filter)</span>
+                          <Badge variant="secondary" className="text-data">{presetRange.label}</Badge>
+                          <span className="text-data text-muted-foreground">(live filter)</span>
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -1020,44 +1020,44 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Quick Presets</div>
                 <div className="px-2 pb-2 flex flex-wrap gap-1">
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'overdue' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'overdue', dueDateToRelative: undefined})}
                   >Overdue</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'today' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'today', dueDateToRelative: undefined})}
                   >Today</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'tomorrow' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'tomorrow', dueDateToRelative: undefined})}
                   >Tomorrow</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'this-week' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-week', dueDateToRelative: undefined})}
                   >This Week</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'last-week-to-today' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'last-week-to-today', dueDateToRelative: undefined})}
                   >Last Week+</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    className={`text-data px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'this-month' ? 'bg-primary text-white border-primary' : 'hover-elevate'
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-month', dueDateToRelative: undefined})}
                   >This Month</button>
                   {(filters.dueDateFrom || filters.dueDateTo || filters.dueDatePreset || filters.dueDateToRelative) && (
                     <button 
-                      className="text-[10px] px-1.5 py-0.5 rounded border text-destructive hover-elevate"
+                      className="text-data px-1.5 py-0.5 rounded border text-destructive hover-elevate"
                       onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: undefined, dueDateToRelative: undefined})}
                     >Clear</button>
                   )}
@@ -1204,7 +1204,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 {groupBy !== 'none' && (
                   <div className="flex items-center gap-2 mb-2 px-2">
                     <span className="text-xs font-medium text-muted-foreground">{groupName}</span>
-                    <Badge variant="outline" className="text-[10px]">{groupTasks.length}</Badge>
+                    <Badge variant="outline" className="text-data">{groupTasks.length}</Badge>
                   </div>
                 )}
                 <TaskListCompact

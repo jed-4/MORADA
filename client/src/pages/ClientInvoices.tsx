@@ -467,7 +467,7 @@ export default function ClientInvoices() {
                 <span className="text-2xl font-bold tabular-nums leading-tight">
                   {formatCurrency(financials.projectTotal)}
                 </span>
-                <span className="text-[11px] text-muted-foreground mt-0.5">Total</span>
+                <span className="text-table text-muted-foreground mt-0.5">Total</span>
               </div>
 
               {/* Middle — breakdown lines with dot separators */}
@@ -511,22 +511,22 @@ export default function ClientInvoices() {
 
           {/* Right — invoices stats: group label + compact columns, pushed to far right */}
           <div className="flex flex-col gap-1 ml-auto">
-            <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Invoices</span>
+            <span className="text-data uppercase tracking-widest font-medium text-muted-foreground/70">Invoices</span>
             <div className="flex items-end gap-6">
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground">Paid</span>
+                <span className="text-data text-muted-foreground">Paid</span>
                 <span className="text-base font-bold tabular-nums text-emerald-600 dark:text-emerald-400 leading-tight">
                   {formatCurrency(financials.paidTotal)}
                 </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground">Invoiced</span>
+                <span className="text-data text-muted-foreground">Invoiced</span>
                 <span className="text-base font-bold tabular-nums leading-tight">
                   {formatCurrency(financials.invoicedTotal)}
                 </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground">Outstanding</span>
+                <span className="text-data text-muted-foreground">Outstanding</span>
                 <span className={cn(
                   "text-base font-bold tabular-nums leading-tight",
                   financials.balanceTotal <= 0
@@ -540,7 +540,7 @@ export default function ClientInvoices() {
               </div>
               {hasProjectContext && financials.projectTotal > 0 && (
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground">To Invoice</span>
+                  <span className="text-data text-muted-foreground">To Invoice</span>
                   <span className={cn(
                     "text-base font-bold tabular-nums leading-tight",
                     financials.toInvoiceTotal === 0
@@ -553,7 +553,7 @@ export default function ClientInvoices() {
               )}
               {!hasProjectContext && (
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground">Count</span>
+                  <span className="text-data text-muted-foreground">Count</span>
                   <span className="text-base font-bold tabular-nums leading-tight">{financials.count}</span>
                 </div>
               )}
@@ -595,7 +595,7 @@ export default function ClientInvoices() {
                     </span>
                     {selectedStatus !== "all" && (
                       <span
-                        className="ml-0.5 text-[10px] text-primary cursor-pointer"
+                        className="ml-0.5 text-data text-primary cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); setSelectedStatus("all"); }}
                       >×</span>
                     )}

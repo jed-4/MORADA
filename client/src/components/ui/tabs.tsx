@@ -48,7 +48,7 @@ const tabsTriggerVariants = cva(
         default:
           "rounded-sm px-3 py-1.5 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
         underline:
-          "relative h-9 px-1 pb-2 pt-1 text-[11px] font-medium text-[hsl(var(--tab-inactive))] " +
+          "relative h-9 px-1 pb-2 pt-1 text-table font-medium text-[hsl(var(--tab-inactive))] " +
           "data-[state=active]:font-semibold data-[state=active]:text-[hsl(var(--tab-active))] " +
           "after:absolute after:left-0 after:right-0 after:-bottom-px after:h-[2px] after:bg-[hsl(var(--tab-active))] after:content-[''] " +
           "after:scale-x-0 data-[state=active]:after:scale-x-100 after:transition-transform",

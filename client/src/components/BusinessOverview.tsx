@@ -662,7 +662,7 @@ export default function BusinessOverview() {
                     <def.icon className="h-4 w-4 text-primary" />
                     <span className="text-sm font-medium">{def.name}</span>
                     {isAdded && (
-                      <Badge variant="secondary" className="text-[10px] ml-auto">Added</Badge>
+                      <Badge variant="secondary" className="text-data ml-auto">Added</Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">{def.description}</p>

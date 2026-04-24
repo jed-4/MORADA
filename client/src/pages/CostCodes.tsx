@@ -375,10 +375,10 @@ export default function CostCodes() {
               {row.original.title}
             </span>
             {row.original.isArchived && (
-              <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+              <Badge variant="secondary" className="text-data">Archived</Badge>
             )}
             {row.original.isSynced && (
-              <Badge variant="outline" className="text-[10px]">Synced</Badge>
+              <Badge variant="outline" className="text-data">Synced</Badge>
             )}
           </div>
         ),
@@ -391,7 +391,7 @@ export default function CostCodes() {
         accessorFn: (c) => c.xeroTrackingOptionName ?? "",
         cell: ({ row }) =>
           row.original.xeroTrackingOptionName ? (
-            <Badge variant="outline" className="text-[10px]" data-testid={`cell-xero-${row.original.id}`}>
+            <Badge variant="outline" className="text-data" data-testid={`cell-xero-${row.original.id}`}>
               {row.original.xeroTrackingOptionName}
             </Badge>
           ) : (
@@ -406,11 +406,11 @@ export default function CostCodes() {
         accessorFn: (c) => (c.availableInTimesheets ? 1 : 0),
         cell: ({ row }) =>
           row.original.availableInTimesheets ? (
-            <Badge variant="outline" className="gap-1 text-[10px]" data-testid={`cell-timesheet-${row.original.id}`}>
+            <Badge variant="outline" className="gap-1 text-data" data-testid={`cell-timesheet-${row.original.id}`}>
               <Clock className="h-3 w-3" /> Yes
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`cell-timesheet-${row.original.id}`}>
+            <Badge variant="secondary" className="gap-1 text-data" data-testid={`cell-timesheet-${row.original.id}`}>
               <Ban className="h-3 w-3" /> No
             </Badge>
           ),

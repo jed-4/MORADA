@@ -1026,7 +1026,7 @@ export default function BusinessTasks() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Status</span>
                 {filters.status && filters.status.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     {filters.status.length}
                   </Badge>
                 )}
@@ -1061,7 +1061,7 @@ export default function BusinessTasks() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Priority</span>
                 {filters.priority && filters.priority.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     {filters.priority.length}
                   </Badge>
                 )}
@@ -1092,7 +1092,7 @@ export default function BusinessTasks() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Assignee</span>
                 {filters.assignee && filters.assignee.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     {filters.assignee.length}
                   </Badge>
                 )}
@@ -1123,7 +1123,7 @@ export default function BusinessTasks() {
               <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
                 <span>Labels</span>
                 {filters.labels && filters.labels.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     {filters.labels.length}
                   </Badge>
                 )}
@@ -1346,7 +1346,7 @@ export default function BusinessTasks() {
                         <div className="h-7 px-2 flex items-center justify-between bg-muted/30 border-b border-border/50">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-medium text-muted-foreground">{label}</span>
-                            <span className="text-[10px] text-muted-foreground/70">({groupTasks.length})</span>
+                            <span className="text-data text-muted-foreground/70">({groupTasks.length})</span>
                           </div>
                           <button
                             type="button"

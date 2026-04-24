@@ -85,12 +85,12 @@ function daysUntil(dateStr: string | null | undefined): number | null {
 
 function ExpiryBadge({ dateStr }: { dateStr: string | null | undefined }) {
   const days = daysUntil(dateStr);
-  if (days === null) return <Badge variant="secondary" className="text-[10px]">Not set</Badge>;
-  if (days < 0) return <Badge variant="destructive" className="text-[10px]">Expired</Badge>;
-  if (days <= 30) return <Badge className="text-[10px] bg-orange-500/15 text-status-warning dark:text-orange-400 hover:bg-orange-500/20">{days}d left</Badge>;
-  if (days <= 90) return <Badge className="text-[10px] bg-yellow-500/15 text-status-warning dark:text-yellow-400 hover:bg-yellow-500/20">{days}d left</Badge>;
+  if (days === null) return <Badge variant="secondary" className="text-data">Not set</Badge>;
+  if (days < 0) return <Badge variant="destructive" className="text-data">Expired</Badge>;
+  if (days <= 30) return <Badge className="text-data bg-orange-500/15 text-status-warning dark:text-orange-400 hover:bg-orange-500/20">{days}d left</Badge>;
+  if (days <= 90) return <Badge className="text-data bg-yellow-500/15 text-status-warning dark:text-yellow-400 hover:bg-yellow-500/20">{days}d left</Badge>;
   const d = new Date(dateStr!);
-  return <Badge variant="secondary" className="text-[10px]">{d.toLocaleDateString("en-AU")}</Badge>;
+  return <Badge variant="secondary" className="text-data">{d.toLocaleDateString("en-AU")}</Badge>;
 }
 
 // ─── Inline editable field ────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ function EditableField({
   if (editing) {
     return (
       <div className="flex flex-col gap-1">
-        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</Label>
+        <Label className="text-data text-muted-foreground uppercase tracking-wide">{label}</Label>
         <div className="flex items-center gap-1">
           {prefix && <span className="text-xs text-muted-foreground">{prefix}</span>}
           <Input
@@ -149,7 +149,7 @@ function EditableField({
 
   return (
     <div className="flex flex-col gap-0.5 group/ef">
-      <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</Label>
+      <Label className="text-data text-muted-foreground uppercase tracking-wide">{label}</Label>
       <button
         onClick={() => { setDraft(value ?? ""); setEditing(true); }}
         className="flex items-center gap-1 text-xs text-left hover:text-foreground text-muted-foreground transition-colors"
@@ -198,7 +198,7 @@ function HWITracker({ limit, committed, onSave }: { limit: number | null; commit
               style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+          <div className="flex justify-between mt-1 text-data text-muted-foreground">
             <span>{pct.toFixed(1)}% used</span>
             <span>{available !== null ? `${fmt(available)} available` : ""}</span>
           </div>
@@ -296,7 +296,7 @@ function OverviewTab({ projects }: { projects: Project[] }) {
                 <div>
                   <p className="text-xs text-muted-foreground">{k.label}</p>
                   <p className="text-2xl font-bold mt-0.5 tabular-nums">{k.value}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{k.sub}</p>
+                  <p className="text-data text-muted-foreground mt-0.5">{k.sub}</p>
                 </div>
                 <k.icon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
               </div>
@@ -504,7 +504,7 @@ function FinancialTab({ settings, onSave, projects }: { settings: CompanySetting
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+              <div className="flex justify-between mt-1 text-data text-muted-foreground">
                 <span>{pct.toFixed(1)}% of target</span>
                 <span>{fmt(Math.max(revenueTarget - totalLocked, 0))} to go</span>
               </div>
@@ -530,7 +530,7 @@ function FinancialTab({ settings, onSave, projects }: { settings: CompanySetting
               <CardContent className="pt-4 pb-4 px-4">
                 <p className="text-xs text-muted-foreground">{label} — Locked Value</p>
                 <p className="text-xl font-bold tabular-nums mt-0.5">{val > 0 ? fmt(val) : "—"}</p>
-                <p className="text-[10px] text-muted-foreground">{ps.length} project{ps.length !== 1 ? "s" : ""}</p>
+                <p className="text-data text-muted-foreground">{ps.length} project{ps.length !== 1 ? "s" : ""}</p>
               </CardContent>
             </Card>
           );
@@ -593,7 +593,7 @@ function PipelineTab({ projects }: { projects: Project[] }) {
                 <div>
                   <p className="text-xs text-muted-foreground">{s.label}</p>
                   <p className="text-2xl font-bold tabular-nums">{s.count}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{s.desc}</p>
+                  <p className="text-data text-muted-foreground mt-0.5 leading-tight">{s.desc}</p>
                 </div>
               </div>
             </CardContent>

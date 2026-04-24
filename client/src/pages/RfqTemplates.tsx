@@ -414,7 +414,7 @@ export default function RfqTemplates() {
         cell: ({ row }) => {
           const breadcrumb = getCategoryBreadcrumb(row.original.categoryId);
           return breadcrumb ? (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]">{breadcrumb}</Badge>
+            <Badge variant="outline" className="h-4 px-1.5 text-data">{breadcrumb}</Badge>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           );
@@ -428,7 +428,7 @@ export default function RfqTemplates() {
         accessorFn: (t) => t.tradeName || "",
         cell: ({ row }) => (
           row.original.tradeName ? (
-            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{row.original.tradeName}</Badge>
+            <Badge variant="secondary" className="h-4 px-1.5 text-data">{row.original.tradeName}</Badge>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           )

@@ -146,7 +146,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
 
             {/* Construction fields - small line below title */}
             {hasCostOrUnits && (
-              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-2 mt-0.5 text-data text-muted-foreground">
                 {task.estimatedCost && (
                   <span className="flex items-center gap-0.5">
                     <DollarSign className="h-2.5 w-2.5" />
@@ -162,7 +162,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
 
           {/* Priority tag - top right */}
           {priorityColor && (displaySettings?.showPriority !== false) && (
-            <Badge className={`text-[10px] px-1 py-0 h-4 rounded-full ${priorityColor} border gap-0.5 no-default-hover-elevate no-default-active-elevate shrink-0`}>
+            <Badge className={`text-data px-1 py-0 h-4 rounded-full ${priorityColor} border gap-0.5 no-default-hover-elevate no-default-active-elevate shrink-0`}>
               <Flag className="h-2 w-2" />
             </Badge>
           )}
@@ -210,14 +210,14 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
             {/* Status chip - bottom left */}
             {statusOption && (displaySettings?.showStatus !== false) && (
-              <Badge className={`text-[10px] px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
+              <Badge className={`text-data px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
                 {isCompleted ? '✓' : statusOption.name}
               </Badge>
             )}
             
             {/* Due date chip */}
             {task.dueDate && (displaySettings?.showDueDate !== false) && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
+              <Badge variant="outline" className="text-data px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
                 <Calendar className="h-2 w-2 mr-0.5" />
                 {formatInTimezone(new Date(task.dueDate), effectiveTimezone, { month: 'short', day: 'numeric' })}
               </Badge>
@@ -227,7 +227,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             {(task as any).projectName && (displaySettings?.showProject !== false) && (
               <Badge 
                 variant="outline" 
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate max-w-[80px] truncate"
+                className="text-data px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate max-w-[80px] truncate"
                 style={(task as any).projectColor ? { borderColor: (task as any).projectColor, color: (task as any).projectColor } : undefined}
               >
                 <FolderKanban className="h-2 w-2 mr-0.5 shrink-0" />
@@ -239,7 +239,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             {(task as any).checklistInstanceId && (
               <Badge 
                 variant="outline" 
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20 no-default-hover-elevate no-default-active-elevate max-w-[100px] truncate"
+                className="text-data px-1.5 py-0 h-4 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20 no-default-hover-elevate no-default-active-elevate max-w-[100px] truncate"
               >
                 <ClipboardList className="h-2 w-2 mr-0.5 shrink-0" />
                 <span className="truncate">{(task as any).checklistInstanceName || 'Checklist'}</span>
@@ -259,13 +259,13 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
                   <div className="flex -space-x-1.5 shrink-0">
                     {assigneeNames.slice(0, 3).map((name, idx) => (
                       <Avatar key={idx} className="h-5 w-5 border-2 border-background">
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                        <AvatarFallback className="text-data bg-primary/10 text-primary">
                           {getInitials(name)}
                         </AvatarFallback>
                       </Avatar>
                     ))}
                     {assigneeNames.length > 3 && (
-                      <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] border-2 border-background">
+                      <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-data border-2 border-background">
                         +{assigneeNames.length - 3}
                       </div>
                     )}
@@ -274,7 +274,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
               } else if (hasSingle) {
                 return (
                   <Avatar className="h-5 w-5 border border-border/50">
-                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                    <AvatarFallback className="text-data bg-primary/10 text-primary">
                       {getInitials(task.assigneeName)}
                     </AvatarFallback>
                   </Avatar>

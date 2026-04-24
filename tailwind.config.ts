@@ -175,6 +175,14 @@ export default {
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
       },
+      fontSize: {
+        '2xs':    ['0.5rem',    { lineHeight: '0.75rem' }],   /* 8px  — widget labels, ultra-compact metadata */
+        'label':  ['0.5625rem', { lineHeight: '0.875rem' }],  /* 9px  — table column headers, uppercase section labels */
+        'data':   ['0.625rem',  { lineHeight: '1rem' }],      /* 10px — compact data, line item text */
+        'table':  ['0.6875rem', { lineHeight: '1.0625rem' }], /* 11px — standard table body text */
+        'body-sm':['0.8125rem', { lineHeight: '1.25rem' }],   /* 13px — domain body text */
+        'body-lg':['0.9375rem', { lineHeight: '1.375rem' }],  /* 15px — domain body large */
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

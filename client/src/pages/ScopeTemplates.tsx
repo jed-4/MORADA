@@ -249,7 +249,7 @@ export default function ScopeTemplates() {
         return (
           <Badge
             variant="secondary"
-            className={`h-4 px-1.5 text-[10px] ${getCategoryColor(category)}`}
+            className={`h-4 px-1.5 text-data ${getCategoryColor(category)}`}
             data-testid={`cell-category-${row.original.id}`}
           >
             {category}

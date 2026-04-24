@@ -189,7 +189,7 @@ export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODia
                   <div className="flex items-center gap-2">
                     <HardHat className="h-3.5 w-3.5 text-amber-500" />
                     <span className="text-sm font-medium">{getUserName(userId)}</span>
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="secondary" className="text-data">
                       {timesheets.length} {timesheets.length === 1 ? "entry" : "entries"}
                     </Badge>
                   </div>
@@ -211,12 +211,12 @@ export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODia
                             className="h-3.5 w-3.5"
                           />
                         </TableHead>
-                        <TableHead className="text-[10px] px-2">Date</TableHead>
-                        <TableHead className="text-[10px] px-2">Project</TableHead>
-                        <TableHead className="text-[10px] px-2">Cost Code</TableHead>
-                        <TableHead className="text-[10px] px-2">Time</TableHead>
-                        <TableHead className="text-[10px] px-2">Hours</TableHead>
-                        <TableHead className="text-[10px] px-2">Description</TableHead>
+                        <TableHead className="text-data px-2">Date</TableHead>
+                        <TableHead className="text-data px-2">Project</TableHead>
+                        <TableHead className="text-data px-2">Cost Code</TableHead>
+                        <TableHead className="text-data px-2">Time</TableHead>
+                        <TableHead className="text-data px-2">Hours</TableHead>
+                        <TableHead className="text-data px-2">Description</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -229,22 +229,22 @@ export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODia
                               className="h-3.5 w-3.5"
                             />
                           </TableCell>
-                          <TableCell className="text-[11px] px-2 py-1">
+                          <TableCell className="text-table px-2 py-1">
                             {ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "-"}
                           </TableCell>
-                          <TableCell className="text-[11px] text-muted-foreground px-2 py-1 truncate max-w-[120px]">
+                          <TableCell className="text-table text-muted-foreground px-2 py-1 truncate max-w-[120px]">
                             {getProjectName(ts.projectId)}
                           </TableCell>
-                          <TableCell className="text-[11px] text-muted-foreground px-2 py-1 truncate max-w-[120px]">
+                          <TableCell className="text-table text-muted-foreground px-2 py-1 truncate max-w-[120px]">
                             {getCostCodeName(ts.costCodeId)}
                           </TableCell>
-                          <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                          <TableCell className="text-table text-muted-foreground tabular-nums px-2 py-1">
                             {ts.startTime || "?"} - {ts.endTime || "?"}
                           </TableCell>
-                          <TableCell className="text-[11px] font-medium tabular-nums px-2 py-1">
+                          <TableCell className="text-table font-medium tabular-nums px-2 py-1">
                             {parseFloat(ts.duration || "0").toFixed(2)}
                           </TableCell>
-                          <TableCell className="text-[11px] text-muted-foreground px-2 py-1 truncate max-w-[150px]">
+                          <TableCell className="text-table text-muted-foreground px-2 py-1 truncate max-w-[150px]">
                             {ts.description || "-"}
                           </TableCell>
                         </TableRow>

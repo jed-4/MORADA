@@ -381,7 +381,7 @@ export default function SiteDiaryEntries() {
                 >
                   <span>{selectedProjectId && selectedProjectId !== "all" ? (projects.find(p => p.id === selectedProjectId)?.name || "Project") : "All Projects"}</span>
                   {selectedProjectId && selectedProjectId !== "all" && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       1
                     </Badge>
                   )}
@@ -425,7 +425,7 @@ export default function SiteDiaryEntries() {
               >
                 <span>Template</span>
                 {selectedTemplateId && selectedTemplateId !== "all" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}
@@ -564,7 +564,7 @@ function SiteDiaryCalendarView({
 
       <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-visible flex-1">
         {weekDays.map((day) => (
-          <div key={day} className="bg-muted px-2 py-1.5 text-center text-[10px] font-medium text-muted-foreground">
+          <div key={day} className="bg-muted px-2 py-1.5 text-center text-data font-medium text-muted-foreground">
             {day}
           </div>
         ))}
@@ -578,7 +578,7 @@ function SiteDiaryCalendarView({
               key={day.toISOString()}
               className={`bg-card min-h-[80px] p-1 ${!isCurrentMonth ? "opacity-40" : ""}`}
             >
-              <div className={`text-[10px] font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-primary text-white" : "text-muted-foreground"}`}>
+              <div className={`text-data font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-primary text-white" : "text-muted-foreground"}`}>
                 {format(day, "d")}
               </div>
               <div className="space-y-0.5">
@@ -586,7 +586,7 @@ function SiteDiaryCalendarView({
                   <Badge
                     key={entry.id}
                     variant="secondary"
-                    className="w-full justify-start text-[9px] px-1 py-0 cursor-pointer truncate bg-primary/10 text-primary border-0"
+                    className="w-full justify-start text-label px-1 py-0 cursor-pointer truncate bg-primary/10 text-primary border-0"
                     onClick={() => onViewEntry(entry)}
                     title={entry.title}
                   >
@@ -594,7 +594,7 @@ function SiteDiaryCalendarView({
                   </Badge>
                 ))}
                 {dayEntries.length > 3 && (
-                  <span className="text-[9px] text-muted-foreground px-1">
+                  <span className="text-label text-muted-foreground px-1">
                     +{dayEntries.length - 3} more
                   </span>
                 )}
@@ -720,12 +720,12 @@ function SiteDiaryFeedCard({
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-base leading-tight line-clamp-2">{entry.title}</h3>
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              <Badge variant="default" className="text-[10px] px-1.5">{entry.templateName}</Badge>
+              <Badge variant="default" className="text-data px-1.5">{entry.templateName}</Badge>
               {projectName && (
-                <Badge variant="outline" className="text-[10px] px-1.5">{projectName}</Badge>
+                <Badge variant="outline" className="text-data px-1.5">{projectName}</Badge>
               )}
               {entry.shareWithClient && (
-                <Badge variant="secondary" className="text-[10px] px-1.5">Shared</Badge>
+                <Badge variant="secondary" className="text-data px-1.5">Shared</Badge>
               )}
             </div>
           </div>
@@ -814,7 +814,7 @@ function SiteDiaryFeedCard({
         )}
 
         {/* Footer */}
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1 border-t border-border">
+        <div className="flex items-center gap-2 text-table text-muted-foreground pt-1 border-t border-border">
           {entry.createdByName && (
             <span className="flex items-center gap-1">
               <User className="w-3 h-3" />{entry.createdByName}
@@ -919,7 +919,7 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
             return (
               <div className="flex flex-wrap gap-1 mt-1">
                 {checkboxEntries.map(([key, v]: [string, any]) => (
-                  <span key={key} className="text-[9px] text-muted-foreground">
+                  <span key={key} className="text-label text-muted-foreground">
                     {v.checkedByName} {v.checkedAt ? format(new Date(v.checkedAt), "h:mm a") : ""}
                   </span>
                 ))}
@@ -932,19 +932,19 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Project Name (standalone mode) */}
           {projectName && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-project-${entry.id}`}>
+            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-project-${entry.id}`}>
               {projectName}
             </Badge>
           )}
 
           {/* Template */}
-          <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`entry-template-${entry.id}`}>
+          <Badge variant="default" className="h-4 px-1.5 text-data" data-testid={`entry-template-${entry.id}`}>
             {entry.templateName}
           </Badge>
 
           {/* Weather */}
           {weather && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-weather-${entry.id}`}>
+            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-weather-${entry.id}`}>
               <Cloud className="w-2.5 h-2.5 mr-0.5" />
               {weather}
             </Badge>
@@ -952,21 +952,21 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
 
           {/* Temperature */}
           {temperature && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-temp-${entry.id}`}>
+            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-temp-${entry.id}`}>
               <Thermometer className="w-2.5 h-2.5 mr-0.5" />
               {temperature}
             </Badge>
           )}
 
           {/* Date */}
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
+          <div className="flex items-center gap-1 text-data text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
             <CalendarIcon className="h-3 w-3" />
             <span>{format(new Date(entry.entryDateTime), "MMM d, yyyy")}</span>
           </div>
 
           {/* Share indicator */}
           {entry.shareWithClient && (
-            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+            <Badge variant="secondary" className="h-4 px-1.5 text-data">
               Shared
             </Badge>
           )}
@@ -1117,7 +1117,7 @@ function TemplatePopoverSelector({
           <span className="flex items-center gap-2 truncate">
             {selectedTemplate?.name || "Select template"}
             {selectedTemplate?.isDefault && (
-              <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
+              <Badge variant="secondary" className="text-data h-4 px-1">Default</Badge>
             )}
           </span>
           <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0" />
@@ -1137,7 +1137,7 @@ function TemplatePopoverSelector({
             >
               <span>{template.name}</span>
               {template.isDefault && (
-                <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
+                <Badge variant="secondary" className="text-data h-4 px-1">Default</Badge>
               )}
             </button>
           ))}
@@ -1220,7 +1220,7 @@ function SiteDiaryFileUpload({
               {isPhoto ? (
                 <div className="aspect-square bg-muted flex items-center justify-center">
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                  <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1 py-0.5 truncate">
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-label px-1 py-0.5 truncate">
                     {f.name}
                   </span>
                 </div>
@@ -1228,7 +1228,7 @@ function SiteDiaryFileUpload({
                 <div className="flex items-center gap-2 p-1.5 text-xs">
                   <FileText className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                   <span className="truncate flex-1">{f.name}</span>
-                  <span className="text-muted-foreground text-[10px]">{(f.size / 1024).toFixed(0)}KB</span>
+                  <span className="text-muted-foreground text-data">{(f.size / 1024).toFixed(0)}KB</span>
                 </div>
               )}
               <button
@@ -1632,7 +1632,7 @@ function EntryViewDetail({
           <div className="flex-1 min-w-0">
             <CardTitle className="text-base truncate">{entry.title}</CardTitle>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="default" className="text-[10px]">{entry.templateName}</Badge>
+              <Badge variant="default" className="text-data">{entry.templateName}</Badge>
               <span className="text-xs text-muted-foreground">
                 {format(new Date(entry.entryDateTime), "EEEE, MMM d, yyyy")}
               </span>
@@ -1825,7 +1825,7 @@ function EntryEditForm({
           <div className="flex-1">
             <CardTitle className="text-base">Edit Site Diary Entry</CardTitle>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="default" className="text-[10px]">{entry.templateName}</Badge>
+              <Badge variant="default" className="text-data">{entry.templateName}</Badge>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-cancel-edit">

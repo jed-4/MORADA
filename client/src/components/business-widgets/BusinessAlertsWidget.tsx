@@ -94,7 +94,7 @@ export default function BusinessAlertsWidget({ widget }: WidgetProps) {
             <p className="text-sm font-medium">{pendingBillsCount} Pending Bills</p>
             <p className="text-xs text-muted-foreground">Awaiting approval</p>
           </div>
-          <Badge className="bg-status-warning-bg text-status-warning text-[10px]">
+          <Badge className="bg-status-warning-bg text-status-warning text-data">
             Action Required
           </Badge>
         </div>

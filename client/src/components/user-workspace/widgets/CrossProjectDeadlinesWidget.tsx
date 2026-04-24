@@ -217,14 +217,14 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
                     <p className="text-xs font-medium truncate leading-tight">{item.title}</p>
                     <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                       {item.projectName && (
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                        <span className="text-data text-muted-foreground truncate max-w-[80px]">
                           {item.projectName}
                         </span>
                       )}
-                      <Badge className={`${daysInfo.color} text-[10px] px-1 py-0 h-4`}>
+                      <Badge className={`${daysInfo.color} text-data px-1 py-0 h-4`}>
                         {daysInfo.label}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                      <Badge variant="outline" className="text-data px-1 py-0 h-4">
                         {item.type}
                       </Badge>
                     </div>

@@ -104,7 +104,7 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
       </div>
 
       {item.quantity && (
-        <Badge variant="outline" className="h-5 text-[10px] flex-shrink-0">
+        <Badge variant="outline" className="h-5 text-data flex-shrink-0">
           {item.quantity} {item.unit || 'ea'}
         </Badge>
       )}

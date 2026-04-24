@@ -181,7 +181,7 @@ function NoteListItem({
       {preview && (
         <p className="text-xs text-muted-foreground truncate mt-0.5 pl-0">{preview}</p>
       )}
-      <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+      <p className="text-data text-muted-foreground/70 mt-0.5">
         {format(new Date(note.updatedAt), "MMM d")}
       </p>
     </div>
@@ -751,7 +751,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                           {group.name}
                         </span>
                       )}
-                      <Badge variant="secondary" className="text-[10px] px-1 h-4 shrink-0">
+                      <Badge variant="secondary" className="text-data px-1 h-4 shrink-0">
                         {groupNotes.length}
                       </Badge>
                       <DropdownMenu>
@@ -891,10 +891,10 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
               </Button>
               <div className="flex-1" />
               {saveState === "saving" && (
-                <span className="text-[11px] text-muted-foreground">Saving…</span>
+                <span className="text-table text-muted-foreground">Saving…</span>
               )}
               {saveState === "saved" && (
-                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <span className="text-table text-muted-foreground flex items-center gap-1">
                   <Check className="h-3 w-3" />
                   Saved
                 </span>

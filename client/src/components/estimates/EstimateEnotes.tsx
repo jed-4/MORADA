@@ -178,7 +178,7 @@ function NotePopover({
           rows={4}
         />
         <div className="flex justify-between items-center mt-1.5">
-          <span className="text-[10px] text-muted-foreground">Enter or click Save</span>
+          <span className="text-data text-muted-foreground">Enter or click Save</span>
           <Button size="sm" className="h-6 text-xs px-2" onClick={() => handleOpenChange(false)}>
             Save
           </Button>
@@ -207,10 +207,10 @@ function StatusPill({
       onValueChange={v => onChange(v === "__none__" ? null : v)}
     >
       <SelectTrigger
-        className="h-5 text-[11px] border-0 focus:ring-0 focus:ring-offset-0 px-1.5 rounded gap-0.5"
+        className="h-5 text-table border-0 focus:ring-0 focus:ring-offset-0 px-1.5 rounded gap-0.5"
         style={selected ? { backgroundColor: selected.color + "28", color: selected.color, borderColor: "transparent" } : { backgroundColor: "transparent" }}
       >
-        <SelectValue placeholder={<span className="opacity-30 text-[10px]">—</span>} />
+        <SelectValue placeholder={<span className="opacity-30 text-data">—</span>} />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="__none__">
@@ -248,7 +248,7 @@ function ColumnsDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
           title="Manage columns"
         >
           <Columns3 className="w-3 h-3" />
@@ -429,7 +429,7 @@ function AttachmentPanel({
                   {/* Name + size */}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{att.fileName}</p>
-                    <p className="text-[10px] text-muted-foreground">{formatBytes(att.fileSize)}</p>
+                    <p className="text-data text-muted-foreground">{formatBytes(att.fileSize)}</p>
                   </div>
 
                   {/* Actions */}
@@ -892,7 +892,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
         {/* LEFT: Categories panel */}
         <div className="w-52 flex-shrink-0 border-r border-border flex flex-col bg-muted/20">
           <div className="px-3 py-2 border-b border-border/50 flex-shrink-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Categories</span>
+            <span className="text-data font-semibold uppercase tracking-wider text-muted-foreground">Categories</span>
           </div>
           <div className="flex-1 overflow-y-auto">
             {categoryNames.length === 0 ? (
@@ -912,9 +912,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 >
                   <span className="text-xs font-medium truncate w-full">{cat}</span>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-muted-foreground">{done}/{catAll.length} done</span>
+                    <span className="text-data text-muted-foreground">{done}/{catAll.length} done</span>
                     {reqCount > 0 && (
-                      <span className="text-[9px] px-1 rounded font-medium bg-green-500/15 text-status-success dark:text-green-400">
+                      <span className="text-label px-1 rounded font-medium bg-green-500/15 text-status-success dark:text-green-400">
                         {reqCount} req.
                       </span>
                     )}
@@ -959,7 +959,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
               <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-background flex-wrap">
                 <button
                   onClick={() => setHideNotRequired(v => !v)}
-                  className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
+                  className={`flex items-center gap-1.5 text-table px-2 py-1 rounded border transition-colors ${
                     hideNotRequired
                       ? "bg-primary/10 border-primary/30 text-primary"
                       : "border-border/50 text-muted-foreground hover:text-foreground"
@@ -985,7 +985,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                     setSelectedTemplateSetId(templateSets[0]?.id ?? "");
                     setApplyTemplateOpen(true);
                   }}
-                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
+                  className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
                   title="Apply a saved template to this estimate"
                   disabled={templateSets.length === 0}
                 >
@@ -998,7 +998,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                     setSaveTemplateName("");
                     setSaveTemplateOpen(true);
                   }}
-                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
+                  className="flex items-center gap-1.5 text-table px-2 py-1 rounded border border-border/50 text-muted-foreground hover:text-foreground hover-elevate"
                   title="Save this estimate's E-Notes layout as a template"
                 >
                   <Save className="w-3 h-3" />
@@ -1007,7 +1007,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
               </div>
 
               {/* Column header */}
-              <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-[10px] font-medium text-muted-foreground uppercase tracking-wide select-none overflow-hidden">
+              <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-data font-medium text-muted-foreground uppercase tracking-wide select-none overflow-hidden">
                 <div
                   className="grid items-center px-3 py-1.5"
                   style={{ gridTemplateColumns: gridTemplate }}
@@ -1072,7 +1072,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                         )}
                         {attCount > 0 && (
                           <button
-                            className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0"
+                            className="flex items-center gap-0.5 text-data text-muted-foreground hover:text-foreground flex-shrink-0"
                             onClick={() => setAttachmentPanelRow(row)}
                             title={`${attCount} attachment${attCount !== 1 ? "s" : ""}`}
                           >
@@ -1108,7 +1108,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                               <Paperclip className="w-3.5 h-3.5" />
                               Attachments
                               {attCount > 0 && (
-                                <span className="ml-auto text-[10px] text-muted-foreground">{attCount}</span>
+                                <span className="ml-auto text-data text-muted-foreground">{attCount}</span>
                               )}
                             </DropdownMenuItem>
                             {row.isCustom && (
@@ -1134,7 +1134,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 {effectiveCategory && (
                   <div className="px-3 py-1.5 flex">
                     <button
-                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex items-center gap-1 text-table text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => addCustomRowMutation.mutate(effectiveCategory)}
                       disabled={addCustomRowMutation.isPending}
                       title="Add blank row to this group"
@@ -1260,14 +1260,14 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   <RadioGroupItem value="replace" id="apply-replace" className="mt-0.5" />
                   <div>
                     <Label htmlFor="apply-replace" className="text-sm cursor-pointer font-medium">Replace existing</Label>
-                    <p className="text-[11px] text-muted-foreground">Remove all current E-Notes rows first, then apply template</p>
+                    <p className="text-table text-muted-foreground">Remove all current E-Notes rows first, then apply template</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <RadioGroupItem value="merge" id="apply-merge" className="mt-0.5" />
                   <div>
                     <Label htmlFor="apply-merge" className="text-sm cursor-pointer font-medium">Merge (append)</Label>
-                    <p className="text-[11px] text-muted-foreground">Keep existing rows and add template rows below them</p>
+                    <p className="text-table text-muted-foreground">Keep existing rows and add template rows below them</p>
                   </div>
                 </div>
               </RadioGroup>

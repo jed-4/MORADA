@@ -315,7 +315,7 @@ function SortableRow({
             onClick={() => onCellClick(item, "costCode")}
           >
             {item.costCodeTitle ? (
-              <Badge variant="outline" className="h-4 px-1 text-[9px] max-w-full truncate">
+              <Badge variant="outline" className="h-4 px-1 text-label max-w-full truncate">
                 {item.costCodeTitle}
               </Badge>
             ) : (
@@ -345,7 +345,7 @@ function SortableRow({
           <SelectTrigger className="h-6 text-xs border-0 shadow-none px-1 focus:ring-0 bg-transparent hover:bg-muted/40 w-full">
             <SelectValue>
               {item.allowance && item.allowance !== "None" ? (
-                <span className={`text-[9px] px-1 py-0.5 rounded border ${allowanceChipClass(item.allowance)}`}>
+                <span className={`text-label px-1 py-0.5 rounded border ${allowanceChipClass(item.allowance)}`}>
                   {item.allowance === "Prime Cost" ? "PC" : "PS"}
                 </span>
               ) : (
@@ -746,7 +746,7 @@ export default function EstimateTemplateDetail() {
 
       {/* ── Column Headers ── */}
       <div
-        className="grid items-center h-7 bg-muted/50 border-b border-border flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none"
+        className="grid items-center h-7 bg-muted/50 border-b border-border flex-shrink-0 text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
         style={{ gridTemplateColumns: GRID_TEMPLATE }}
       >
         <div /> {/* drag */}
@@ -814,7 +814,7 @@ export default function EstimateTemplateDetail() {
                     </div>
                     <div className="col-span-10 pl-1 flex items-center gap-2">
                       <span className="text-xs font-semibold">{label}</span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-data text-muted-foreground">
                         {gItems.length} {gItems.length === 1 ? "item" : "items"}
                       </span>
                     </div>

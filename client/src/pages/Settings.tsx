@@ -829,7 +829,7 @@ export default function Settings() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       Map each cost code to an option in this category
                     </p>
                   </div>
@@ -848,7 +848,7 @@ export default function Settings() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-data text-muted-foreground">
                       Projects auto-create as options in this category
                     </p>
                   </div>
@@ -889,7 +889,7 @@ export default function Settings() {
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-table text-muted-foreground">
                   Set <code className="bg-muted px-1 rounded">XERO_WEBHOOK_KEY</code> in environment settings with the key from the Xero developer portal to enable signature validation.
                 </p>
               </div>
@@ -1638,7 +1638,7 @@ function TimesheetSettingsSection() {
           {reminderEnabled && (
             <div className="max-w-xs">
               <Label className="text-sm font-medium">Remind after (hours)</Label>
-              <p className="text-[11px] text-muted-foreground mb-1.5">
+              <p className="text-table text-muted-foreground mb-1.5">
                 Send a notification when a timesheet has been recording for longer than this
               </p>
               <Input

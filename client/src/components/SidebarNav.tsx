@@ -929,7 +929,7 @@ export function SidebarNav() {
                       const sec = dynamicSections[sectionId];
                       return (
                         <div key={sectionId}>
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 pt-2 pb-0.5 select-none">
+                          <p className="text-label uppercase tracking-wide font-medium text-muted-foreground px-2 pt-2 pb-0.5 select-none">
                             {sec.label}
                           </p>
                           {sec.items.map((item, index) => {
@@ -1025,7 +1025,7 @@ export function SidebarNav() {
                           {showBadge && (
                             <Badge 
                               variant="destructive" 
-                              className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-[10px]"}
+                              className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-data"}
                             >
                               {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
                             </Badge>
@@ -1096,7 +1096,7 @@ export function SidebarNav() {
                     <div className="mb-1.5">
                       <button
                         onClick={() => toggleGroup("user")}
-                        className="flex items-center gap-1 w-full px-1 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                        className="flex items-center gap-1 w-full px-1 py-0.5 text-label font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
                       >
                         <ChevronDown 
                           className={cn(
@@ -1155,7 +1155,7 @@ export function SidebarNav() {
                   <div className="mb-1.5">
                     <button
                       onClick={() => toggleGroup("project")}
-                      className="flex items-center gap-1 w-full px-1 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                      className="flex items-center gap-1 w-full px-1 py-0.5 text-label font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
                     >
                       <ChevronDown 
                         className={cn(
@@ -1207,7 +1207,7 @@ export function SidebarNav() {
                     <div key={sectionId} className="mb-2">
                       <button
                         onClick={() => toggleGroup(sectionId)}
-                        className="flex items-center gap-1 w-full px-1 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                        className="flex items-center gap-1 w-full px-1 py-1 text-label font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
                       >
                         <ChevronDown 
                           className={cn(
@@ -1267,7 +1267,7 @@ export function SidebarNav() {
                   <div className="text-center py-6 text-xs text-muted-foreground">
                     <Star className="h-6 w-6 mx-auto mb-2 opacity-30" />
                     <p>No favorites yet</p>
-                    <p className="mt-1 text-[10px]">Click the star icon on any menu item to add it here</p>
+                    <p className="mt-1 text-data">Click the star icon on any menu item to add it here</p>
                   </div>
                 )}
               </div>

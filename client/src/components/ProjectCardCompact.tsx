@@ -152,7 +152,7 @@ export default function ProjectCardCompact({
         {/* Row 2: budget left, progress ring right */}
         {showBudgetRow && (
           <div className="flex items-center justify-between gap-1.5">
-            <span className="text-[11px] font-semibold text-foreground truncate">
+            <span className="text-table font-semibold text-foreground truncate">
               {visibleFields.budget && costValue ? formatCurrency(costValue) : ''}
             </span>
             {visibleFields.progress && project.progress != null && (
@@ -164,12 +164,12 @@ export default function ProjectCardCompact({
         {/* Row 3: client left, foreman avatar right */}
         {showClientRow && (
           <div className="flex items-center justify-between gap-1.5">
-            <span className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">
+            <span className="text-table text-muted-foreground truncate flex-1 min-w-0">
               {visibleFields.client && project.clientName ? project.clientName : ''}
             </span>
             {visibleFields.foreman && project.foreman ? (
               <Avatar className="h-5 w-5 border border-border/50 shrink-0">
-                <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">
+                <AvatarFallback className="text-data bg-muted text-muted-foreground">
                   {getInitials(project.foreman)}
                 </AvatarFallback>
               </Avatar>
@@ -184,7 +184,7 @@ export default function ProjectCardCompact({
           <div className="flex items-center gap-1 flex-wrap">
             {groupBy === "phase" && statusOption && (
               <Badge
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                 style={{
                   backgroundColor: `${statusOption.color}15`,
                   color: statusOption.color,
@@ -197,7 +197,7 @@ export default function ProjectCardCompact({
             {visibleFields.dueDate && project.endDate && (
               <Badge
                 variant="outline"
-                className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate"
+                className="text-data px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate"
               >
                 <Calendar className="h-2 w-2 mr-0.5" />
                 {format(new Date(project.endDate), 'MMM d')}

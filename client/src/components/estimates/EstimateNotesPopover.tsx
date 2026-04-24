@@ -88,7 +88,7 @@ export function EstimateNotesPopover({ estimateId }: EstimateNotesPopoverProps) 
         >
           <MessageSquare className="w-3 h-3" />
           {notes.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-[8px] rounded-full flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary text-primary-foreground text-2xs rounded-full flex items-center justify-center">
               {notes.length > 9 ? '9+' : notes.length}
             </span>
           )}
@@ -117,7 +117,7 @@ export function EstimateNotesPopover({ estimateId }: EstimateNotesPopoverProps) 
             />
           </div>
           <div className="flex justify-between items-center mt-2">
-            <span className="text-[10px] text-muted-foreground">Cmd+Enter to send</span>
+            <span className="text-data text-muted-foreground">Cmd+Enter to send</span>
             <Button 
               type="submit" 
               size="sm" 
@@ -151,7 +151,7 @@ export function EstimateNotesPopover({ estimateId }: EstimateNotesPopoverProps) 
                   data-testid={`note-${note.id}`}
                 >
                   <div className="flex items-start gap-2">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-medium flex items-center justify-center flex-shrink-0">
+                    <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-data font-medium flex items-center justify-center flex-shrink-0">
                       {getUserInitials(note.userId)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -159,7 +159,7 @@ export function EstimateNotesPopover({ estimateId }: EstimateNotesPopoverProps) 
                         <span className="text-xs font-medium truncate">
                           {getUserName(note.userId)}
                         </span>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-data text-muted-foreground">
                           {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
                         </span>
                       </div>

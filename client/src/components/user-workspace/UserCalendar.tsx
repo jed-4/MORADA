@@ -730,7 +730,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                 >
                   <span>Projects</span>
                   {filters.projectIds && filters.projectIds.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.projectIds.length}
                     </Badge>
                   )}
@@ -781,7 +781,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                 >
                   <span>Status</span>
                   {filters.statuses && filters.statuses.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.statuses.length}
                     </Badge>
                   )}
@@ -832,7 +832,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                 >
                   <span>Event Types</span>
                   {!allEventTypesSelected && filters.eventTypes && filters.eventTypes.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                       {filters.eventTypes.length}
                     </Badge>
                   )}
@@ -872,7 +872,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                         />
                         <span className="text-xs">{type.label}</span>
                         {type.disabled && type.key === 'google-calendar' && (
-                          <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                          <span className="text-data text-muted-foreground">(not connected)</span>
                         )}
                       </label>
                     ))}
@@ -891,7 +891,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
               >
                 <span>Date Range</span>
                 {(filters.dateFrom || filters.dateTo) && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
                     1
                   </Badge>
                 )}

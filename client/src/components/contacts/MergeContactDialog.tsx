@@ -121,7 +121,7 @@ export function MergeContactDialog({
                   <SelectItem key={contact.id} value={contact.id}>
                     <div className="flex items-center gap-2">
                       <span>{contact.name}</span>
-                      <Badge variant="outline" className="text-[10px] capitalize">
+                      <Badge variant="outline" className="text-data capitalize">
                         {contact.contactType}
                       </Badge>
                     </div>
@@ -152,7 +152,7 @@ export function MergeContactDialog({
                   <SelectItem key={contact.id} value={contact.id}>
                     <div className="flex items-center gap-2">
                       <span>{contact.name}</span>
-                      <Badge variant="outline" className="text-[10px] capitalize">
+                      <Badge variant="outline" className="text-data capitalize">
                         {contact.contactType}
                       </Badge>
                     </div>

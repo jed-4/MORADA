@@ -606,7 +606,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               <Button variant="outline" size="icon" className="h-7 w-7 relative">
                 <Filter className="w-3 h-3" />
                 {activeFilterCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-label rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
                     {activeFilterCount}
                   </span>
                 )}
@@ -620,7 +620,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assignees</span>
                       {hiddenAssignees.size > 0 && (
                         <button
-                          className="text-[10px] text-primary hover:underline"
+                          className="text-data text-primary hover:underline"
                           onClick={() => setHiddenAssignees(new Set())}
                         >
                           Show all
@@ -662,7 +662,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Schedule Type</span>
                     {hidePreconstructionSchedule && (
                       <button
-                        className="text-[10px] text-primary hover:underline"
+                        className="text-data text-primary hover:underline"
                         onClick={() => setHidePreconstructionSchedule(false)}
                       >
                         Show all
@@ -685,7 +685,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Projects</span>
                       {hiddenProjects.size > 0 && (
                         <button
-                          className="text-[10px] text-primary hover:underline"
+                          className="text-data text-primary hover:underline"
                           onClick={() => setHiddenProjects(new Set())}
                         >
                           Show all
@@ -803,7 +803,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       {row.name}
                     </span>
                     {row.id.startsWith("team:") && (
-                      <span className="shrink-0 text-[9px] px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">
+                      <span className="shrink-0 text-label px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">
                         Team
                       </span>
                     )}
@@ -820,12 +820,12 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           )} />
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent side="right" className="bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 border">
+                      <TooltipContent side="right" className="bg-popover text-popover-foreground text-data px-1.5 py-0.5 border">
                         Up to {assigneeOverloads.get(row.id)?.maxConcurrent} concurrent items
                       </TooltipContent>
                     </Tooltip>
                   )}
-                  <span className="text-[10px] text-muted-foreground shrink-0">
+                  <span className="text-data text-muted-foreground shrink-0">
                     {row.items.length}
                   </span>
                 </div>
@@ -855,7 +855,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     className="flex items-center px-1.5 border-l border-border/40 first:border-l-0 min-w-0"
                     style={{ flex: `${seg.widthPx} 1 0` }}
                   >
-                    <span className="text-[10px] font-semibold text-muted-foreground/80 uppercase tracking-wide truncate">
+                    <span className="text-data font-semibold text-muted-foreground/80 uppercase tracking-wide truncate">
                       {format(seg.start, "MMM yyyy")}
                     </span>
                   </div>
@@ -870,7 +870,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                     className="flex items-center px-1.5 border-l border-border/60 first:border-l-0 min-w-0"
                     style={{ flex: `${seg.widthPx} 1 0` }}
                   >
-                    <span className="text-[10px] font-medium text-muted-foreground truncate">
+                    <span className="text-data font-medium text-muted-foreground truncate">
                       {format(seg.start, "d MMM")}
                     </span>
                   </div>
@@ -912,14 +912,14 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                             }}
                           />
                         </TooltipTrigger>
-                        <TooltipContent side="top" className="bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 border">
+                        <TooltipContent side="top" className="bg-popover text-popover-foreground text-data px-1.5 py-0.5 border">
                           {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                         </TooltipContent>
                       </Tooltip>
-                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-label leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                       </div>
-                      <div className={cn("text-[9px] leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-label leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {format(day, "d")}
                       </div>
                     </div>
@@ -1030,7 +1030,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                               onClick={() => setSelectedItem(item)}
                             >
                               <span
-                                className="text-[10px] font-medium truncate px-1 leading-none"
+                                className="text-data font-medium truncate px-1 leading-none"
                                 style={{ color: "#fff" }}
                               >
                                 {item.name}
@@ -1038,7 +1038,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="bg-popover text-popover-foreground border max-w-[240px]">
-                            <div className="text-[10px]">
+                            <div className="text-data">
                               <div className="font-medium">{item.name}</div>
                               <div className="text-muted mt-0.5">{item.projectName}</div>
                               <div className="text-muted mt-0.5">

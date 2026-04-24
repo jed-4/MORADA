@@ -140,7 +140,7 @@ export function CasvaScheduleRow({
           {item.assignedToName && (
             <div className="flex items-center gap-1.5 min-w-0">
               <Avatar className="w-5 h-5 flex-shrink-0">
-                <AvatarFallback className="text-[9px] bg-muted">
+                <AvatarFallback className="text-label bg-muted">
                   {item.assignedToName.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
@@ -156,7 +156,7 @@ export function CasvaScheduleRow({
       {visibleColumns.type && (
         <TableCell className="w-24 h-8 py-0">
           {item.type && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1 capitalize">
+            <Badge variant="outline" className="text-data h-4 px-1 capitalize">
               {item.type}
             </Badge>
           )}
@@ -245,7 +245,7 @@ export function CasvaScheduleRow({
                 <Check className="w-3 h-3" />
               )}
             </button>
-            <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-[11px] font-medium px-2 py-0.5 min-w-[40px]">
+            <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-table font-medium px-2 py-0.5 min-w-[40px]">
               {item.progressPercent || 0} %
             </span>
           </div>

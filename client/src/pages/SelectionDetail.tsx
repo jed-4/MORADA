@@ -537,7 +537,7 @@ export default function SelectionDetail() {
               <div className="flex items-center gap-6 flex-wrap">
                 {/* Status */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Status</div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Status</div>
                   <Badge 
                     variant="outline" 
                     className={cn("text-xs capitalize", currentStatus.bgClass, currentStatus.textClass)}
@@ -549,13 +549,13 @@ export default function SelectionDetail() {
 
                 {/* Category */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Category</div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Category</div>
                   <div className="text-sm font-medium">{selection.category || "—"}</div>
                 </div>
                 
                 {/* Location */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Location</div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Location</div>
                   <div className="text-sm font-medium flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-muted-foreground" />
                     {selection.room || "—"}
@@ -564,7 +564,7 @@ export default function SelectionDetail() {
                 
                 {/* Deadline */}
                 <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
                   <div className="text-sm font-medium flex items-center gap-1">
                     <CalendarIcon className="w-3 h-3 text-muted-foreground" />
                     {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
@@ -589,16 +589,16 @@ export default function SelectionDetail() {
                       <div className="flex items-start gap-6">
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Allowance</span>
+                            <span className="text-data text-muted-foreground uppercase tracking-wide w-16">Allowance</span>
                             <span className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Selected</span>
+                            <span className="text-data text-muted-foreground uppercase tracking-wide w-16">Selected</span>
                             <span className="text-sm font-semibold text-primary">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
                         <div className="flex flex-col items-end">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Difference</span>
+                          <span className="text-data text-muted-foreground uppercase tracking-wide">Difference</span>
                           {(() => {
                             const difference = selectedPrice - allowanceAmount;
                             const isOver = difference > 0;
@@ -689,7 +689,7 @@ export default function SelectionDetail() {
                       name="name"
                       render={({ field }) => (
                         <FormItem className="lg:col-span-2">
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Name</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Name</FormLabel>
                           <FormControl>
                             <Input 
                               placeholder="e.g., Kitchen Splashback Tiles"
@@ -707,7 +707,7 @@ export default function SelectionDetail() {
                       name="category"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Category</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Category</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="h-7 text-sm" data-testid="select-category">
@@ -731,7 +731,7 @@ export default function SelectionDetail() {
                       name="room"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Location</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Location</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="h-7 text-sm" data-testid="select-room">
@@ -759,7 +759,7 @@ export default function SelectionDetail() {
                       name="deadline"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
                           <Popover>
                             <PopoverTrigger asChild>
                               <FormControl>
@@ -798,7 +798,7 @@ export default function SelectionDetail() {
                       name="status"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Status</FormLabel>
                           <Select onValueChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="h-7 text-sm" data-testid="select-status">
@@ -822,7 +822,7 @@ export default function SelectionDetail() {
                       name="allowance"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance ($)</FormLabel>
+                          <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Allowance ($)</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
@@ -858,7 +858,7 @@ export default function SelectionDetail() {
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-[10px] text-muted-foreground uppercase tracking-wide">Description</FormLabel>
+                        <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Description</FormLabel>
                         <FormControl>
                           <Textarea 
                             placeholder="Add notes about this selection..."
@@ -1213,7 +1213,7 @@ export default function SelectionDetail() {
           <div className="surface-panel p-3" data-testid="selection-comments">
             <div className="flex items-center gap-2 mb-2">
               <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Comments</span>
+              <span className="text-data text-muted-foreground uppercase tracking-wide">Comments</span>
             </div>
             <div className="text-center py-4 text-muted-foreground">
               <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />

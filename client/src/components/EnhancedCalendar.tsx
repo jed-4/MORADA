@@ -144,7 +144,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
+        "group relative flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-table mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isReadOnlyEvent && "touch-none",
         !isReadOnlyEvent && !showResizeHandles && "cursor-move hover:shadow-md",
@@ -191,7 +191,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         <div className="flex items-center gap-1 w-full">
           <div 
             className={cn(
-              "font-semibold truncate flex-1 text-[10.5px] leading-tight",
+              "font-semibold truncate flex-1 text-data leading-tight",
               isCompleted && "line-through opacity-60"
             )}
             style={{ color: notionColors.darkText }}
@@ -201,7 +201,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {isRecurring && (
             <Badge 
               variant="outline" 
-              className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-green-500 border-none text-white font-bold"
+              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-green-500 border-none text-white font-bold"
               title="Recurring template task"
               data-testid={`recurring-badge-${event.id}`}
             >
@@ -211,7 +211,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {event.isModified && (
             <Badge 
               variant="outline" 
-              className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold"
+              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold"
               title="Task has been rescheduled"
               data-testid={`moved-badge-${event.id}`}
             >
@@ -221,7 +221,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </div>
         {showTime && (displayOptions?.showTime !== false) && (
           <div 
-            className="text-[9px] font-normal opacity-80 leading-tight"
+            className="text-label font-normal opacity-80 leading-tight"
             style={{ color: notionColors.darkText }}
           >
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
@@ -229,7 +229,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         )}
         {displayOptions?.showProject && event.projectName && (
           <div 
-            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full"
+            className="text-label font-normal opacity-70 leading-tight truncate w-full"
             style={{ color: notionColors.darkText }}
           >
             {event.projectName}
@@ -237,7 +237,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         )}
         {displayOptions?.showAssignee && event.assigneeName && (
           <div 
-            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full"
+            className="text-label font-normal opacity-70 leading-tight truncate w-full"
             style={{ color: notionColors.darkText }}
           >
             {event.assigneeName}
@@ -245,7 +245,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         )}
         {displayOptions?.showStatus && event.status && (
           <div 
-            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full capitalize"
+            className="text-label font-normal opacity-70 leading-tight truncate w-full capitalize"
             style={{ color: notionColors.darkText }}
           >
             {event.status}
@@ -952,7 +952,7 @@ export function EnhancedCalendar({
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
             <div
               key={day}
-              className="py-2 px-1 text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-r border-border/50 last:border-r-0"
+              className="py-2 px-1 text-center text-data font-semibold text-muted-foreground uppercase tracking-wide border-r border-border/50 last:border-r-0"
             >
               {day}
             </div>
@@ -987,8 +987,8 @@ export function EnhancedCalendar({
                         className="h-full"
                       >
                         <div className={cn(
-                          "text-[11px] font-medium mb-0.5 px-0.5",
-                          isToday(date) && "inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px]",
+                          "text-table font-medium mb-0.5 px-0.5",
+                          isToday(date) && "inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-data",
                           !isToday(date) && "text-foreground"
                         )}>
                           {format(date, "d")}
@@ -1006,7 +1006,7 @@ export function EnhancedCalendar({
                             />
                           ))}
                           {dayEvents.length > 3 && (
-                            <div className="text-[9px] text-muted-foreground px-1 py-0.5">
+                            <div className="text-label text-muted-foreground px-1 py-0.5">
                               +{dayEvents.length - 3} more
                             </div>
                           )}
@@ -1054,7 +1054,7 @@ export function EnhancedCalendar({
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
-                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+                  <div className="text-data text-muted-foreground uppercase font-semibold">
                     {format(date, "EEE")}
                   </div>
                   <div className={cn(
@@ -1071,7 +1071,7 @@ export function EnhancedCalendar({
 
         {/* All-Day Events Section - Notion style */}
         <div className="flex border-b border-border">
-          <div className="py-1.5 px-2 border-r border-border/50 w-16 flex-shrink-0 text-[9px] text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
+          <div className="py-1.5 px-2 border-r border-border/50 w-16 flex-shrink-0 text-label text-muted-foreground flex items-center justify-center bg-background uppercase font-semibold">
             All Day
           </div>
           <div 
@@ -1114,7 +1114,7 @@ export function EnhancedCalendar({
                   {hiddenCount > 0 && (
                     <Popover>
                       <PopoverTrigger asChild>
-                        <div className="text-[9px] text-muted-foreground px-1 py-0.5 cursor-pointer hover:text-foreground hover:bg-muted/50 rounded transition-colors">
+                        <div className="text-label text-muted-foreground px-1 py-0.5 cursor-pointer hover:text-foreground hover:bg-muted/50 rounded transition-colors">
                           +{hiddenCount} more
                         </div>
                       </PopoverTrigger>
@@ -1156,7 +1156,7 @@ export function EnhancedCalendar({
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[9px] text-muted-foreground border-b border-border/50 text-center uppercase">
+              <div key={hour} className="h-10 p-1 text-label text-muted-foreground border-b border-border/50 text-center uppercase">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -1248,13 +1248,13 @@ export function EnhancedCalendar({
                             }}
                           >
                             <div
-                              className="text-[9px] font-semibold px-1 pt-0.5 truncate leading-tight"
+                              className="text-label font-semibold px-1 pt-0.5 truncate leading-tight"
                               style={{ color: fb.color }}
                             >
                               {fb.title}
                             </div>
                             <div
-                              className="text-[8px] px-1 truncate leading-tight opacity-80"
+                              className="text-2xs px-1 truncate leading-tight opacity-80"
                               style={{ color: fb.color }}
                             >
                               {startTime} – {endTime}
@@ -1265,7 +1265,7 @@ export function EnhancedCalendar({
                               {fbTasks.slice(0, 4).map((t) => (
                                 <div
                                   key={t.id}
-                                  className="flex items-center gap-1 text-[8px] leading-tight rounded-sm px-1 py-0.5"
+                                  className="flex items-center gap-1 text-2xs leading-tight rounded-sm px-1 py-0.5"
                                   style={{ backgroundColor: fb.color + "30", color: fb.color }}
                                 >
                                   <span
@@ -1282,7 +1282,7 @@ export function EnhancedCalendar({
                                 </div>
                               ))}
                               {fbTasks.length > 4 && (
-                                <div className="text-[7px] leading-tight opacity-70" style={{ color: fb.color }}>
+                                <div className="text-2xs leading-tight opacity-70" style={{ color: fb.color }}>
                                   +{fbTasks.length - 4} more
                                 </div>
                               )}

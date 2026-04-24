@@ -184,7 +184,7 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
       style={style}
       onContextMenu={onContextMenu}
       className={cn(
-        "h-7 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted/50 select-none relative",
+        "h-7 px-2 text-data font-medium uppercase tracking-wide text-muted-foreground/70 border-b border-border bg-muted/50 select-none relative",
         align === "right" && "text-right",
         align === "center" && "text-center",
         !pinned && "cursor-grab active:cursor-grabbing",

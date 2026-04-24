@@ -2650,7 +2650,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                 className="h-full rounded transition-[width] bg-primary/70"
                                 style={{ width: `${percent}%` }}
                               />
-                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-foreground/70 pointer-events-none">
+                              <span className="absolute inset-0 flex items-center justify-center text-data font-medium text-foreground/70 pointer-events-none">
                                 {percent}%
                               </span>
                             </div>
@@ -2678,7 +2678,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                     >
                                       {item.assignedToName ? (
                                         <Avatar className="w-5 h-5">
-                                          <AvatarFallback className="text-[10px]">
+                                          <AvatarFallback className="text-data">
                                             {item.assignedToName.substring(0, 2).toUpperCase()}
                                           </AvatarFallback>
                                         </Avatar>
@@ -2691,7 +2691,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                   </PopoverTrigger>
                                 </TooltipTrigger>
                                 {item.assignedToName && !assigneePopoverItemId && (
-                                  <TooltipContent side="bottom" className="bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 border">
+                                  <TooltipContent side="bottom" className="bg-popover text-popover-foreground text-data px-1.5 py-0.5 border">
                                     {item.assignedToName}
                                   </TooltipContent>
                                 )}
@@ -3012,7 +3012,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   }}
                 >
                   <span
-                    className="absolute top-1 left-1 text-[9px] font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    className="absolute top-1 left-1 text-label font-semibold whitespace-nowrap rounded px-1 py-0.5"
                     style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
                   >
                     {line.label}
@@ -3582,7 +3582,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   }}
                 >
                   <span
-                    className="absolute top-1 left-1 text-[9px] font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    className="absolute top-1 left-1 text-label font-semibold whitespace-nowrap rounded px-1 py-0.5"
                     style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
                   >
                     {line.label}

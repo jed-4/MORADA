@@ -534,7 +534,7 @@ export default function Timesheets() {
         header: "Date",
         meta: { headerLabel: "Date", defaultWidth: 70 },
         cell: ({ row }) => (
-          <span className="text-[11px] font-medium truncate">
+          <span className="text-table font-medium truncate">
             {formatTimesheetDate(row.original.date, tsDateFormat)}
           </span>
         ),
@@ -545,7 +545,7 @@ export default function Timesheets() {
         header: "User",
         meta: { headerLabel: "User", defaultWidth: 100 },
         cell: ({ row }) => (
-          <span className="text-[11px] truncate">{getUserName(row.original.userId)}</span>
+          <span className="text-table truncate">{getUserName(row.original.userId)}</span>
         ),
       },
       {
@@ -554,7 +554,7 @@ export default function Timesheets() {
         header: "Project",
         meta: { headerLabel: "Project", defaultWidth: 120 },
         cell: ({ row }) => (
-          <span className="text-[11px] truncate text-muted-foreground">
+          <span className="text-table truncate text-muted-foreground">
             {getProjectName(row.original.projectId)}
           </span>
         ),
@@ -565,7 +565,7 @@ export default function Timesheets() {
         header: "Cost Code",
         meta: { headerLabel: "Cost Code", defaultWidth: 100 },
         cell: ({ row }) => (
-          <span className="text-[11px] truncate text-muted-foreground">
+          <span className="text-table truncate text-muted-foreground">
             {getCostCodeName(row.original.costCodeId)}
           </span>
         ),
@@ -577,7 +577,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "Start", defaultWidth: 60 },
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-table text-muted-foreground tabular-nums">
             {row.original.startTime || "-"}
           </span>
         ),
@@ -589,7 +589,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "End", defaultWidth: 60 },
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-table text-muted-foreground tabular-nums">
             {row.original.endTime || "-"}
           </span>
         ),
@@ -601,7 +601,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "Break", defaultWidth: 45 },
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-table text-muted-foreground tabular-nums">
             {row.original.breakDuration ? formatDuration(parseFloat(row.original.breakDuration)) : "-"}
           </span>
         ),
@@ -612,7 +612,7 @@ export default function Timesheets() {
         header: "Hours",
         meta: { headerLabel: "Hours", defaultWidth: 50 },
         cell: ({ row }) => (
-          <span className="text-[11px] font-medium tabular-nums">
+          <span className="text-table font-medium tabular-nums">
             {formatDuration(getNetHours(row.original))}
           </span>
         ),
@@ -624,7 +624,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "Rate", defaultWidth: 50 },
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-table text-muted-foreground tabular-nums">
             ${row.original.hourlyRate ? parseFloat(row.original.hourlyRate).toFixed(0) : "0"}
           </span>
         ),
@@ -636,7 +636,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "Total", defaultWidth: 60, align: "right" },
         cell: ({ row }) => (
-          <span className="text-[11px] font-semibold tabular-nums">
+          <span className="text-table font-semibold tabular-nums">
             ${row.original.total ? parseFloat(row.original.total).toFixed(2) : "0.00"}
           </span>
         ),
@@ -653,14 +653,14 @@ export default function Timesheets() {
             return (
               <div className="flex items-center gap-1 flex-wrap">
                 {(labels as string[]).map((label, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px] font-medium">
+                  <Badge key={i} variant="secondary" className="text-data font-medium">
                     {label}
                   </Badge>
                 ))}
               </div>
             );
           }
-          return <span className="text-[11px] text-muted-foreground/50">&mdash;</span>;
+          return <span className="text-table text-muted-foreground/50">&mdash;</span>;
         },
       },
       {
@@ -670,10 +670,10 @@ export default function Timesheets() {
         meta: { headerLabel: "Status", defaultWidth: 70 },
         cell: ({ row }) => {
           const s = row.original.status;
-          if (s === "approved") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
-          if (s === "submitted") return <Badge variant="outline" className="text-[10px] font-medium bg-muted text-secondary border-border">Submitted</Badge>;
-          if (s === "rejected") return <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-status-danger dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
-          return <Badge variant="secondary" className="text-[10px] font-medium">{s}</Badge>;
+          if (s === "approved") return <Badge variant="outline" className="text-data font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
+          if (s === "submitted") return <Badge variant="outline" className="text-data font-medium bg-muted text-secondary border-border">Submitted</Badge>;
+          if (s === "rejected") return <Badge variant="outline" className="text-data font-medium bg-red-50 dark:bg-red-900/20 text-status-danger dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
+          return <Badge variant="secondary" className="text-data font-medium">{s}</Badge>;
         },
       },
       {
@@ -684,10 +684,10 @@ export default function Timesheets() {
         meta: { headerLabel: "PO Status", defaultWidth: 90 },
         cell: ({ row }) => {
           const p = row.original.poStatus;
-          if (p === "awaiting_po") return <Badge variant="outline" className="text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">Awaiting PO</Badge>;
-          if (p === "on_po") return <Badge variant="outline" className="text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800">On PO</Badge>;
-          if (p === "paid") return <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Paid</Badge>;
-          return <span className="text-[11px] text-muted-foreground/50">&mdash;</span>;
+          if (p === "awaiting_po") return <Badge variant="outline" className="text-data font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">Awaiting PO</Badge>;
+          if (p === "on_po") return <Badge variant="outline" className="text-data font-medium bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800">On PO</Badge>;
+          if (p === "paid") return <Badge variant="outline" className="text-data font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Paid</Badge>;
+          return <span className="text-table text-muted-foreground/50">&mdash;</span>;
         },
       },
       {
@@ -697,7 +697,7 @@ export default function Timesheets() {
         enableSorting: false,
         meta: { headerLabel: "Description", defaultWidth: 180 },
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground truncate">
+          <span className="text-table text-muted-foreground truncate">
             {row.original.description || "-"}
           </span>
         ),
@@ -857,7 +857,7 @@ export default function Timesheets() {
                 >
                   <span>Project</span>
                   {selectedProjects.length > 0 && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
+                    <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
                       {selectedProjects.length}
                     </Badge>
                   )}
@@ -901,7 +901,7 @@ export default function Timesheets() {
               >
                 <span>User</span>
                 {selectedUsers.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
                     {selectedUsers.length}
                   </Badge>
                 )}
@@ -940,7 +940,7 @@ export default function Timesheets() {
               >
                 <span>Status</span>
                 {selectedStatuses.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
                     {selectedStatuses.length}
                   </Badge>
                 )}
@@ -983,7 +983,7 @@ export default function Timesheets() {
               >
                 <span>Cost Code</span>
                 {selectedCostCodes.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
                     {selectedCostCodes.length}
                   </Badge>
                 )}
@@ -1026,7 +1026,7 @@ export default function Timesheets() {
               >
                 <span>Phase</span>
                 {selectedPhases.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-primary/20 text-[#8b7ab8]">
+                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
                     {selectedPhases.length}
                   </Badge>
                 )}
@@ -1241,14 +1241,14 @@ export default function Timesheets() {
               <Table>
                 <TableHeader>
                   <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[140px] px-2">Team Member</TableHead>
+                    <TableHead className="text-data font-medium text-muted-foreground w-[140px] px-2">Team Member</TableHead>
                     {weekDays.map((day) => (
-                      <TableHead key={day.toISOString()} className="text-[10px] font-medium text-muted-foreground text-center w-[70px] px-1">
+                      <TableHead key={day.toISOString()} className="text-data font-medium text-muted-foreground text-center w-[70px] px-1">
                         <div>{format(day, "EEE")}</div>
-                        <div className="text-[9px]">{format(day, "dd/MM")}</div>
+                        <div className="text-label">{format(day, "dd/MM")}</div>
                       </TableHead>
                     ))}
-                    <TableHead className="text-[10px] font-medium text-muted-foreground text-center w-[70px] px-2 bg-muted/50">Total</TableHead>
+                    <TableHead className="text-data font-medium text-muted-foreground text-center w-[70px] px-2 bg-muted/50">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1261,14 +1261,14 @@ export default function Timesheets() {
                   ) : (
                     weeklySummary.map((user) => (
                       <TableRow key={user.userId} className="h-7 border-b border-border">
-                        <TableCell className="text-[11px] font-medium px-2 py-1 truncate max-w-[140px]">
+                        <TableCell className="text-table font-medium px-2 py-1 truncate max-w-[140px]">
                           {user.userName}
                         </TableCell>
                         {weekDays.map((day) => {
                           const dayKey = format(day, "yyyy-MM-dd");
                           const hours = user.dailyHours.get(dayKey) || 0;
                           return (
-                            <TableCell key={dayKey} className="text-[11px] text-center tabular-nums px-1 py-1">
+                            <TableCell key={dayKey} className="text-table text-center tabular-nums px-1 py-1">
                               {hours > 0 ? (
                                 <span className={hours >= 8 ? "font-medium text-status-success dark:text-green-400" : ""}>
                                   {formatDuration(hours)}
@@ -1279,7 +1279,7 @@ export default function Timesheets() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="text-[11px] font-semibold text-center tabular-nums px-2 py-1 bg-muted/30">
+                        <TableCell className="text-table font-semibold text-center tabular-nums px-2 py-1 bg-muted/30">
                           {formatDuration(user.totalHours)}
                         </TableCell>
                       </TableRow>
@@ -1288,17 +1288,17 @@ export default function Timesheets() {
                   {/* Totals Row */}
                   {weeklySummary.length > 0 && (
                     <TableRow className="h-7 bg-muted/20 border-t-2 border-border">
-                      <TableCell className="text-[10px] font-semibold px-2 py-1">TOTAL</TableCell>
+                      <TableCell className="text-data font-semibold px-2 py-1">TOTAL</TableCell>
                       {weekDays.map((day) => {
                         const dayKey = format(day, "yyyy-MM-dd");
                         const dayTotal = weeklySummary.reduce((sum, user) => sum + (user.dailyHours.get(dayKey) || 0), 0);
                         return (
-                          <TableCell key={dayKey} className="text-[10px] font-semibold text-center tabular-nums px-1 py-1">
+                          <TableCell key={dayKey} className="text-data font-semibold text-center tabular-nums px-1 py-1">
                             {dayTotal > 0 ? formatDuration(dayTotal) : "-"}
                           </TableCell>
                         );
                       })}
-                      <TableCell className="text-[10px] font-bold text-center tabular-nums px-2 py-1 bg-muted/50">
+                      <TableCell className="text-data font-bold text-center tabular-nums px-2 py-1 bg-muted/50">
                         {formatDuration(weeklySummary.reduce((sum, user) => sum + user.totalHours, 0))}
                       </TableCell>
                     </TableRow>
@@ -1467,14 +1467,14 @@ export default function Timesheets() {
                       <div
                         key={day.toISOString()}
                         style={{ flex }}
-                        className={`text-center py-1.5 border-r border-border last:border-r-0 text-[11px] font-medium min-w-0 ${
+                        className={`text-center py-1.5 border-r border-border last:border-r-0 text-table font-medium min-w-0 ${
                           isToday ? "bg-blue-50 dark:bg-blue-900/20" : "bg-muted/30 dark:bg-muted/10"
                         }`}
                       >
                         <div className={isToday ? "text-status-info dark:text-blue-400" : "text-muted-foreground"}>
                           {format(day, "EEE")}
                         </div>
-                        <div className={`text-[10px] font-semibold ${isToday ? "text-status-info dark:text-blue-400" : ""}`}>
+                        <div className={`text-data font-semibold ${isToday ? "text-status-info dark:text-blue-400" : ""}`}>
                           {format(day, "d")}
                         </div>
                         {/* Per-user lane labels (only when 2–5 users) */}
@@ -1483,7 +1483,7 @@ export default function Timesheets() {
                             {laneUsers.map(uid => (
                               <div
                                 key={uid}
-                                className="flex-1 text-[8px] text-muted-foreground truncate px-0.5 text-center border-r border-border/30 last:border-r-0"
+                                className="flex-1 text-2xs text-muted-foreground truncate px-0.5 text-center border-r border-border/30 last:border-r-0"
                                 title={getUserName(uid)}
                               >
                                 {getUserLabel(uid)}
@@ -1498,7 +1498,7 @@ export default function Timesheets() {
 
                 {/* Too-many-users notice (supplemental, calendar still renders with overlap) */}
                 {tooManyUsers && (
-                  <div className="flex items-center justify-center py-1.5 bg-muted/20 border-b border-border text-[10px] text-muted-foreground italic">
+                  <div className="flex items-center justify-center py-1.5 bg-muted/20 border-b border-border text-data text-muted-foreground italic">
                     Filter to 5 or fewer users to enable lanes
                   </div>
                 )}
@@ -1508,7 +1508,7 @@ export default function Timesheets() {
                   <div className="flex border-b border-border bg-muted/10">
                     <div
                       style={{ width: GUTTER_W, minWidth: GUTTER_W }}
-                      className="text-[9px] text-muted-foreground text-right pr-2 pt-1 leading-tight border-r border-border"
+                      className="text-label text-muted-foreground text-right pr-2 pt-1 leading-tight border-r border-border"
                     >
                       no<br />time
                     </div>
@@ -1535,7 +1535,7 @@ export default function Timesheets() {
                                       <div
                                         key={ts.id}
                                         onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                        className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                        className={`text-label px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
                                         style={projColor ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` } : undefined}
                                         title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
                                       >
@@ -1561,7 +1561,7 @@ export default function Timesheets() {
                                   <div
                                     key={ts.id}
                                     onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                    className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                    className={`text-label px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate hover-elevate relative text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
                                     style={projColor ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` } : undefined}
                                     title={`${getUserName(ts.userId)} — ${getProjectName(ts.projectId)} (${formatDuration(getNetHours(ts))})`}
                                   >
@@ -1592,7 +1592,7 @@ export default function Timesheets() {
                       return (
                         <div
                           key={h}
-                          className="absolute right-0 pr-2 text-[10px] text-muted-foreground leading-none"
+                          className="absolute right-0 pr-2 text-data text-muted-foreground leading-none"
                           style={{ top: i * HOUR_PX - 6 }}
                         >
                           {h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`}
@@ -1695,7 +1695,7 @@ export default function Timesheets() {
                               <div
                                 key={ts.id}
                                 onClick={() => { setSelectedTimesheet(ts); setIsDialogOpen(true); }}
-                                className={`absolute rounded text-[9px] px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
+                                className={`absolute rounded text-label px-1 py-0.5 cursor-pointer overflow-hidden hover-elevate text-foreground${projColor ? "" : " bg-muted/60 border-l-2 border-border"}`}
                                 style={projColor ? {
                                   top,
                                   height,
@@ -1783,7 +1783,7 @@ export default function Timesheets() {
           {selectedTimesheets.length > 0 ? (
             <div className="flex items-center justify-between gap-4 px-3 py-2">
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-[11px]">
+                <Badge variant="secondary" className="text-table">
                   {selectedTimesheets.length} selected
                 </Badge>
               </div>
@@ -1843,10 +1843,10 @@ export default function Timesheets() {
                       const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
                       return (
                         <div key={key} className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-data font-semibold ${bgClass} ${textClass}`}>
                             {label}
                           </span>
-                          <span className="text-[11px] font-medium tabular-nums text-foreground">
+                          <span className="text-table font-medium tabular-nums text-foreground">
                             {formatDuration(totalHours)}
                           </span>
                         </div>

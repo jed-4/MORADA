@@ -232,7 +232,7 @@ export default function DashboardThemeSettings({
                     />
                     {!hasColor && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="text-[8px] font-medium text-muted-foreground bg-muted/80 px-0.5 rounded">OFF</span>
+                        <span className="text-2xs font-medium text-muted-foreground bg-muted/80 px-0.5 rounded">OFF</span>
                       </div>
                     )}
                   </div>
@@ -403,7 +403,7 @@ export default function DashboardThemeSettings({
                       }`}
                       style={{ background: preset.gradient }}
                     >
-                      <span className="text-[10px] text-white font-medium drop-shadow-md">
+                      <span className="text-data text-white font-medium drop-shadow-md">
                         {preset.name}
                       </span>
                     </button>
@@ -419,7 +419,7 @@ export default function DashboardThemeSettings({
                   placeholder="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
                   className="h-8 text-xs"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-data text-muted-foreground">
                   Format: linear-gradient(angle, #color1 0%, #color2 100%)
                 </p>
               </div>
