@@ -82,6 +82,8 @@ import {
   ExternalLink,
   Users,
   X,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -418,7 +420,7 @@ export default function SelectionDetail() {
         description: selection.description || "",
         category: selection.category || "",
         room: selection.room || "",
-        selectionType: (selection as any).selectionType || "selection",
+        selectionType: selection.selectionType || "selection",
         status: selection.status,
         deadline: selection.deadline || undefined,
         allowance: selection.allowance || undefined,
@@ -498,7 +500,7 @@ export default function SelectionDetail() {
         </div>
         
         <div className="flex items-center gap-2">
-          {hasUnsavedChanges && (
+          {hasUnsavedChanges && !isEditingDetails && (
             <Button 
               size="sm" 
               onClick={handleSaveSelection}
@@ -1207,7 +1209,27 @@ export default function SelectionDetail() {
             )}
           </div>
 
-          {/* Selection Details now lives above Options as a merged summary/edit block. */}
+          {/* Comments */}
+          <div className="surface-panel p-3" data-testid="selection-comments">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Comments</span>
+            </div>
+            <div className="text-center py-4 text-muted-foreground">
+              <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No comments yet</p>
+            </div>
+            <div className="flex items-start gap-2 pt-2 border-t">
+              <Textarea
+                placeholder="Add a comment..."
+                className="flex-1 min-h-[60px] text-sm"
+                data-testid="input-comment"
+              />
+              <Button size="icon" className="h-8 w-8" disabled data-testid="button-send-comment">
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
