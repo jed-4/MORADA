@@ -189,68 +189,78 @@
   --elevate-1: rgba(255,255,255, .03);
   --elevate-2: rgba(255,255,255, .07);
 
-  /* IMPLEMENT design tokens — three distinct warm-charcoal layers */
-  --background: 25 8% 11%; /* #1C1B19 — page floor */
+  /* Figma IMPLEMENTATION > Dark (Claude Dark) — exact hex values */
+  /* Surfaces */
+  --background: 40 6% 10%;        /* #1C1B19 */
 
-  --page-background: 25 8% 8%; /* #141312 — deepest anchor (matches sidebar) */
+  --page-background: 30 5% 7%;    /* #141312 — matches sidebar */
 
-  --foreground: 35 18% 88%; /* #E8E4DC */
+  --card: 36 7% 14%;              /* #252320 */
 
-  --border: 25 6% 22%; /* #393532 — visible but not harsh */
+  --card-foreground: 40 21% 89%;
 
-  --card: 25 8% 17%; /* #2B2926 — cards lift clearly off page */
+  --card-border: 36 6% 17%;
 
-  --card-foreground: 35 18% 88%;
+  --popover: 36 7% 14%;           /* #252320 */
 
-  --card-border: 25 6% 22%;
+  --popover-foreground: 40 21% 89%;
 
-  --sidebar: 25 8% 8%; /* #141312 — deepest anchor */
+  --popover-border: 36 6% 17%;
 
-  --sidebar-foreground: 35 18% 88%;
+  --muted: 36 7% 14%;             /* #252320 */
 
-  --sidebar-border: 25 6% 18%;
+  /* Sidebar — codebase consumes --sidebar (Tailwind: bg-sidebar) */
+  --sidebar: 30 5% 7%;            /* #141312 */
 
-  --sidebar-primary: 265 50% 75%; /* Lavender #A890D4 */
+  --sidebar-foreground: 40 21% 89%;
 
-  --sidebar-primary-foreground: 25 8% 11%;
+  --sidebar-border: 36 6% 17%;
 
-  --sidebar-accent: 25 8% 14%;
+  --sidebar-primary: 261 44% 70%; /* #A890D4 */
 
-  --sidebar-accent-foreground: 35 18% 88%;
+  --sidebar-primary-foreground: 40 6% 10%;
 
-  --sidebar-ring: 265 40% 68%;
+  --sidebar-accent: 36 7% 14%;
 
-  --popover: 25 8% 17%;
+  --sidebar-accent-foreground: 40 21% 89%;
 
-  --popover-foreground: 35 18% 88%;
+  --sidebar-ring: 261 44% 70%;
 
-  --popover-border: 25 6% 22%;
+  /* Borders */
+  --border: 36 6% 17%;            /* #2E2C29 */
 
-  /* Lavender Brand */
-  --primary: 265 50% 75%; /* #A890D4 */
+  --input: 36 6% 17%;             /* #2E2C29 */
 
-  --primary-foreground: 25 8% 11%;
+  --ring: 261 44% 70%;            /* #A890D4 */
 
-  --secondary: 265 25% 20%; /* #2D2840 subtle lavender wash */
+  /* Text */
+  --foreground: 40 21% 89%;       /* #E8E4DC */
 
-  --secondary-foreground: 35 18% 88%;
+  --muted-foreground: 40 6% 64%;  /* #A8A49C */
 
-  --muted: 25 8% 17%;
+  /* Primary — lavender */
+  --primary: 261 44% 70%;         /* #A890D4 */
 
-  --muted-foreground: 30 8% 65%; /* #A8A49C */
+  --primary-foreground: 40 6% 10%;
 
-  --accent: 265 25% 20%;
+  /* Secondary — lavender subtle wash */
+  --secondary: 253 23% 20%;       /* #2D2840 */
 
-  --accent-foreground: 35 18% 88%;
+  --secondary-foreground: 40 21% 89%;
+
+  --accent: 253 23% 20%;          /* #2D2840 */
+
+  --accent-foreground: 40 21% 89%;
 
   /* Status colors - Dark Mode */
   --success: 142 70% 48%;
 
   --warning: 39 55% 70%;
 
-  --destructive: 8 55% 65%;
+  /* Destructive — coral */
+  --destructive: 11 52% 70%;      /* #DA988A */
 
-  --destructive-foreground: 35 18% 88%;
+  --destructive-foreground: 40 21% 89%;
 
   /* Helper tokens */
   --border-strong: 30 8% 26%; /* #46423E */
