@@ -189,75 +189,75 @@
   --elevate-1: rgba(255,255,255, .03);
   --elevate-2: rgba(255,255,255, .07);
 
-  /* Claude Dark Canvas — warm dark palette */
-  --background: 36 11% 14%; /* Warm charcoal #252320 */
+  /* IMPLEMENT design tokens — three distinct warm-charcoal layers */
+  --background: 25 8% 11%; /* #1C1B19 — page floor */
 
-  --page-background: 30 8% 10%; /* Deep warm ink #1C1B19 */
+  --page-background: 25 8% 8%; /* #141312 — deepest anchor (matches sidebar) */
 
-  --foreground: 40 18% 91%; /* Warm cream #ECE9E2 */
+  --foreground: 35 18% 88%; /* #E8E4DC */
 
-  --border: 30 7% 21%; /* Warm hairline #3A3733 */
+  --border: 25 6% 22%; /* #393532 — visible but not harsh */
 
-  --card: 30 9% 16%; /* Elevated warm surface #2D2A26 */
+  --card: 25 8% 17%; /* #2B2926 — cards lift clearly off page */
 
-  --card-foreground: 40 18% 91%;
+  --card-foreground: 35 18% 88%;
 
-  --card-border: 30 7% 21%;
+  --card-border: 25 6% 22%;
 
-  --sidebar: 30 9% 7%; /* Deepest warm shadow #141312 */
+  --sidebar: 25 8% 8%; /* #141312 — deepest anchor */
 
-  --sidebar-foreground: 40 18% 91%;
+  --sidebar-foreground: 35 18% 88%;
 
-  --sidebar-border: 30 8% 15%;
+  --sidebar-border: 25 6% 18%;
 
-  --sidebar-primary: 261 44% 70%; /* Lavender #A890D4 */
+  --sidebar-primary: 265 50% 75%; /* Lavender #A890D4 */
 
-  --sidebar-primary-foreground: 30 9% 7%;
+  --sidebar-primary-foreground: 25 8% 11%;
 
-  --sidebar-accent: 36 11% 14%;
+  --sidebar-accent: 25 8% 14%;
 
-  --sidebar-accent-foreground: 40 18% 91%;
+  --sidebar-accent-foreground: 35 18% 88%;
 
-  --sidebar-ring: 261 44% 70%;
+  --sidebar-ring: 265 40% 68%;
 
-  --popover: 30 9% 16%;
+  --popover: 25 8% 17%;
 
-  --popover-foreground: 40 18% 91%;
+  --popover-foreground: 35 18% 88%;
 
-  --popover-border: 30 7% 21%;
+  --popover-border: 25 6% 22%;
 
   /* Lavender Brand */
-  --primary: 261 44% 70%; /* #A890D4 */
+  --primary: 265 50% 75%; /* #A890D4 */
 
-  --primary-foreground: 30 9% 7%;
+  --primary-foreground: 25 8% 11%;
 
-  --secondary: 30 7% 18%; /* Warm muted #322F2B */
+  --secondary: 265 25% 20%; /* #2D2840 subtle lavender wash */
 
-  --secondary-foreground: 40 18% 91%;
+  --secondary-foreground: 35 18% 88%;
 
-  --muted: 30 7% 18%;
+  --muted: 25 8% 17%;
 
-  --muted-foreground: 36 8% 60%; /* Warm grey #A29C92 */
+  --muted-foreground: 30 8% 65%; /* #A8A49C */
 
-  --accent: 261 44% 70%;
+  --accent: 265 25% 20%;
 
-  --accent-foreground: 30 9% 7%;
+  --accent-foreground: 35 18% 88%;
 
   /* Status colors - Dark Mode */
   --success: 142 70% 48%;
 
   --warning: 39 55% 70%;
 
-  --destructive: 0 75% 60%;
+  --destructive: 8 55% 65%;
 
-  --destructive-foreground: 0 0% 98%;
+  --destructive-foreground: 35 18% 88%;
 
   /* Helper tokens */
-  --border-strong: 30 8% 27%; /* #4A4640 */
-  --text-secondary: 36 12% 73%; /* #C4BEB4 */
-  --text-muted: 36 8% 60%; /* #A29C92 */
-  --primary-hover: 261 53% 77%; /* #B8A6E3 */
-  --primary-light: 265 25% 24%; /* #3A2F4D */
+  --border-strong: 30 8% 26%; /* #46423E */
+  --text-secondary: 30 8% 65%; /* #A8A49C */
+  --text-muted: 33 4% 51%; /* #8A8680 */
+  --primary-hover: 265 50% 77%; /* #BEA8E0 */
+  --primary-light: 265 25% 20%; /* #2D2840 */
 
   /* Organic accent palette */
   --teal: 170 35% 60%;
