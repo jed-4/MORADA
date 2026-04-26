@@ -195,7 +195,7 @@
 
   --page-background: 30 5% 7%;    /* #141312 — true floor, darkest surface (Claude pattern) */
 
-  --card: 36 7% 14%;              /* #252320 */
+  --card: 40 6% 10%;              /* #1C1B19 — matches canvas, no elevation */
 
   --card-foreground: 40 21% 89%;
 
