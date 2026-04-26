@@ -193,7 +193,7 @@
   /* Surfaces */
   --background: 40 6% 10%;        /* #1C1B19 */
 
-  --page-background: 40 6% 10%;   /* #1C1B19 — page floor (App.tsx wrapper consumes this) */
+  --page-background: 30 5% 7%;    /* #141312 — true floor, darkest surface (Claude pattern) */
 
   --card: 36 7% 14%;              /* #252320 */
 
@@ -210,7 +210,7 @@
   --muted: 36 7% 14%;             /* #252320 */
 
   /* Sidebar — codebase consumes --sidebar (Tailwind: bg-sidebar) */
-  --sidebar: 30 5% 7%;            /* #141312 */
+  --sidebar: 40 6% 10%;           /* #1C1B19 — matches main canvas, blends in (Claude pattern) */
 
   --sidebar-foreground: 40 21% 89%;
 
