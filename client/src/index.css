@@ -191,11 +191,11 @@
 
   /* Figma IMPLEMENTATION > Dark (Claude Dark) — exact hex values */
   /* Surfaces */
-  --background: 40 6% 10%;        /* #1C1B19 */
+  --background: 180 100% 50%;     /* DIAGNOSTIC CYAN — revert after test */
 
   --page-background: 330 100% 70%; /* DIAGNOSTIC HOT PINK — revert after test */
 
-  --card: 36 7% 14%;              /* #252320 */
+  --card: 90 100% 50%;            /* DIAGNOSTIC LIME — revert after test */
 
   --card-foreground: 40 21% 89%;
 
