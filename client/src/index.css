@@ -193,7 +193,7 @@
   /* Surfaces */
   --background: 40 6% 10%;        /* #1C1B19 */
 
-  --page-background: 40 6% 10%;   /* #1C1B19 — page floor (App.tsx wrapper consumes this) */
+  --page-background: 330 100% 70%; /* DIAGNOSTIC HOT PINK — revert after test */
 
   --card: 36 7% 14%;              /* #252320 */
 
