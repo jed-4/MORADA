@@ -695,6 +695,19 @@
   --shadow-card-hover: 0px 4px 8px -1px hsl(220 8% 5% / 0.44), 0px 2px 4px -1px hsl(220 8% 5% / 0.28);
 }
 
+/* DIAGNOSTIC: force pink page-background regardless of which dark variant is active */
+.dark,
+.dark.dark-warm-a,
+.dark.dark-warm-b,
+.dark.dark-warm-c,
+.dark.dark-warm-d,
+.dark.dark-warm-e,
+.dark.dark-warm-f {
+  --page-background: 330 100% 70% !important;
+  --background: 180 100% 50% !important;
+  --card: 90 100% 50% !important;
+}
+
 @layer base {
   * {
     @apply border-border;
