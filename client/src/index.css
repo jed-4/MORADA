@@ -193,7 +193,7 @@
   /* Surfaces */
   --background: 40 6% 10%;        /* #1C1B19 */
 
-  --page-background: 30 5% 7%;    /* #141312 — matches sidebar */
+  --page-background: 40 6% 10%;   /* #1C1B19 — page floor (App.tsx wrapper consumes this) */
 
   --card: 36 7% 14%;              /* #252320 */
 
