@@ -20,13 +20,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +46,8 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Filter,
+  MoreHorizontal,
   GripVertical,
   Trash2,
   CheckSquare,
@@ -579,9 +582,13 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
       )}
       
-      {/* Grid Row - h-10, ultra-compact */}
+      {/* Grid Row - compact by default; grows to fit when descriptions are inline */}
       <div 
-        className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
+        className={`grid gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
+          showDescriptionInline && item.description
+            ? 'min-h-10 items-start py-2'
+            : 'h-10 items-center'
+        } ${
           isSelected ? 'bg-primary/5 border-primary/30' : ''
         } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-orange-400 bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
         style={{ 
@@ -650,15 +657,15 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         </div>
 
         {/* Description - minmax(150px, 2fr) */}
-        <div className="flex items-center gap-1">
+        <div className={`flex gap-1 ${showDescriptionInline && item.description ? 'items-start pt-1' : 'items-center'}`}>
           {showDescriptionInline ? (
             <div 
-              className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex-1"
+              className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex-1 break-words"
               onClick={() => setIsEditingDescription(true)}
             >
               {item.description ? (
                 <div 
-                  className="text-xs leading-relaxed [&_*]:!text-inherit [&_*]:!text-xs"
+                  className="text-xs leading-relaxed whitespace-normal [&_*]:!text-inherit [&_*]:!text-xs"
                   dangerouslySetInnerHTML={{ __html: item.description }}
                 />
               ) : (
@@ -3302,34 +3309,10 @@ export default function ProjectScope() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Single Row Header - Filters & Actions */}
-      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 bg-background">
-        {/* Left: Type Filters — shows types visible to current role */}
-        <div className="flex items-center gap-1 flex-wrap">
-          {/* When company has type definitions, render only the role-visible ones (may be empty).
-              When no definitions are configured, fall back to the legacy SCOPE_TYPES list. */}
-          {(scopeItemTypeDefs.length > 0 ? visibleTypeDefs : SCOPE_TYPES.map(t => ({ id: t, name: t, displayOrder: 0, visibleToRoles: [], companyId: '', createdAt: new Date() }))).map((def) => {
-            const type = def.name.toLowerCase();
-            const isActive = activeTypeFilters.has(type);
-            return (
-              <button
-                key={def.id || def.name}
-                onClick={() => toggleTypeFilter(type)}
-                className={`h-6 px-2 text-data font-medium rounded-md border transition-all hover-elevate active-elevate-2 ${
-                  isActive 
-                    ? 'bg-primary/10 text-primary border-primary/20' 
-                    : 'bg-background text-muted-foreground border-border/50'
-                }`}
-                data-testid={`chip-filter-${type}`}
-              >
-                {def.name.toUpperCase()}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right: Action Buttons */}
+      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 bg-background gap-2">
+        {/* Left: Expand/Collapse + Filter dropdown */}
         <div className="flex items-center gap-1">
-          {/* Collapse/Expand All Stages */}
+          {/* Collapse/Expand All Stages — far left */}
           {scopeStages.length > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -3351,94 +3334,144 @@ export default function ProjectScope() {
             </Tooltip>
           )}
 
-          {/* Toggle Description Display */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowDescriptionInline(!showDescriptionInline)}
-                className={`h-6 px-2 flex items-center gap-1 rounded-md border transition-all hover-elevate active-elevate-2 ${
-                  showDescriptionInline 
-                    ? 'bg-primary/10 text-primary border-primary/20' 
-                    : 'border-border/50 text-muted-foreground'
-                }`}
-                data-testid="button-toggle-description-inline"
-              >
-                <AlignLeft className="h-3 w-3" />
-                <span className="text-data font-medium">Desc</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{showDescriptionInline ? 'Show descriptions on hover' : 'Show descriptions inline'}</p>
-            </TooltipContent>
-          </Tooltip>
-
-
-          {/* Add Stage */}
-          <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DialogTrigger asChild>
-                  <button 
-                    className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
-                    onClick={() => {
-                      if (scopeStages.length > 0) {
-                        setAddStageAfterId(scopeStages[scopeStages.length - 1].id);
-                      }
-                    }}
-                    data-testid="button-add-stage"
+          {/* Type Filter dropdown — collapsed into one button */}
+          {(() => {
+            const filterDefs = scopeItemTypeDefs.length > 0
+              ? visibleTypeDefs
+              : SCOPE_TYPES.map(t => ({ id: t, name: t, displayOrder: 0, visibleToRoles: [], companyId: '', createdAt: new Date() }));
+            const totalTypes = filterDefs.length;
+            const activeCount = filterDefs.filter(d => activeTypeFilters.has(d.name.toLowerCase())).length;
+            const allActive = totalTypes > 0 && activeCount === totalTypes;
+            const noneActive = activeCount === 0;
+            return (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={`h-6 px-2 flex items-center gap-1 rounded-md border transition-all hover-elevate active-elevate-2 ${
+                      !allActive
+                        ? 'bg-primary/10 text-primary border-primary/20'
+                        : 'border-border/50 text-muted-foreground'
+                    }`}
+                    data-testid="button-filter-types"
                   >
-                    <Plus className="h-3 w-3" />
+                    <Filter className="h-3 w-3" />
+                    <span className="text-data font-medium">
+                      {allActive ? 'Filter' : noneActive ? 'Filter (none)' : `Filter (${activeCount})`}
+                    </span>
                   </button>
-                </DialogTrigger>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Add Stage</p>
-              </TooltipContent>
-            </Tooltip>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Stage</DialogTitle>
-                <DialogDescription>
-                  Create a new stage for your scope
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label>Stage Name</Label>
-                  <Input
-                    value={newStageName}
-                    onChange={(e) => setNewStageName(e.target.value)}
-                    placeholder="Enter stage name"
-                    data-testid="input-new-stage-name"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  onClick={handleCreateNewStage}
-                  disabled={!newStageName.trim()}
-                  data-testid="button-confirm-add-stage"
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  {filterDefs.map(def => {
+                    const type = def.name.toLowerCase();
+                    return (
+                      <DropdownMenuCheckboxItem
+                        key={def.id || def.name}
+                        checked={activeTypeFilters.has(type)}
+                        onCheckedChange={() => toggleTypeFilter(type)}
+                        onSelect={(e) => e.preventDefault()}
+                        data-testid={`dropdown-filter-${type}`}
+                      >
+                        {def.name.charAt(0).toUpperCase() + def.name.slice(1).toLowerCase()}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
+        </div>
+
+        {/* Right: One options dropdown */}
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 px-2 flex items-center gap-1 rounded-md border border-border/50 hover-elevate active-elevate-2"
+                data-testid="button-scope-options"
+              >
+                <MoreHorizontal className="h-3 w-3" />
+                <span className="text-data font-medium">Options</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuCheckboxItem
+                checked={showDescriptionInline}
+                onCheckedChange={(c) => setShowDescriptionInline(!!c)}
+                onSelect={(e) => e.preventDefault()}
+                data-testid="option-show-descriptions"
+              >
+                <AlignLeft className="h-3.5 w-3.5 mr-2" />
+                Show descriptions
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  if (scopeStages.length > 0) {
+                    setAddStageAfterId(scopeStages[scopeStages.length - 1].id);
+                  }
+                  setIsAddStageDialogOpen(true);
+                }}
+                data-testid="option-add-stage"
+              >
+                <Plus className="h-3.5 w-3.5 mr-2" />
+                Add Stage
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setIsTemplateDialogOpen(true)}
+                data-testid="option-load-template"
+              >
+                <FileDown className="h-3.5 w-3.5 mr-2" />
+                Load Template
+              </DropdownMenuItem>
+              {estimates.length > 0 && (
+                <DropdownMenuItem
+                  onClick={() => setIsImportFromEstimateOpen(true)}
+                  data-testid="option-import-stages"
                 >
-                  Create Stage
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                  <FileText className="h-3.5 w-3.5 mr-2" />
+                  Import Stages
+                </DropdownMenuItem>
+              )}
+              {selectedItems.size > 0 && estimates.length > 0 && (
+                <DropdownMenuItem
+                  onClick={() => setIsPushDialogOpen(true)}
+                  data-testid="option-push-to-estimate"
+                >
+                  <DollarSign className="h-3.5 w-3.5 mr-2" />
+                  Push to Estimate ({selectedItems.size})
+                </DropdownMenuItem>
+              )}
+              {selectedItems.size > 0 && (
+                <DropdownMenuItem
+                  onClick={() => setIsRfqDialogOpen(true)}
+                  data-testid="option-create-rfq"
+                >
+                  <Send className="h-3.5 w-3.5 mr-2" />
+                  Create RFQ ({selectedItems.size})
+                </DropdownMenuItem>
+              )}
+              {selectedItems.size > 0 && (
+                <DropdownMenuItem
+                  onClick={() => setIsPoDialogOpen(true)}
+                  data-testid="option-create-po"
+                >
+                  <Package className="h-3.5 w-3.5 mr-2" />
+                  Create PO ({selectedItems.size})
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setIsPdfDialogOpen(true)}
+                data-testid="option-export-pdf"
+              >
+                <FileText className="h-3.5 w-3.5 mr-2" />
+                Export PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Load Template */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DialogTrigger asChild>
-                  <button className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2" data-testid="button-load-template">
-                    <FileDown className="h-3 w-3" />
-                  </button>
-                </DialogTrigger>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Load Template</p>
-              </TooltipContent>
-            </Tooltip>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Apply Scope Template</DialogTitle>
@@ -3474,34 +3507,9 @@ export default function ProjectScope() {
             </DialogContent>
           </Dialog>
 
-          {/* Import from Estimate */}
-          {estimates.length > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button 
-                  onClick={() => setIsImportFromEstimateOpen(true)}
-                  className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" 
-                  data-testid="button-import-from-estimate"
-                >
-                  <FileText className="h-3 w-3" />
-                  <span>Import Stages</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Import stages from estimate groups</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-
           {/* Push to Estimate */}
           {selectedItems.size > 0 && estimates.length > 0 && (
             <Dialog open={isPushDialogOpen} onOpenChange={setIsPushDialogOpen}>
-              <DialogTrigger asChild>
-                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-push-to-estimate">
-                  <DollarSign className="h-3 w-3" />
-                  <span>Push ({selectedItems.size})</span>
-                </button>
-              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Push to Estimate</DialogTitle>
@@ -3544,12 +3552,6 @@ export default function ProjectScope() {
           {/* Create RFQ */}
           {selectedItems.size > 0 && (
             <Dialog open={isRfqDialogOpen} onOpenChange={setIsRfqDialogOpen}>
-              <DialogTrigger asChild>
-                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-rfq">
-                  <Send className="h-3 w-3" />
-                  <span>RFQ</span>
-                </button>
-              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Create RFQ</DialogTitle>
@@ -3572,12 +3574,6 @@ export default function ProjectScope() {
           {/* Create PO */}
           {selectedItems.size > 0 && (
             <Dialog open={isPoDialogOpen} onOpenChange={setIsPoDialogOpen}>
-              <DialogTrigger asChild>
-                <button className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-po">
-                  <Package className="h-3 w-3" />
-                  <span>PO</span>
-                </button>
-              </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Create Purchase Order</DialogTitle>
@@ -3604,18 +3600,6 @@ export default function ProjectScope() {
               setHideClientCosts(false); // Reset toggle when dialog closes
             }
           }}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DialogTrigger asChild>
-                  <button className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2" data-testid="button-export-pdf">
-                    <FileText className="h-3 w-3" />
-                  </button>
-                </DialogTrigger>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Export PDF</p>
-              </TooltipContent>
-            </Tooltip>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Export PDF</DialogTitle>
