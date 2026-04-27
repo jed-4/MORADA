@@ -5,7 +5,7 @@ import type { DashboardTheme } from "@shared/schema";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
 import { SidebarNav } from "@/components/SidebarNav";
@@ -341,6 +341,7 @@ function UnauthenticatedRoutes() {
 function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const [location, navigate] = useLocation();
+  const { resolvedTheme } = useTheme();
   
   // Fetch user's dashboard theme for page background color
   const { data: userTheme } = useQuery<DashboardTheme | null>({
@@ -424,6 +425,9 @@ function AuthWrapper() {
   
   // Get custom page background color from user theme palette
   const getPageBackgroundColor = (): string | undefined => {
+    // Dark mode is locked to the CSS token — never apply a custom inline colour.
+    // resolvedTheme is sourced from ThemeProvider so this re-runs on every toggle.
+    if (resolvedTheme === 'dark') return undefined;
     // Try palette first (new per-page colors)
     const palette = (userTheme as any)?.pageBackgroundPalette as Record<string, string> | null;
     if (palette && typeof palette === 'object') {
@@ -440,49 +444,47 @@ function AuthWrapper() {
 
   return (
     <TooltipProvider>
-      <ThemeProvider>
-        <ProjectProvider>
-          <SocketProvider>
-            <TaskEventsListener />
-            <GlobalMessageNotifier />
-            <SidebarProvider style={style as React.CSSProperties}>
-            <div 
-              className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-0"
-              style={pageBackgroundStyle}
-            >
-              {DEBUG_MODE && (
-                <div style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  background: 'green',
-                  color: 'white',
-                  padding: '10px 20px',
-                  zIndex: 9999,
-                  fontFamily: 'monospace',
-                  fontSize: '12px'
-                }}>
-                  <strong>✅ SHOWING DASHBOARD</strong> | User: {debugInfo.email} | CompanyId: {debugInfo.companyId}
-                </div>
-              )}
-              {/* Header in its own floating bar */}
-              <Header />
-              
-              {/* Sidebar and main content below header */}
-              <div className="flex flex-1 overflow-hidden gap-2">
-                <SidebarNav />
-                <main className="flex-1 overflow-auto">
-                  <ErrorBoundary>
-                    <Router />
-                  </ErrorBoundary>
-                </main>
+      <ProjectProvider>
+        <SocketProvider>
+          <TaskEventsListener />
+          <GlobalMessageNotifier />
+          <SidebarProvider style={style as React.CSSProperties}>
+          <div 
+            className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] px-2 pb-2 gap-0"
+            style={pageBackgroundStyle}
+          >
+            {DEBUG_MODE && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                background: 'green',
+                color: 'white',
+                padding: '10px 20px',
+                zIndex: 9999,
+                fontFamily: 'monospace',
+                fontSize: '12px'
+              }}>
+                <strong>✅ SHOWING DASHBOARD</strong> | User: {debugInfo.email} | CompanyId: {debugInfo.companyId}
               </div>
+            )}
+            {/* Header in its own floating bar */}
+            <Header />
+            
+            {/* Sidebar and main content below header */}
+            <div className="flex flex-1 overflow-hidden gap-2">
+              <SidebarNav />
+              <main className="flex-1 overflow-auto">
+                <ErrorBoundary>
+                  <Router />
+                </ErrorBoundary>
+              </main>
             </div>
-          </SidebarProvider>
-          </SocketProvider>
-        </ProjectProvider>
-      </ThemeProvider>
+          </div>
+        </SidebarProvider>
+        </SocketProvider>
+      </ProjectProvider>
     </TooltipProvider>
   );
 }
@@ -507,9 +509,11 @@ function BfcacheRefresher() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BfcacheRefresher />
-      <AuthWrapper />
-      <Toaster />
+      <ThemeProvider>
+        <BfcacheRefresher />
+        <AuthWrapper />
+        <Toaster />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

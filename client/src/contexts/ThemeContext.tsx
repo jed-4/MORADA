@@ -71,14 +71,11 @@ function applyWarmVariantClass(resolved: ResolvedTheme, variant: WarmVariant) {
   const root = window.document.documentElement;
   root.classList.remove(...ALL_VARIANT_CLASSES);
   if (variant === "none") return;
-  const cls = WARM_VARIANT_CLASSES[variant];
-  if (!cls) return;
-  // Variant G is a light mode palette — only apply when in light mode.
-  // All other variants are dark mode only.
+  // Dark mode is locked to the base `.dark` palette (#1C1B19) — variants a–f
+  // have been removed from CSS, so we never apply their classes either.
+  // Only the light-mode variant `g` still has a CSS rule.
   if (variant === "g" && resolved === "light") {
-    root.classList.add(cls);
-  } else if (variant !== "g" && resolved === "dark") {
-    root.classList.add(cls);
+    root.classList.add("dark-warm-g");
   }
 }
 

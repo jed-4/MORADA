@@ -27,10 +27,10 @@
           var variant = localStorage.getItem('dark-warm-variant');
           var allVariantClasses = ['dark-warm-a','dark-warm-b','dark-warm-c','dark-warm-d','dark-warm-e','dark-warm-f','dark-warm-g'];
           for (var i = 0; i < allVariantClasses.length; i++) root.classList.remove(allVariantClasses[i]);
-          var darkOnlyVariants = ['a','b','c','d','e','f'];
-          if (resolvedTheme === 'dark' && darkOnlyVariants.indexOf(variant) !== -1) {
-            root.classList.add('dark-warm-' + variant);
-          } else if (variant === 'g') {
+          // Variants a-f have been removed from CSS (dark mode is locked to #1C1B19).
+          // Only the light-mode variant 'g' is honoured here, and only when the
+          // resolved theme is light — matching ThemeContext.applyWarmVariantClass.
+          if (variant === 'g' && resolvedTheme === 'light') {
             root.classList.add('dark-warm-g');
           }
         } catch(e) {}
