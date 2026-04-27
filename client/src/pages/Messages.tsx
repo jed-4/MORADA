@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages, useReactionUpdated, useMessageUpdated } from "@/lib/socket";
@@ -50,7 +50,7 @@ import {
   SelectValue,
   SelectSeparator,
 } from "@/components/ui/select";
-import { format, isToday, isYesterday, isThisWeek } from "date-fns";
+import { format, isToday, isYesterday, isThisWeek, isSameDay, differenceInMinutes } from "date-fns";
 import type { Channel, Message, ChannelMember, MessageReaction, MessageAttachment } from "@shared/schema";
 
 // Messages augmented with attachments returned by the API
@@ -280,6 +280,39 @@ function formatMessageTime(date: Date | string): string {
   if (isYesterday(d)) return `Yesterday ${time}`;
   if (isThisWeek(d, { weekStartsOn: 1 })) return `${format(d, "EEE")} ${time}`;
   return `${format(d, "d MMM")} ${time}`;
+}
+
+/** Label shown on the horizontal day divider between message groups. */
+function formatDayDivider(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isToday(d)) return "Today";
+  if (isYesterday(d)) return "Yesterday";
+  if (isThisWeek(d, { weekStartsOn: 1 })) return format(d, "EEEE");
+  return format(d, "EEE d MMM yyyy");
+}
+
+/** Returns true when a horizontal day divider should be drawn before `current`. */
+function shouldShowDayDivider(
+  current: Date | string,
+  previous: Date | string | null | undefined,
+): boolean {
+  if (!previous) return true;
+  const c = typeof current === "string" ? new Date(current) : current;
+  const p = typeof previous === "string" ? new Date(previous) : previous;
+  return !isSameDay(c, p);
+}
+
+/** Returns true when the timestamp under `current` should be shown
+ *  (first message of a thread, day change, or > 30 min since previous). */
+function shouldShowTimestamp(
+  current: Date | string,
+  previous: Date | string | null | undefined,
+): boolean {
+  if (!previous) return true;
+  const c = typeof current === "string" ? new Date(current) : current;
+  const p = typeof previous === "string" ? new Date(previous) : previous;
+  if (!isSameDay(c, p)) return true;
+  return Math.abs(differenceInMinutes(c, p)) > 30;
 }
 
 export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
@@ -1921,7 +1954,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       <p className="text-sm text-muted-foreground">No messages yet. Start the conversation!</p>
                     </div>
                   ) : (
-                    localMessages.map((message) => {
+                    localMessages.map((message, idx, arr) => {
                       const isBot = !!message.isBot;
                       const isOwn = !isBot && message.userId === user?.id;
                       const isHighlighted = newMessageIds.has(message.id);
@@ -1929,6 +1962,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       const msgReactions = reactionsMap[message.id] || [];
                       const threadOpen = openThreads.has(message.id);
                       const threadCount = message.threadCount || 0;
+
+                      // Day divider + grouping rules
+                      const prev = idx > 0 ? arr[idx - 1] : null;
+                      const showDayDivider = shouldShowDayDivider(message.createdAt, prev?.createdAt);
+                      const gapTooLarge = shouldShowTimestamp(message.createdAt, prev?.createdAt);
+                      const sameAuthorAsPrev = !!prev
+                        && !!prev.userId === !!message.userId
+                        && prev.userId === message.userId
+                        && !!prev.isBot === !!message.isBot;
+                      const showHeader = showDayDivider || gapTooLarge || !sameAuthorAsPrev;
+                      const showTimestamp = gapTooLarge || showDayDivider;
 
                       // Group reactions by emoji id
                       const reactionGroups: Record<string, { count: number; myReaction: boolean; users: string[] }> = {};
@@ -1943,32 +1987,54 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           : r.userId;
                         reactionGroups[r.emoji].users.push(name);
                       }
-                      
+
+                      const authorName = isBot
+                        ? 'Assistant'
+                        : isOwn
+                          ? 'You'
+                          : (message.userFirstName && message.userLastName
+                              ? `${message.userFirstName} ${message.userLastName}`
+                              : message.userEmail || 'Unknown');
+
                       return (
-                        <div
-                          key={message.id}
-                          ref={(el) => { messageRefs.current[message.id] = el; }}
-                          className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
-                          data-testid={`message-${message.id}`}
-                        >
-                          {!isOwn && !isBot && (
-                            <Avatar className="h-8 w-8 shrink-0">
-                              <AvatarFallback className="text-xs bg-muted/60">
-                                {getInitials(message.userFirstName, message.userLastName, message.userEmail)}
-                              </AvatarFallback>
-                            </Avatar>
-                          )}
-                          {isBot && (
-                            <div className="h-8 w-8 shrink-0 rounded-full bg-primary flex items-center justify-center">
-                              <Sparkles className="h-4 w-4 text-white" />
+                        <Fragment key={message.id}>
+                          {showDayDivider && (
+                            <div
+                              className="flex items-center gap-3 py-1"
+                              data-testid={`day-divider-${format(new Date(message.createdAt), 'yyyy-MM-dd')}`}
+                            >
+                              <div className="flex-1 h-px bg-border" />
+                              <span className="text-xs font-medium text-muted-foreground px-2">
+                                {formatDayDivider(message.createdAt)}
+                              </span>
+                              <div className="flex-1 h-px bg-border" />
                             </div>
                           )}
-                          <div className={`flex flex-col gap-1 max-w-[70%] ${isOwn ? 'items-end' : 'items-start'}`}>
-                            {!isOwn && (
+                        <div
+                          ref={(el) => { messageRefs.current[message.id] = el; }}
+                          className={`flex gap-3 justify-start ${showHeader ? '' : 'mt-0.5'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
+                          data-testid={`message-${message.id}`}
+                        >
+                          {/* Avatar gutter — visible only on first message of a group */}
+                          {showHeader ? (
+                            isBot ? (
+                              <div className="h-8 w-8 shrink-0 rounded-full bg-primary flex items-center justify-center">
+                                <Sparkles className="h-4 w-4 text-white" />
+                              </div>
+                            ) : (
+                              <Avatar className="h-8 w-8 shrink-0">
+                                <AvatarFallback className="text-xs bg-muted/60">
+                                  {getInitials(message.userFirstName, message.userLastName, message.userEmail)}
+                                </AvatarFallback>
+                              </Avatar>
+                            )
+                          ) : (
+                            <div className="w-8 shrink-0" aria-hidden="true" />
+                          )}
+                          <div className="flex flex-col gap-1 max-w-[80%] items-start">
+                            {showHeader && (
                               <span className="text-xs font-medium text-foreground">
-                                {message.userFirstName && message.userLastName
-                                  ? `${message.userFirstName} ${message.userLastName}`
-                                  : message.userEmail || 'Unknown'}
+                                {authorName}
                               </span>
                             )}
 
@@ -2053,7 +2119,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
                                   bg-background border rounded-lg shadow-sm p-0.5 z-10
                                   invisible group-hover/msg:visible
-                                  ${isOwn ? 'right-full mr-2' : 'left-full ml-2'}
+                                  left-full ml-2
                                 `}
                               >
                                 {/* Single reaction picker trigger */}
@@ -2072,7 +2138,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   </PopoverTrigger>
                                   <PopoverContent
                                     className="w-auto p-1.5"
-                                    side={isOwn ? "left" : "right"}
+                                    side="right"
                                     align="center"
                                   >
                                     <div className="flex items-center gap-1">
@@ -2212,24 +2278,52 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 {loadingThreads.has(message.id) ? (
                                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                 ) : (
-                                  (threadMessages[message.id] || []).map((reply) => {
+                                  (threadMessages[message.id] || []).map((reply, replyIdx, replyArr) => {
                                     const replyIsOwn = reply.userId === user?.id;
                                     const parentName = message.userFirstName && message.userLastName
                                       ? `${message.userFirstName} ${message.userLastName}`
                                       : message.userEmail || "Unknown";
+                                    const prevReply = replyIdx > 0 ? replyArr[replyIdx - 1] : null;
+                                    const replyShowDayDivider = shouldShowDayDivider(reply.createdAt, prevReply?.createdAt);
+                                    const replyGapTooLarge = shouldShowTimestamp(reply.createdAt, prevReply?.createdAt);
+                                    const replySameAuthor = !!prevReply
+                                      && !!prevReply.userId === !!reply.userId
+                                      && prevReply.userId === reply.userId
+                                      && !!prevReply.isBot === !!reply.isBot;
+                                    const replyShowHeader = replyShowDayDivider || replyGapTooLarge || !replySameAuthor;
+                                    const replyShowTimestamp = replyGapTooLarge || replyShowDayDivider;
+                                    const replyAuthor = replyIsOwn
+                                      ? 'You'
+                                      : (reply.userFirstName && reply.userLastName
+                                          ? `${reply.userFirstName} ${reply.userLastName}`
+                                          : reply.userEmail || 'Unknown');
                                     return (
-                                      <div key={reply.id} className="flex gap-2 items-start">
-                                        <Avatar className="h-6 w-6 shrink-0">
-                                          <AvatarFallback className="text-data bg-muted/60">
-                                            {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
-                                          </AvatarFallback>
-                                        </Avatar>
+                                      <Fragment key={reply.id}>
+                                        {replyShowDayDivider && (
+                                          <div className="flex items-center gap-2 py-0.5">
+                                            <div className="flex-1 h-px bg-border" />
+                                            <span className="text-data font-medium text-muted-foreground px-1.5">
+                                              {formatDayDivider(reply.createdAt)}
+                                            </span>
+                                            <div className="flex-1 h-px bg-border" />
+                                          </div>
+                                        )}
+                                      <div className={`flex gap-2 items-start ${replyShowHeader ? '' : 'mt-0.5'}`}>
+                                        {replyShowHeader ? (
+                                          <Avatar className="h-6 w-6 shrink-0">
+                                            <AvatarFallback className="text-data bg-muted/60">
+                                              {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                        ) : (
+                                          <div className="w-6 shrink-0" aria-hidden="true" />
+                                        )}
                                         <div className="flex flex-col gap-0.5 flex-1">
-                                          <span className="text-table font-medium text-foreground">
-                                            {reply.userFirstName && reply.userLastName
-                                              ? `${reply.userFirstName} ${reply.userLastName}`
-                                              : reply.userEmail || 'Unknown'}
-                                          </span>
+                                          {replyShowHeader && (
+                                            <span className="text-table font-medium text-foreground">
+                                              {replyAuthor}
+                                            </span>
+                                          )}
                                           <div className={`
                                             px-2.5 pt-1 pb-1.5 rounded-lg text-sm
                                             ${replyIsOwn
@@ -2291,14 +2385,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                               </div>
                                             )}
                                           </div>
-                                          <span
-                                            className="text-data text-muted-foreground"
-                                            title={format(new Date(reply.createdAt), "EEE d MMM yyyy, h:mm a")}
-                                          >
-                                            {formatMessageTime(reply.createdAt)}
-                                          </span>
+                                          {replyShowTimestamp && (
+                                            <span
+                                              className="text-data text-muted-foreground"
+                                              title={format(new Date(reply.createdAt), "EEE d MMM yyyy, h:mm a")}
+                                            >
+                                              {formatMessageTime(reply.createdAt)}
+                                            </span>
+                                          )}
                                         </div>
                                       </div>
+                                      </Fragment>
                                     );
                                   })
                                 )}
@@ -2397,14 +2494,17 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                               </div>
                             )}
 
-                            <span
-                              className="text-data text-muted-foreground"
-                              title={format(new Date(message.createdAt), "EEE d MMM yyyy, h:mm a")}
-                            >
-                              {formatMessageTime(message.createdAt)}
-                            </span>
+                            {showTimestamp && (
+                              <span
+                                className="text-data text-muted-foreground"
+                                title={format(new Date(message.createdAt), "EEE d MMM yyyy, h:mm a")}
+                              >
+                                {formatMessageTime(message.createdAt)}
+                              </span>
+                            )}
                           </div>
                         </div>
+                        </Fragment>
                       );
                     })
                   )}
