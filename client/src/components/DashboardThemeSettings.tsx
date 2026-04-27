@@ -7,7 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Palette, Image, Sparkles, Upload, X } from "lucide-react";
+import { Palette, Image, Sparkles, Upload, X, RotateCcw } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import type { DashboardTheme } from "@shared/schema";
 
@@ -161,6 +161,24 @@ export default function DashboardThemeSettings({
       ...prev,
       [pageKey]: color,
     }));
+  };
+
+  const handleResetToDefault = () => {
+    setBackgroundType("color");
+    setBackgroundColor("#f8fafc");
+    setBackgroundGradient("");
+    setBackgroundImage("");
+    setOverlayEnabled(true);
+    setOverlayColor("#000000");
+    setOverlayOpacity(40);
+    setBlurStrength(0);
+    setWidgetBackgroundType("default");
+    setWidgetOpacity(100);
+    setPageBackgroundPalette({
+      dashboard: "",
+      workspace: "",
+      project: "",
+    });
   };
 
   const hexToRgba = (hex: string, opacity: number) => {
@@ -558,13 +576,26 @@ export default function DashboardThemeSettings({
 
         </div>
 
-        <DialogFooter className="px-4 py-3 border-t flex-shrink-0">
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
+        <DialogFooter className="px-4 py-3 border-t flex-shrink-0 flex flex-row items-center justify-between gap-2 sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleResetToDefault}
+            className="gap-1.5"
+            data-testid="button-reset-default"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset to Default
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
