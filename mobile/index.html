@@ -16,6 +16,29 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function() {
+        try {
+          // Mirrors client/index.html: honour ?theme=dark|light URL override
+          // (does not persist), then localStorage, then OS preference.
+          var qsTheme = null;
+          try {
+            var qs = new URLSearchParams(window.location.search).get('theme');
+            if (qs === 'dark' || qs === 'light') qsTheme = qs;
+          } catch(_) {}
+          var stored = null;
+          try { stored = localStorage.getItem('theme'); } catch(_) {}
+          var resolved = qsTheme === 'dark' ? 'dark'
+            : qsTheme === 'light' ? 'light'
+            : stored === 'dark' ? 'dark'
+            : stored === 'light' ? 'light'
+            : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var root = document.documentElement;
+          root.classList.remove('light', 'dark');
+          root.classList.add(resolved);
+        } catch(e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

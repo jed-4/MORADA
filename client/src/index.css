@@ -16,89 +16,90 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
 
-  /* Hybrid Notion Canvas — light palette */
-  --background: 40 6% 10%; /* #1C1B19 — test */
+  /* Figma IMPLEMENT > Light (Hybrid Notion) — exact hex values */
+  /* Surfaces */
+  --background: 60 15% 98%;       /* #FAFAF8 — warm cream page */
 
-  --page-background: 36 16% 95%; /* Soft warm outer #F4F2EE */
+  --page-background: 60 15% 98%;  /* #FAFAF8 — matches --background */
 
-  --foreground: 30 8% 10%; /* Deep warm ink #1C1B19 */
+  --foreground: 26 9% 16%;        /* #2C2825 — deep warm ink */
 
-  --border: 36 13% 90%; /* Warm hairline #E8E5E0 */
+  --border: 60 5% 91%;            /* #EAEAE8 — warm hairline */
 
-  --card: 0 0% 100%; /* Pure white cards #FFFFFF */
+  --card: 0 0% 100%;              /* #FFFFFF — pure white cards */
 
-  --card-foreground: 30 8% 10%;
+  --card-foreground: 26 9% 16%;
 
-  --card-border: 36 13% 90%;
+  --card-border: 60 5% 91%;
 
-  --sidebar: 0 0% 100%; /* White sidebar */
+  --sidebar: 48 20% 95%;          /* #F5F4F0 — warm cream sidebar */
 
-  --sidebar-foreground: 30 8% 10%;
+  --sidebar-foreground: 26 9% 16%;
 
-  --sidebar-border: 36 13% 90%;
+  --sidebar-border: 60 5% 91%;
 
-  --sidebar-primary: 261 44% 70%; /* Lavender #A890D4 */
+  --sidebar-primary: 261 44% 70%; /* #A890D4 lavender */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 36 16% 95%; /* Warm tint #F4F2EE */
+  --sidebar-accent: 48 20% 95%;   /* matches sidebar */
 
-  --sidebar-accent-foreground: 30 8% 10%;
+  --sidebar-accent-foreground: 26 9% 16%;
 
   --sidebar-ring: 261 44% 70%;
 
   --popover: 0 0% 100%;
 
-  --popover-foreground: 30 8% 10%;
+  --popover-foreground: 26 9% 16%;
 
-  --popover-border: 36 13% 90%;
+  --popover-border: 60 5% 91%;
 
   /* Casva Lavender Brand */
-  --primary: 261 44% 70%; /* #A890D4 */
+  --primary: 261 44% 70%;         /* #A890D4 */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 265 70% 95%; /* Light lavender wash #EEE9FA */
+  --secondary: 262 48% 95%;       /* #F2EEF9 — lavender wash */
 
-  --secondary-foreground: 30 8% 10%;
+  --secondary-foreground: 26 9% 16%;
 
-  --muted: 36 16% 93%; /* Warm muted #F2F0EC */
+  --muted: 48 14% 94%;            /* warm muted */
 
-  --muted-foreground: 36 9% 33%; /* #5A554D */
+  --muted-foreground: 27 5% 40%;  /* #6B6560 */
 
-  --accent: 261 44% 70%; /* Match primary lavender */
+  --accent: 261 44% 70%;          /* matches primary lavender */
 
   --accent-foreground: 0 0% 100%;
 
-  /* Status colors */
-  --success: 142 76% 36%;
+  /* Status colors — Figma palette */
+  --success: 147 39% 65%;         /* #82C8A2 sage */
 
-  --warning: 39 50% 64%; /* Amber */
+  --warning: 42 54% 64%;          /* #D4B670 amber */
 
-  --destructive: 0 84% 60%;
+  --destructive: 11 52% 70%;      /* #DA988A coral */
 
-  --destructive-foreground: 0 0% 98%;
+  --destructive-foreground: 0 0% 100%;
 
   /* Helper tokens */
-  --border-strong: 36 13% 81%; /* #D4CFC7 */
-  --text-secondary: 36 9% 33%; /* #5A554D */
-  --text-muted: 36 7% 51%; /* #8A857C */
-  --primary-hover: 261 38% 61%; /* #9478C0 */
-  --primary-light: 265 70% 95%; /* #EEE9FA */
+  --border-strong: 45 5% 84%;     /* #D8D7D4 */
+  --text-secondary: 27 5% 40%;    /* #6B6560 */
+  --text-muted: 36 4% 52%;        /* #8A8680 */
+  --primary-hover: 261 39% 62%;   /* #9278C4 */
+  --primary-light: 262 48% 95%;   /* #F2EEF9 */
 
-  /* Organic accent palette */
-  --teal: 170 30% 51%;        /* #5BA89B */
-  --teal-light: 167 38% 90%;  /* #DEF0EC */
-  --sage: 145 40% 65%;        /* #82C8A2 */
-  --sage-light: 145 60% 94%;  /* #E8F8EE */
-  --amber: 39 50% 64%;        /* #D4B670 */
-  --amber-light: 43 80% 93%;  /* #FCF4E0 */
-  --coral: 11 53% 70%;        /* #DA988A */
-  --coral-light: 4 86% 95%;   /* #FDE9E8 */
-  --rose: 333 26% 70%;        /* #C49DB6 */
-  --rose-light: 325 50% 93%;  /* #F5E5EE */
+  /* Organic accent palette — Figma exact hex */
+  --teal: 184 51% 63%;            /* #70CAD0 */
+  --teal-light: 183 56% 92%;      /* #DFF5F6 */
+  --sage: 147 39% 65%;            /* #82C8A2 */
+  --sage-light: 146 51% 92%;      /* #E0F5E9 */
+  --amber: 42 54% 64%;            /* #D4B670 */
+  --amber-light: 39 64% 91%;      /* #F7EDDA */
+  --coral: 11 52% 70%;            /* #DA988A */
+  --coral-light: 9 57% 93%;       /* #F7E5E2 */
+  --rose: 328 43% 68%;            /* #D08AAF */
+  --rose-light: 322 49% 92%;      /* #F5E2EE */
 
-  --input: 36 13% 90%;
+  --input: 60 5% 91%;
   --ring: 261 44% 70%;
   --chart-1: 210 40% 50%;
   --chart-2: 142 70% 40%;
@@ -136,17 +137,17 @@
   --tab-inactive: 290 5% 63%;                /* #A29AA5 */
   --tab-active: 261 44% 70%;                 /* #A890D4 */
 
-  /* Status pill tokens (soft pastel pills) */
-  --status-success-fg: 145 40% 65%;          /* #82C8A2 sage */
-  --status-success-bg: 145 60% 94%;          /* #E8F8EE */
-  --status-warning-fg: 39 50% 64%;           /* #D4B670 amber */
-  --status-warning-bg: 43 80% 93%;           /* #FCF4E0 */
+  /* Status pill tokens (soft pastel pills) — Figma palette */
+  --status-success-fg: 147 39% 65%;          /* #82C8A2 sage */
+  --status-success-bg: 146 51% 92%;          /* #E0F5E9 */
+  --status-warning-fg: 42 54% 64%;           /* #D4B670 amber */
+  --status-warning-bg: 39 64% 91%;           /* #F7EDDA */
   --status-info-fg:    261 44% 70%;          /* #A890D4 lavender */
-  --status-info-bg:    265 70% 95%;          /* #EEE9FA */
-  --status-danger-fg:  11 53% 70%;           /* #DA988A coral */
-  --status-danger-bg:  4 86% 95%;            /* #FDE9E8 */
-  --status-action-fg:  222 56% 71%;          /* #8AA5DE sky */
-  --status-action-bg:  186 70% 94%;          /* #E4F8FA */
+  --status-info-bg:    262 48% 95%;          /* #F2EEF9 */
+  --status-danger-fg:  11 52% 70%;           /* #DA988A coral */
+  --status-danger-bg:  9 57% 93%;            /* #F7E5E2 */
+  --status-action-fg:  184 51% 63%;          /* #70CAD0 teal */
+  --status-action-bg:  183 56% 92%;          /* #DFF5F6 */
 
   /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
 
@@ -252,10 +253,10 @@
 
   --accent-foreground: 40 21% 89%;
 
-  /* Status colors - Dark Mode */
-  --success: 142 70% 48%;
+  /* Status colors - Dark Mode (Figma palette) */
+  --success: 147 39% 65%;         /* #82C8A2 sage */
 
-  --warning: 39 55% 70%;
+  --warning: 42 54% 64%;          /* #D4B670 amber */
 
   /* Destructive — coral */
   --destructive: 11 52% 70%;      /* #DA988A */
@@ -263,26 +264,24 @@
   --destructive-foreground: 40 21% 89%;
 
   /* Helper tokens */
-  --border-strong: 30 8% 26%; /* #46423E */
+  --border-strong: 36 4% 22%; /* #3A3835 */
   --text-secondary: 30 8% 65%; /* #A8A49C */
   --text-muted: 33 4% 51%; /* #8A8680 */
   --primary-hover: 265 50% 77%; /* #BEA8E0 */
-  --primary-light: 265 25% 20%; /* #2D2840 */
+  --primary-light: 253 23% 20%; /* #2D2840 */
 
-  /* Organic accent palette */
-  --teal: 170 35% 60%;
-  --teal-light: 170 25% 22%;
-  --sage: 145 45% 70%;
-  --sage-light: 145 25% 22%;
-  --amber: 39 55% 70%;
-  --amber-light: 39 25% 22%;
-  --coral: 11 58% 75%;
-  --coral-light: 11 25% 22%;
-  --rose: 333 30% 75%;
-  --rose-light: 333 25% 22%;
+  /* Organic accent palette — Figma exact hex (brand colour same as light) */
+  --teal: 184 51% 63%;            /* #70CAD0 */
+  --teal-light: 191 34% 15%;      /* #1A3035 */
+  --sage: 147 39% 65%;            /* #82C8A2 */
+  --sage-light: 144 28% 14%;      /* #1A2E22 */
+  --amber: 42 54% 64%;            /* #D4B670 */
+  --amber-light: 40 48% 12%;      /* #2E2410 */
+  --coral: 11 52% 70%;            /* #DA988A */
+  --coral-light: 5 31% 14%;       /* #2E1A18 */
+  --rose: 328 43% 68%;            /* #D08AAF */
+  --rose-light: 323 24% 13%;      /* #2A1A24 */
 
-  --input: 30 7% 21%;
-  --ring: 261 44% 70%;
   --chart-1: 210 80% 60%;
   --chart-2: 142 65% 55%;
   --chart-3: 38 85% 60%;
@@ -313,17 +312,17 @@
   --tab-inactive: 290 5% 63%;
   --tab-active: 261 44% 70%;
 
-  /* Status pill tokens (soft pastel pills, dark mode = translucent on tint) */
-  --status-success-fg: 145 40% 65%;
-  --status-success-bg: 145 40% 65% / 0.18;
-  --status-warning-fg: 39 50% 64%;
-  --status-warning-bg: 39 50% 64% / 0.18;
+  /* Status pill tokens (Figma palette, dark mode = translucent on tint) */
+  --status-success-fg: 147 39% 65%;
+  --status-success-bg: 147 39% 65% / 0.18;
+  --status-warning-fg: 42 54% 64%;
+  --status-warning-bg: 42 54% 64% / 0.18;
   --status-info-fg:    261 44% 70%;
   --status-info-bg:    261 44% 70% / 0.18;
-  --status-danger-fg:  11 53% 70%;
-  --status-danger-bg:  11 53% 70% / 0.18;
-  --status-action-fg:  222 56% 71%;
-  --status-action-bg:  222 56% 71% / 0.18;
+  --status-danger-fg:  11 52% 70%;
+  --status-danger-bg:  11 52% 70% / 0.18;
+  --status-action-fg:  184 51% 63%;
+  --status-action-bg:  184 51% 63% / 0.18;
 }
 
 /* =========================================================

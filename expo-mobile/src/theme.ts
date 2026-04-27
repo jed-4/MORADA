@@ -43,7 +43,7 @@ const light = {
 const dark = {
   background:   '#1C1B19',
   card:         '#252320',
-  nav:          '#141312',
+  nav:          '#1C1B19',
   subtle:       '#2D2840',
   border:       '#2E2C29',
   borderStrong: '#3A3835',

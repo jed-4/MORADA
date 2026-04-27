@@ -1,0 +1,26 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "-mXVBNVMbpP5gP_KliFhC"
+uri = "file://screenshots/web-dashboard-light.jpg"
+type = "image"
+title = "Web Dashboard — Light (Hybrid Notion)"
+
+[[outputs]]
+id = "jj_Mi4eM0Z2QHjVXQ3QLo"
+uri = "file://screenshots/web-dashboard-dark.jpg"
+type = "image"
+title = "Web Dashboard — Dark (Claude Dark)"
+
+[[outputs]]
+id = "7fYYNF-ZCVLh9MN6GoZ_m"
+uri = "file://screenshots/mobile-light.jpg"
+type = "image"
+title = "Mobile Dashboard — Light"
+
+[[outputs]]
+id = "pVZ9b66eyqSrZ0579ZLnJ"
+uri = "file://screenshots/mobile-dark.jpg"
+type = "image"
+title = "Mobile Dashboard — Dark"

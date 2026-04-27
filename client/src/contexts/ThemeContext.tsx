@@ -32,8 +32,22 @@ function getSystemTheme(): ResolvedTheme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function getUrlTheme(): Theme | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const qs = new URLSearchParams(window.location.search).get("theme");
+    if (qs === "dark" || qs === "light") return qs;
+  } catch {
+  }
+  return null;
+}
+
 function getStoredTheme(defaultTheme: Theme): Theme {
   if (typeof window === "undefined") return defaultTheme;
+  // URL override (?theme=dark|light) wins, but is not persisted — used for
+  // design / palette previews without changing the saved choice.
+  const urlTheme = getUrlTheme();
+  if (urlTheme) return urlTheme;
   try {
     const stored = localStorage.getItem("theme");
     if (stored === "dark" || stored === "light" || stored === "system") {

@@ -17,7 +17,14 @@
     <script>
       (function() {
         try {
-          var theme = localStorage.getItem('theme');
+          // Optional URL override (?theme=dark|light) — does not persist, used
+          // for design / palette previews without changing the saved choice.
+          var qsTheme = null;
+          try {
+            var qs = new URLSearchParams(window.location.search).get('theme');
+            if (qs === 'dark' || qs === 'light') qsTheme = qs;
+          } catch(_) {}
+          var theme = qsTheme || localStorage.getItem('theme');
           var resolvedTheme = theme === 'dark' ? 'dark'
             : theme === 'light' ? 'light'
             : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
