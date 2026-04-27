@@ -7944,8 +7944,19 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getUserInvitation(id: string): Promise<UserInvitation | undefined> { return undefined; }
-  
+  async getUserInvitation(id: string): Promise<UserInvitation | undefined> {
+    try {
+      const [invitation] = await db.select()
+        .from(schema.userInvitations)
+        .where(eq(schema.userInvitations.id, id))
+        .limit(1);
+      return invitation;
+    } catch (error) {
+      console.error("Database error in getUserInvitation:", error);
+      throw error;
+    }
+  }
+
   async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> {
     try {
       const [invitation] = await db.select()
