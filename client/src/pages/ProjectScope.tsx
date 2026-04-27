@@ -1226,7 +1226,7 @@ function DroppableStage({
         className={`mb-3 ${level > 0 ? 'ml-8' : ''}`}
       >
         <div 
-          className={`rounded-xl bg-background border-2 border-border shadow-sm transition-all duration-200 overflow-hidden ${
+          className={`rounded-xl bg-card border border-border shadow-sm transition-all duration-200 overflow-hidden ${
             isOver && isDraggingStage ? 'ring-2 ring-primary/50 bg-primary/10' : ''
           }`}
         >
