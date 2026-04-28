@@ -434,9 +434,9 @@ export default function Allowances() {
         <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center" role="tablist">
           {(
             [
-              { key: "all", label: "All", count: totalCount },
-              { key: "pc", label: "Prime Cost", count: pcCount },
-              { key: "ps", label: "Prov Sum", count: psCount },
+              { key: "all", label: "All" },
+              { key: "pc", label: "Prime Cost" },
+              { key: "ps", label: "Prov Sum" },
             ] as const
           ).map((seg) => {
             const active = typeFilter === seg.key;
@@ -445,15 +445,14 @@ export default function Allowances() {
                 key={seg.key}
                 type="button"
                 onClick={() => setTypeFilter(seg.key)}
-                className={`h-6 px-2.5 rounded text-[11px] flex items-center gap-1.5 ${
+                className={`h-6 px-2.5 rounded text-[11px] flex items-center ${
                   active
                     ? "bg-card shadow-sm text-foreground font-semibold"
                     : "text-muted-foreground hover-elevate"
                 }`}
                 data-testid={`button-filter-${seg.key}`}
               >
-                <span>{seg.label}</span>
-                <span className="opacity-70 tabular-nums">· {seg.count}</span>
+                {seg.label}
               </button>
             );
           })}
@@ -539,35 +538,6 @@ export default function Allowances() {
             </div>
           </PopoverContent>
         </Popover>
-
-        {/* PC / PS / All segmented toggle */}
-        <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center ml-1" role="tablist">
-          {(
-            [
-              { key: "all", label: "All", count: totalCount },
-              { key: "pc", label: "Prime Cost", count: pcCount },
-              { key: "ps", label: "Prov Sum", count: psCount },
-            ] as const
-          ).map((seg) => {
-            const active = typeFilter === seg.key;
-            return (
-              <button
-                key={seg.key}
-                type="button"
-                onClick={() => setTypeFilter(seg.key)}
-                className={`h-6 px-2.5 rounded text-[11px] flex items-center gap-1.5 ${
-                  active
-                    ? "bg-card shadow-sm text-foreground font-semibold"
-                    : "text-muted-foreground hover-elevate"
-                }`}
-                data-testid={`button-filter-${seg.key}`}
-              >
-                <span>{seg.label}</span>
-                <span className="opacity-70 tabular-nums">· {seg.count}</span>
-              </button>
-            );
-          })}
-        </div>
 
         {/* Options menu */}
         <Popover>
