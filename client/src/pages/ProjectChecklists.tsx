@@ -244,6 +244,7 @@ export default function ProjectChecklists() {
   // Collapsed state - track which are collapsed (default: all expanded)
   const [collapsedInstances, setCollapsedInstances] = useState<Set<string>>(new Set());
   const [expandedChecklists, setExpandedChecklists] = useState<Set<string>>(new Set());
+  const [showCompletedItems, setShowCompletedItems] = useState<Set<string>>(new Set());
   const [newItemText, setNewItemText] = useState<Record<string, string>>({});
   const [showNotesDialog, setShowNotesDialog] = useState<ChecklistInstanceItem | null>(null);
   const [newNoteText, setNewNoteText] = useState("");
@@ -792,12 +793,16 @@ export default function ProjectChecklists() {
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
-      low: "bg-muted text-secondary ",
-      medium: "bg-blue-100 text-status-info dark:bg-blue-900/30 dark:text-blue-400",
-      high: "bg-orange-100 text-status-warning dark:bg-orange-900/30 dark:text-orange-400",
-      urgent: "bg-red-100 text-status-danger dark:bg-red-900/30 dark:text-red-400",
+      low: "bg-muted/60 text-muted-foreground border-transparent",
+      medium: "bg-[hsl(var(--primary)/0.15)] text-primary border-transparent",
+      high: "bg-[hsl(var(--amber)/0.18)] text-[hsl(var(--amber))] border-transparent",
+      urgent: "bg-[hsl(var(--coral)/0.18)] text-[hsl(var(--coral))] border-transparent",
     };
-    return <Badge className={`${styles[priority] || styles.medium} text-data px-1.5 py-0`}>{priority}</Badge>;
+    return (
+      <Badge className={`${styles[priority] || styles.medium} text-data px-2 py-0 capitalize font-medium`}>
+        {priority}
+      </Badge>
+    );
   };
 
   const getStatusLabel = (status: string) => {
@@ -811,11 +816,24 @@ export default function ProjectChecklists() {
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-status-success dark:bg-green-900/30 dark:text-green-400";
+        return "bg-[hsl(var(--sage)/0.18)] text-[hsl(var(--sage))] border-transparent";
       case "in_progress":
-        return "bg-primary/20 text-primary";
+        return "bg-[hsl(var(--amber)/0.18)] text-[hsl(var(--amber))] border-transparent";
       default:
-        return "bg-muted text-secondary ";
+        return "bg-muted/60 text-muted-foreground border-transparent";
+    }
+  };
+
+  // Returns the tailwind class for the 4px left accent bar on a checklist card.
+  // sage = completed, amber = action/in_progress, primary = has-progress, border = upcoming/idle.
+  const getStatusAccentClass = (status: string, hasProgress: boolean) => {
+    switch (status) {
+      case "completed":
+        return "bg-[hsl(var(--sage))]";
+      case "in_progress":
+        return "bg-[hsl(var(--amber))]";
+      default:
+        return hasProgress ? "bg-primary" : "bg-border";
     }
   };
 
@@ -1025,7 +1043,7 @@ export default function ProjectChecklists() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto px-6 py-6">
         {groupedByInstance.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
             <ClipboardList className="h-12 w-12 opacity-50" />
@@ -1049,23 +1067,40 @@ export default function ProjectChecklists() {
             )}
           </div>
         ) : (
-          <div className="space-y-4">
-            {groupedByInstance.map(({ instance, groups }) => {
+          <div>
+            {groupedByInstance.map(({ instance, groups }, instanceIdx) => {
               const isCollapsed = collapsedInstances.has(instance.id);
-              
+
+              // Aggregate items across all groups in this instance for the stage progress bar.
+              let stageTotalItems = 0;
+              let stageCompletedItems = 0;
+              groups.forEach((g) => {
+                const items = checklistItems[g.id] || [];
+                stageTotalItems += items.length;
+                stageCompletedItems += items.filter(
+                  (i) => i.status === "completed" || i.status === "na",
+                ).length;
+              });
+              const stagePct = stageTotalItems > 0
+                ? Math.round((stageCompletedItems / stageTotalItems) * 100)
+                : 0;
+
               return (
-                <div key={instance.id} className="space-y-3">
-                  {/* Group Header - Collapsible */}
+                <div
+                  key={instance.id}
+                  className={instanceIdx === 0 ? "" : "mt-8"}
+                  data-testid={`instance-section-${instance.id}`}
+                >
+                  {/* Stage / Group header — clean section header (no heavy box) */}
                   <div
-                    className="flex items-center gap-2 px-3 py-2 bg-muted/30 border border-border/60 rounded-md cursor-pointer hover:bg-muted/50 transition-all"
+                    className="flex items-center gap-3 cursor-pointer group/stage select-none"
                     onClick={() => toggleInstanceCollapse(instance.id)}
                     data-testid={`instance-header-${instance.id}`}
                   >
                     <div className={`transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <FolderOpen className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium flex-1 flex items-center gap-1.5">
+                    <h2 className="text-base font-semibold flex items-center gap-1.5">
                       {instance.name}
                       {instance.visibility === "assignee_only" && (
                         <Tooltip>
@@ -1078,16 +1113,27 @@ export default function ProjectChecklists() {
                           <TooltipContent>Visible to assignee only</TooltipContent>
                         </Tooltip>
                       )}
+                    </h2>
+                    <span className="text-xs text-muted-foreground">
+                      {groups.length} checklist{groups.length === 1 ? '' : 's'}
+                      {stageTotalItems > 0 && ` · ${stageCompletedItems} of ${stageTotalItems} items complete`}
                     </span>
+                    {/* Sage progress bar — flexes to fill available space */}
+                    {stageTotalItems > 0 && (
+                      <div className="flex-1 h-1 rounded-full bg-muted/60 overflow-hidden max-w-xs ml-2">
+                        <div
+                          className="h-full bg-[hsl(var(--sage))] transition-all duration-300"
+                          style={{ width: `${stagePct}%` }}
+                        />
+                      </div>
+                    )}
+                    {!stageTotalItems && <div className="flex-1" />}
                     {instance.scopeStageId && (
                       <Badge variant="secondary" className="text-data px-1.5 py-0 flex-shrink-0" data-testid={`stage-badge-${instance.id}`}>
                         <Layers className="h-2.5 w-2.5 mr-1" />
                         {scopeStages.find(s => s.id === instance.scopeStageId)?.name ?? 'Stage'}
                       </Badge>
                     )}
-                    <Badge variant="secondary" className="text-data px-1.5 py-0">
-                      {groups.length} checklists
-                    </Badge>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -1178,39 +1224,59 @@ export default function ProjectChecklists() {
                     </DropdownMenu>
                   </div>
                   
-                  {/* Checklists Grid - only show if not collapsed */}
+                  {/* Checklist cards — only show if stage not collapsed */}
                   {!isCollapsed && (
-                    <div className="space-y-3 ml-2 pl-4 border-l-2 border-primary/30">
+                    <div className="mt-4">
                       {groups.map((group) => {
                         const isExpanded = expandedChecklists.has(group.id);
                         const items = checklistItems[group.id] || [];
                         const completedItems = items.filter(i => i.status === "completed" || i.status === "na").length;
+                        const groupPct = items.length > 0
+                          ? Math.round((completedItems / items.length) * 100)
+                          : 0;
+                        const accentClass = getStatusAccentClass(group.status, groupPct > 0 && group.status !== "completed");
                         
                         return (
                           <div
                             key={group.id}
-                            className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+                            className="group relative bg-card rounded-xl mb-4 overflow-hidden shadow-sm dark:shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-all"
                             data-testid={`checklist-card-${group.id}`}
-                            onClick={() => toggleChecklistExpand(group.id)}
                           >
-                            {/* Checklist Header */}
-                            <div className="flex items-start gap-2">
-                              {/* Left: Chevron + Title */}
-                              <div className="flex items-start gap-2 flex-1 min-w-0">
-                                <div className={`transition-transform duration-200 mt-0.5 ${isExpanded ? 'rotate-90' : ''}`}>
+                            {/* 4px left accent bar */}
+                            <div
+                              className={`absolute top-0 left-0 bottom-0 w-1 ${accentClass}`}
+                              aria-hidden="true"
+                            />
+
+                            {/* Card Header */}
+                            <div
+                              className="flex items-center gap-3 pl-6 pr-4 py-4 cursor-pointer hover-elevate"
+                              onClick={() => toggleChecklistExpand(group.id)}
+                            >
+                              {/* Left: Chevron + Title + Progress */}
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className={`transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}>
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm line-clamp-1">{group.name}</span>
+                                <div className="flex-1 min-w-0 flex items-center gap-3">
+                                  <span className="text-sm font-medium truncate">{group.name}</span>
                                   {items.length > 0 && (
-                                    <p className="text-xs text-muted-foreground">
-                                      {completedItems} of {items.length} items
-                                    </p>
+                                    <>
+                                      <div className="hidden sm:flex flex-1 max-w-[160px] h-1 rounded-full bg-muted/60 overflow-hidden flex-shrink-0">
+                                        <div
+                                          className="h-full bg-[hsl(var(--sage))] transition-all duration-300"
+                                          style={{ width: `${groupPct}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                                        {completedItems}/{items.length}
+                                      </span>
+                                    </>
                                   )}
                                 </div>
                               </div>
                               
-                              {/* Right: Chips + Assignee */}
+                              {/* Right: Chips + Assignee + Menu */}
                               <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <Badge 
                                   className={`${getStatusBadgeClass(group.status)} text-data px-1.5 py-0 cursor-pointer hover:opacity-80`}
@@ -1470,62 +1536,68 @@ export default function ProjectChecklists() {
                             </div>
                             
                             {/* Expanded Items Panel */}
-                            {isExpanded && (
-                              <div className="border-t border-border/40 bg-muted/30 p-3" onClick={(e) => e.stopPropagation()}>
+                            {isExpanded && (() => {
+                              const activeItems = items.filter(i => !(i.status === "completed" || i.status === "na"));
+                              const completedItemsList = items.filter(i => i.status === "completed" || i.status === "na");
+                              const showCompleted = showCompletedItems.has(group.id);
+                              const itemsToRender = showCompleted ? items : activeItems;
+                              return (
+                              <div className="px-6 pb-4" onClick={(e) => e.stopPropagation()}>
                                 {items.length === 0 ? (
-                                  <div className="space-y-3">
-                                    <p className="text-xs text-muted-foreground text-center py-2">
-                                      No items in this checklist
-                                    </p>
-                                    {/* Add Item Form - shown even when empty */}
-                                    <div className="flex items-center gap-2">
-                                      <Input
-                                        placeholder="Add new item..."
-                                        value={newItemText[group.id] || ""}
-                                        onChange={(e) => setNewItemText(prev => ({ ...prev, [group.id]: e.target.value }))}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter" && newItemText[group.id]?.trim()) {
-                                            createItemMutation.mutate({
-                                              instanceId: group.instanceId,
-                                              groupId: group.id,
-                                              description: newItemText[group.id].trim(),
-                                            });
-                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
-                                          }
-                                        }}
-                                        className="h-8 text-sm"
-                                        data-testid={`add-item-input-empty-${group.id}`}
-                                      />
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-8 px-3"
-                                        disabled={!newItemText[group.id]?.trim() || createItemMutation.isPending}
-                                        onClick={() => {
-                                          if (newItemText[group.id]?.trim()) {
-                                            createItemMutation.mutate({
-                                              instanceId: group.instanceId,
-                                              groupId: group.id,
-                                              description: newItemText[group.id].trim(),
-                                            });
-                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
-                                          }
-                                        }}
-                                        data-testid={`add-item-button-empty-${group.id}`}
-                                      >
-                                        <Plus className="h-3.5 w-3.5 mr-1" />
-                                        Add
-                                      </Button>
-                                    </div>
+                                  <div
+                                    className="flex items-center gap-2 px-3 py-2.5 rounded-md border border-dashed border-border/60 hover-elevate cursor-text group/add"
+                                    onClick={() => {
+                                      const el = document.getElementById(`ghost-add-input-empty-${group.id}`);
+                                      el?.focus();
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4 text-muted-foreground/60 group-hover/add:text-muted-foreground" />
+                                    <input
+                                      id={`ghost-add-input-empty-${group.id}`}
+                                      type="text"
+                                      placeholder="Add checklist item"
+                                      value={newItemText[group.id] || ""}
+                                      onChange={(e) => setNewItemText(prev => ({ ...prev, [group.id]: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" && newItemText[group.id]?.trim()) {
+                                          createItemMutation.mutate({
+                                            instanceId: group.instanceId,
+                                            groupId: group.id,
+                                            description: newItemText[group.id].trim(),
+                                          });
+                                          setNewItemText(prev => ({ ...prev, [group.id]: "" }));
+                                        }
+                                      }}
+                                      className="flex-1 bg-transparent border-0 outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/60 focus:text-foreground"
+                                      data-testid={`add-item-input-empty-${group.id}`}
+                                    />
                                   </div>
                                 ) : (
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="text-xs text-muted-foreground">
-                                        {completedItems} of {items.length} completed
-                                      </span>
-                                    </div>
-                                    {items.map((item) => {
+                                  <div className="rounded-md overflow-hidden border border-border/40">
+                                    {/* Collapsed completed-items row (only when there are completed items) */}
+                                    {completedItemsList.length > 0 && (
+                                      <button
+                                        type="button"
+                                        className="w-full flex items-center gap-2 px-3 py-2.5 bg-muted/20 hover-elevate text-left transition-colors"
+                                        onClick={() => {
+                                          setShowCompletedItems(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(group.id)) next.delete(group.id);
+                                            else next.add(group.id);
+                                            return next;
+                                          });
+                                        }}
+                                        data-testid={`toggle-completed-items-${group.id}`}
+                                      >
+                                        <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${showCompleted ? 'rotate-90' : ''}`} />
+                                        <CheckCircle2 className="h-3.5 w-3.5 text-[hsl(var(--sage))]" />
+                                        <span className="text-xs text-muted-foreground">
+                                          {completedItemsList.length} completed item{completedItemsList.length === 1 ? '' : 's'}
+                                          {!showCompleted && ' (hidden)'}
+                                        </span>
+                                      </button>
+                                    )}
+                                    {itemsToRender.map((item, itemIdx) => {
                                       const responseType = (item.responseType as string) || "checkbox";
                                       const responseOptions = (item.responseOptions as string[]) || [];
                                       const selectedResponses = (item.selectedResponses as string[]) || [];
@@ -1539,11 +1611,16 @@ export default function ProjectChecklists() {
                                       return (
                                         <div
                                           key={item.id}
-                                          className={`group/item p-2 rounded-md border border-border/40 bg-background/50 transition-colors ${
-                                            isAnswered ? 'opacity-80' : ''
-                                          }`}
+                                          className={`group/item min-h-[52px] px-3 py-2.5 transition-colors ${
+                                            itemIdx % 2 === 1 ? 'bg-muted/20' : 'bg-transparent'
+                                          } ${
+                                            (itemIdx > 0 || completedItemsList.length > 0) ? 'border-t border-border/40' : ''
+                                          } ${isAnswered ? 'opacity-80' : ''}`}
                                         >
-                                          <div className="flex items-start gap-2">
+                                          <div className="flex items-start gap-3">
+                                            <span className="text-data text-muted-foreground/60 w-6 text-right select-none mt-0.5 font-mono shrink-0 tabular-nums">
+                                              {String(itemIdx + 1).padStart(2, '0')}
+                                            </span>
                                             {/* Response Type Icon/Input */}
                                             {responseType === "checkbox" && (
                                               <Checkbox
@@ -1898,10 +1975,19 @@ export default function ProjectChecklists() {
                                       );
                                     })}
                                     
-                                    {/* Add Item Form */}
-                                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/40">
-                                      <Input
-                                        placeholder="Add new item..."
+                                    {/* Ghost Add Item Row */}
+                                    <div
+                                      className="flex items-center gap-2 px-3 py-2.5 border-t border-border/40 hover-elevate cursor-text group/add"
+                                      onClick={() => {
+                                        const el = document.getElementById(`ghost-add-input-${group.id}`);
+                                        el?.focus();
+                                      }}
+                                    >
+                                      <Plus className="h-4 w-4 text-muted-foreground/60 group-hover/add:text-muted-foreground" />
+                                      <input
+                                        id={`ghost-add-input-${group.id}`}
+                                        type="text"
+                                        placeholder="Add checklist item"
                                         value={newItemText[group.id] || ""}
                                         onChange={(e) => setNewItemText(prev => ({ ...prev, [group.id]: e.target.value }))}
                                         onKeyDown={(e) => {
@@ -1914,34 +2000,15 @@ export default function ProjectChecklists() {
                                             setNewItemText(prev => ({ ...prev, [group.id]: "" }));
                                           }
                                         }}
-                                        className="h-8 text-sm"
+                                        className="flex-1 bg-transparent border-0 outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/60 focus:text-foreground"
                                         data-testid={`add-item-input-${group.id}`}
                                       />
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-8 px-3"
-                                        disabled={!newItemText[group.id]?.trim() || createItemMutation.isPending}
-                                        onClick={() => {
-                                          if (newItemText[group.id]?.trim()) {
-                                            createItemMutation.mutate({
-                                              instanceId: group.instanceId,
-                                              groupId: group.id,
-                                              description: newItemText[group.id].trim(),
-                                            });
-                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
-                                          }
-                                        }}
-                                        data-testid={`add-item-button-${group.id}`}
-                                      >
-                                        <Plus className="h-3.5 w-3.5 mr-1" />
-                                        Add
-                                      </Button>
                                     </div>
                                   </div>
                                 )}
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         );
                       })}
