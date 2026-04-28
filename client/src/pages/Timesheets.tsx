@@ -596,7 +596,11 @@ export default function Timesheets() {
         id: "select",
         enableSorting: false,
         enableHiding: false,
-        meta: { defaultWidth: 16, pinned: true, align: "center" },
+        enableResizing: false,
+        size: 36,
+        minSize: 36,
+        maxSize: 36,
+        meta: { defaultWidth: 36, pinned: true, align: "center" },
         header: () => (
           <div className="flex items-center justify-center w-full">
             <Checkbox
