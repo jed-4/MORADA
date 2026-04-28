@@ -949,12 +949,8 @@ export default function Timesheets() {
       {/* Header Panel — single condensed row */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         <div className="h-8 flex items-center gap-2 px-3">
-          {/* LEFT: Title + Search + Filters + (Stop pill if running) */}
-          <h1 className="text-sm font-semibold whitespace-nowrap">
-            {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
-          </h1>
-
-          <div className="relative w-48">
+          {/* LEFT: Search + Filters + (Stop pill if running) */}
+          <div className="relative w-64">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search..."
