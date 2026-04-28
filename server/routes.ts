@@ -17617,8 +17617,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/timesheets/:id", async (req, res) => {
+  app.patch("/api/timesheets/:id", requireAuth, async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const existing = await storage.getTimesheet(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      // Tenant isolation: the timesheets table has no companyId column —
+      // it is inferred from the owning user. Block any access where the
+      // owning user is not in the caller's company.
+      const owner = await storage.getUser(existing.userId);
+      if (!owner || !owner.companyId || owner.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      // Allow the owner of the timesheet to edit it; otherwise require the
+      // approve-timesheets permission (managers/admins/owners). Mirrors the
+      // frontend canEditTimesheet helper.
+      const ownerId = req.user.id;
+      const sessionOwnerId = (req.session as any)?.userId;
+      const isOwner = existing.userId === ownerId || existing.userId === sessionOwnerId;
+      if (!isOwner) {
+        const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+        if (!canApprove) {
+          return res.status(403).json({ error: "You do not have permission to edit this timesheet" });
+        }
+      }
       const body = { ...req.body };
       if (body.date && typeof body.date === "string") {
         body.date = new Date(body.date);
@@ -17641,19 +17667,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/timesheets/:id", async (req, res) => {
+  app.delete("/api/timesheets/:id", requireAuth, async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const timesheet = await storage.getTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
-      // When called from mobile, only allow deleting own timesheets
-      const isMobile = req.headers['x-client'] === 'mobile';
-      if (isMobile && req.user) {
-        const ownerId = req.user.id;
-        const sessionOwnerId = (req.session as any)?.userId;
-        if (timesheet.userId !== ownerId && timesheet.userId !== sessionOwnerId) {
-          return res.status(403).json({ error: "You can only delete your own timesheets" });
+      // Tenant isolation — see PATCH handler above.
+      const owner = await storage.getUser(timesheet.userId);
+      if (!owner || !owner.companyId || owner.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      // Owner can always delete their own; non-owners must have the
+      // approve-timesheets permission.
+      const ownerId = req.user.id;
+      const sessionOwnerId = (req.session as any)?.userId;
+      const isOwner = timesheet.userId === ownerId || timesheet.userId === sessionOwnerId;
+      if (!isOwner) {
+        const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+        if (!canApprove) {
+          return res.status(403).json({ error: "You do not have permission to delete this timesheet" });
         }
       }
       const deleted = await storage.deleteTimesheet(req.params.id);

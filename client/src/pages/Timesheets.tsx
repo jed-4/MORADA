@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat } from "lucide-react";
+import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, eachDayOfInterval, isSameDay, addDays, subWeeks, getDay } from "date-fns";
@@ -79,16 +81,30 @@ export default function Timesheets() {
   const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
   
-  // Permission check for editing timesheets
+  // Permission check for editing timesheets.
+  // The `user` object exposes `roleName` (free-text, e.g. "Office Manager",
+  // "General Manager", "Admin") — there is no `role` field. We treat any role
+  // whose name contains owner/admin/manager as a manager-like role, and we
+  // also let through anyone who has the existing approve-timesheets permission.
+  const isManagerLikeRole = (roleName?: string | null): boolean => {
+    if (!roleName) return false;
+    const n = roleName.toLowerCase();
+    return n.includes("owner") || n.includes("admin") || n.includes("manager");
+  };
   const canEditTimesheet = (timesheet: Timesheet): boolean => {
     if (!user) return false;
     // User can edit their own timesheets
     if (timesheet.userId === user.id) return true;
-    // Admins, owners, and managers can edit all timesheets
-    if (user.role === "owner" || user.role === "admin" || user.role === "manager") return true;
+    // Anyone allowed to approve timesheets can also edit them
+    if (canApproveTimesheets) return true;
+    // Manager-style roles can edit all timesheets
+    if (isManagerLikeRole(user.roleName)) return true;
     return false;
   };
   const [selectedTimesheets, setSelectedTimesheets] = useState<string[]>([]);
+  // Single-row delete confirmation (kept at page level so the dialog isn't
+  // unmounted when the row's actions menu closes).
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -282,6 +298,52 @@ export default function Timesheets() {
     onError: () => {
       toast({
         title: "Bulk action failed",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Duplicate a single timesheet — copies the source's fields onto today's
+  // date as a fresh draft, then opens the dialog on the new entry so the
+  // user can adjust before saving.
+  const duplicateMutation = useMutation({
+    mutationFn: async (source: Timesheet) => {
+      const payload = {
+        projectId: source.projectId,
+        userId: source.userId,
+        costCodeId: source.costCodeId,
+        date: new Date().toISOString(),
+        startTime: source.startTime || "",
+        endTime: source.endTime || "",
+        duration: source.duration || "0",
+        breakDuration: source.breakDuration || "0",
+        breakStartTime: source.breakStartTime || "",
+        breakEndTime: source.breakEndTime || "",
+        hourlyRate: source.hourlyRate || "0",
+        // Carry total over so the duplicate has the same hours/$ as the source
+        total: source.total || "0",
+        description: source.description || "",
+        labels: Array.isArray(source.labels) ? (source.labels as string[]) : [],
+        status: "draft",
+      };
+      return apiRequest("/api/timesheets", "POST", payload) as Promise<Timesheet>;
+    },
+    onSuccess: (newTs) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+      }
+      toast({
+        title: "Timesheet duplicated",
+        description: "New draft entry created for today.",
+      });
+      setSelectedTimesheet(newTs);
+      setIsDialogOpen(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to duplicate timesheet",
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -761,10 +823,105 @@ export default function Timesheets() {
           </span>
         ),
       },
+      {
+        // Far-right per-row 3-dot actions menu. Pinned so it can't be
+        // hidden, reordered or resized — it should always be the last
+        // visible column.
+        id: "actions",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { defaultWidth: 32, pinned: true, align: "center", headerLabel: "" },
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const ts = row.original;
+          const canEdit = canEditTimesheet(ts);
+          return (
+            <div
+              className="flex items-center justify-center w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    data-testid={`button-row-actions-${ts.id}`}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedTimesheet(ts);
+                      setIsDialogOpen(true);
+                    }}
+                    data-testid={`menu-edit-${ts.id}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-2" />
+                    {canEdit ? "Edit" : "View"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => duplicateMutation.mutate(ts)}
+                    disabled={duplicateMutation.isPending}
+                    data-testid={`menu-duplicate-${ts.id}`}
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-2" />
+                    Duplicate
+                  </DropdownMenuItem>
+                  {canApproveTimesheets && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-data uppercase tracking-wider text-muted-foreground font-medium">
+                        Change status
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => bulkActionMutation.mutate({ ids: [ts.id], action: "changeStatus", status: "submitted" })}
+                        data-testid={`menu-status-submitted-${ts.id}`}
+                      >
+                        <div className="w-2 h-2 rounded-full mr-2 bg-primary" />
+                        Submitted
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => bulkActionMutation.mutate({ ids: [ts.id], action: "changeStatus", status: "approved" })}
+                        data-testid={`menu-status-approved-${ts.id}`}
+                      >
+                        <div className="w-2 h-2 rounded-full mr-2 bg-[hsl(var(--sage))]" />
+                        Approved
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => bulkActionMutation.mutate({ ids: [ts.id], action: "changeStatus", status: "rejected" })}
+                        data-testid={`menu-status-rejected-${ts.id}`}
+                      >
+                        <div className="w-2 h-2 rounded-full mr-2 bg-[hsl(var(--coral))]" />
+                        Rejected
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {canEdit && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleteCandidateId(ts.id)}
+                        data-testid={`menu-delete-${ts.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+      },
     ];
     return cols;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat]);
+  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, user?.id, user?.roleName, duplicateMutation.isPending]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1966,6 +2123,35 @@ export default function Timesheets() {
         defaultProjectId={projectId}
         readonly={selectedTimesheet ? !canEditTimesheet(selectedTimesheet) : false}
       />
+
+      <AlertDialog
+        open={!!deleteCandidateId}
+        onOpenChange={(o) => { if (!o) setDeleteCandidateId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this timesheet?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the entry and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-row-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteCandidateId) {
+                  bulkActionMutation.mutate({ ids: [deleteCandidateId], action: "delete" });
+                }
+                setDeleteCandidateId(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-row-delete-confirm"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <RapidApprovalModal
         open={isRapidApprovalOpen}
