@@ -3479,23 +3479,39 @@ export default function ProjectScope() {
             const activeCount = filterDefs.filter(d => activeTypeFilters.has(d.name.toLowerCase())).length;
             const allActive = totalTypes > 0 && activeCount === totalTypes;
             const noneActive = activeCount === 0;
+            const tooltipLabel = allActive
+              ? 'Filter'
+              : noneActive
+                ? 'Filter (none)'
+                : `Filter (${activeCount} of ${totalTypes})`;
             return (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className={`h-6 px-2 flex items-center gap-1 rounded-md border transition-all hover-elevate active-elevate-2 ${
-                      !allActive
-                        ? 'bg-primary/10 text-primary border-primary/20'
-                        : 'border-border/50 text-muted-foreground'
-                    }`}
-                    data-testid="button-filter-types"
-                  >
-                    <Filter className="h-3 w-3" />
-                    <span className="text-data font-medium">
-                      {allActive ? 'Filter' : noneActive ? 'Filter (none)' : `Filter (${activeCount})`}
-                    </span>
-                  </button>
-                </DropdownMenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                          !allActive
+                            ? 'bg-primary/10 text-primary border-primary/20'
+                            : 'border-border/50 text-muted-foreground'
+                        }`}
+                        data-testid="button-filter-types"
+                        aria-label={tooltipLabel}
+                      >
+                        <Filter className="h-3 w-3" />
+                        {!allActive && !noneActive && (
+                          <span
+                            className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                            data-testid="badge-filter-types-count"
+                          >
+                            {activeCount}
+                          </span>
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{tooltipLabel}</TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent align="start" className="w-48">
                   {filterDefs.map(def => {
                     const type = def.name.toLowerCase();
