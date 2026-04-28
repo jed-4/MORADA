@@ -430,14 +430,47 @@ export default function Allowances() {
     <div className="flex flex-col h-full bg-background">
       {/* Top bar */}
       <div className="h-9 bg-background flex items-center justify-between px-4 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {currentProject.name} / Allowances
-          </h2>
-          <span className="text-xs text-muted-foreground" data-testid="text-allowance-count">
-            {filtered.length} of {totalCount} items
-          </span>
-        </div>
+        <span className="text-xs text-muted-foreground" data-testid="text-allowance-count">
+          {filtered.length} of {totalCount} items
+        </span>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              data-testid="button-toolbar-options"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-3">
+            <div className="space-y-2">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Estimate version
+              </label>
+              <Select
+                value={selectedEstimateId || ""}
+                onValueChange={handleEstimateChange}
+                disabled={estimatesLoading || estimates.length === 0}
+              >
+                <SelectTrigger
+                  className="w-full h-8 text-[12px] bg-card border-border rounded-md"
+                  data-testid="select-estimate"
+                >
+                  <SelectValue placeholder="Select estimate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {estimates.map((est) => (
+                    <SelectItem key={est.id} value={est.id} data-testid={`estimate-option-${est.id}`}>
+                      {est.name} (v{est.version})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Summary strip (60px) */}
@@ -473,61 +506,84 @@ export default function Allowances() {
       {/* Filter bar */}
       <div className="bg-background flex items-center justify-between px-4 py-2 gap-2 border-b border-border flex-shrink-0 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative w-56">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search allowances…"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 h-7 text-[11px] text-muted-foreground bg-card border border-border rounded-md"
-              data-testid="input-search-allowances"
-            />
-          </div>
+          {/* Search icon button (popover with input) */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className={`h-7 w-7 ${searchTerm ? "text-primary" : "text-muted-foreground"}`}
+                data-testid="button-search-allowances"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search allowances…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 pr-7 h-8 text-[12px] bg-card border border-border rounded-md"
+                  data-testid="input-search-allowances"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover-elevate"
+                    data-testid="button-clear-search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
 
-          {/* Estimate (version) selector */}
-          <Select
-            value={selectedEstimateId || ""}
-            onValueChange={handleEstimateChange}
-            disabled={estimatesLoading || estimates.length === 0}
-          >
-            <SelectTrigger
-              className="w-[200px] h-7 text-[11px] text-muted-foreground bg-card border-border rounded-md"
-              data-testid="select-estimate"
-            >
-              <SelectValue placeholder="Select estimate" />
-            </SelectTrigger>
-            <SelectContent>
-              {estimates.map((est) => (
-                <SelectItem key={est.id} value={est.id} data-testid={`estimate-option-${est.id}`}>
-                  {est.name} (v{est.version})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Status filter */}
-          <Select
-            value={statusFilter || "all"}
-            onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
-          >
-            <SelectTrigger
-              className="w-[140px] h-7 text-[11px] text-muted-foreground bg-card border-border rounded-md"
-              data-testid="select-status-filter"
-            >
-              <SelectValue>
-                {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {filterStatusOptions.map((s) => (
-                <SelectItem key={s.key} value={s.key}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Filter icon button (popover with status filter) */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className={`h-7 w-7 ${statusFilter ? "text-primary" : "text-muted-foreground"}`}
+                data-testid="button-filter-allowances"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 p-3">
+              <div className="space-y-2">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Status
+                </label>
+                <Select
+                  value={statusFilter || "all"}
+                  onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger
+                    className="w-full h-8 text-[12px] bg-card border-border rounded-md"
+                    data-testid="select-status-filter"
+                  >
+                    <SelectValue>
+                      {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {filterStatusOptions.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           {/* PC / PS / All segmented toggle */}
           <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center" role="tablist">
