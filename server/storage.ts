@@ -4057,6 +4057,7 @@ export class MemStorage implements IStorage {
     // For each item, calculate actual costs from bills and timesheets
     const allowancesWithCosts = allowanceItems.map(item => {
       const estimate = estimates.find(e => e.id === item.estimateId);
+      const group = item.groupId ? this.estimateGroups.get(item.groupId) : undefined;
       
       // Since we don't have bill/timesheet allocations in memory, return 0 for now
       const actualCost = 0;
@@ -4067,6 +4068,7 @@ export class MemStorage implements IStorage {
           ...item,
           estimateName: estimate?.name || "Unknown",
           estimateVersion: estimate?.version || 1,
+          groupName: group?.name || null,
         },
         actualCost,
         variance,
@@ -9165,11 +9167,17 @@ export class DbStorage implements IStorage {
             )
           )
         );
+
+      // Get all groups for these estimates so we can attach groupName to each item
+      const groupsRows = await db.select().from(schema.estimateGroups)
+        .where(inArray(schema.estimateGroups.estimateId, estimateIds));
+      const groupsMap = new Map(groupsRows.map(g => [g.id, g]));
       
       // For each item, calculate actual costs from bills and timesheets
       const allowancesWithCosts = await Promise.all(
         allowanceItems.map(async (item) => {
           const estimate = estimates.find(e => e.id === item.estimateId);
+          const group = item.groupId ? groupsMap.get(item.groupId) : undefined;
           
           // Get bill line item allocations
           const billAllocations = await db.select({
