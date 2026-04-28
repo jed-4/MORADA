@@ -428,17 +428,123 @@ export default function Allowances() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Top bar */}
-      <div className="h-9 bg-background flex items-center justify-between px-4 gap-4 flex-shrink-0">
-        <span className="text-xs text-muted-foreground" data-testid="text-allowance-count">
-          {filtered.length} of {totalCount} items
-        </span>
+      {/* Top bar (consolidated toolbar) */}
+      <div className="h-9 bg-background flex items-center justify-end px-4 gap-1 flex-shrink-0">
+        {/* Search icon button (popover with input) */}
         <Popover>
           <PopoverTrigger asChild>
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7"
+              className={`h-7 w-7 ${searchTerm ? "text-primary" : "text-muted-foreground"}`}
+              data-testid="button-search-allowances"
+            >
+              <Search className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                autoFocus
+                placeholder="Search allowances…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 pr-7 h-8 text-[12px] bg-card border border-border rounded-md"
+                data-testid="input-search-allowances"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover-elevate"
+                  data-testid="button-clear-search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Filter icon button (popover with status filter) */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={`h-7 w-7 ${statusFilter ? "text-primary" : "text-muted-foreground"}`}
+              data-testid="button-filter-allowances"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-56 p-3">
+            <div className="space-y-2">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Status
+              </label>
+              <Select
+                value={statusFilter || "all"}
+                onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
+              >
+                <SelectTrigger
+                  className="w-full h-8 text-[12px] bg-card border-border rounded-md"
+                  data-testid="select-status-filter"
+                >
+                  <SelectValue>
+                    {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {filterStatusOptions.map((s) => (
+                    <SelectItem key={s.key} value={s.key}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* PC / PS / All segmented toggle */}
+        <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center ml-1" role="tablist">
+          {(
+            [
+              { key: "all", label: "All", count: totalCount },
+              { key: "pc", label: "Prime Cost", count: pcCount },
+              { key: "ps", label: "Prov Sum", count: psCount },
+            ] as const
+          ).map((seg) => {
+            const active = typeFilter === seg.key;
+            return (
+              <button
+                key={seg.key}
+                type="button"
+                onClick={() => setTypeFilter(seg.key)}
+                className={`h-6 px-2.5 rounded text-[11px] flex items-center gap-1.5 ${
+                  active
+                    ? "bg-card shadow-sm text-foreground font-semibold"
+                    : "text-muted-foreground hover-elevate"
+                }`}
+                data-testid={`button-filter-${seg.key}`}
+              >
+                <span>{seg.label}</span>
+                <span className="opacity-70 tabular-nums">· {seg.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Options menu */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 ml-1"
               data-testid="button-toolbar-options"
             >
               <MoreVertical className="h-4 w-4" />
@@ -501,119 +607,6 @@ export default function Allowances() {
         />
         <StatCard value={String(pcCount)} label="PC Items" variant="primary" testId="stat-pc-count" />
         <StatCard value={String(psCount)} label="PS Items" variant="muted" testId="stat-ps-count" />
-      </div>
-
-      {/* Filter bar */}
-      <div className="bg-background flex items-center justify-between px-4 py-2 gap-2 border-b border-border flex-shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Search icon button (popover with input) */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className={`h-7 w-7 ${searchTerm ? "text-primary" : "text-muted-foreground"}`}
-                data-testid="button-search-allowances"
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  autoFocus
-                  placeholder="Search allowances…"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-7 pr-7 h-8 text-[12px] bg-card border border-border rounded-md"
-                  data-testid="input-search-allowances"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover-elevate"
-                    data-testid="button-clear-search"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* Filter icon button (popover with status filter) */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className={`h-7 w-7 ${statusFilter ? "text-primary" : "text-muted-foreground"}`}
-                data-testid="button-filter-allowances"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-56 p-3">
-              <div className="space-y-2">
-                <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Status
-                </label>
-                <Select
-                  value={statusFilter || "all"}
-                  onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
-                >
-                  <SelectTrigger
-                    className="w-full h-8 text-[12px] bg-card border-border rounded-md"
-                    data-testid="select-status-filter"
-                  >
-                    <SelectValue>
-                      {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {filterStatusOptions.map((s) => (
-                      <SelectItem key={s.key} value={s.key}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* PC / PS / All segmented toggle */}
-          <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center" role="tablist">
-            {(
-              [
-                { key: "all", label: "All", count: totalCount },
-                { key: "pc", label: "Prime Cost", count: pcCount },
-                { key: "ps", label: "Prov Sum", count: psCount },
-              ] as const
-            ).map((seg) => {
-              const active = typeFilter === seg.key;
-              return (
-                <button
-                  key={seg.key}
-                  type="button"
-                  onClick={() => setTypeFilter(seg.key)}
-                  className={`h-6 px-2.5 rounded text-[11px] flex items-center gap-1.5 ${
-                    active
-                      ? "bg-card shadow-sm text-foreground font-semibold"
-                      : "text-muted-foreground hover-elevate"
-                  }`}
-                  data-testid={`button-filter-${seg.key}`}
-                >
-                  <span>{seg.label}</span>
-                  <span className="opacity-70 tabular-nums">· {seg.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {/* Table */}
