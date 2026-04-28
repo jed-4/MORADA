@@ -542,7 +542,6 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   };
 
   const hasChildren = children.length > 0;
-  const itemTotal = (item.quantity || 0) * (item.rate || 0);
 
   const isCompleted = item.isCompleted || false;
   
@@ -592,7 +591,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           isSelected ? 'bg-primary/5 border-primary/30' : ''
         } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-orange-400 bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
         style={{ 
-          gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
+          gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px',
         }}
         data-testid={`scope-item-row-${item.id}`}
       >
@@ -720,31 +719,6 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               <span>{gearList.filter(g => g.checked).length}/{gearList.length}</span>
             </button>
           )}
-        </div>
-
-        {/* Quantity - 80px */}
-        <input
-          type="number"
-          value={item.quantity || ''}
-          onChange={(e) => onUpdate(item.id, { quantity: parseFloat(e.target.value) || null })}
-          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
-          placeholder="-"
-          data-testid={`input-quantity-${item.id}`}
-        />
-
-        {/* Rate - 100px */}
-        <input
-          type="number"
-          value={item.rate || ''}
-          onChange={(e) => onUpdate(item.id, { rate: parseFloat(e.target.value) || null })}
-          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
-          placeholder="-"
-          data-testid={`input-rate-${item.id}`}
-        />
-
-        {/* Total - 120px */}
-        <div className="text-sm font-semibold text-right text-muted-foreground">
-          {itemTotal > 0 ? `$${itemTotal.toLocaleString()}` : '-'}
         </div>
 
         {/* Menu - 24px */}
@@ -1218,13 +1192,6 @@ function DroppableStage({
 
   const hasChildren = children.length > 0;
 
-  // Calculate total value for this stage
-  const stageTotal = items.reduce((sum, item) => {
-    const qty = item.quantity || 0;
-    const rate = item.rate || 0;
-    return sum + (qty * rate);
-  }, 0);
-
   return (
     <>
       <div 
@@ -1328,12 +1295,6 @@ function DroppableStage({
                 </button>
               )}
 
-              {/* Total Value */}
-              {stageTotal > 0 && (
-                <span className="text-data text-muted-foreground font-medium">
-                  ${stageTotal.toLocaleString()}
-                </span>
-              )}
             </div>
 
             <div className="flex items-center gap-1">
