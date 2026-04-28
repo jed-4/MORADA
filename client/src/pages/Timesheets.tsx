@@ -25,6 +25,17 @@ import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, e
 import { useTimesheetDateFormat, formatTimesheetDate } from "@/hooks/useTimesheetDateFormat";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { RapidApprovalModal } from "@/components/RapidApprovalModal";
 import { SubcontractorPODialog } from "@/components/SubcontractorPODialog";
@@ -1810,15 +1821,39 @@ export default function Timesheets() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "delete" })}
-                  disabled={bulkActionMutation.isPending}
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                  Delete
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={bulkActionMutation.isPending}
+                      data-testid="button-bulk-delete-timesheets"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Delete {selectedTimesheets.length} timesheet{selectedTimesheets.length === 1 ? "" : "s"}?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This permanently removes the selected {selectedTimesheets.length === 1 ? "entry" : "entries"} and cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel data-testid="button-bulk-delete-cancel">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "delete" })}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        data-testid="button-bulk-delete-confirm"
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <Button
                   size="sm"
                   variant="ghost"
