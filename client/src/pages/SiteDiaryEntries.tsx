@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { Switch } from "@/components/ui/switch";
 import { 
   BookOpen, 
   Plus, 
@@ -43,6 +44,10 @@ import {
   Clock,
   User,
   Cloud,
+  CloudRain,
+  CloudSnow,
+  CloudLightning,
+  Sun,
   Thermometer,
   ChevronDown,
   ChevronLeft,
@@ -52,6 +57,9 @@ import {
   Newspaper,
   Wind,
   Droplets,
+  Camera,
+  Settings2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, getDay, startOfWeek, endOfWeek } from "date-fns";
 import { useUpload } from "@/hooks/use-upload";
@@ -65,6 +73,113 @@ import type {
 import { insertSiteDiaryEntrySchema } from "@shared/schema";
 import { z } from "zod";
 import { Image as ImageIcon } from "lucide-react";
+
+const HIDE_SUMMARY_KEY = "site-diary-hide-summary";
+
+type WeatherTone = "sage" | "amber" | "coral" | "muted";
+
+function classifyWeather(condition?: string | null): {
+  tone: WeatherTone;
+  Icon: React.ComponentType<{ className?: string }>;
+} {
+  const c = (condition || "").toLowerCase();
+  if (/storm|thunder|lightning/.test(c)) return { tone: "coral", Icon: CloudLightning };
+  if (/rain|shower|drizzle|wet/.test(c)) return { tone: "coral", Icon: CloudRain };
+  if (/snow|sleet|hail/.test(c)) return { tone: "muted", Icon: CloudSnow };
+  if (/wind|gust|breez/.test(c)) return { tone: "amber", Icon: Wind };
+  if (/sun|clear|fine/.test(c)) return { tone: "sage", Icon: Sun };
+  if (/cloud|overcast|fog|haze|mist/.test(c)) return { tone: "muted", Icon: Cloud };
+  return { tone: "muted", Icon: Cloud };
+}
+
+function weatherChipClass(tone: WeatherTone): string {
+  switch (tone) {
+    case "sage":
+      return "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border-[hsl(var(--sage))]/30";
+    case "amber":
+      return "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))] border-[hsl(var(--amber))]/30";
+    case "coral":
+      return "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border-[hsl(var(--coral))]/30";
+    default:
+      return "bg-muted/40 text-muted-foreground border-border";
+  }
+}
+
+function isPhotoUrl(v: unknown): boolean {
+  if (typeof v !== "string") return false;
+  return v.startsWith("http") || v.startsWith("/");
+}
+
+function collectPhotos(entry: SiteDiaryEntry): string[] {
+  const overall = (entry.overallPhotos as string[] | null) || [];
+  const fieldValues = (entry.fieldValues as Record<string, any>) || {};
+  const fromFields: string[] = [];
+  for (const v of Object.values(fieldValues)) {
+    if (Array.isArray(v)) {
+      for (const item of v) if (isPhotoUrl(item)) fromFields.push(item as string);
+    }
+  }
+  return [...overall, ...fromFields];
+}
+
+function getEntryWeather(entry: SiteDiaryEntry): { condition?: string; temp?: number; wind?: number; humidity?: number } | null {
+  const fv = (entry.fieldValues as Record<string, any>) || {};
+  const w = (entry.weather as Record<string, any> | null) || null;
+  const condition =
+    (typeof w?.condition === "string" && w.condition) ||
+    (typeof fv.weather === "string" && fv.weather) ||
+    (typeof fv.weatherConditions === "string" && fv.weatherConditions) ||
+    undefined;
+  const tempRaw = w?.temp ?? fv.temperature ?? fv.temp;
+  const temp = typeof tempRaw === "number" ? tempRaw : tempRaw ? Number(tempRaw) : undefined;
+  const windRaw = w?.wind ?? fv.wind;
+  const wind = typeof windRaw === "number" ? windRaw : windRaw ? Number(windRaw) : undefined;
+  const humRaw = w?.humidity ?? fv.humidity;
+  const humidity = typeof humRaw === "number" ? humRaw : humRaw ? Number(humRaw) : undefined;
+  if (!condition && temp == null && wind == null && humidity == null) return null;
+  return { condition, temp: Number.isFinite(temp) ? temp : undefined, wind: Number.isFinite(wind) ? wind : undefined, humidity: Number.isFinite(humidity) ? humidity : undefined };
+}
+
+function getWorkerCount(entry: SiteDiaryEntry): number {
+  const fv = (entry.fieldValues as Record<string, any>) || {};
+  for (const [k, v] of Object.entries(fv)) {
+    const lk = k.toLowerCase();
+    if (lk.includes("worker") || lk.includes("crew") || lk.includes("headcount") || lk === "labour") {
+      if (typeof v === "number") return v;
+      if (typeof v === "string") {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
+      if (Array.isArray(v)) {
+        let sum = 0;
+        for (const item of v) {
+          if (typeof item === "number") sum += item;
+          else if (item && typeof item === "object") {
+            const candidate = (item as any).count ?? (item as any).workers ?? (item as any).number;
+            if (typeof candidate === "number") sum += candidate;
+            else if (typeof candidate === "string" && Number.isFinite(Number(candidate))) sum += Number(candidate);
+          }
+        }
+        if (sum > 0) return sum;
+      }
+    }
+  }
+  return 0;
+}
+
+function hasIssues(entry: SiteDiaryEntry): boolean {
+  const fv = (entry.fieldValues as Record<string, any>) || {};
+  for (const [k, v] of Object.entries(fv)) {
+    const lk = k.toLowerCase();
+    if (lk.includes("issue") || lk.includes("incident") || lk.includes("delay") || lk.includes("hazard")) {
+      if (v === true) return true;
+      if (typeof v === "string" && v.trim().length > 0) return true;
+      if (Array.isArray(v) && v.length > 0) return true;
+      if (v && typeof v === "object" && "value" in v && (v as any).value === true) return true;
+    }
+  }
+  return false;
+}
 
 export default function SiteDiaryEntries() {
   const { toast } = useToast();
@@ -83,8 +198,17 @@ export default function SiteDiaryEntries() {
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "feed">("feed");
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [hideSummary, setHideSummary] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(HIDE_SUMMARY_KEY) === "1";
+  });
   const isProjectFromUrl = !!projectIdFromUrl;
   const isStandalone = !isProjectFromUrl;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HIDE_SUMMARY_KEY, hideSummary ? "1" : "0");
+  }, [hideSummary]);
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -292,176 +416,281 @@ export default function SiteDiaryEntries() {
     );
   }
 
+  // Stats derived from filtered entries
+  const summary = (() => {
+    const dates = new Set<string>();
+    const rainDateSet = new Set<string>();
+    let workers = 0;
+    let workerEntries = 0;
+    let issues = 0;
+    let photos = 0;
+    let monthEntries = 0;
+    const now = new Date();
+    const monthStr = format(now, "yyyy-MM");
+    for (const e of filteredEntries) {
+      const d = new Date(e.entryDateTime);
+      const ds = format(d, "yyyy-MM-dd");
+      dates.add(ds);
+      if (format(d, "yyyy-MM") === monthStr) monthEntries++;
+      const w = getWorkerCount(e);
+      if (w > 0) {
+        workers += w;
+        workerEntries++;
+      }
+      const wx = getEntryWeather(e);
+      if (wx?.condition) {
+        const isRainy =
+          classifyWeather(wx.condition).Icon === CloudRain ||
+          /storm|thunder|lightning/i.test(wx.condition);
+        if (isRainy) rainDateSet.add(ds);
+      }
+      if (hasIssues(e)) issues++;
+      photos += collectPhotos(e).length;
+    }
+    return {
+      daysLogged: dates.size,
+      workers,
+      avgOnSite: workerEntries > 0 ? Math.round(workers / workerEntries) : 0,
+      rainDays: rainDateSet.size,
+      issues,
+      photos,
+      monthEntries,
+    };
+  })();
+
+  const activeFilterCount =
+    (isStandalone && selectedProjectId && selectedProjectId !== "all" ? 1 : 0) +
+    (selectedTemplateId && selectedTemplateId !== "all" ? 1 : 0);
+
+  const showCanAdd = isStandalone || !!selectedProjectId;
+
   return (
     <div className="flex flex-col h-full" data-testid="page-site-diary">
-      {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {pageTitle}
-          </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-entry-count">
-            {filteredEntries.length} entries
-          </Badge>
+      {/* Toolbar */}
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-3 border-b border-border flex-shrink-0">
+        {/* Left: View toggle (icon only) + search + filter */}
+        <div className="flex items-center gap-1.5">
+          <div
+            className="bg-muted/40 rounded-md p-0.5 h-[28px] flex"
+            data-testid="view-toggle"
+          >
+            <button
+              onClick={() => setViewMode("list")}
+              className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+                viewMode === "list"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+              data-testid="button-list-view"
+              aria-label="List view"
+              title="List view"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("calendar")}
+              className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+                viewMode === "calendar"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+              data-testid="button-calendar-view"
+              aria-label="Calendar view"
+              title="Calendar view"
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("feed")}
+              className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+                viewMode === "feed"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+              data-testid="button-feed-view"
+              aria-label="Feed view"
+              title="Feed view"
+            >
+              <Newspaper className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Search icon → popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
+                data-testid="button-search"
+                aria-label="Search entries"
+                title="Search"
+              >
+                <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                {searchTerm && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="start">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search entries..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 pr-7 h-8 text-xs"
+                  data-testid="site-diary-search-input"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Filter icon → popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
+                data-testid="button-filter"
+                aria-label="Filter entries"
+                title="Filter"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="start">
+              <div className="space-y-3">
+                {isStandalone && (
+                  <SiteDiaryFilterGroup
+                    label="Project"
+                    value={selectedProjectId && selectedProjectId !== "all" ? selectedProjectId : "All"}
+                    onChange={(v) => setSelectedProjectId(v === "All" ? "" : v)}
+                    allLabel="All projects"
+                    options={projects.map((p) => ({ key: p.id, name: p.name }))}
+                    testIdPrefix="filter-project"
+                  />
+                )}
+                <SiteDiaryFilterGroup
+                  label="Template"
+                  value={selectedTemplateId && selectedTemplateId !== "all" ? selectedTemplateId : "All"}
+                  onChange={(v) => setSelectedTemplateId(v === "All" ? "all" : v)}
+                  allLabel="All templates"
+                  options={templates.map((t) => ({ key: t.id, name: t.name }))}
+                  testIdPrefix="filter-template"
+                />
+                {activeFilterCount > 0 && (
+                  <div className="pt-1.5 border-t border-border">
+                    <button
+                      onClick={() => {
+                        if (isStandalone) setSelectedProjectId("");
+                        setSelectedTemplateId("all");
+                      }}
+                      className="w-full h-7 text-xs text-muted-foreground hover:text-foreground rounded hover-elevate flex items-center justify-center gap-1"
+                      data-testid="clear-filters"
+                    >
+                      <X className="w-3 h-3" />
+                      Clear filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
+        {/* Right: PDF + Add + Options */}
         <div className="flex items-center gap-1.5">
           {filteredEntries.length > 0 && (
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
               onClick={() => handleExportPdf()}
               disabled={isExportingPdf}
               data-testid="button-export-pdf"
+              title="Export as PDF"
             >
               {isExportingPdf ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
               <span>PDF</span>
             </button>
           )}
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
             onClick={() => handleAddEntry()}
-            disabled={!isStandalone && !selectedProjectId}
+            disabled={!showCanAdd}
             data-testid="button-add-site-diary"
           >
             <Plus className="w-3 h-3" />
-            <span>Add Site Diary</span>
+            <span>Add</span>
           </button>
-        </div>
-      </div>
-
-      {/* Row 2 - Filters & Search (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "list" ? "bg-primary text-white border-primary/20" : "hover-elevate active-elevate-2"}`}
-            onClick={() => setViewMode("list")}
-            data-testid="button-list-view"
-          >
-            <LayoutList className="w-3 h-3" />
-            <span>List</span>
-          </button>
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "calendar" ? "bg-primary text-white border-primary/20" : "hover-elevate active-elevate-2"}`}
-            onClick={() => setViewMode("calendar")}
-            data-testid="button-calendar-view"
-          >
-            <CalendarIcon className="w-3 h-3" />
-            <span>Calendar</span>
-          </button>
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "feed" ? "bg-primary text-white border-primary/20" : "hover-elevate active-elevate-2"}`}
-            onClick={() => setViewMode("feed")}
-            data-testid="button-feed-view"
-          >
-            <Newspaper className="w-3 h-3" />
-            <span>Feed</span>
-          </button>
-
-          <div className="w-px h-4 bg-border mx-1" />
-
-          {/* Search */}
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search entries..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-              data-testid="site-diary-search-input"
-            />
-          </div>
-
-          {/* Project Filter (only when not in project context) */}
-          {isStandalone && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button 
-                  className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                  data-testid="filter-project-popover"
-                >
-                  <span>{selectedProjectId && selectedProjectId !== "all" ? (projects.find(p => p.id === selectedProjectId)?.name || "Project") : "All Projects"}</span>
-                  {selectedProjectId && selectedProjectId !== "all" && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
-                      1
-                    </Badge>
-                  )}
-                  <ChevronDown className="w-3 h-3 ml-0.5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-2" align="start">
-                <div className="space-y-1">
-                  <button
-                    onClick={() => setSelectedProjectId("")}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
-                      !selectedProjectId || selectedProjectId === "all" ? "bg-primary/10 text-primary font-medium" : ""
-                    }`}
-                    data-testid="filter-project-all"
-                  >
-                    All Projects
-                  </button>
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => setSelectedProjectId(project.id)}
-                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
-                        selectedProjectId === project.id ? "bg-primary/10 text-primary font-medium" : ""
-                      }`}
-                      data-testid={`filter-project-${project.id}`}
-                    >
-                      {project.name}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-
-          {/* Template Filter */}
           <Popover>
             <PopoverTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                data-testid="filter-template-popover"
+              <button
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-options"
+                aria-label="Options"
+                title="Options"
               >
-                <span>Template</span>
-                {selectedTemplateId && selectedTemplateId !== "all" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
-                    1
-                  </Badge>
-                )}
+                <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-56 p-2" align="start">
-              <div className="space-y-1">
-                <button
-                  onClick={() => setSelectedTemplateId("all")}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
-                    selectedTemplateId === "all" || !selectedTemplateId ? "bg-primary/10 text-primary font-medium" : ""
-                  }`}
-                  data-testid="filter-template-all"
+            <PopoverContent className="w-60 p-2" align="end">
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
+                  Display
+                </div>
+                <label
+                  className="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover-elevate cursor-pointer"
+                  data-testid="option-hide-summary"
                 >
-                  All Templates
-                </button>
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => setSelectedTemplateId(template.id)}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
-                      selectedTemplateId === template.id ? "bg-primary/10 text-primary font-medium" : ""
-                    }`}
-                    data-testid={`filter-template-${template.id}`}
-                  >
-                    {template.name}
-                  </button>
-                ))}
+                  <div className="flex flex-col">
+                    <span className="text-xs text-foreground">
+                      Hide summary cards
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Hide the stats strip below the toolbar
+                    </span>
+                  </div>
+                  <Switch
+                    checked={hideSummary}
+                    onCheckedChange={setHideSummary}
+                    data-testid="switch-hide-summary"
+                  />
+                </label>
               </div>
             </PopoverContent>
           </Popover>
         </div>
       </div>
 
+      {/* Summary strip */}
+      {!hideSummary && filteredEntries.length > 0 && (
+        <div
+          className="flex items-center gap-3 px-3 py-2 border-b border-border flex-shrink-0 overflow-x-auto"
+          data-testid="stats-strip"
+        >
+          <SiteDiaryStatCard label="Days Logged" value={summary.daysLogged} testId="stat-days" />
+          <SiteDiaryStatCard label="Workers" value={summary.workers} testId="stat-workers" />
+          <SiteDiaryStatCard label="Avg On Site" value={summary.avgOnSite} testId="stat-avg-on-site" />
+          <SiteDiaryStatCard label="Rain Days" value={summary.rainDays} testId="stat-rain" />
+          <SiteDiaryStatCard label="Issues" value={summary.issues} testId="stat-issues" />
+          <SiteDiaryStatCard label="Photos" value={summary.photos} testId="stat-photos" />
+        </div>
+      )}
+
       {/* Content */}
-      <div className="flex-1 overflow-auto p-2">
+      <div className="flex-1 overflow-auto">
         {!isStandalone && !selectedProjectId ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <BookOpen className="h-12 w-12 text-muted-foreground" />
@@ -472,12 +701,14 @@ export default function SiteDiaryEntries() {
             <p className="text-muted-foreground text-sm">Loading entries...</p>
           </div>
         ) : viewMode === "calendar" ? (
-          <SiteDiaryCalendarView
-            entries={filteredEntries}
-            currentMonth={calendarMonth}
-            onMonthChange={setCalendarMonth}
-            onViewEntry={setViewingEntry}
-          />
+          <div className="p-3 h-full">
+            <SiteDiaryCalendarView
+              entries={filteredEntries}
+              currentMonth={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              onViewEntry={setViewingEntry}
+            />
+          </div>
         ) : viewMode === "feed" && filteredEntries.length > 0 ? (
           <SiteDiaryFeedView
             entries={filteredEntries}
@@ -492,19 +723,19 @@ export default function SiteDiaryEntries() {
             <p className="text-muted-foreground text-sm">
               {entries.length === 0 ? "No site diary entries yet" : "No matching entries"}
             </p>
-            {entries.length === 0 && (
+            {entries.length === 0 && showCanAdd && (
               <button
-                className="h-7 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+                className="h-8 px-3 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
                 onClick={() => handleAddEntry()}
                 data-testid="button-add-first-entry"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Add First Entry
+                Add first entry
               </button>
             )}
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="p-2 space-y-1">
             {filteredEntries.map((entry) => {
               const entryProject = isStandalone ? projects.find(p => p.id === entry.projectId) : undefined;
               return (
@@ -519,6 +750,84 @@ export default function SiteDiaryEntries() {
             })}
           </div>
         )}
+      </div>
+
+      {/* Sticky footer */}
+      <div className="flex-none h-11 bg-muted/30 border-t border-border flex items-center justify-between px-3 text-[11px] text-muted-foreground" data-testid="footer-summary">
+        <div data-testid="footer-count">
+          {filteredEntries.length} of {entries.length} entries shown
+        </div>
+        <div className="flex items-center gap-3">
+          <span>
+            <span className="text-foreground font-semibold">{summary.monthEntries}</span> this month
+          </span>
+          <span className="text-border">·</span>
+          <span>
+            <span className="text-foreground font-semibold">{summary.photos}</span> photos
+          </span>
+          <span className="text-border">·</span>
+          <span>
+            <span className="text-[hsl(var(--coral))] font-semibold">{summary.rainDays}</span> rain days
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SiteDiaryFilterGroup({
+  label,
+  value,
+  onChange,
+  allLabel,
+  options,
+  testIdPrefix,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  allLabel: string;
+  options: Array<{ key: string; name: string }>;
+  testIdPrefix: string;
+}) {
+  const items = [{ key: "All", name: allLabel }, ...options];
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 px-1">
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {items.map((opt) => {
+          const isActive = value === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => onChange(opt.key)}
+              className={`h-6 px-2 text-[11px] rounded-md border transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-foreground border-border hover-elevate"
+              }`}
+              data-testid={`${testIdPrefix}-${opt.key}`}
+            >
+              {opt.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SiteDiaryStatCard({ label, value, testId }: { label: string; value: number | string; testId: string }) {
+  return (
+    <div
+      className="rounded-lg border bg-card border-border px-3 py-2 min-w-[110px] flex flex-col"
+      data-testid={testId}
+    >
+      <div className="text-[14px] font-bold leading-tight text-foreground">{value}</div>
+      <div className="text-[8px] font-semibold uppercase tracking-wide mt-1 text-muted-foreground">
+        {label}
       </div>
     </div>
   );
@@ -553,18 +862,28 @@ function SiteDiaryCalendarView({
   return (
     <div className="flex flex-col h-full" data-testid="calendar-view">
       <div className="flex items-center justify-between mb-3">
-        <Button variant="ghost" size="icon" onClick={() => onMonthChange(subMonths(currentMonth, 1))}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
+        <button
+          onClick={() => onMonthChange(subMonths(currentMonth, 1))}
+          className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+          aria-label="Previous month"
+          title="Previous month"
+        >
+          <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
         <h3 className="text-sm font-semibold">{format(currentMonth, "MMMM yyyy")}</h3>
-        <Button variant="ghost" size="icon" onClick={() => onMonthChange(addMonths(currentMonth, 1))}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        <button
+          onClick={() => onMonthChange(addMonths(currentMonth, 1))}
+          className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+          aria-label="Next month"
+          title="Next month"
+        >
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-visible flex-1">
+      <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-hidden flex-1 border border-border">
         {weekDays.map((day) => (
-          <div key={day} className="bg-muted px-2 py-1.5 text-center text-data font-medium text-muted-foreground">
+          <div key={day} className="bg-muted/50 px-2 py-1.5 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             {day}
           </div>
         ))}
@@ -576,25 +895,31 @@ function SiteDiaryCalendarView({
           return (
             <div
               key={day.toISOString()}
-              className={`bg-card min-h-[80px] p-1 ${!isCurrentMonth ? "opacity-40" : ""}`}
+              className={`bg-card min-h-[80px] p-1.5 ${!isCurrentMonth ? "opacity-40" : ""}`}
             >
-              <div className={`text-data font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-primary text-white" : "text-muted-foreground"}`}>
+              <div className={`text-[11px] font-semibold mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
+                isToday
+                  ? "bg-primary text-primary-foreground"
+                  : isCurrentMonth
+                    ? "text-foreground"
+                    : "text-muted-foreground"
+              }`}>
                 {format(day, "d")}
               </div>
               <div className="space-y-0.5">
                 {dayEntries.slice(0, 3).map((entry) => (
-                  <Badge
+                  <button
                     key={entry.id}
-                    variant="secondary"
-                    className="w-full justify-start text-label px-1 py-0 cursor-pointer truncate bg-primary/10 text-primary border-0"
                     onClick={() => onViewEntry(entry)}
+                    className="block w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate bg-muted/50 text-foreground hover-elevate active-elevate-2"
                     title={entry.title}
+                    data-testid={`calendar-entry-${entry.id}`}
                   >
                     {entry.title}
-                  </Badge>
+                  </button>
                 ))}
                 {dayEntries.length > 3 && (
-                  <span className="text-label text-muted-foreground px-1">
+                  <span className="block text-[10px] text-muted-foreground px-1">
                     +{dayEntries.length - 3} more
                   </span>
                 )}
@@ -679,7 +1004,6 @@ function SiteDiaryFeedCard({
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
-  const overallPhotos = (entry.overallPhotos as string[]) || [];
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -695,25 +1019,31 @@ function SiteDiaryFeedCard({
     },
   });
 
-  const weather = entry.weather as Record<string, any> | null;
+  const weather = getEntryWeather(entry);
+  const weatherInfo = weather?.condition ? classifyWeather(weather.condition) : null;
+  const WeatherIcon = weatherInfo?.Icon || Cloud;
 
   const displayFields = Object.entries(fieldValues)
     .filter(([, v]) => {
       if (v === null || v === undefined || v === "") return false;
-      if (Array.isArray(v) && v.length === 0) return false;
+      if (Array.isArray(v)) {
+        // skip arrays that are pure photo URLs (shown in strip below)
+        if (v.length === 0) return false;
+        if (v.every((x) => isPhotoUrl(x))) return false;
+        return true;
+      }
       if (typeof v === "object" && "value" in v) return v.value === true;
       return true;
     })
     .slice(0, 4);
 
-  const allPhotos = [
-    ...overallPhotos,
-    ...Object.values(fieldValues).filter(v => Array.isArray(v)).flat().filter(v => typeof v === "string" && (v.startsWith("http") || v.startsWith("/"))),
-  ].slice(0, 8);
+  const allPhotos = collectPhotos(entry);
+  const visiblePhotos = allPhotos.slice(0, 4);
+  const extraPhotos = Math.max(0, allPhotos.length - visiblePhotos.length);
 
   return (
     <>
-    <Card className="cursor-pointer" onClick={onView}>
+    <Card className="cursor-pointer overflow-hidden" onClick={onView}>
       <CardContent className="p-4 space-y-3">
         {/* Header row */}
         <div className="flex items-start justify-between gap-2">
@@ -752,23 +1082,23 @@ function SiteDiaryFeedCard({
           </DropdownMenu>
         </div>
 
-        {/* Weather strip */}
-        {weather && (weather.condition || weather.temp) && (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground py-1.5 px-3 rounded-md bg-muted/50">
-            <Cloud className="w-3.5 h-3.5 shrink-0" />
-            {weather.condition && <span>{weather.condition}</span>}
+        {/* Weather chip */}
+        {weather && (
+          <div className={`inline-flex items-center gap-2 text-[11px] py-1 px-2 rounded-md border ${weatherChipClass(weatherInfo?.tone || "muted")}`}>
+            <WeatherIcon className="w-3.5 h-3.5 shrink-0" />
+            {weather.condition && <span className="font-medium">{weather.condition}</span>}
             {weather.temp != null && (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-0.5">
                 <Thermometer className="w-3 h-3" />{weather.temp}°C
               </span>
             )}
             {weather.wind != null && (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-0.5">
                 <Wind className="w-3 h-3" />{weather.wind} km/h
               </span>
             )}
             {weather.humidity != null && (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-0.5">
                 <Droplets className="w-3 h-3" />{weather.humidity}%
               </span>
             )}
@@ -780,13 +1110,17 @@ function SiteDiaryFeedCard({
           <div className="space-y-1.5">
             {displayFields.map(([key, val]) => {
               let displayVal: string;
-              if (typeof val === "object" && "value" in val) {
+              if (typeof val === "object" && val !== null && "value" in val) {
                 displayVal = val.value === true ? (val.checkedByName ? `Yes — ${val.checkedByName}` : "Yes") : "No";
               } else if (Array.isArray(val)) {
-                displayVal = val.join(", ");
+                displayVal = val
+                  .map((x) => (typeof x === "string" || typeof x === "number" ? String(x) : (x?.label || x?.name || "")))
+                  .filter(Boolean)
+                  .join(", ");
               } else {
                 displayVal = String(val);
               }
+              if (!displayVal) return null;
               const label = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
               return (
                 <div key={key} className="flex gap-2 text-xs">
@@ -798,32 +1132,52 @@ function SiteDiaryFeedCard({
           </div>
         )}
 
-        {/* Photo strip */}
-        {allPhotos.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {allPhotos.map((url, i) => (
-              <img
-                key={i}
-                src={url}
-                alt=""
-                className="h-20 w-auto rounded-md object-cover shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              />
-            ))}
+        {/* Photo strip — 80px squares with +N overlay */}
+        {visiblePhotos.length > 0 && (
+          <div className="flex gap-2">
+            {visiblePhotos.map((url, i) => {
+              const isLast = i === visiblePhotos.length - 1 && extraPhotos > 0;
+              return (
+                <div
+                  key={i}
+                  className="relative w-20 h-20 rounded-md overflow-hidden bg-muted shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  {isLast && (
+                    <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-sm font-semibold">
+                      +{extraPhotos}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex items-center gap-2 text-table text-muted-foreground pt-1 border-t border-border">
-          {entry.createdByName && (
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-2 border-t border-border">
+          {entry.createdByName ? (
             <span className="flex items-center gap-1">
               <User className="w-3 h-3" />{entry.createdByName}
             </span>
+          ) : (
+            <span />
           )}
-          <span className="flex items-center gap-1 ml-auto">
+          <span className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {format(new Date(entry.entryDateTime), "h:mm a")}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-[11px] text-muted-foreground"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            data-testid={`feed-edit-${entry.id}`}
+          >
+            <Edit className="w-3 h-3 mr-1" />
+            Edit
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -877,105 +1231,84 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
     },
   });
 
-  const getWeatherDisplay = () => {
-    const weather = fieldValues.weather || fieldValues.weatherConditions;
-    if (weather) return weather;
-    return null;
-  };
-
-  const getTemperatureDisplay = () => {
-    const temp = fieldValues.temperature || fieldValues.temp;
-    if (temp) return `${temp}°C`;
-    return null;
-  };
-
-  const weather = getWeatherDisplay();
-  const temperature = getTemperatureDisplay();
+  const weatherInfo = getEntryWeather(entry);
+  const weatherTone = weatherInfo?.condition ? classifyWeather(weatherInfo.condition) : null;
+  const WeatherIcon = weatherTone?.Icon || Cloud;
+  const temperature = weatherInfo?.temp != null ? `${weatherInfo.temp}°C` : null;
+  const photoCount = collectPhotos(entry).length;
 
   return (
     <>
     <div 
-      className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+      className="group border rounded-md px-3 py-2 bg-card hover-elevate transition-all cursor-pointer"
       onClick={onView}
       data-testid={`site-diary-card-${entry.id}`}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-3">
         {/* Title and Content */}
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm mb-1 line-clamp-1" data-testid={`entry-title-${entry.id}`}>
-            {entry.title}
-          </h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="font-semibold text-sm truncate" data-testid={`entry-title-${entry.id}`}>
+              {entry.title}
+            </h3>
+            {entry.shareWithClient && (
+              <Badge variant="secondary" className="h-4 px-1.5 text-[10px] shrink-0">
+                Shared
+              </Badge>
+            )}
+          </div>
           {fieldValues.notes || fieldValues.description || fieldValues.summary ? (
-            <p className="text-xs text-muted-foreground line-clamp-2">
+            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
               {fieldValues.notes || fieldValues.description || fieldValues.summary}
             </p>
           ) : null}
-          {/* Checkbox accountability indicators */}
-          {(() => {
-            const checkboxEntries = Object.entries(fieldValues).filter(
-              ([, v]) => v && typeof v === 'object' && 'checkedBy' in v && v.value === true
-            );
-            if (checkboxEntries.length === 0) return null;
-            return (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {checkboxEntries.map(([key, v]: [string, any]) => (
-                  <span key={key} className="text-label text-muted-foreground">
-                    {v.checkedByName} {v.checkedAt ? format(new Date(v.checkedAt), "h:mm a") : ""}
-                  </span>
-                ))}
-              </div>
-            );
-          })()}
         </div>
 
         {/* Metadata Column */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Project Name (standalone mode) */}
           {projectName && (
-            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-project-${entry.id}`}>
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]" data-testid={`entry-project-${entry.id}`}>
               {projectName}
             </Badge>
           )}
 
-          {/* Template */}
-          <Badge variant="default" className="h-4 px-1.5 text-data" data-testid={`entry-template-${entry.id}`}>
+          <Badge variant="default" className="h-5 px-1.5 text-[10px]" data-testid={`entry-template-${entry.id}`}>
             {entry.templateName}
           </Badge>
 
-          {/* Weather */}
-          {weather && (
-            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-weather-${entry.id}`}>
-              <Cloud className="w-2.5 h-2.5 mr-0.5" />
-              {weather}
-            </Badge>
+          {weatherInfo?.condition && (
+            <span
+              className={`inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border ${weatherChipClass(weatherTone?.tone || "muted")}`}
+              data-testid={`entry-weather-${entry.id}`}
+            >
+              <WeatherIcon className="w-2.5 h-2.5" />
+              {weatherInfo.condition}
+            </span>
           )}
 
-          {/* Temperature */}
           {temperature && (
-            <Badge variant="outline" className="h-4 px-1.5 text-data" data-testid={`entry-temp-${entry.id}`}>
-              <Thermometer className="w-2.5 h-2.5 mr-0.5" />
+            <span className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border" data-testid={`entry-temp-${entry.id}`}>
+              <Thermometer className="w-2.5 h-2.5" />
               {temperature}
-            </Badge>
+            </span>
           )}
 
-          {/* Date */}
-          <div className="flex items-center gap-1 text-data text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
+          {photoCount > 0 && (
+            <span className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border" title={`${photoCount} photos`}>
+              <Camera className="w-2.5 h-2.5" />
+              {photoCount}
+            </span>
+          )}
+
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums w-[88px] justify-end" data-testid={`entry-date-${entry.id}`}>
             <CalendarIcon className="h-3 w-3" />
             <span>{format(new Date(entry.entryDateTime), "MMM d, yyyy")}</span>
           </div>
 
-          {/* Share indicator */}
-          {entry.shareWithClient && (
-            <Badge variant="secondary" className="h-4 px-1.5 text-data">
-              Shared
-            </Badge>
-          )}
-
-          {/* Actions */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`entry-menu-trigger-${entry.id}`}>
-                <MoreVertical className="h-3 w-3" />
+              <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`entry-menu-trigger-${entry.id}`} onClick={(e) => e.stopPropagation()}>
+                <MoreVertical className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
