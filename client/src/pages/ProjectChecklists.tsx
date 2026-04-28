@@ -879,71 +879,7 @@ export default function ProjectChecklists() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1: Tabs & Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-0.5" data-testid="tabs-checklist-status">
-          <button
-            onClick={() => setActiveTab("all")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "all"
-                ? "bg-primary text-white border-primary/20 hover:bg-primary/90"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-all"
-          >
-            All
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{allCount}</Badge>
-          </button>
-          <button
-            onClick={() => setActiveTab("upcoming")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "upcoming"
-                ? "bg-primary text-white border-primary/20 hover:bg-primary/90"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-upcoming"
-          >
-            Upcoming
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{upcomingCount}</Badge>
-          </button>
-          <button
-            onClick={() => setActiveTab("action")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "action"
-                ? "bg-primary text-white border-primary/20 hover:bg-primary/90"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-action"
-          >
-            Action
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{actionCount}</Badge>
-          </button>
-          <button
-            onClick={() => setActiveTab("done")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "done"
-                ? "bg-primary text-white border-primary/20 hover:bg-primary/90"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-done"
-          >
-            Done
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-data">{doneCount}</Badge>
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setShowAddDialog(true)}
-            data-testid="button-add-checklist"
-          >
-            <Plus className="h-3 w-3" />
-            Add Group
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2: Search & Filters */}
+      {/* Toolbar: Search, Filter, Options */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5 flex-1">
           <div className="relative w-48">
@@ -956,33 +892,115 @@ export default function ProjectChecklists() {
               data-testid="input-search"
             />
           </div>
-          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="h-6 w-auto text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-              <Filter className="h-3 w-3" />
-              <SelectValue placeholder="Assignee" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              {teamMembers.map((member) => (
-                <SelectItem key={member.id} value={member.id}>
-                  {member.displayName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <button
-            onClick={() => setHideCompleted(!hideCompleted)}
-            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
-              hideCompleted 
-                ? "bg-primary text-white border-primary/20" 
-                : "hover-elevate"
-            } active-elevate-2`}
-            data-testid="toggle-hide-completed"
-          >
-            <CheckCircle2 className="h-3 w-3" />
-            {hideCompleted ? "Show Done" : "Hide Done"}
-          </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="relative h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                aria-label="Filter"
+                data-testid="button-filter"
+              >
+                <Filter className="h-3 w-3" />
+                {(activeTab !== "all" || assigneeFilter !== "all") && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary border border-background"
+                    data-testid="indicator-filter-active"
+                  />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 p-3 space-y-3">
+              <div className="space-y-1.5">
+                <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">Status</div>
+                <RadioGroup
+                  value={activeTab}
+                  onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+                  className="space-y-1"
+                  data-testid="filter-status-group"
+                >
+                  {([
+                    { value: "all", label: "All", count: allCount },
+                    { value: "upcoming", label: "Upcoming", count: upcomingCount },
+                    { value: "action", label: "Action", count: actionCount },
+                    { value: "done", label: "Done", count: doneCount },
+                  ] as const).map((opt) => (
+                    <label
+                      key={opt.value}
+                      htmlFor={`filter-status-${opt.value}`}
+                      className="flex items-center gap-2 text-xs cursor-pointer"
+                      data-testid={`filter-status-${opt.value}`}
+                    >
+                      <RadioGroupItem id={`filter-status-${opt.value}`} value={opt.value} />
+                      <span className="flex-1">{opt.label}</span>
+                      <Badge variant="secondary" className="h-4 px-1 text-data">{opt.count}</Badge>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
+              <div className="border-t border-border" />
+              <div className="space-y-1.5">
+                <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">Assignee</div>
+                <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                  <SelectTrigger className="h-7 w-full text-xs" data-testid="filter-assignee-trigger">
+                    <SelectValue placeholder="All Assignees" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Assignees</SelectItem>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {(activeTab !== "all" || assigneeFilter !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full h-7 text-xs"
+                  onClick={() => {
+                    setActiveTab("all");
+                    setAssigneeFilter("all");
+                  }}
+                  data-testid="button-clear-filters"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear filters
+                </Button>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              aria-label="Options"
+              data-testid="button-options"
+            >
+              <MoreVertical className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onSelect={() => setShowAddDialog(true)}
+              data-testid="menu-add-checklist"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Group
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setHideCompleted(!hideCompleted);
+              }}
+              data-testid="menu-toggle-hide-completed"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              {hideCompleted ? "Show done items" : "Hide done items"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Stage filter banner */}
