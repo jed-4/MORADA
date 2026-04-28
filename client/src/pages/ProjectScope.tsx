@@ -388,6 +388,281 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
   );
 }
 
+// Inline blank-row item creation: shows a single auto-focused input.
+// Enter saves and re-arms a fresh blank row. Escape cancels. Blur saves if non-empty, cancels if empty.
+function InlineAddItemRow({ stage, onSave, onCancel }: {
+  stage: string;
+  onSave: (title: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onSave(trimmed);
+      setValue("");
+      // Refocus the same input for the next item
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      onCancel();
+    }
+  };
+
+  return (
+    <div
+      className="grid gap-2 px-2 border-b border-border/50 h-10 items-center bg-primary/5"
+      style={{ gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px' }}
+      data-testid={`inline-add-row-${stage.toLowerCase().replace(/\s+/g, '-')}`}
+    >
+      <div />
+      <div />
+      <div />
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setValue("");
+            onCancel();
+          }
+        }}
+        onBlur={(e) => {
+          // If focus is moving to another "+ Item" trigger or another inline-add input,
+          // skip blur-cancel so the parent can switch stages cleanly.
+          const next = e.relatedTarget as HTMLElement | null;
+          if (next && (
+            next.getAttribute('data-testid')?.startsWith('button-add-item-') ||
+            next.getAttribute('data-testid')?.startsWith('input-inline-add-')
+          )) {
+            return;
+          }
+          commit();
+        }}
+        placeholder="Item name (Enter to save, Esc to cancel)"
+        className="h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
+        data-testid={`input-inline-add-${stage.toLowerCase().replace(/\s+/g, '-')}`}
+      />
+      <div />
+      <div />
+      <div />
+    </div>
+  );
+}
+
+// Right-side detail panel for a scope item (380px, slides in shrinking main content).
+function ScopeItemDetailPanel({
+  item,
+  onClose,
+  onUpdate,
+  scopeItemTypeDefs,
+  visibleTypeDefs,
+}: {
+  item: ScopeItem;
+  onClose: () => void;
+  onUpdate: (id: string, data: Partial<ScopeItem>) => void;
+  scopeItemTypeDefs: ScopeItemTypeDefinition[];
+  visibleTypeDefs: ScopeItemTypeDefinition[];
+}) {
+  const [title, setTitle] = useState(item.title);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [checklistsOpen, setChecklistsOpen] = useState(false);
+  const [entered, setEntered] = useState(false);
+
+  // Trigger slide-in animation on mount
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // Sync local state when the panel switches to a different item
+  useEffect(() => {
+    setTitle(item.title);
+  }, [item.id, item.title]);
+
+  const detailEditor = useEditor({
+    extensions: [StarterKit, Underline],
+    content: item.description || '',
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[160px] p-3',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      onUpdate(item.id, { description: editor.getHTML() });
+    },
+  });
+
+  // When the panel is reused for a different item, reset the editor's content
+  useEffect(() => {
+    if (detailEditor && detailEditor.getHTML() !== (item.description || '<p></p>')) {
+      detailEditor.commands.setContent(item.description || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
+
+  // Escape closes the panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const typeOptions = scopeItemTypeDefs.length > 0
+    ? visibleTypeDefs
+    : SCOPE_TYPES.map((t, i) => ({
+        id: t,
+        name: t.charAt(0).toUpperCase() + t.slice(1),
+        displayOrder: i,
+        visibleToRoles: [],
+        companyId: '',
+        createdAt: new Date(),
+      } as ScopeItemTypeDefinition));
+
+  return (
+    <div
+      className={`w-[380px] shrink-0 bg-card border-l border-border flex flex-col overflow-hidden transition-transform duration-200 ${entered ? 'translate-x-0' : 'translate-x-full'}`}
+      data-testid="scope-item-detail-panel"
+    >
+      {/* Header */}
+      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 shrink-0">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item Details</span>
+        <button
+          onClick={onClose}
+          className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+          data-testid="button-close-detail-panel"
+          aria-label="Close detail panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Body (scrollable) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Title */}
+        <div>
+          <Label htmlFor="detail-title" className="text-xs text-muted-foreground">Title</Label>
+          <Input
+            id="detail-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => {
+              if (title.trim() && title !== item.title) {
+                onUpdate(item.id, { title: title.trim() });
+              } else if (!title.trim()) {
+                setTitle(item.title);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            }}
+            className="mt-1 text-base font-semibold"
+            data-testid="input-detail-title"
+          />
+        </div>
+
+        {/* Type */}
+        <div>
+          <Label htmlFor="detail-type" className="text-xs text-muted-foreground">Type</Label>
+          <Select
+            value={(item.itemType || 'scope').toLowerCase()}
+            onValueChange={(value) => onUpdate(item.id, { itemType: value })}
+          >
+            <SelectTrigger id="detail-type" className="mt-1" data-testid="select-detail-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {typeOptions.map((def) => (
+                <SelectItem key={def.id} value={def.name.toLowerCase()}>
+                  {def.name.charAt(0).toUpperCase() + def.name.slice(1).toLowerCase()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Description */}
+        <div>
+          <Label className="text-xs text-muted-foreground">Description</Label>
+          {detailEditor && (
+            <div className="mt-1 border rounded-md overflow-hidden" data-testid="detail-tiptap-editor">
+              <div className="border-b bg-muted/30 p-1.5 flex items-center gap-1 flex-wrap">
+                <Button type="button" variant={detailEditor.isActive('bold') ? 'default' : 'ghost'} size="sm" onClick={() => detailEditor.chain().focus().toggleBold().run()} className="h-7 w-7 p-0" data-testid="detail-toolbar-bold">
+                  <strong className="text-xs">B</strong>
+                </Button>
+                <Button type="button" variant={detailEditor.isActive('italic') ? 'default' : 'ghost'} size="sm" onClick={() => detailEditor.chain().focus().toggleItalic().run()} className="h-7 w-7 p-0" data-testid="detail-toolbar-italic">
+                  <em className="text-xs">I</em>
+                </Button>
+                <Button type="button" variant={detailEditor.isActive('underline') ? 'default' : 'ghost'} size="sm" onClick={() => detailEditor.chain().focus().toggleUnderline().run()} className="h-7 w-7 p-0" data-testid="detail-toolbar-underline">
+                  <span className="text-xs underline">U</span>
+                </Button>
+                <div className="w-px h-4 bg-border mx-1" />
+                <Button type="button" variant={detailEditor.isActive('bulletList') ? 'default' : 'ghost'} size="sm" onClick={() => detailEditor.chain().focus().toggleBulletList().run()} className="h-7 w-7 p-0" data-testid="detail-toolbar-bullet">
+                  <span className="text-xs">•</span>
+                </Button>
+                <Button type="button" variant={detailEditor.isActive('orderedList') ? 'default' : 'ghost'} size="sm" onClick={() => detailEditor.chain().focus().toggleOrderedList().run()} className="h-7 w-7 p-0" data-testid="detail-toolbar-ordered">
+                  <span className="text-xs">1.</span>
+                </Button>
+              </div>
+              <EditorContent editor={detailEditor} />
+            </div>
+          )}
+        </div>
+
+        {/* Attachments — collapsible */}
+        <div className="border-t border-border/50 pt-3">
+          <button
+            onClick={() => setAttachmentsOpen(o => !o)}
+            className="w-full flex items-center justify-between px-1 py-1 rounded-md hover-elevate"
+            data-testid="button-toggle-detail-attachments"
+          >
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+              <Paperclip className="h-3 w-3" /> Attachments
+            </span>
+            {attachmentsOpen ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+          </button>
+          {attachmentsOpen && (
+            <div className="px-1 py-2 text-xs text-muted-foreground italic">
+              No attachments yet.
+            </div>
+          )}
+        </div>
+
+        {/* Linked Checklists — collapsible */}
+        <div className="border-t border-border/50 pt-3">
+          <button
+            onClick={() => setChecklistsOpen(o => !o)}
+            className="w-full flex items-center justify-between px-1 py-1 rounded-md hover-elevate"
+            data-testid="button-toggle-detail-checklists"
+          >
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+              <ClipboardList className="h-3 w-3" /> Checklists
+            </span>
+            {checklistsOpen ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+          </button>
+          {checklistsOpen && (
+            <div className="px-1 py-2 text-xs text-muted-foreground italic">
+              No linked checklists yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface SortableScopeItemProps {
   item: ScopeItem;
   onUpdate: (id: string, data: Partial<ScopeItem>) => void;
@@ -405,10 +680,11 @@ interface SortableScopeItemProps {
   showDescriptionInline?: boolean; // Show full description inline instead of hover
   dropIndicator?: 'above' | 'below' | null; // Drop indicator position
   dropTarget?: { id: string; position: 'above' | 'below' } | null; // Drop target for nested items
+  onOpenDetail?: (itemId: string) => void; // Open the side detail panel for this item
+  isDetailOpen?: boolean; // Whether this item is the one shown in the detail panel
 }
 
-function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems, showDescriptionInline = false, dropIndicator, dropTarget }: SortableScopeItemProps) {
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
+function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems, showDescriptionInline = false, dropIndicator, dropTarget, onOpenDetail, isDetailOpen = false }: SortableScopeItemProps) {
   const [showGearList, setShowGearList] = useState(false);
   const [showAddToTemplate, setShowAddToTemplate] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -485,26 +761,6 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
     transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
     transition: transition || 'transform 150ms ease',
   };
-
-  const editor = useEditor({
-    extensions: [StarterKit, Underline],
-    content: item.description || '',
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
-      onUpdate(item.id, { description: html });
-    },
-  });
-
-  // Update editor editable state when isEditingDescription changes
-  useEffect(() => {
-    if (editor) {
-      editor.setEditable(isEditingDescription);
-      if (isEditingDescription) {
-        // Focus the editor when entering edit mode
-        editor.commands.focus();
-      }
-    }
-  }, [isEditingDescription, editor]);
 
   const gearList = (item.gearList as any[] || []);
 
@@ -583,17 +839,25 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       
       {/* Grid Row - compact by default; grows to fit when descriptions are inline */}
       <div 
-        className={`grid gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
+        className={`grid gap-2 px-2 border-b border-border/50 transition-all hover-elevate group cursor-pointer ${
           showDescriptionInline && item.description
             ? 'min-h-10 items-start py-2'
             : 'h-10 items-center'
         } ${
-          isSelected ? 'bg-primary/5 border-primary/30' : ''
+          isDetailOpen ? 'bg-primary/5' : isSelected ? 'bg-primary/5 border-primary/30' : ''
         } ${isCompleted ? 'opacity-60' : ''} ${item.isTodo ? 'border-l-2 border-orange-400 bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
         style={{ 
           gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 24px',
         }}
         data-testid={`scope-item-row-${item.id}`}
+        onClick={(e) => {
+          // Ignore clicks on interactive controls within the row
+          const target = e.target as HTMLElement;
+          if (target.closest('input, textarea, button, a, [role="checkbox"], [role="menuitem"], [data-no-detail-open="true"]')) {
+            return;
+          }
+          onOpenDetail?.(item.id);
+        }}
       >
         {/* Completion Toggle - 24px */}
         <button
@@ -659,8 +923,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <div className={`flex gap-1 ${showDescriptionInline && item.description ? 'items-start pt-1' : 'items-center'}`}>
           {showDescriptionInline ? (
             <div 
-              className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex-1 break-words"
-              onClick={() => setIsEditingDescription(true)}
+              className="text-xs text-muted-foreground hover:text-foreground flex-1 break-words"
             >
               {item.description ? (
                 <div 
@@ -675,8 +938,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             <HoverCard openDelay={200} closeDelay={100}>
               <HoverCardTrigger asChild>
                 <div 
-                  className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
-                  onClick={() => setIsEditingDescription(true)}
+                  className="text-xs text-muted-foreground truncate hover:text-foreground flex-1"
                 >
                   {item.description ? (
                     <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
@@ -698,11 +960,6 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                       className="text-sm leading-relaxed text-foreground [&_*]:!text-inherit [&_*]:!opacity-100"
                       dangerouslySetInnerHTML={{ __html: item.description }}
                     />
-                    <div className="pt-2 border-t border-border">
-                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setIsEditingDescription(true)}>
-                        <Pen className="h-3 w-3 mr-1" /> Edit
-                      </Button>
-                    </div>
                   </div>
                 </HoverCardContent>
               )}
@@ -733,11 +990,11 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem 
-              onClick={() => setIsEditingDescription(true)}
+              onClick={() => onOpenDetail?.(item.id)}
               data-testid={`menu-edit-description-${item.id}`}
             >
               <Pen className="h-3 w-3 mr-2" />
-              Edit Description
+              Open Details
             </DropdownMenuItem>
             <DropdownMenuItem 
               onClick={() => onUpdate(item.id, { isTodo: !item.isTodo })}
@@ -813,88 +1070,6 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             </Button>
           </div>
         </div>
-      )}
-
-      {/* Description Editor Dialog */}
-      {isEditingDescription && editor && (
-        <Dialog open={isEditingDescription} onOpenChange={setIsEditingDescription}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Description</DialogTitle>
-              <DialogDescription>
-                Add or edit the description for {item.title}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="border rounded-md overflow-hidden">
-              {/* Toolbar */}
-              <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
-                <Button
-                  type="button"
-                  variant={editor.isActive('bold') ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => editor.chain().focus().toggleBold().run()}
-                  className="h-8 w-8 p-0"
-                  data-testid={`toolbar-bold-${item.id}`}
-                >
-                  <strong className="text-xs">B</strong>
-                </Button>
-                <Button
-                  type="button"
-                  variant={editor.isActive('italic') ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => editor.chain().focus().toggleItalic().run()}
-                  className="h-8 w-8 p-0"
-                  data-testid={`toolbar-italic-${item.id}`}
-                >
-                  <em className="text-xs">I</em>
-                </Button>
-                <Button
-                  type="button"
-                  variant={editor.isActive('underline') ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => editor.chain().focus().toggleUnderline().run()}
-                  className="h-8 w-8 p-0"
-                  data-testid={`toolbar-underline-${item.id}`}
-                >
-                  <span className="text-xs underline">U</span>
-                </Button>
-                <div className="w-px h-5 bg-border mx-1" />
-                <Button
-                  type="button"
-                  variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => editor.chain().focus().toggleBulletList().run()}
-                  className="h-8 w-8 p-0"
-                  data-testid={`toolbar-bullet-${item.id}`}
-                >
-                  <span className="text-xs">•</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                  className="h-8 w-8 p-0"
-                  data-testid={`toolbar-ordered-${item.id}`}
-                >
-                  <span className="text-xs">1.</span>
-                </Button>
-              </div>
-              {/* Editor */}
-              <div className="p-3 min-h-[200px]">
-                <EditorContent editor={editor} className="prose prose-sm max-w-none" />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Use the toolbar to format text with bold, italic, underline, and lists
-            </p>
-            <DialogFooter>
-              <Button onClick={() => setIsEditingDescription(false)}>
-                Done
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       )}
 
       {/* Gear Checklist Dialog */}
@@ -992,6 +1167,8 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 showDescriptionInline={showDescriptionInline}
                 dropIndicator={dropTarget?.id === child.id ? dropTarget.position : null}
                 dropTarget={dropTarget}
+                onOpenDetail={onOpenDetail}
+                isDetailOpen={isDetailOpen}
               />
             );
           })}
@@ -1034,7 +1211,12 @@ interface DroppableStageProps {
   onUpdate: (id: string, data: Partial<ScopeItem>) => void;
   onDelete: (id: string) => void;
   onToggleSelect: (id: string) => void;
-  onAddItem: (stage: string) => void;
+  onStartInlineAdd: (stage: string) => void;
+  addingForStage?: string | null;
+  onSaveInlineAdd?: (title: string, stage: string) => void;
+  onCancelInlineAdd?: () => void;
+  onOpenDetail?: (itemId: string) => void;
+  detailItemId?: string | null;
   onEditStage: (stageId: string, newName: string) => void;
   onDeleteStage: (stageId: string) => void;
   onAddNewStage: (afterStageId: string) => void;
@@ -1083,7 +1265,12 @@ function DroppableStage({
   onUpdate, 
   onDelete, 
   onToggleSelect, 
-  onAddItem, 
+  onStartInlineAdd, 
+  addingForStage = null,
+  onSaveInlineAdd,
+  onCancelInlineAdd,
+  onOpenDetail,
+  detailItemId = null,
   onEditStage,
   onDeleteStage,
   onAddNewStage,
@@ -1318,7 +1505,7 @@ function DroppableStage({
                 className="h-6 px-2 text-data font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAddItem(stageData.name);
+                  onStartInlineAdd(stageData.name);
                 }}
                 data-testid={`button-add-item-${stageData.name.toLowerCase().replace(/\s+/g, '-')}`}
               >
@@ -1399,9 +1586,20 @@ function DroppableStage({
                       showDescriptionInline={showDescriptionInline}
                       dropIndicator={dropTarget?.id === item.id ? dropTarget.position : null}
                       dropTarget={dropTarget}
+                      onOpenDetail={onOpenDetail}
+                      isDetailOpen={detailItemId === item.id}
                     />
                   ))}
                 </SortableContext>
+              )}
+
+              {/* Inline blank-row add for this stage */}
+              {addingForStage === stageData.name && (
+                <InlineAddItemRow
+                  stage={stageData.name}
+                  onSave={(title) => onSaveInlineAdd?.(title, stageData.name)}
+                  onCancel={() => onCancelInlineAdd?.()}
+                />
               )}
               
               {/* Linked Purchase Orders */}
@@ -1786,7 +1984,12 @@ function DroppableStage({
                 onUpdate={onUpdate}
                 onDelete={onDelete}
                 onToggleSelect={onToggleSelect}
-                onAddItem={onAddItem}
+                onStartInlineAdd={onStartInlineAdd}
+                addingForStage={addingForStage}
+                onSaveInlineAdd={onSaveInlineAdd}
+                onCancelInlineAdd={onCancelInlineAdd}
+                onOpenDetail={onOpenDetail}
+                detailItemId={detailItemId}
                 onEditStage={onEditStage}
                 onDeleteStage={onDeleteStage}
                 onAddNewStage={onAddNewStage}
@@ -1920,13 +2123,8 @@ export default function ProjectScope() {
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
   const [pdfStage, setPdfStage] = useState<string>('');
   const [hideClientCosts, setHideClientCosts] = useState(false); // Client toggle for PDF
-  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
-  const [addItemStage, setAddItemStage] = useState<string | null>(null);
-  const [newItemTitle, setNewItemTitle] = useState("");
-  const [newItemDescription, setNewItemDescription] = useState("");
-  const [newItemType, setNewItemType] = useState<string>("scope"); // Scope 2.0: item type
-  const [newDialogChecklistItems, setNewDialogChecklistItems] = useState<ChecklistItem[]>([]); // Checklist items for add dialog
-  const [newDialogChecklistText, setNewDialogChecklistText] = useState(""); // Current checklist item input
+  const [addingForStage, setAddingForStage] = useState<string | null>(null); // Inline blank-row add — which stage is in adding mode
+  const [detailItemId, setDetailItemId] = useState<string | null>(null); // Which item's detail panel is open
   
   // Scope 2.0: Type filtering
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set(SCOPE_TYPES as readonly string[]));
@@ -1945,16 +2143,6 @@ export default function ProjectScope() {
   const [selectedEstimateForImport, setSelectedEstimateForImport] = useState<string | null>(null);
   const [selectedGroupsToImport, setSelectedGroupsToImport] = useState<Set<string>>(new Set());
 
-  // Tiptap editor for Add Item dialog
-  const addItemEditor = useEditor({
-    extensions: [StarterKit, Underline],
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[150px] p-3',
-      },
-    },
-  });
 
   // Fetch scope items
   const { data: scopeItems = [], isLoading } = useQuery<ScopeItem[]>({
@@ -2433,10 +2621,6 @@ export default function ProjectScope() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
-      setIsAddItemDialogOpen(false);
-      setNewItemTitle("");
-      setNewItemDescription("");
-      toast({ title: "Scope item added successfully!" });
     },
   });
 
@@ -2938,43 +3122,34 @@ export default function ProjectScope() {
     setSelectedItems(newSelected);
   };
 
-  const handleAddItem = (stage: string) => {
-    setAddItemStage(stage);
-    setIsAddItemDialogOpen(true);
+  // Inline blank-row item creation handlers
+  const handleStartInlineAdd = (stage: string) => {
+    setAddingForStage(stage);
   };
 
-  const handleCreateItem = () => {
-    if (!newItemTitle.trim() || !addItemStage) return;
-    
-    // For checklist type, use checklistItems; for others, use rich text description
-    if (newItemType === 'checklist') {
-      createItemMutation.mutate({
-        title: newItemTitle.trim(),
-        description: '', // No description for checklists
-        stage: addItemStage,
-        itemType: newItemType,
-        checklistItems: newDialogChecklistItems,
-      });
-      // Clear checklist state
-      setNewDialogChecklistItems([]);
-      setNewDialogChecklistText("");
-    } else {
-      if (!addItemEditor) return;
-      // Get HTML from Tiptap editor (maintains compatibility with existing editing/display)
-      const descriptionHtml = addItemEditor.getHTML();
-      
-      createItemMutation.mutate({
-        title: newItemTitle.trim(),
-        description: descriptionHtml,
-        stage: addItemStage,
-        itemType: newItemType,
-      });
-      
-      // Clear editor
-      addItemEditor.commands.clearContent();
-    }
-    
-    setNewItemType("scope");
+  const handleSaveInlineAdd = (title: string, stage: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    createItemMutation.mutate({
+      title: trimmed,
+      description: '',
+      stage,
+    });
+    // Keep adding mode active so the next blank row appears for the same stage
+    setAddingForStage(stage);
+  };
+
+  const handleCancelInlineAdd = () => {
+    setAddingForStage(null);
+  };
+
+  // Detail panel handlers
+  const handleOpenDetail = (itemId: string) => {
+    setDetailItemId(itemId);
+  };
+
+  const handleCloseDetail = () => {
+    setDetailItemId(null);
   };
 
   const toggleStage = (stageName: string) => {
@@ -3616,8 +3791,9 @@ export default function ProjectScope() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Main Content + Detail Panel */}
+      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 overflow-auto p-6 transition-all duration-200">
         <div className="max-w-5xl mx-auto">
           {scopeItems.length === 0 && scopeStages.length === 0 ? (
             <Card className="p-12">
@@ -3654,7 +3830,12 @@ export default function ProjectScope() {
                       onUpdate={handleUpdateItem}
                       onDelete={handleDeleteItem}
                       onToggleSelect={handleToggleSelect}
-                      onAddItem={handleAddItem}
+                      onStartInlineAdd={handleStartInlineAdd}
+                      addingForStage={addingForStage}
+                      onSaveInlineAdd={handleSaveInlineAdd}
+                      onCancelInlineAdd={handleCancelInlineAdd}
+                      onOpenDetail={handleOpenDetail}
+                      detailItemId={detailItemId}
                       onEditStage={handleEditStage}
                       onDeleteStage={handleDeleteStage}
                       onAddNewStage={handleAddNewStage}
@@ -3721,213 +3902,21 @@ export default function ProjectScope() {
         </div>
       </div>
 
-      {/* Add Item Dialog with Tiptap */}
-      <Dialog open={isAddItemDialogOpen} onOpenChange={(open) => {
-        setIsAddItemDialogOpen(open);
-        if (!open) {
-          setNewItemTitle("");
-          addItemEditor?.commands.clearContent();
-          setAddItemStage(null);
-          setNewItemType("scope");
-          setNewDialogChecklistItems([]);
-          setNewDialogChecklistText("");
-        }
-      }}>
-        <DialogContent className="max-w-2xl flex flex-col max-h-[88vh]">
-          <DialogHeader className="shrink-0 pb-2">
-            <DialogTitle>Add Item to {addItemStage}</DialogTitle>
-            <DialogDescription>
-              Fill in the details below to add a new scope item.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="overflow-y-auto flex-1 pr-1">
-          <div className="space-y-5 py-1">
-            <div>
-              <Label htmlFor="item-title">Title</Label>
-              <Input
-                id="item-title"
-                value={newItemTitle}
-                onChange={(e) => setNewItemTitle(e.target.value)}
-                placeholder="e.g., Concrete Pour, Skylight Installation"
-                data-testid="input-new-item-title"
-              />
-            </div>
-            <div>
-              <Label htmlFor="item-type">Type</Label>
-              <Select value={newItemType} onValueChange={(value) => setNewItemType(value)}>
-                <SelectTrigger id="item-type" data-testid="select-item-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* When company has type definitions, restrict to role-visible types (may be empty).
-                      When no definitions are configured, fall back to the legacy SCOPE_TYPES list. */}
-                  {(scopeItemTypeDefs.length > 0
-                    ? visibleTypeDefs
-                    : SCOPE_TYPES.map((t, i) => ({ id: t, name: t.charAt(0).toUpperCase() + t.slice(1), displayOrder: i, visibleToRoles: [], companyId: '', createdAt: new Date() }))
-                  ).map(def => (
-                    <SelectItem key={def.id} value={def.name.toLowerCase()}>
-                      {def.name.charAt(0).toUpperCase() + def.name.slice(1).toLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Show checklist builder for checklist type, rich text editor for others */}
-            {newItemType === 'checklist' ? (
-              <div>
-                <Label>Checklist Items</Label>
-                <div className="border rounded-md p-3 space-y-2 min-h-[200px]" data-testid="checklist-builder">
-                  {/* Existing checklist items */}
-                  {newDialogChecklistItems.map((ci, idx) => (
-                    <div key={ci.id} className="flex items-center gap-2 group">
-                      <div className="w-5 h-5 rounded border border-border flex items-center justify-center text-muted-foreground text-xs">
-                        {idx + 1}
-                      </div>
-                      <span className="flex-1 text-sm">{ci.text}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                        onClick={() => setNewDialogChecklistItems(items => items.filter(i => i.id !== ci.id))}
-                        data-testid={`button-remove-checklist-item-${idx}`}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
-                  
-                  {/* Add new checklist item */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <Plus className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={newDialogChecklistText}
-                      onChange={(e) => setNewDialogChecklistText(e.target.value)}
-                      placeholder="Add checklist item..."
-                      className="flex-1 h-8"
-                      data-testid="input-new-checklist-item"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newDialogChecklistText.trim()) {
-                          e.preventDefault();
-                          const newItem: ChecklistItem = {
-                            id: crypto.randomUUID(),
-                            text: newDialogChecklistText.trim(),
-                            completed: false,
-                          };
-                          setNewDialogChecklistItems(items => [...items, newItem]);
-                          setNewDialogChecklistText("");
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      disabled={!newDialogChecklistText.trim()}
-                      onClick={() => {
-                        if (newDialogChecklistText.trim()) {
-                          const newItem: ChecklistItem = {
-                            id: crypto.randomUUID(),
-                            text: newDialogChecklistText.trim(),
-                            completed: false,
-                          };
-                          setNewDialogChecklistItems(items => [...items, newItem]);
-                          setNewDialogChecklistText("");
-                        }
-                      }}
-                      data-testid="button-add-checklist-item"
-                    >
-                      Add
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Press Enter or click Add to add checklist items
-                </p>
-              </div>
-            ) : (
-              <div>
-                <Label>Description (Rich Text)</Label>
-                {addItemEditor && (
-                  <div className="border rounded-md overflow-hidden" data-testid="tiptap-editor">
-                    <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
-                      <Button
-                        type="button"
-                        variant={addItemEditor.isActive('bold') ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => addItemEditor.chain().focus().toggleBold().run()}
-                        className="h-8 w-8 p-0"
-                        data-testid="toolbar-add-bold"
-                      >
-                        <strong className="text-xs">B</strong>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={addItemEditor.isActive('italic') ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => addItemEditor.chain().focus().toggleItalic().run()}
-                        className="h-8 w-8 p-0"
-                        data-testid="toolbar-add-italic"
-                      >
-                        <em className="text-xs">I</em>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={addItemEditor.isActive('underline') ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => addItemEditor.chain().focus().toggleUnderline().run()}
-                        className="h-8 w-8 p-0"
-                        data-testid="toolbar-add-underline"
-                      >
-                        <span className="text-xs underline">U</span>
-                      </Button>
-                      <div className="w-px h-5 bg-border mx-1" />
-                      <Button
-                        type="button"
-                        variant={addItemEditor.isActive('bulletList') ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => addItemEditor.chain().focus().toggleBulletList().run()}
-                        className="h-8 w-8 p-0"
-                        data-testid="toolbar-add-bullet"
-                      >
-                        <span className="text-xs">•</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={addItemEditor.isActive('orderedList') ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => addItemEditor.chain().focus().toggleOrderedList().run()}
-                        className="h-8 w-8 p-0"
-                        data-testid="toolbar-add-ordered"
-                      >
-                        <span className="text-xs">1.</span>
-                      </Button>
-                    </div>
-                    <EditorContent 
-                      editor={addItemEditor}
-                      className="prose prose-sm max-w-none p-3 min-h-[200px]"
-                    />
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  Use the toolbar to format text with bold, italic, underline, and lists
-                </p>
-              </div>
-            )}
-          </div>
-          </div>
-          <DialogFooter className="shrink-0 pt-2 border-t border-border">
-            <Button
-              onClick={handleCreateItem}
-              disabled={!newItemTitle.trim() || createItemMutation.isPending}
-              data-testid="button-create-scope-item"
-            >
-              {createItemMutation.isPending ? "Creating..." : "Add Item"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Right-side detail panel — shrinks main content (not an overlay) */}
+      {detailItemId && (() => {
+        const detailItem = scopeItems.find(i => i.id === detailItemId);
+        if (!detailItem) return null;
+        return (
+          <ScopeItemDetailPanel
+            item={detailItem}
+            onClose={handleCloseDetail}
+            onUpdate={handleUpdateItem}
+            scopeItemTypeDefs={scopeItemTypeDefs}
+            visibleTypeDefs={visibleTypeDefs}
+          />
+        );
+      })()}
+      </div>
 
       {/* Add New Stage Dialog */}
       <Dialog open={isAddStageDialogOpen} onOpenChange={(open) => {
