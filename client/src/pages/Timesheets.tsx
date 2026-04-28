@@ -2043,9 +2043,12 @@ export default function Timesheets() {
               setSelectedTimesheet(t);
               setIsDialogOpen(true);
             }}
-            rowClassName={(t) =>
-              selectedTimesheets.includes(t.id) ? "bg-muted/30 dark:bg-muted/20" : ""
-            }
+            rowClassName={(t) => {
+              if (isDialogOpen && selectedTimesheet?.id === t.id) {
+                return "bg-primary/10 ring-1 ring-inset ring-primary/40";
+              }
+              return selectedTimesheets.includes(t.id) ? "bg-muted/30 dark:bg-muted/20" : "";
+            }}
             headerClassName="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground"
           />
         )}
@@ -2179,6 +2182,28 @@ export default function Timesheets() {
         timesheet={selectedTimesheet}
         defaultProjectId={projectId}
         readonly={selectedTimesheet ? !canEditTimesheet(selectedTimesheet) : false}
+        hasPrev={(() => {
+          if (!selectedTimesheet) return false;
+          const idx = filteredTimesheets.findIndex((t) => t.id === selectedTimesheet.id);
+          return idx > 0;
+        })()}
+        hasNext={(() => {
+          if (!selectedTimesheet) return false;
+          const idx = filteredTimesheets.findIndex((t) => t.id === selectedTimesheet.id);
+          return idx >= 0 && idx < filteredTimesheets.length - 1;
+        })()}
+        onNavigatePrev={() => {
+          if (!selectedTimesheet) return;
+          const idx = filteredTimesheets.findIndex((t) => t.id === selectedTimesheet.id);
+          if (idx > 0) setSelectedTimesheet(filteredTimesheets[idx - 1]);
+        }}
+        onNavigateNext={() => {
+          if (!selectedTimesheet) return;
+          const idx = filteredTimesheets.findIndex((t) => t.id === selectedTimesheet.id);
+          if (idx >= 0 && idx < filteredTimesheets.length - 1) {
+            setSelectedTimesheet(filteredTimesheets[idx + 1]);
+          }
+        }}
       />
 
       <AlertDialog

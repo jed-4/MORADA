@@ -95,6 +95,7 @@
   --sage-bg: 146 51% 92%;         /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
   --amber-light: 39 64% 91%;      /* #F7EDDA */
+  --amber-bg: 39 64% 91%;         /* alias of --amber-light for status backgrounds */
   --coral: 11 52% 70%;            /* #DA988A */
   --coral-light: 9 57% 93%;       /* #F7E5E2 */
   --coral-bg: 9 57% 93%;          /* alias of --coral-light for status backgrounds */
@@ -280,6 +281,7 @@
   --sage-bg: 144 28% 14%;         /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
   --amber-light: 40 48% 12%;      /* #2E2410 */
+  --amber-bg: 40 48% 12%;         /* alias of --amber-light for status backgrounds */
   --coral: 11 52% 70%;            /* #DA988A */
   --coral-light: 5 31% 14%;       /* #2E1A18 */
   --coral-bg: 5 31% 14%;          /* alias of --coral-light for status backgrounds */
