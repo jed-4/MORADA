@@ -8911,6 +8911,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/selections/with-options", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const selections = await storage.getSelectionsWithOptions(projectId as string);
+      res.json(selections);
+    } catch (error) {
+      console.error("Error fetching selections with options:", error);
+      res.status(500).json({ error: "Failed to fetch selections with options" });
+    }
+  });
+
   app.get("/api/selections/:id", async (req, res) => {
     try {
       const selection = await storage.getSelectionWithOptions(req.params.id);

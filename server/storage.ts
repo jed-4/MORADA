@@ -546,6 +546,7 @@ export interface IStorage {
   getSelection(id: string): Promise<Selection | undefined>;
   getSelectionByEstimateItemId(estimateItemId: string): Promise<Selection | undefined>;
   getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined>;
+  getSelectionsWithOptions(projectId: string): Promise<SelectionWithOptions[]>;
   createSelection(selection: InsertSelection): Promise<Selection>;
   updateSelection(id: string, selection: Partial<InsertSelection>): Promise<Selection | undefined>;
   deleteSelection(id: string): Promise<boolean>;
@@ -5057,6 +5058,11 @@ export class MemStorage implements IStorage {
     };
   }
 
+  async getSelectionsWithOptions(projectId: string): Promise<SelectionWithOptions[]> {
+    const selections = await this.getSelections(projectId);
+    return Promise.all(selections.map(async (s) => (await this.getSelectionWithOptions(s.id))!));
+  }
+
   async createSelection(insertSelection: InsertSelection): Promise<Selection> {
     const id = randomUUID();
     const now = new Date();
@@ -7287,6 +7293,11 @@ export class DbStorage implements IStorage {
       ...selection,
       options
     };
+  }
+
+  async getSelectionsWithOptions(projectId: string): Promise<SelectionWithOptions[]> {
+    const selections = await this.getSelections(projectId);
+    return Promise.all(selections.map(async (s) => (await this.getSelectionWithOptions(s.id))!));
   }
 
   async createSelection(insertSelection: InsertSelection): Promise<Selection> {

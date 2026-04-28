@@ -1,14 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -18,14 +11,9 @@ import {
   type InsertSelection,
   type FieldCategoryWithOptions,
   type SelectionWithOptions,
+  type SelectionOption,
+  type OptionAttachment,
 } from "@shared/schema";
-import { type ColumnDef } from "@tanstack/react-table";
-import {
-  DataTable,
-  DataTableColumnPicker,
-  type DataTableColumnMeta,
-} from "@/components/data-table/DataTable";
-import { StatusBadge as SharedStatusBadge } from "@/components/StatusBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,421 +28,645 @@ import {
   Edit3,
   Trash2,
   CalendarIcon,
-  DollarSign,
-  Layers,
-  ChevronDown,
   Eye,
-  List,
-  Palette,
-  LayoutList,
-  LayoutGrid,
-  Pencil,
-  MapPin,
-  Boxes,
-  Columns3,
+  ChevronRight,
+  ChevronDown,
+  Image as ImageIcon,
+  Check,
+  MessageSquare,
+  Paperclip,
 } from "lucide-react";
-import {
-  DndContext,
-  DragOverlay,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragStartEvent,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { useDroppable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
-import { format } from "date-fns";
+import { format, differenceInCalendarDays } from "date-fns";
 
-// Component for displaying selection options in dropdown
-interface SelectionOptionsDropdownProps {
-  selectionId: string;
-  onNavigate: (path: string) => void;
+// ───────────────────────────────────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────────────────────────────────
+
+type DerivedStatus = "open" | "submitted" | "approved" | "overdue";
+
+const CATEGORY_DOT_COLOURS: Record<string, string> = {
+  Tiles: "#7C5CBF",
+  Cladding: "#B5813B",
+  Flooring: "#4A7A9B",
+  Lighting: "#9B7A4A",
+  Appliances: "#5C7A5C",
+  Fixtures: "#C46B5A",
+  Joinery: "#8B6B4A",
+  Plumbing: "#4A8B7A",
+};
+
+function getCategoryColour(category?: string | null): string {
+  if (!category) return "#94a3b8"; // neutral slate
+  return CATEGORY_DOT_COLOURS[category] ?? "#94a3b8";
 }
 
-function SelectionOptionsDropdown({ selectionId, onNavigate }: SelectionOptionsDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  
-  // Fetch selection with options when dropdown is opened
-  const { data: selectionWithOptions, isLoading } = useQuery<SelectionWithOptions>({
-    queryKey: ["/api/selections", selectionId, "with-options"],
-    queryFn: async () => {
-      return await apiRequest(`/api/selections/${selectionId}`, "GET");
-    },
-    enabled: isOpen, // Only fetch when dropdown is open
-  });
+function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
+  if (sel.status === "approved" || sel.status === "completed") return "approved";
+  const isPastDue = sel.deadline && new Date(sel.deadline).getTime() < Date.now();
+  if (isPastDue) return "overdue";
+  if (sel.options?.some((o) => o.isSelectedByClient)) return "submitted";
+  return "open";
+}
 
+function getSelectedOption(sel: SelectionWithOptions): SelectionOption | undefined {
+  return sel.options?.find((o) => o.isSelectedByClient);
+}
+
+function getActualCents(sel: SelectionWithOptions): number | null {
+  const sel0 = getSelectedOption(sel);
+  return sel0?.totalCost ?? null;
+}
+
+function formatMoneyCents(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) return "—";
+  return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function formatVarianceCents(cents: number | null): { text: string; tone: "under" | "over" | "none" } {
+  if (cents === null || cents === 0) return { text: cents === 0 ? "$0" : "—", tone: "none" };
+  const sign = cents > 0 ? "+" : "−";
+  return {
+    text: `${sign}$${Math.abs(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+    tone: cents > 0 ? "over" : "under",
+  };
+}
+
+function getDeadlineMeta(deadline: Date | null | undefined, derived: DerivedStatus) {
+  if (!deadline) return { text: "—", className: "text-muted-foreground/40" };
+  const date = new Date(deadline);
+  if (derived === "approved") return { text: "Done", className: "text-muted-foreground/50" };
+  const days = differenceInCalendarDays(date, new Date());
+  if (days < 0) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--coral))]" };
+  if (days <= 7) return { text: format(date, "dd MMM"), className: "font-semibold text-[hsl(var(--amber))]" };
+  return { text: format(date, "dd MMM yyyy"), className: "text-muted-foreground" };
+}
+
+const STATUS_CHIP_CLASS: Record<DerivedStatus, string> = {
+  open: "bg-primary/10 text-primary border-primary/30",
+  submitted: "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))] border-[hsl(var(--amber))]/30",
+  approved: "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border-[hsl(var(--sage))]/30",
+  overdue: "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border-[hsl(var(--coral))]/30",
+};
+
+const STATUS_LABEL: Record<DerivedStatus, string> = {
+  open: "Open",
+  submitted: "Submitted",
+  approved: "Approved",
+  overdue: "Overdue",
+};
+
+// ───────────────────────────────────────────────────────────────────────
+// Sub-components
+// ───────────────────────────────────────────────────────────────────────
+
+interface SelectionThumbnailProps {
+  category?: string | null;
+  attachment?: OptionAttachment;
+  size?: number;
+}
+
+function SelectionThumbnail({ category, attachment, size = 32 }: SelectionThumbnailProps) {
+  const colour = getCategoryColour(category);
+  const isImage = attachment && attachment.fileType?.toLowerCase() === "image";
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button 
-          variant="outline" 
-          size="sm"
-          className="h-8 gap-1"
-          data-testid={`button-view-options-${selectionId}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <List className="w-3 h-3" />
-          <span className="text-xs">Options</span>
-          <ChevronDown className="w-3 h-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        {isLoading ? (
-          <DropdownMenuItem disabled>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-muted border-t-primary rounded-full animate-spin" />
-              <span>Loading options...</span>
-            </div>
-          </DropdownMenuItem>
-        ) : selectionWithOptions?.options && selectionWithOptions.options.length > 0 ? (
-          <>
-            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b">
-              Available Options ({selectionWithOptions.options.length})
-            </div>
-            {selectionWithOptions.options.slice(0, 5).map((option) => (
-              <DropdownMenuItem 
-                key={option.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNavigate(`/selections/${selectionId}#option-${option.id}`);
-                }}
-                className="flex flex-col items-start gap-1 py-2"
-              >
-                <div className="font-medium text-sm">{option.name}</div>
-                {option.price !== null && option.price !== undefined && (
-                  <div className="text-xs text-muted-foreground">
-                    ${(option.price / 100).toFixed(2)}
-                  </div>
-                )}
-              </DropdownMenuItem>
-            ))}
-            {selectionWithOptions.options.length > 5 && (
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                onNavigate(`/selections/${selectionId}`);
-              }}>
-                <Eye className="w-4 h-4 mr-2" />
-                View all {selectionWithOptions.options.length} options
-              </DropdownMenuItem>
-            )}
-            <div className="border-t">
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                onNavigate(`/selections/${selectionId}#add-option`);
-              }}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add New Option
-              </DropdownMenuItem>
-            </div>
-          </>
-        ) : (
-          <>
-            <DropdownMenuItem disabled>
-              <Package className="w-4 h-4 mr-2 text-muted-foreground" />
-              No options available
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={(e) => {
-              e.stopPropagation();
-              onNavigate(`/selections/${selectionId}#add-option`);
-            }}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add First Option
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div
+      className="rounded-md overflow-hidden flex items-center justify-center shrink-0"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: `${colour}26`, // ~15% alpha
+      }}
+    >
+      {isImage && attachment?.filePath ? (
+        <img src={attachment.filePath} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <ImageIcon className="text-muted-foreground/60" style={{ width: size * 0.4, height: size * 0.4 }} />
+      )}
+    </div>
   );
 }
 
-// Compact Selection Card for both List and Kanban views
-interface SelectionCardCompactProps {
-  selection: Selection;
-  onClick: () => void;
-  onEdit: (selection: Selection) => void;
-  onDelete: (id: string) => void;
-  showCategory?: boolean;
-  showRoom?: boolean;
-  isDragging?: boolean;
+interface StatCardProps {
+  value: number | string;
+  label: string;
+  variant: "default" | "primary" | "amber" | "sage" | "coral";
+  active?: boolean;
+  onClick?: () => void;
+  testId?: string;
 }
 
-function SelectionCardCompact({ 
-  selection, 
-  onClick, 
-  onEdit, 
-  onDelete,
-  showCategory = true,
-  showRoom = true,
-  isDragging = false
-}: SelectionCardCompactProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const selectionType = (selection as any).selectionType || 'selection';
-
-  const statusConfig = {
-    draft: { color: '#eab308', bg: '#eab30815', label: 'Draft' },
-    pending: { color: '#3b82f6', bg: '#3b82f615', label: 'Open' },
-    approved: { color: '#22c55e', bg: '#22c55e15', label: 'Approved' },
-    completed: { color: '#16a34a', bg: '#16a34a15', label: 'Completed' },
+function StatCard({ value, label, variant, active = false, onClick, testId }: StatCardProps) {
+  const variantClasses: Record<typeof variant, string> = {
+    default: "bg-card border-border text-foreground",
+    primary: "bg-primary/10 border-primary/30 text-primary",
+    amber: "bg-[hsl(var(--amber-bg))] border-[hsl(var(--amber))]/30 text-[hsl(var(--amber))]",
+    sage: "bg-[hsl(var(--sage-bg))] border-[hsl(var(--sage))]/30 text-[hsl(var(--sage))]",
+    coral: "bg-[hsl(var(--coral-bg))] border-[hsl(var(--coral))]/30 text-[hsl(var(--coral))]",
   };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className={`rounded-lg border px-3 py-2 w-[120px] text-left transition-shadow ${variantClasses[variant]} hover-elevate active-elevate-2 ${
+        active ? "ring-2 ring-primary/40" : ""
+      }`}
+    >
+      <div className="text-[17px] font-bold leading-tight tabular-nums">{value}</div>
+      <div className="text-[9px] font-semibold uppercase tracking-wide opacity-90">{label}</div>
+    </button>
+  );
+}
 
-  const statusInfo = statusConfig[selection.status as keyof typeof statusConfig] || statusConfig.draft;
-  const { color: statusColor, bg: statusBg } = statusInfo;
+interface SelectionRowProps {
+  selection: SelectionWithOptions;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onSelectOption: (selectionId: string, optionId: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  isPending: boolean;
+}
+
+function SelectionRow({
+  selection,
+  expanded,
+  onToggleExpand,
+  onSelectOption,
+  onEdit,
+  onDelete,
+  isPending,
+}: SelectionRowProps) {
+  const derived = getDerivedStatus(selection);
+  const selectedOption = getSelectedOption(selection);
+  const actual = getActualCents(selection);
+  const allowance = selection.allowance ?? null;
+  const variance = actual !== null && allowance !== null ? actual - allowance : null;
+  const varianceMeta = formatVarianceCents(variance);
+  const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
+
+  // Use first attachment of the selected option for the row thumbnail
+  const rowThumb = selectedOption?.attachments?.[0] ?? selection.options?.[0]?.attachments?.[0];
 
   return (
-    <Card
-      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 hover-elevate active-elevate-2 ${
-        isDragging ? 'opacity-80 shadow-lg scale-[1.01]' : ''
-      }`}
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      data-testid={`selection-card-${selection.id}`}
-    >
-      <CardContent className="p-2 h-full flex flex-col justify-between">
-        {/* Top row: Title + Status Badge */}
-        <div className="flex items-start gap-1.5">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start gap-1">
-              <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium" data-testid={`selection-title-${selection.id}`}>
-                {selection.name}
-              </h3>
-              
-              {/* Status badge */}
-              <Badge 
-                className="text-data px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
-                style={{
-                  backgroundColor: statusBg,
-                  color: statusColor,
-                  borderColor: `${statusColor}30`
-                }}
-              >
-                {statusInfo.label}
-              </Badge>
-            </div>
+    <>
+      <div
+        className={`grid grid-cols-[24px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
+          expanded ? "bg-[#F5F3F0] dark:bg-[#2A2720]" : "hover:bg-muted/30"
+        }`}
+        onClick={onToggleExpand}
+        data-testid={`row-selection-${selection.id}`}
+      >
+        {/* Expand toggle */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpand();
+          }}
+          className={`flex items-center justify-center rounded ${expanded ? "text-primary" : "text-muted-foreground"} hover-elevate w-5 h-5`}
+          data-testid={`button-expand-${selection.id}`}
+        >
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
 
-            {/* Metadata line below title */}
-            <div className="flex items-center gap-2 mt-0.5 text-data text-muted-foreground">
-              {selectionType === 'design' && (
-                <span className="flex items-center gap-0.5 text-purple-600">
-                  <Palette className="h-2.5 w-2.5 flex-shrink-0" />
-                  Design
-                </span>
-              )}
-              {showCategory && selection.category && (
-                <span className="truncate">{selection.category}</span>
-              )}
-              {showRoom && selection.room && (
-                <span className="flex items-center gap-0.5 truncate">
-                  <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
-                  {selection.room}
-                </span>
-              )}
-            </div>
+        {/* Thumbnail */}
+        <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
+
+        {/* Selection name + sub-label */}
+        <div className="min-w-0">
+          <div className="text-[12px] font-medium text-foreground truncate" data-testid={`text-name-${selection.id}`}>
+            {selection.name}
           </div>
+          {selectedOption ? (
+            <div className="text-[10px] text-muted-foreground/60 truncate">{selectedOption.name}</div>
+          ) : selection.description ? (
+            <div className="text-[10px] text-muted-foreground/60 truncate">{selection.description}</div>
+          ) : null}
+        </div>
 
-          {/* Pencil icon on hover */}
-          {isHovered && (
-            <Pencil className="h-3 w-3 text-primary shrink-0" />
+        {/* Category */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {selection.category && (
+            <>
+              <span
+                className="rounded-full shrink-0"
+                style={{ width: 7, height: 7, backgroundColor: getCategoryColour(selection.category) }}
+              />
+              <span className="text-[11px] text-muted-foreground truncate">{selection.category}</span>
+            </>
           )}
         </div>
 
-        {/* Bottom row: Allowance + Actions */}
-        <div className="flex items-center justify-between">
-          {/* Allowance or deadline */}
-          <div className="flex items-center gap-2 text-data text-muted-foreground">
-            {selection.allowance && (
-              <span className="flex items-center gap-0.5">
-                <DollarSign className="h-2.5 w-2.5" />
-                ${(selection.allowance / 100).toFixed(0)}
-              </span>
-            )}
-            {selection.deadline && (
-              <span className="flex items-center gap-0.5">
-                <CalendarIcon className="h-2.5 w-2.5" />
-                {format(new Date(selection.deadline), 'MMM d')}
-              </span>
-            )}
-          </div>
+        {/* Location */}
+        <div className="text-[11px] text-muted-foreground truncate">{selection.room || ""}</div>
 
-          {/* Actions dropdown */}
-          <div onClick={(e) => e.stopPropagation()}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="h-5 w-5 rounded-md hover-elevate active-elevate-2 flex items-center justify-center" data-testid={`button-actions-${selection.id}`}>
-                  <MoreVertical className="h-3 w-3" />
+        {/* Status */}
+        <div>
+          <span
+            className={`inline-block rounded px-2 py-1 text-[10px] font-medium border ${STATUS_CHIP_CLASS[derived]}`}
+            data-testid={`badge-status-${selection.id}`}
+          >
+            {STATUS_LABEL[derived]}
+          </span>
+        </div>
+
+        {/* Allowance */}
+        <div className="text-[12px] text-muted-foreground tabular-nums text-right">
+          {formatMoneyCents(allowance)}
+        </div>
+
+        {/* Actual */}
+        <div
+          className={`text-[12px] tabular-nums text-right ${actual === null ? "text-muted-foreground/50" : "text-foreground"}`}
+          data-testid={`text-actual-${selection.id}`}
+        >
+          {formatMoneyCents(actual)}
+        </div>
+
+        {/* Variance */}
+        <div
+          className={`text-[12px] font-semibold tabular-nums text-right ${
+            varianceMeta.tone === "under"
+              ? "text-[hsl(var(--sage))]"
+              : varianceMeta.tone === "over"
+                ? "text-[hsl(var(--coral))]"
+                : "text-muted-foreground/40"
+          }`}
+        >
+          {varianceMeta.text}
+        </div>
+
+        {/* Deadline */}
+        <div className={`text-[11px] truncate ${deadlineMeta.className}`}>{deadlineMeta.text}</div>
+
+        {/* Options count badge (only when collapsed) */}
+        <div className="flex justify-center">
+          {!expanded && selection.options && selection.options.length > 0 && (
+            <span className="bg-muted/40 text-muted-foreground rounded-full text-[10px] font-medium px-2 py-0.5">
+              {selection.options.length} options
+            </span>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                data-testid={`button-actions-${selection.id}`}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
+                <Eye className="w-4 h-4 mr-2" />
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEdit(selection.id)}>
+                <Edit3 className="w-4 h-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {expanded && (
+        <OptionsPanel
+          selection={selection}
+          onSelectOption={(optionId) => onSelectOption(selection.id, optionId)}
+          isPending={isPending}
+        />
+      )}
+    </>
+  );
+}
+
+interface OptionsPanelProps {
+  selection: SelectionWithOptions;
+  onSelectOption: (optionId: string) => void;
+  isPending: boolean;
+}
+
+function OptionsPanel({ selection, onSelectOption, isPending }: OptionsPanelProps) {
+  const allowance = selection.allowance ?? null;
+  const options = selection.options ?? [];
+
+  return (
+    <div className="relative border-b border-border bg-muted/20" data-testid={`panel-options-${selection.id}`}>
+      {/* Left accent bar */}
+      <div aria-hidden="true" className="absolute top-0 left-0 bottom-0 w-[3px] bg-primary" />
+
+      <div className="pl-4">
+        {/* Sub-column header row */}
+        <div className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-6 border-b border-border/60 px-3 text-[9px] uppercase tracking-wider font-semibold text-muted-foreground/60">
+          <div></div>
+          <div></div>
+          <div>Option</div>
+          <div>Specifications</div>
+          <div className="text-right">Price</div>
+          <div className="text-right">Vs Allowance</div>
+          <div></div>
+        </div>
+
+        {options.length === 0 ? (
+          <div className="px-3 py-4 text-[11px] text-muted-foreground/60 text-center">
+            No options yet. Add an option below to begin.
+          </div>
+        ) : (
+          options.map((option) => {
+            const isSelected = !!option.isSelectedByClient;
+            const price = option.totalCost ?? null;
+            const variance = price !== null && allowance !== null ? price - allowance : null;
+            const varMeta = formatVarianceCents(variance);
+            const optThumb = option.attachments?.[0];
+            const specsParts: string[] = [];
+            if (option.brand) specsParts.push(option.brand);
+            if (option.sku) specsParts.push(`SKU ${option.sku}`);
+            if (option.unitType && option.quantity)
+              specsParts.push(`${option.quantity} ${option.unitType}`);
+            const specsText = specsParts.join(" · ") || (option.description ?? "—");
+
+            return (
+              <div
+                key={option.id}
+                className="grid grid-cols-[18px_40px_minmax(160px,1.5fr)_minmax(140px,1fr)_120px_120px_140px] gap-3 items-center h-[52px] border-b border-border/60 last:border-0 px-3"
+                data-testid={`row-option-${option.id}`}
+              >
+                {/* Radio */}
+                <button
+                  type="button"
+                  onClick={() => !isSelected && !isPending && onSelectOption(option.id)}
+                  disabled={isPending}
+                  className={`w-[18px] h-[18px] rounded-full flex items-center justify-center border-2 transition-colors ${
+                    isSelected
+                      ? "bg-primary border-primary"
+                      : "bg-transparent border-border hover:border-primary"
+                  }`}
+                  aria-label={isSelected ? "Selected option" : "Select this option"}
+                  data-testid={`radio-option-${option.id}`}
+                >
+                  {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onClick()}>
-                  <Eye className="w-4 h-4 mr-2" />
-                  View Details
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onEdit(selection)}>
-                  <Edit3 className="w-4 h-4 mr-2" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
-// Draggable Selection Card for Kanban
-interface DraggableSelectionCardProps {
-  selection: Selection;
-  columnId: string;
-  onClick: () => void;
-  onEdit: (selection: Selection) => void;
-  onDelete: (id: string) => void;
-}
+                {/* Thumbnail */}
+                <SelectionThumbnail category={option.category ?? selection.category} attachment={optThumb} size={36} />
 
-function DraggableSelectionCard({ selection, columnId, onClick, onEdit, onDelete }: DraggableSelectionCardProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ 
-    id: selection.id,
-    data: { 
-      type: 'card',
-      columnId: columnId,
-    }
-  });
+                {/* Option name + supplier */}
+                <div className="min-w-0">
+                  <div
+                    className={`text-[12px] font-medium truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    {option.name}
+                  </div>
+                  {option.brand && (
+                    <div className="text-[10px] text-muted-foreground/60 truncate">{option.brand}</div>
+                  )}
+                </div>
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+                {/* Specs */}
+                <div className="text-[11px] text-muted-foreground truncate">{specsText}</div>
 
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SelectionCardCompact
-        selection={selection}
-        onClick={onClick}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        isDragging={isDragging}
-      />
-    </div>
-  );
-}
+                {/* Price */}
+                <div
+                  className={`text-[12px] tabular-nums text-right ${
+                    isSelected ? "font-semibold text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {formatMoneyCents(price)}
+                </div>
 
-// Kanban Column Component
-interface KanbanColumnProps {
-  column: { id: string; title: string; color: string };
-  selections: Selection[];
-  onCardClick: (id: string) => void;
-  onEdit: (selection: Selection) => void;
-  onDelete: (id: string) => void;
-}
+                {/* Variance vs allowance */}
+                <div
+                  className={`text-[11px] font-semibold tabular-nums text-right ${
+                    varMeta.tone === "under"
+                      ? "text-[hsl(var(--sage))]"
+                      : varMeta.tone === "over"
+                        ? "text-[hsl(var(--coral))]"
+                        : "text-muted-foreground/40"
+                  }`}
+                >
+                  {varMeta.text}
+                </div>
 
-function KanbanColumn({ column, selections, onCardClick, onEdit, onDelete }: KanbanColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: column.id,
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`flex flex-col w-72 shrink-0 rounded-lg bg-muted/30 ${isOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-    >
-      {/* Column Header */}
-      <div className="px-3 py-2 border-b border-border/50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-2 h-2 rounded-full" 
-              style={{ backgroundColor: column.color }}
-            />
-            <span className="text-sm font-medium">{column.title}</span>
-          </div>
-          <Badge variant="secondary" className="text-xs h-5">
-            {selections.length}
-          </Badge>
-        </div>
-      </div>
-
-      {/* Cards Container */}
-      <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[200px]">
-        <SortableContext id={column.id} items={selections.map(s => s.id)} strategy={verticalListSortingStrategy}>
-          {selections.map((selection) => (
-            <DraggableSelectionCard
-              key={selection.id}
-              selection={selection}
-              columnId={column.id}
-              onClick={() => onCardClick(selection.id)}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-        </SortableContext>
-        
-        {selections.length === 0 && (
-          <div className="text-center text-xs text-muted-foreground py-8">
-            No selections
-          </div>
+                {/* Right side: Selected pill or Select button + comment/attach */}
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
+                    aria-label="Comment"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground/50 hover:text-muted-foreground p-1 rounded hover-elevate"
+                    aria-label="Attach"
+                  >
+                    <Paperclip className="w-3 h-3" />
+                  </button>
+                  {isSelected ? (
+                    <span className="bg-primary/10 text-primary rounded px-2 py-1 text-[10px] font-medium inline-flex items-center gap-1">
+                      Selected
+                      <Check className="w-3 h-3" />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => !isPending && onSelectOption(option.id)}
+                      disabled={isPending}
+                      className="border border-border rounded px-3 py-1 text-[11px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                      data-testid={`button-select-${option.id}`}
+                    >
+                      Select
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
+
+        {/* Add option ghost row */}
+        <button
+          type="button"
+          className="w-full h-9 flex items-center text-[11px] text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10 px-3"
+          data-testid={`button-add-option-${selection.id}`}
+        >
+          <span className="pl-[136px]">+ Add option</span>
+        </button>
       </div>
     </div>
   );
 }
+
+// ───────────────────────────────────────────────────────────────────────
+// Main page
+// ───────────────────────────────────────────────────────────────────────
 
 export default function Selections() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [groupBy, setGroupBy] = useState<'none' | 'category' | 'room' | 'status'>('none');
-  const [showGroupingMenu, setShowGroupingMenu] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [locationFilter, setLocationFilter] = useState<string>("");
-  const [showSelections, setShowSelections] = useState(true);
-  const [showDesign, setShowDesign] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [statusTab, setStatusTab] = useState<"all" | DerivedStatus>("all");
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
 
-  // Fetch selections for the current project
-  const { data: selections = [], isLoading } = useQuery<Selection[]>({
-    queryKey: ["/api/selections", currentProject?.id],
-    queryFn: () => apiRequest(`/api/selections?projectId=${currentProject?.id}`, "GET"),
-    enabled: !!currentProject?.id,
+  const projectId = currentProject?.id;
+
+  // Fetch selections WITH options & attachments in a single call
+  const { data: selectionsWithOptions = [], isLoading } = useQuery<SelectionWithOptions[]>({
+    queryKey: ["/api/selections/with-options", projectId],
+    queryFn: () => apiRequest(`/api/selections/with-options?projectId=${projectId}`, "GET"),
+    enabled: !!projectId,
   });
 
-  // Fetch selection categories
+  // Fetch selection categories for filter
   const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
   });
 
-  // Fetch room/location options (used for filters)
-  const { data: locationCategories } = useQuery<FieldCategoryWithOptions>({
-    queryKey: ["/api/field-categories/by-key/selection.room"],
+  // Mutations
+  const createSelectionMutation = useMutation({
+    mutationFn: async (selection: InsertSelection) => {
+      return await apiRequest("/api/selections", "POST", selection);
+    },
+    onSuccess: (newSelection: Selection) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+      toast({ title: "Selection created" });
+      setLocation(`/selections/${newSelection.id}`);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create selection.", variant: "destructive" });
+    },
   });
 
-  // Handle creating a new selection and navigating to it
+  const deleteSelectionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest(`/api/selections/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+      toast({ title: "Selection deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete selection.", variant: "destructive" });
+    },
+  });
+
+  const selectOptionMutation = useMutation({
+    mutationFn: async ({ selectionId, optionId }: { selectionId: string; optionId: string }) => {
+      const sel = selectionsWithOptions.find((s) => s.id === selectionId);
+      if (!sel) throw new Error("Selection not found");
+
+      // Clear any previously selected option(s)
+      const previouslySelected = sel.options.filter((o) => o.isSelectedByClient && o.id !== optionId);
+      await Promise.all(
+        previouslySelected.map((o) =>
+          apiRequest(`/api/selection-options/${o.id}`, "PATCH", { isSelectedByClient: false }),
+        ),
+      );
+
+      // Set the chosen one
+      await apiRequest(`/api/selection-options/${optionId}`, "PATCH", { isSelectedByClient: true });
+
+      // Bump status from draft → pending so it shows as Submitted
+      if (sel.status === "draft") {
+        await apiRequest(`/api/selections/${selectionId}`, "PATCH", { status: "pending" });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update selection.", variant: "destructive" });
+    },
+  });
+
+  // Computed stats (across the unfiltered set so they're stable)
+  const stats = useMemo(() => {
+    let open = 0, submitted = 0, approved = 0, overdue = 0;
+    let totalAllowance = 0, totalActual = 0, pendingAmount = 0;
+    let openCount = 0;
+    selectionsWithOptions.forEach((sel) => {
+      const d = getDerivedStatus(sel);
+      if (d === "open") { open++; openCount++; }
+      if (d === "submitted") submitted++;
+      if (d === "approved") approved++;
+      if (d === "overdue") overdue++;
+      if (sel.allowance) totalAllowance += sel.allowance;
+      const a = getActualCents(sel);
+      if (a !== null) totalActual += a;
+      if (d === "open" && sel.allowance) pendingAmount += sel.allowance;
+    });
+    return {
+      total: selectionsWithOptions.length,
+      open,
+      submitted,
+      approved,
+      overdue,
+      totalAllowance,
+      totalActual,
+      variance: totalActual - totalAllowance,
+      pendingAmount,
+      openCount,
+    };
+  }, [selectionsWithOptions]);
+
+  // Filtered list
+  const filtered = useMemo(() => {
+    return selectionsWithOptions.filter((sel) => {
+      const d = getDerivedStatus(sel);
+      if (statusTab !== "all" && statusTab !== d) return false;
+      if (categoryFilter && sel.category !== categoryFilter) return false;
+      if (searchTerm) {
+        const t = searchTerm.toLowerCase();
+        if (
+          !sel.name.toLowerCase().includes(t) &&
+          !(sel.category?.toLowerCase().includes(t)) &&
+          !(sel.room?.toLowerCase().includes(t))
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [selectionsWithOptions, statusTab, categoryFilter, searchTerm]);
+
+  // Approved spend
+  const approvedSpend = useMemo(() => {
+    return selectionsWithOptions.reduce((sum, sel) => {
+      const d = getDerivedStatus(sel);
+      if (d === "approved") {
+        const a = getActualCents(sel);
+        if (a !== null) return sum + a;
+      }
+      return sum;
+    }, 0);
+  }, [selectionsWithOptions]);
+
+  // Handlers
+  const toggleExpand = (id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleAddSelection = () => {
-    if (!currentProject?.id) return;
+    if (!projectId) return;
     createSelectionMutation.mutate({
-      projectId: currentProject.id,
+      projectId,
       name: "New Selection",
       description: "",
       category: "",
@@ -466,377 +678,8 @@ export default function Selections() {
     });
   };
 
-  // Handle editing - navigate to the detail page
-  const handleEdit = (selection: Selection) => {
-    setLocation(`/selections/${selection.id}`);
-  };
-
-  // Create selection mutation - navigates to detail page after creation
-  const createSelectionMutation = useMutation({
-    mutationFn: async (selection: InsertSelection) => {
-      return await apiRequest("/api/selections", "POST", selection);
-    },
-    onSuccess: (newSelection: Selection) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });
-      toast({
-        title: "Selection created",
-        description: "Your new selection has been created successfully.",
-      });
-      // Navigate to the new selection's detail page
-      setLocation(`/selections/${newSelection.id}`);
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create selection. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Update selection mutation (kept for drag-drop status updates in kanban)
-  const updateSelectionMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertSelection> }) => {
-      return await apiRequest(`/api/selections/${id}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });
-      toast({
-        title: "Selection updated",
-        description: "Your selection has been updated successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update selection. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Delete selection mutation
-  const deleteSelectionMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest(`/api/selections/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });
-      toast({
-        title: "Selection deleted",
-        description: "The selection has been deleted successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to delete selection. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-
-  // Filter selections based on search, type toggles, and category/location filters
-  const filteredSelections = (selections || []).filter((selection: Selection) => {
-    // Type filter (showSelections/showDesign)
-    const selectionType = (selection as any).selectionType || 'selection';
-    if (!showSelections && selectionType === 'selection') return false;
-    if (!showDesign && selectionType === 'design') return false;
-    
-    // Search filter
-    const matchesSearch = 
-      selection.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      selection.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      selection.category?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Category filter
-    const matchesCategory = !categoryFilter || selection.category === categoryFilter;
-    
-    // Location filter
-    const matchesLocation = !locationFilter || selection.room === locationFilter;
-    
-    return matchesSearch && matchesCategory && matchesLocation;
-  });
-
-  // Group selections based on selected grouping
-  const groupedSelections = React.useMemo(() => {
-    if (groupBy === 'none') {
-      return { 'All Selections': filteredSelections };
-    }
-
-    const groups: Record<string, Selection[]> = {};
-    
-    filteredSelections.forEach((selection) => {
-      let groupKey = 'Ungrouped';
-      
-      switch (groupBy) {
-        case 'category':
-          groupKey = selection.category || 'No Category';
-          break;
-        case 'room':
-          groupKey = selection.room || 'No Location';
-          break;
-        case 'status':
-          groupKey = selection.status?.charAt(0).toUpperCase() + selection.status?.slice(1) || 'No Status';
-          break;
-      }
-      
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
-      }
-      groups[groupKey].push(selection);
-    });
-    
-    // Sort groups by name
-    const sortedGroups: Record<string, Selection[]> = {};
-    Object.keys(groups).sort().forEach(key => {
-      sortedGroups[key] = groups[key];
-    });
-    
-    return sortedGroups;
-  }, [filteredSelections, groupBy]);
-
-  // Status label map for shared StatusBadge
-  const STATUS_LABELS: Record<string, string> = {
-    draft: "Draft",
-    pending: "Open",
-    approved: "Approved",
-    completed: "Completed",
-  };
-
-  // ── DataTable column defs ─────────────────────────────────────────────────
-  const selectionColumns = useMemo<ColumnDef<Selection, unknown>[]>(() => [
-    {
-      id: "name",
-      header: "Name",
-      accessorFn: (s) => s.name || "",
-      cell: ({ row }) => (
-        <span className="text-xs font-medium" data-testid={`cell-name-${row.original.id}`}>
-          {row.original.name}
-        </span>
-      ),
-      size: 220,
-      meta: { defaultWidth: 220, headerLabel: "Name" },
-    },
-    {
-      id: "type",
-      header: "Type",
-      accessorFn: (s) => (s as Selection & { selectionType?: string }).selectionType || "selection",
-      cell: ({ row }) => {
-        const type = (row.original as Selection & { selectionType?: string }).selectionType || "selection";
-        return type === "design" ? (
-          <span className="inline-flex items-center gap-1 text-xs text-purple-600">
-            <Palette className="w-3 h-3" />
-            Design
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">Selection</span>
-        );
-      },
-      size: 90,
-      meta: { defaultWidth: 90, headerLabel: "Type" },
-    },
-    {
-      id: "category",
-      header: "Category",
-      accessorFn: (s) => s.category || "",
-      cell: ({ row }) => (
-        <span className="text-xs" data-testid={`cell-category-${row.original.id}`}>
-          {row.original.category || "—"}
-        </span>
-      ),
-      size: 140,
-      meta: { defaultWidth: 140, headerLabel: "Category" },
-    },
-    {
-      id: "room",
-      header: "Location",
-      accessorFn: (s) => s.room || "",
-      cell: ({ row }) => (
-        <span className="text-xs inline-flex items-center gap-1" data-testid={`cell-room-${row.original.id}`}>
-          {row.original.room ? (
-            <>
-              <MapPin className="w-3 h-3 text-muted-foreground" />
-              {row.original.room}
-            </>
-          ) : (
-            "—"
-          )}
-        </span>
-      ),
-      size: 140,
-      meta: { defaultWidth: 140, headerLabel: "Location" },
-    },
-    {
-      id: "status",
-      header: "Status",
-      accessorFn: (s) => s.status,
-      cell: ({ row }) => (
-        <SharedStatusBadge
-          status={row.original.status}
-          label={STATUS_LABELS[row.original.status] || row.original.status}
-        />
-      ),
-      size: 110,
-      meta: { defaultWidth: 110, headerLabel: "Status" },
-    },
-    {
-      id: "allowance",
-      header: "Allowance",
-      accessorFn: (s) => s.allowance ?? 0,
-      cell: ({ row }) =>
-        row.original.allowance ? (
-          <span className="text-xs tabular-nums" data-testid={`cell-allowance-${row.original.id}`}>
-            ${(row.original.allowance / 100).toFixed(0)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        ),
-      size: 100,
-      meta: { defaultWidth: 100, align: "right", headerLabel: "Allowance" },
-    },
-    {
-      id: "deadline",
-      header: "Deadline",
-      accessorFn: (s) => (s.deadline ? new Date(s.deadline).getTime() : 0),
-      cell: ({ row }) =>
-        row.original.deadline ? (
-          <span className="text-xs inline-flex items-center gap-1" data-testid={`cell-deadline-${row.original.id}`}>
-            <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-            {format(new Date(row.original.deadline), "dd MMM yyyy")}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        ),
-      size: 130,
-      meta: { defaultWidth: 130, headerLabel: "Deadline" },
-    },
-    {
-      id: "actions",
-      header: "",
-      enableSorting: false,
-      cell: ({ row }) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-5 w-5 rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                data-testid={`button-actions-${row.original.id}`}
-              >
-                <MoreVertical className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setLocation(`/selections/${row.original.id}`)}>
-                <Eye className="w-4 h-4 mr-2" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleEdit(row.original)}>
-                <Edit3 className="w-4 h-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => deleteSelectionMutation.mutate(row.original.id)}
-                className="text-destructive"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
-      size: 48,
-      meta: { defaultWidth: 48, align: "center", headerLabel: "Actions" },
-    },
-  ], [setLocation, deleteSelectionMutation]);
-
-  const pickerColumns = useMemo(
-    () => [
-      { id: "name", label: "Name" },
-      { id: "type", label: "Type" },
-      { id: "category", label: "Category" },
-      { id: "room", label: "Location" },
-      { id: "status", label: "Status" },
-      { id: "allowance", label: "Allowance" },
-      { id: "deadline", label: "Deadline" },
-      { id: "actions", label: "Actions" },
-    ],
-    [],
-  );
-
-  // DnD sensors for Kanban board
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  // Kanban columns - using "Open" instead of "Pending" for client portal terminology
-  const kanbanColumns = [
-    { id: 'draft', title: 'Draft', color: '#eab308' },
-    { id: 'pending', title: 'Open', color: '#3b82f6' },
-    { id: 'approved', title: 'Approved', color: '#22c55e' },
-    { id: 'completed', title: 'Completed', color: '#16a34a' },
-  ];
-
-  // Get selections by status for Kanban
-  const getSelectionsByStatus = (status: string) => {
-    return filteredSelections.filter(s => s.status === status);
-  };
-
-  // Handle drag start
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
-  // Handle drag end - update selection status
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-
-    if (!over) return;
-
-    const activeSelection = filteredSelections.find(s => s.id === active.id);
-    if (!activeSelection) return;
-
-    const overId = over.id as string;
-
-    // Determine target column - either directly on column or on a card within a column
-    let targetColumnId: string | undefined;
-    
-    // Check if dropped directly on a column
-    const directColumn = kanbanColumns.find(col => col.id === overId);
-    if (directColumn) {
-      targetColumnId = directColumn.id;
-    } else {
-      // Dropped on a card - get the destination column from the sortable containerId
-      // or from the over card's stored columnId
-      const overData = over.data?.current as any;
-      if (overData?.sortable?.containerId) {
-        targetColumnId = overData.sortable.containerId;
-      } else if (overData?.columnId) {
-        targetColumnId = overData.columnId;
-      }
-    }
-    
-    // Update status if dropped on a different column
-    if (targetColumnId && activeSelection.status !== targetColumnId) {
-      updateSelectionMutation.mutate({
-        id: activeSelection.id,
-        data: { status: targetColumnId }
-      });
-    }
-  };
-
-  // Get the active selection for drag overlay
-  const activeSelection = activeId ? filteredSelections.find(s => s.id === activeId) : null;
+  const handleEdit = (id: string) => setLocation(`/selections/${id}`);
+  const handleDelete = (id: string) => deleteSelectionMutation.mutate(id);
 
   if (!currentProject) {
     return (
@@ -849,314 +692,259 @@ export default function Selections() {
     );
   }
 
+  // Status tab definition
+  const tabs: { key: "all" | DerivedStatus; label: string; count: number }[] = [
+    { key: "all", label: "All", count: stats.total },
+    { key: "open", label: "Open", count: stats.open },
+    { key: "submitted", label: "Submitted", count: stats.submitted },
+    { key: "approved", label: "Approved", count: stats.approved },
+    { key: "overdue", label: "Overdue", count: stats.overdue },
+  ];
+
+  const varianceMeta = formatVarianceCents(stats.variance);
+
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Row 1 - Breadcrumbs & Add Button (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Project Name (Breadcrumb style) */}
+      {/* Top bar - page title + add button */}
+      <div className="h-9 bg-background flex items-center justify-between px-4 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {currentProject.name} / Selections
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-selection-count">
-            {filteredSelections.length} items
-          </Badge>
+          <span className="text-xs text-muted-foreground" data-testid="text-selection-count">
+            {filtered.length} of {stats.total} items
+          </span>
+        </div>
+        <button
+          className="h-7 px-2.5 text-xs rounded-md bg-primary text-white hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
+          onClick={handleAddSelection}
+          disabled={createSelectionMutation.isPending}
+          data-testid="button-add-selection"
+        >
+          {createSelectionMutation.isPending ? (
+            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Plus className="w-3 h-3" />
+          )}
+          <span>Add Selection</span>
+        </button>
+      </div>
+
+      {/* Summary strip */}
+      <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0 flex-wrap">
+        {/* Left: stat cards */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <StatCard
+            value={stats.total}
+            label="Total"
+            variant="default"
+            active={statusTab === "all"}
+            onClick={() => setStatusTab("all")}
+            testId="stat-total"
+          />
+          <StatCard
+            value={stats.open}
+            label="Open"
+            variant="primary"
+            active={statusTab === "open"}
+            onClick={() => setStatusTab("open")}
+            testId="stat-open"
+          />
+          <StatCard
+            value={stats.submitted}
+            label="Submitted"
+            variant="amber"
+            active={statusTab === "submitted"}
+            onClick={() => setStatusTab("submitted")}
+            testId="stat-submitted"
+          />
+          <StatCard
+            value={stats.approved}
+            label="Approved"
+            variant="sage"
+            active={statusTab === "approved"}
+            onClick={() => setStatusTab("approved")}
+            testId="stat-approved"
+          />
+          <StatCard
+            value={stats.overdue}
+            label="Overdue"
+            variant="coral"
+            active={statusTab === "overdue"}
+            onClick={() => setStatusTab("overdue")}
+            testId="stat-overdue"
+          />
         </div>
 
-        {/* Right: Add Selection Button */}
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleAddSelection}
-            disabled={createSelectionMutation.isPending}
-            data-testid="button-add-selection"
-          >
-            {createSelectionMutation.isPending ? (
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Plus className="w-3 h-3" />
-            )}
-            <span>Add Selection</span>
-          </button>
+        {/* Right: budget summary */}
+        <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center gap-6">
+          <div>
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Allowance</div>
+            <div className="text-[13px] font-bold text-foreground tabular-nums" data-testid="text-total-allowance">
+              {formatMoneyCents(stats.totalAllowance)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Actual</div>
+            <div
+              className={`text-[13px] font-bold tabular-nums ${
+                stats.variance > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"
+              }`}
+              data-testid="text-total-actual"
+            >
+              {formatMoneyCents(stats.totalActual)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Variance</div>
+            <div
+              className={`text-[13px] font-bold tabular-nums ${
+                varianceMeta.tone === "over"
+                  ? "text-[hsl(var(--coral))]"
+                  : varianceMeta.tone === "under"
+                    ? "text-[hsl(var(--sage))]"
+                    : "text-foreground"
+              }`}
+              data-testid="text-total-variance"
+            >
+              {varianceMeta.text}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Row 2 - Search, Filters & Type Toggles (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Search + Filters + Divider + Type Toggles */}
-        <div className="flex items-center gap-1.5 flex-1">
-          {/* Search */}
-          <div className="relative w-48">
+      {/* Filter bar */}
+      <div className="h-11 bg-background flex items-center justify-between px-4 gap-3 border-b border-border flex-shrink-0">
+        {/* Status tabs */}
+        <div className="flex items-center gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setStatusTab(tab.key)}
+              data-testid={`tab-${tab.key}`}
+              className={`rounded-md px-3 py-1.5 text-xs flex items-center gap-1.5 ${
+                statusTab === tab.key
+                  ? "bg-primary/10 text-primary font-semibold"
+                  : "text-muted-foreground hover:text-foreground hover-elevate"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className="opacity-70 tabular-nums">{tab.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Search + category */}
+        <div className="flex items-center gap-2">
+          <div className="relative w-56">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
-              placeholder="Search..."
+              placeholder="Search selections…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              className="pl-7 pr-2 h-7 text-xs"
               data-testid="input-search-selections"
             />
           </div>
-
-          {/* Category Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Category</span>
-                {categoryFilter && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
-                    1
-                  </Badge>
-                )}
+              <button
+                className="h-7 px-2.5 text-xs border border-border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-category-filter"
+              >
+                <span>{categoryFilter || "Category"}</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setCategoryFilter("")}>
                 <span className={!categoryFilter ? "font-medium" : ""}>All Categories</span>
               </DropdownMenuItem>
-              {selectionCategories?.options?.map(option => (
-                <DropdownMenuItem 
-                  key={option.key} 
-                  onClick={() => setCategoryFilter(option.name)}
-                  className={categoryFilter === option.name ? "bg-accent" : ""}
+              {selectionCategories?.options?.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.key}
+                  onClick={() => setCategoryFilter(opt.name)}
+                  className={categoryFilter === opt.name ? "bg-accent" : ""}
                 >
-                  {option.name}
+                  {opt.name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Location Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Location</span>
-                {locationFilter && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-data flex items-center justify-center">
-                    1
-                  </Badge>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setLocationFilter("")}>
-                <span className={!locationFilter ? "font-medium" : ""}>All Locations</span>
-              </DropdownMenuItem>
-              {locationCategories?.options?.map(option => (
-                <DropdownMenuItem 
-                  key={option.key} 
-                  onClick={() => setLocationFilter(option.name)}
-                  className={locationFilter === option.name ? "bg-accent" : ""}
-                >
-                  {option.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Subtle Divider */}
-          <div className="w-px h-4 bg-border mx-1" />
-
-          {/* Selections Toggle */}
-          <button
-            onClick={() => setShowSelections(!showSelections)}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              showSelections 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-toggle-selections"
-          >
-            <Boxes className="w-3 h-3" />
-            <span>Selections</span>
-          </button>
-
-          {/* Design Toggle */}
-          <button
-            onClick={() => setShowDesign(!showDesign)}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              showDesign 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-toggle-design"
-          >
-            <Palette className="w-3 h-3" />
-            <span>Design</span>
-          </button>
-
-          {/* Subtle Divider */}
-          <div className="w-px h-4 bg-border mx-1" />
-
-          {/* View Toggle */}
-          <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`h-5 w-5 rounded flex items-center justify-center ${
-                viewMode === 'list' 
-                  ? 'bg-primary text-white' 
-                  : 'hover-elevate text-muted-foreground'
-              }`}
-              data-testid="button-view-list"
-              title="List View"
-            >
-              <LayoutList className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => setViewMode('board')}
-              className={`h-5 w-5 rounded flex items-center justify-center ${
-                viewMode === 'board' 
-                  ? 'bg-primary text-white' 
-                  : 'hover-elevate text-muted-foreground'
-              }`}
-              data-testid="button-view-board"
-              title="Board View"
-            >
-              <LayoutGrid className="w-3 h-3" />
-            </button>
-          </div>
         </div>
-
-        {/* Right: Column Picker (list view only) + Grouping Toggle */}
-        {viewMode === 'list' && (
-          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                data-testid="button-column-picker"
-                title="Columns"
-              >
-                <Columns3 className="w-3 h-3" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="p-0 w-auto">
-              <DataTableColumnPicker storageKey="selections" columns={pickerColumns} />
-            </PopoverContent>
-          </Popover>
-        )}
-        <DropdownMenu open={showGroupingMenu} onOpenChange={setShowGroupingMenu}>
-          <DropdownMenuTrigger asChild>
-            <button 
-              className={`h-6 w-6 text-xs border rounded-md ${
-                groupBy !== 'none' 
-                  ? 'bg-primary text-white border-primary/20' 
-                  : 'hover-elevate'
-              } active-elevate-2 flex items-center justify-center`}
-              data-testid="button-grouping"
-            >
-              <Layers className="w-3 h-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setGroupBy('none')}>
-              <span className={groupBy === 'none' ? "font-medium" : ""}>No Grouping</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setGroupBy('category')}>
-              <span className={groupBy === 'category' ? "font-medium" : ""}>Group by Category</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setGroupBy('room')}>
-              <span className={groupBy === 'room' ? "font-medium" : ""}>Group by Location</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setGroupBy('status')}>
-              <span className={groupBy === 'status' ? "font-medium" : ""}>Group by Status</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-auto p-3">
-        {/* Loading State */}
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {/* Table header */}
+        <div className="grid grid-cols-[24px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
+          <div></div>
+          <div></div>
+          <div>Selection</div>
+          <div>Category</div>
+          <div>Location</div>
+          <div>Status</div>
+          <div className="text-right">Allowance</div>
+          <div className="text-right">Actual</div>
+          <div className="text-right">Variance</div>
+          <div>Deadline</div>
+          <div className="text-center">Options</div>
+          <div></div>
+        </div>
+
+        {/* Body */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {[...Array(6)].map((_, i) => (
-              <Card key={i} className="h-20 animate-pulse rounded-xl">
-                <CardContent className="p-2 h-full flex flex-col justify-between">
-                  <div className="h-4 bg-muted rounded w-3/4"></div>
-                  <div className="h-3 bg-muted rounded w-1/2"></div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : filteredSelections.length === 0 ? (
+          <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading selections…</div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-12">
             <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">No selections found</h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm ? "Try adjusting your search terms." : "Create your first selection to get started."}
+            <h3 className="text-base font-medium mb-2">No selections found</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              {searchTerm || categoryFilter || statusTab !== "all"
+                ? "Try adjusting your filters."
+                : "Create your first selection to get started."}
             </p>
-            {!searchTerm && (
-              <Button onClick={handleAddSelection} disabled={createSelectionMutation.isPending}>
-                {createSelectionMutation.isPending ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-2" />
-                )}
+            {!searchTerm && !categoryFilter && statusTab === "all" && (
+              <Button onClick={handleAddSelection} disabled={createSelectionMutation.isPending} size="sm">
+                <Plus className="w-4 h-4 mr-2" />
                 Add Selection
               </Button>
             )}
           </div>
-        ) : viewMode === 'board' ? (
-          /* Kanban Board View */
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="flex gap-4 overflow-x-auto pb-4">
-              {kanbanColumns.map((column) => (
-                <KanbanColumn
-                  key={column.id}
-                  column={column}
-                  selections={getSelectionsByStatus(column.id)}
-                  onCardClick={(id) => setLocation(`/selections/${id}`)}
-                  onEdit={handleEdit}
-                  onDelete={(id) => deleteSelectionMutation.mutate(id)}
-                />
-              ))}
-            </div>
-            <DragOverlay>
-              {activeSelection && (
-                <SelectionCardCompact
-                  selection={activeSelection}
-                  onClick={() => {}}
-                  onEdit={() => {}}
-                  onDelete={() => {}}
-                  isDragging
-                />
-              )}
-            </DragOverlay>
-          </DndContext>
         ) : (
-          /* List View with shared DataTable */
-          <div className="space-y-6">
-            {Object.entries(groupedSelections).map(([groupName, groupSelections]) => (
-              <div key={groupName} className="space-y-2">
-                {groupBy !== 'none' && (
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-foreground">{groupName}</h3>
-                    <Badge variant="secondary" className="text-xs">
-                      {groupSelections.length}
-                    </Badge>
-                  </div>
-                )}
-
-                <div className="border rounded-md overflow-hidden">
-                  <DataTable
-                    data={groupSelections}
-                    columns={selectionColumns}
-                    storageKey={groupBy === 'none' ? "selections" : `selections-group-${groupName}`}
-                    legacyConfigKey="selections-column-config-v1"
-                    rowKey={(s) => s.id}
-                    onRowClick={(s) => setLocation(`/selections/${s.id}`)}
-                  />
-                </div>
-              </div>
+          <div>
+            {filtered.map((sel) => (
+              <SelectionRow
+                key={sel.id}
+                selection={sel}
+                expanded={expandedRows.has(sel.id)}
+                onToggleExpand={() => toggleExpand(sel.id)}
+                onSelectOption={(selectionId, optionId) =>
+                  selectOptionMutation.mutate({ selectionId, optionId })
+                }
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                isPending={selectOptionMutation.isPending}
+              />
             ))}
           </div>
         )}
       </div>
 
+      {/* Sticky footer */}
+      <div className="flex-none h-11 bg-muted/30 border-t border-border flex items-center justify-between px-4 text-xs text-muted-foreground flex-shrink-0">
+        <span data-testid="text-footer-count">
+          {filtered.length} of {stats.total} selections shown
+        </span>
+        <span data-testid="text-footer-summary">
+          Approved spend: <span className="text-foreground font-medium tabular-nums">{formatMoneyCents(approvedSpend)}</span>
+          {" · "}
+          Pending: <span className="text-foreground font-medium tabular-nums">{formatMoneyCents(stats.pendingAmount)}</span>
+          {" across "}
+          <span className="text-foreground font-medium">{stats.openCount}</span>
+          {" open selections"}
+        </span>
+      </div>
     </div>
   );
 }
