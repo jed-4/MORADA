@@ -25,7 +25,10 @@ import {
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
+  MoreVertical,
   FolderOpen,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { type Estimate } from "@shared/schema";
 
