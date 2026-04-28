@@ -563,7 +563,7 @@ export default function Timesheets() {
         id: "project",
         accessorFn: (t) => getProjectName(t.projectId),
         header: "Project",
-        meta: { headerLabel: "Project", defaultWidth: 120 },
+        meta: { headerLabel: "Project", defaultWidth: 120, defaultHidden: true },
         cell: ({ row }) => (
           <span className="text-table truncate text-muted-foreground">
             {getProjectName(row.original.projectId)}
@@ -622,11 +622,17 @@ export default function Timesheets() {
         accessorFn: (t) => getNetHours(t),
         header: "Hours",
         meta: { headerLabel: "Hours", defaultWidth: 50 },
-        cell: ({ row }) => (
-          <span className="text-table font-medium tabular-nums">
-            {formatDuration(getNetHours(row.original))}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const hrs = getNetHours(row.original);
+          if (hrs > 0) {
+            return (
+              <span className="font-semibold text-[13px] text-primary tabular-nums">
+                {formatDuration(hrs)}
+              </span>
+            );
+          }
+          return <span className="text-table text-muted-foreground font-normal tabular-nums">&mdash;</span>;
+        },
       },
       {
         id: "rate",
@@ -634,11 +640,17 @@ export default function Timesheets() {
         header: "Rate",
         enableSorting: false,
         meta: { headerLabel: "Rate", defaultWidth: 50 },
-        cell: ({ row }) => (
-          <span className="text-table text-muted-foreground tabular-nums">
-            ${row.original.hourlyRate ? parseFloat(row.original.hourlyRate).toFixed(0) : "0"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const rate = row.original.hourlyRate ? parseFloat(row.original.hourlyRate) : 0;
+          if (rate > 0) {
+            return (
+              <span className="text-table text-muted-foreground tabular-nums">
+                ${rate.toFixed(0)}
+              </span>
+            );
+          }
+          return <span className="text-table text-muted-foreground tabular-nums">&mdash;</span>;
+        },
       },
       {
         id: "total",
@@ -646,18 +658,25 @@ export default function Timesheets() {
         header: "Total",
         enableSorting: false,
         meta: { headerLabel: "Total", defaultWidth: 60, align: "right" },
-        cell: ({ row }) => (
-          <span className="text-table font-semibold tabular-nums">
-            ${row.original.total ? parseFloat(row.original.total).toFixed(2) : "0.00"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const hasRate = row.original.hourlyRate && parseFloat(row.original.hourlyRate) > 0;
+          if (!hasRate) {
+            return <span className="text-table text-muted-foreground tabular-nums">&mdash;</span>;
+          }
+          const total = row.original.total ? parseFloat(row.original.total) : 0;
+          return (
+            <span className="text-table font-medium text-foreground tabular-nums">
+              ${total.toFixed(2)}
+            </span>
+          );
+        },
       },
       {
         id: "labels",
         accessorFn: (t) => (Array.isArray(t.labels) ? (t.labels as string[]).join(",") : ""),
         header: "Labels",
         enableSorting: false,
-        meta: { headerLabel: "Labels", defaultWidth: 100 },
+        meta: { headerLabel: "Labels", defaultWidth: 100, defaultHidden: true },
         cell: ({ row }) => {
           const labels = row.original.labels;
           if (Array.isArray(labels) && (labels as string[]).length > 0) {
@@ -681,9 +700,27 @@ export default function Timesheets() {
         meta: { headerLabel: "Status", defaultWidth: 70 },
         cell: ({ row }) => {
           const s = row.original.status;
-          if (s === "approved") return <Badge variant="outline" className="text-data font-medium bg-green-50 dark:bg-green-900/20 text-status-success dark:text-green-400 border-green-200 dark:border-green-800">Approved</Badge>;
-          if (s === "submitted") return <Badge variant="outline" className="text-data font-medium bg-muted text-secondary border-border">Submitted</Badge>;
-          if (s === "rejected") return <Badge variant="outline" className="text-data font-medium bg-red-50 dark:bg-red-900/20 text-status-danger dark:text-red-400 border-red-200 dark:border-red-800">Rejected</Badge>;
+          if (s === "approved") {
+            return (
+              <Badge variant="outline" className="text-data font-medium bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border border-[hsl(var(--sage))]">
+                Approved
+              </Badge>
+            );
+          }
+          if (s === "submitted") {
+            return (
+              <Badge variant="outline" className="text-data font-medium bg-primary/10 text-primary border border-primary/20">
+                Submitted
+              </Badge>
+            );
+          }
+          if (s === "rejected") {
+            return (
+              <Badge variant="outline" className="text-data font-medium bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border border-[hsl(var(--coral))]">
+                Rejected
+              </Badge>
+            );
+          }
           return <Badge variant="secondary" className="text-data font-medium">{s}</Badge>;
         },
       },
@@ -692,7 +729,7 @@ export default function Timesheets() {
         accessorKey: "poStatus",
         header: "PO Status",
         enableSorting: false,
-        meta: { headerLabel: "PO Status", defaultWidth: 90 },
+        meta: { headerLabel: "PO Status", defaultWidth: 90, defaultHidden: true },
         cell: ({ row }) => {
           const p = row.original.poStatus;
           if (p === "awaiting_po") return <Badge variant="outline" className="text-data font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">Awaiting PO</Badge>;
@@ -1204,7 +1241,7 @@ export default function Timesheets() {
       </div>
 
       {/* Content Area */}
-      <div ref={contentScrollRef} className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
+      <div ref={contentScrollRef} className="flex-1 overflow-auto min-h-0 border-x border-b border-border rounded-b-lg bg-card">
         {loadingTimesheets ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading timesheets...</div>
@@ -1784,13 +1821,13 @@ export default function Timesheets() {
             rowClassName={(t) =>
               selectedTimesheets.includes(t.id) ? "bg-muted/30 dark:bg-muted/20" : ""
             }
-            className="max-h-[calc(100vh-260px)]"
+            headerClassName="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground"
           />
         )}
       </div>
 
       {filteredTimesheets.length > 0 && (
-        <div className="sticky bottom-0 z-50 border-t border-border bg-card">
+        <div className="flex-none sticky bottom-0 z-50 border-t border-border bg-muted/30">
           {selectedTimesheets.length > 0 ? (
             <div className="flex items-center justify-between gap-4 px-3 py-2">
               <div className="flex items-center gap-2">
@@ -1864,33 +1901,49 @@ export default function Timesheets() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-end gap-4 px-3 py-2">
-              {(() => {
-                const statusGroups = [
-                  { key: "submitted", label: "Submitted", bgClass: "bg-muted", textClass: "text-secondary" },
-                  { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-status-success dark:text-green-300" },
-                  { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-status-danger dark:text-red-300" },
-                ];
-                return (
-                  <>
-                    {statusGroups.map(({ key, label, bgClass, textClass }) => {
-                      const entries = filteredTimesheets.filter(ts => ts.status === key);
-                      const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
-                      return (
-                        <div key={key} className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-data font-semibold ${bgClass} ${textClass}`}>
-                            {label}
-                          </span>
-                          <span className="text-table font-medium tabular-nums text-foreground">
-                            {formatDuration(totalHours)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </>
-                );
-              })()}
-            </div>
+            (() => {
+              const submittedEntries = filteredTimesheets.filter(ts => ts.status === "submitted");
+              const approvedEntries  = filteredTimesheets.filter(ts => ts.status === "approved");
+              const rejectedEntries  = filteredTimesheets.filter(ts => ts.status === "rejected");
+              const submittedHrs = submittedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+              const approvedHrs  = approvedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+              const rejectedHrs  = rejectedEntries.reduce((s, ts) => s + getNetHours(ts), 0);
+              const totalHrs     = filteredTimesheets.reduce((s, ts) => s + getNetHours(ts), 0);
+              const entryCount   = filteredTimesheets.length;
+              return (
+                <div className="flex items-center justify-between gap-4 h-11 px-4">
+                  <span className="text-table text-muted-foreground">
+                    {entryCount} {entryCount === 1 ? "entry" : "entries"}
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-data uppercase tracking-wider text-muted-foreground">Submitted</span>
+                      <span className="text-table tabular-nums text-primary font-medium">
+                        {submittedEntries.length} &middot; {formatDuration(submittedHrs)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-data uppercase tracking-wider text-muted-foreground">Approved</span>
+                      <span className="text-table tabular-nums text-[hsl(var(--sage))] font-medium">
+                        {approvedEntries.length} &middot; {formatDuration(approvedHrs)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-data uppercase tracking-wider text-muted-foreground">Rejected</span>
+                      <span className="text-table tabular-nums text-[hsl(var(--coral))] font-medium">
+                        {rejectedEntries.length} &middot; {formatDuration(rejectedHrs)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-data uppercase tracking-wider text-muted-foreground">Total</span>
+                      <span className="text-table tabular-nums font-semibold text-foreground">
+                        {formatDuration(totalHrs)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
           )}
         </div>
       )}

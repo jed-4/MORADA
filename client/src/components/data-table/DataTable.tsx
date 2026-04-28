@@ -66,6 +66,8 @@ export interface DataTableProps<TData> {
   emptyState?: React.ReactNode;
   /** Optional class on the outer scroll container. */
   className?: string;
+  /** Optional class merged onto every <th>. Useful for per-table compact header styling. */
+  headerClassName?: string;
   /** Row min-height in px (default 36). */
   rowHeight?: number;
   /**
@@ -147,9 +149,10 @@ interface DraggableHeaderProps {
   sticky: boolean;
   align?: "left" | "right" | "center";
   onContextMenu?: (e: React.MouseEvent) => void;
+  thClassName?: string;
 }
 
-function DraggableHeader({ id, children, width, pinned, sticky, align, onContextMenu }: DraggableHeaderProps) {
+function DraggableHeader({ id, children, width, pinned, sticky, align, onContextMenu, thClassName }: DraggableHeaderProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, over, active } =
     useSortable({ id, disabled: pinned });
 
@@ -188,6 +191,7 @@ function DraggableHeader({ id, children, width, pinned, sticky, align, onContext
         align === "right" && "text-right",
         align === "center" && "text-center",
         !pinned && "cursor-grab active:cursor-grabbing",
+        thClassName,
       )}
       {...dragProps}
     >
@@ -212,6 +216,7 @@ export function DataTable<TData>({
   rowClassName,
   emptyState,
   className,
+  headerClassName,
   rowHeight = 36,
   legacyConfigKey,
   getSubRows,
@@ -442,6 +447,7 @@ export function DataTable<TData>({
                           pinned={!!meta.pinned}
                           sticky={isSticky}
                           align={meta.align}
+                          thClassName={headerClassName}
                         >
                           <div
                             className={cn(

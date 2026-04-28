@@ -92,10 +92,12 @@
   --teal-light: 183 56% 92%;      /* #DFF5F6 */
   --sage: 147 39% 65%;            /* #82C8A2 */
   --sage-light: 146 51% 92%;      /* #E0F5E9 */
+  --sage-bg: 146 51% 92%;         /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
   --amber-light: 39 64% 91%;      /* #F7EDDA */
   --coral: 11 52% 70%;            /* #DA988A */
   --coral-light: 9 57% 93%;       /* #F7E5E2 */
+  --coral-bg: 9 57% 93%;          /* alias of --coral-light for status backgrounds */
   --rose: 328 43% 68%;            /* #D08AAF */
   --rose-light: 322 49% 92%;      /* #F5E2EE */
 
@@ -275,10 +277,12 @@
   --teal-light: 191 34% 15%;      /* #1A3035 */
   --sage: 147 39% 65%;            /* #82C8A2 */
   --sage-light: 144 28% 14%;      /* #1A2E22 */
+  --sage-bg: 144 28% 14%;         /* alias of --sage-light for status backgrounds */
   --amber: 42 54% 64%;            /* #D4B670 */
   --amber-light: 40 48% 12%;      /* #2E2410 */
   --coral: 11 52% 70%;            /* #DA988A */
   --coral-light: 5 31% 14%;       /* #2E1A18 */
+  --coral-bg: 5 31% 14%;          /* alias of --coral-light for status backgrounds */
   --rose: 328 43% 68%;            /* #D08AAF */
   --rose-light: 323 24% 13%;      /* #2A1A24 */
 
