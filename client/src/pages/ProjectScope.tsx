@@ -3386,11 +3386,11 @@ export default function ProjectScope() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="h-6 px-2 flex items-center gap-1 rounded-md border border-border/50 hover-elevate active-elevate-2"
+                className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                 data-testid="button-scope-options"
+                aria-label="Scope options"
               >
                 <MoreHorizontal className="h-3 w-3" />
-                <span className="text-data font-medium">Options</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
