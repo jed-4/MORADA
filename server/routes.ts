@@ -17072,7 +17072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "User not authenticated" });
       }
-      const user = (req.user as any).dbUser;
+      const user = (req.user as any).dbUser ?? req.user;
       if (!user?.id || !user?.companyId) {
         return res.status(401).json({ error: "User not found in database" });
       }
