@@ -429,7 +429,38 @@ export default function Allowances() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Top bar (consolidated toolbar) */}
-      <div className="h-9 bg-background flex items-center justify-end px-4 gap-1 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-4 gap-1 flex-shrink-0">
+        {/* PC / PS / All segmented toggle (left) */}
+        <div className="bg-muted/40 rounded-md p-0.5 h-7 flex items-center" role="tablist">
+          {(
+            [
+              { key: "all", label: "All", count: totalCount },
+              { key: "pc", label: "Prime Cost", count: pcCount },
+              { key: "ps", label: "Prov Sum", count: psCount },
+            ] as const
+          ).map((seg) => {
+            const active = typeFilter === seg.key;
+            return (
+              <button
+                key={seg.key}
+                type="button"
+                onClick={() => setTypeFilter(seg.key)}
+                className={`h-6 px-2.5 rounded text-[11px] flex items-center gap-1.5 ${
+                  active
+                    ? "bg-card shadow-sm text-foreground font-semibold"
+                    : "text-muted-foreground hover-elevate"
+                }`}
+                data-testid={`button-filter-${seg.key}`}
+              >
+                <span>{seg.label}</span>
+                <span className="opacity-70 tabular-nums">· {seg.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right-side actions */}
+        <div className="flex items-center gap-1">
         {/* Search icon button (popover with input) */}
         <Popover>
           <PopoverTrigger asChild>
@@ -577,6 +608,7 @@ export default function Allowances() {
             </div>
           </PopoverContent>
         </Popover>
+        </div>
       </div>
 
       {/* Summary strip (60px) */}
