@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy } from "lucide-react";
+import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -976,7 +976,7 @@ export default function Timesheets() {
                 }`}
                 data-testid="button-filters"
               >
-                <Settings2 className="w-3 h-3" />
+                <Filter className="w-3 h-3" />
                 <span>Filters</span>
                 {activeFilterCount > 0 && (
                   <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
@@ -1353,15 +1353,20 @@ export default function Timesheets() {
           </button>
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-options"
-              >
-                <span>Options</span>
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                    data-testid="button-options"
+                    aria-label="Options"
+                  >
+                    <MoreHorizontal className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Options</TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="end" className="w-52">
               {!activeTimesheet && (
                 <DropdownMenuItem
