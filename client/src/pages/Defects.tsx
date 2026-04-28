@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Plus,
   LayoutList,
@@ -25,6 +26,8 @@ import {
   MoreVertical,
   MapPin,
   X,
+  SlidersHorizontal,
+  Settings2,
 } from "lucide-react";
 import type { Defect } from "@shared/schema";
 import { DefectFormDialog } from "@/components/defects/DefectFormDialog";
@@ -49,6 +52,7 @@ import { format } from "date-fns";
 
 type ViewMode = "list" | "kanban";
 const VIEW_KEY = "defects-view";
+const HIDE_STATS_KEY = "defects-hide-stats";
 
 export default function Defects() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -67,6 +71,19 @@ export default function Defects() {
       /* noop */
     }
   }, [currentView]);
+
+  const [hideStats, setHideStats] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(HIDE_STATS_KEY) === "1";
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HIDE_STATS_KEY, hideStats ? "1" : "0");
+    } catch {
+      /* noop */
+    }
+  }, [hideStats]);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -172,144 +189,145 @@ export default function Defects() {
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="h-9 bg-background flex items-center justify-between px-6 gap-3 border-b border-border flex-shrink-0">
-        {/* Left: View toggle */}
-        <div
-          className="bg-muted/40 rounded-md p-0.5 h-[28px] flex w-[148px]"
-          data-testid="view-toggle"
-        >
-          <button
-            onClick={() => setCurrentView("list")}
-            className={`flex-1 flex items-center justify-center gap-1 rounded text-[11px] transition-colors ${
-              currentView === "list"
-                ? "bg-card shadow-sm text-foreground font-semibold"
-                : "text-muted-foreground"
-            }`}
-            data-testid="button-list-view"
-          >
-            <LayoutList className="w-3 h-3" />
-            <span>List</span>
-          </button>
-          <button
-            onClick={() => setCurrentView("kanban")}
-            className={`flex-1 flex items-center justify-center gap-1 rounded text-[11px] transition-colors ${
-              currentView === "kanban"
-                ? "bg-card shadow-sm text-foreground font-semibold"
-                : "text-muted-foreground"
-            }`}
-            data-testid="button-kanban-view"
-          >
-            <Columns3 className="w-3 h-3" />
-            <span>Kanban</span>
-          </button>
-        </div>
-
-        {/* Right: Search + filters + add */}
+        {/* Left: View toggle (icon only) + search + filter */}
         <div className="flex items-center gap-1.5">
-          {/* Search */}
-          <div className="relative w-56">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search defects..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-7 text-xs"
-              data-testid="defects-search-input"
-            />
+          <div
+            className="bg-muted/40 rounded-md p-0.5 h-[28px] flex"
+            data-testid="view-toggle"
+          >
+            <button
+              onClick={() => setCurrentView("list")}
+              className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+                currentView === "list"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+              data-testid="button-list-view"
+              aria-label="List view"
+              title="List view"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setCurrentView("kanban")}
+              className={`w-7 h-full flex items-center justify-center rounded transition-colors ${
+                currentView === "kanban"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+              data-testid="button-kanban-view"
+              aria-label="Kanban view"
+              title="Kanban view"
+            >
+              <Columns3 className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* Status */}
+          {/* Search icon → popover with input */}
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="filter-status-popover"
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
+                data-testid="button-search"
+                aria-label="Search defects"
+                title="Search"
               >
-                <span>Status</span>
-                {selectedStatus !== "All" && (
-                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
-                    1
+                <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                {searchTerm && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="start">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search defects..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 pr-7 h-8 text-xs"
+                  data-testid="defects-search-input"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Filter icon → popover with all three filters */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center relative"
+                data-testid="button-filter"
+                aria-label="Filter defects"
+                title="Filter"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
+                    {activeFilterCount}
                   </span>
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-48 p-1.5" align="end">
-              <FilterList
-                value={selectedStatus}
-                onChange={setSelectedStatus}
-                allLabel="All statuses"
-                options={statusOptions}
-                testIdPrefix="filter-status"
-              />
-            </PopoverContent>
-          </Popover>
-
-          {/* Priority */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="filter-priority-popover"
-              >
-                <span>Priority</span>
-                {selectedPriority !== "All" && (
-                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
-                    1
-                  </span>
+            <PopoverContent className="w-60 p-2" align="start">
+              <div className="space-y-3">
+                <FilterGroup
+                  label="Status"
+                  value={selectedStatus}
+                  onChange={setSelectedStatus}
+                  allLabel="All statuses"
+                  options={statusOptions}
+                  testIdPrefix="filter-status"
+                />
+                <FilterGroup
+                  label="Priority"
+                  value={selectedPriority}
+                  onChange={setSelectedPriority}
+                  allLabel="All priorities"
+                  options={priorityOptions}
+                  testIdPrefix="filter-priority"
+                />
+                <FilterGroup
+                  label="Type"
+                  value={selectedType}
+                  onChange={setSelectedType}
+                  allLabel="All types"
+                  options={typeOptions}
+                  testIdPrefix="filter-type"
+                />
+                {activeFilterCount > 0 && (
+                  <div className="pt-1.5 border-t border-border">
+                    <button
+                      onClick={() => {
+                        setSelectedStatus("All");
+                        setSelectedPriority("All");
+                        setSelectedType("All");
+                      }}
+                      className="w-full h-7 text-xs text-muted-foreground hover:text-foreground rounded hover-elevate flex items-center justify-center gap-1"
+                      data-testid="clear-filters"
+                    >
+                      <X className="w-3 h-3" />
+                      Clear filters
+                    </button>
+                  </div>
                 )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-1.5" align="end">
-              <FilterList
-                value={selectedPriority}
-                onChange={setSelectedPriority}
-                allLabel="All priorities"
-                options={priorityOptions}
-                testIdPrefix="filter-priority"
-              />
+              </div>
             </PopoverContent>
           </Popover>
+        </div>
 
-          {/* Type */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="filter-type-popover"
-              >
-                <span>Type</span>
-                {selectedType !== "All" && (
-                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] h-3.5 min-w-[14px] px-1">
-                    1
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-1.5" align="end">
-              <FilterList
-                value={selectedType}
-                onChange={setSelectedType}
-                allLabel="All types"
-                options={typeOptions}
-                testIdPrefix="filter-type"
-              />
-            </PopoverContent>
-          </Popover>
-
-          {activeFilterCount > 0 && (
-            <button
-              onClick={() => {
-                setSelectedStatus("All");
-                setSelectedPriority("All");
-                setSelectedType("All");
-              }}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              data-testid="clear-filters"
-            >
-              <X className="w-3 h-3" />
-              Clear
-            </button>
-          )}
-
+        {/* Right: Add + options */}
+        <div className="flex items-center gap-1.5">
           <button
             className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
             onClick={() => setIsCreateDialogOpen(true)}
@@ -318,48 +336,91 @@ export default function Defects() {
             <Plus className="w-3 h-3" />
             <span>Add</span>
           </button>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-options"
+                aria-label="Options"
+                title="Options"
+              >
+                <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-60 p-2" align="end">
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
+                  Display
+                </div>
+                <label
+                  className="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover-elevate cursor-pointer"
+                  data-testid="option-hide-stats"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-xs text-foreground">
+                      Hide summary cards
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Hide the coloured Open / In Progress strip
+                    </span>
+                  </div>
+                  <Switch
+                    checked={hideStats}
+                    onCheckedChange={setHideStats}
+                    data-testid="switch-hide-stats"
+                  />
+                </label>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
       {/* Summary strip */}
-      <div className="flex items-center gap-3 px-6 py-2 border-b border-border flex-shrink-0">
-        <StatCard
-          label="Open"
-          value={stats.open}
-          variant="coral"
-          testId="stat-open"
-        />
-        <StatCard
-          label="In Progress"
-          value={stats.inProgress}
-          variant="amber"
-          testId="stat-in-progress"
-        />
-        <StatCard
-          label="Resolved"
-          value={stats.resolved}
-          variant="sage"
-          testId="stat-resolved"
-        />
-        <StatCard
-          label="Closed"
-          value={stats.closed}
-          variant="muted"
-          testId="stat-closed"
-        />
-        <StatCard
-          label="Critical"
-          value={stats.critical}
-          variant="coral"
-          testId="stat-critical"
-        />
-        <StatCard
-          label="Avg Open Age"
-          value={`${stats.avgAge}d`}
-          variant="default"
-          testId="stat-avg-age"
-        />
-      </div>
+      {!hideStats && (
+        <div
+          className="flex items-center gap-3 px-6 py-2 border-b border-border flex-shrink-0"
+          data-testid="stats-strip"
+        >
+          <StatCard
+            label="Open"
+            value={stats.open}
+            variant="coral"
+            testId="stat-open"
+          />
+          <StatCard
+            label="In Progress"
+            value={stats.inProgress}
+            variant="amber"
+            testId="stat-in-progress"
+          />
+          <StatCard
+            label="Resolved"
+            value={stats.resolved}
+            variant="sage"
+            testId="stat-resolved"
+          />
+          <StatCard
+            label="Closed"
+            value={stats.closed}
+            variant="muted"
+            testId="stat-closed"
+          />
+          <StatCard
+            label="Critical"
+            value={stats.critical}
+            variant="coral"
+            testId="stat-critical"
+          />
+          <StatCard
+            label="Avg Open Age"
+            value={`${stats.avgAge}d`}
+            variant="default"
+            testId="stat-avg-age"
+          />
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
@@ -482,7 +543,8 @@ export default function Defects() {
 
 /* ---------- Subcomponents ---------- */
 
-interface FilterListProps {
+interface FilterGroupProps {
+  label: string;
   value: string;
   onChange: (v: string) => void;
   allLabel: string;
@@ -490,34 +552,39 @@ interface FilterListProps {
   testIdPrefix: string;
 }
 
-function FilterList({ value, onChange, allLabel, options, testIdPrefix }: FilterListProps) {
+function FilterGroup({
+  label,
+  value,
+  onChange,
+  allLabel,
+  options,
+  testIdPrefix,
+}: FilterGroupProps) {
+  const items = [{ key: "All", name: allLabel }, ...options];
   return (
-    <div className="space-y-0.5">
-      <button
-        onClick={() => onChange("All")}
-        className={`w-full text-left px-2 py-1.5 text-xs rounded transition-colors ${
-          value === "All"
-            ? "bg-primary/10 text-primary font-medium"
-            : "text-foreground hover-elevate"
-        }`}
-        data-testid={`${testIdPrefix}-all`}
-      >
-        {allLabel}
-      </button>
-      {options.map((opt) => (
-        <button
-          key={opt.key}
-          onClick={() => onChange(opt.key)}
-          className={`w-full text-left px-2 py-1.5 text-xs rounded transition-colors ${
-            value === opt.key
-              ? "bg-primary/10 text-primary font-medium"
-              : "text-foreground hover-elevate"
-          }`}
-          data-testid={`${testIdPrefix}-${opt.key}`}
-        >
-          {opt.name}
-        </button>
-      ))}
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 px-1">
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {items.map((opt) => {
+          const isActive = value === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => onChange(opt.key)}
+              className={`h-6 px-2 text-[11px] rounded-md border transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-foreground border-border hover-elevate"
+              }`}
+              data-testid={`${testIdPrefix}-${opt.key}`}
+            >
+              {opt.name}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
