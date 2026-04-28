@@ -513,23 +513,28 @@ export default function Timesheets() {
         id: "select",
         enableSorting: false,
         enableHiding: false,
-        meta: { defaultWidth: 32, pinned: true, align: "left" },
+        meta: { defaultWidth: 16, pinned: true, align: "center" },
         header: () => (
-          <Checkbox
-            checked={
-              filteredTimesheets.length > 0 &&
-              selectedTimesheets.length === filteredTimesheets.length
-            }
-            onCheckedChange={(checked) => {
-              if (checked) setSelectedTimesheets(filteredTimesheets.map((t) => t.id));
-              else setSelectedTimesheets([]);
-            }}
-            className="h-3.5 w-3.5"
-            data-testid="checkbox-select-all"
-          />
+          <div className="flex items-center justify-center w-full">
+            <Checkbox
+              checked={
+                filteredTimesheets.length > 0 &&
+                selectedTimesheets.length === filteredTimesheets.length
+              }
+              onCheckedChange={(checked) => {
+                if (checked) setSelectedTimesheets(filteredTimesheets.map((t) => t.id));
+                else setSelectedTimesheets([]);
+              }}
+              className="h-3.5 w-3.5"
+              data-testid="checkbox-select-all"
+            />
+          </div>
         ),
         cell: ({ row }) => (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center justify-center w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Checkbox
               checked={selectedTimesheets.includes(row.original.id)}
               onCheckedChange={() => toggleSelect(row.original.id)}
@@ -611,11 +616,17 @@ export default function Timesheets() {
         header: "Break",
         enableSorting: false,
         meta: { headerLabel: "Break", defaultWidth: 45 },
-        cell: ({ row }) => (
-          <span className="text-table text-muted-foreground tabular-nums">
-            {row.original.breakDuration ? formatDuration(parseFloat(row.original.breakDuration)) : "-"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const brk = row.original.breakDuration ? parseFloat(row.original.breakDuration) : 0;
+          if (brk > 0) {
+            return (
+              <span className="text-table text-muted-foreground tabular-nums">
+                {formatDuration(brk)}
+              </span>
+            );
+          }
+          return <span className="text-table text-muted-foreground tabular-nums">&mdash;</span>;
+        },
       },
       {
         id: "hours",
