@@ -42,6 +42,8 @@ import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { RapidApprovalModal } from "@/components/RapidApprovalModal";
 import { SubcontractorPODialog } from "@/components/SubcontractorPODialog";
 import { TimesheetImportDialog } from "@/components/TimesheetImportDialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectSelect } from "@/components/ProjectSelect";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -511,6 +513,25 @@ export default function Timesheets() {
 
   const weeklySummary = getWeeklySummary();
 
+  // Rolled-up active-filter count + clear-all helper for the Filters popover
+  const activeFilterCount =
+    selectedProjects.length +
+    selectedUsers.length +
+    selectedStatuses.length +
+    selectedCostCodes.length +
+    selectedPhases.length +
+    (dateRangeType !== "all" ? 1 : 0);
+  const clearAllFilters = () => {
+    setSelectedProjects([]);
+    setSelectedUsers([]);
+    setSelectedStatuses([]);
+    setSelectedCostCodes([]);
+    setSelectedPhases([]);
+    setDateRangeType("all");
+    setCustomStartDate(undefined);
+    setCustomEndDate(undefined);
+  };
+
   // Export timesheets to Excel
   const handleExport = () => {
     const exportData = filteredTimesheets.map((timesheet) => ({
@@ -925,50 +946,332 @@ export default function Timesheets() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Panel - 2 rows connected to content */}
+      {/* Header Panel — single condensed row */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
-        {/* Row 1: Title + Action Buttons */}
-        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-        <h1 className="text-sm font-semibold">
-          {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            data-testid="button-import-timesheets"
-            title="Import from XLSX"
-          >
-            <Upload className="w-3 h-3" />
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={filteredTimesheets.length === 0}
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50 disabled:pointer-events-none"
-            data-testid="button-export-timesheets"
-            title="Export to Excel"
-          >
-            <Download className="w-3 h-3" />
-          </button>
-          {canApproveTimesheets && pendingTimesheets.length > 0 && (
-            <button
-              onClick={() => setIsRapidApprovalOpen(true)}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30 active-elevate-2 flex items-center gap-0.5"
-              data-testid="button-rapid-approval"
-            >
-              <Zap className="w-3 h-3" />
-              Approve ({pendingTimesheets.length})
-            </button>
-          )}
-          <button
-            onClick={() => setIsSubPODialogOpen(true)}
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-blue-50 dark:bg-blue-900/20 text-status-info dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 active-elevate-2 flex items-center gap-0.5"
-            data-testid="button-generate-sub-po"
-          >
-            <HardHat className="w-3 h-3" />
-            Sub PO
-          </button>
-          {activeTimesheet ? (
+        <div className="h-8 flex items-center gap-2 px-3">
+          {/* LEFT: Title + Search + Filters + (Stop pill if running) */}
+          <h1 className="text-sm font-semibold whitespace-nowrap">
+            {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
+          </h1>
+
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              data-testid="input-search-timesheets"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+            />
+          </div>
+
+          {/* Filters popover — rolls up Project, User, Status, Cost Code, Phase, Date Range */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${
+                  activeFilterCount > 0
+                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40"
+                    : ""
+                }`}
+                data-testid="button-filters"
+              >
+                <Settings2 className="w-3 h-3" />
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+                <ChevronDown className="w-3 h-3 opacity-50" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-3" align="start">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={clearAllFilters}
+                      className="text-xs text-muted-foreground hover:text-foreground hover-elevate active-elevate-2 px-1 rounded"
+                      data-testid="button-filters-clear"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Project (only when not in project context) */}
+                {!projectId && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Project</label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                            selectedProjects.length > 0 ? "bg-primary/10 border-primary/40" : ""
+                          }`}
+                          data-testid="button-filter-project"
+                        >
+                          <span className="truncate">
+                            {selectedProjects.length === 0
+                              ? "All projects"
+                              : `${selectedProjects.length} selected`}
+                          </span>
+                          <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="max-h-72 overflow-auto">
+                        {projects.map((project) => (
+                          <DropdownMenuItem
+                            key={project.id}
+                            className="flex items-center"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              const next = selectedProjects.includes(project.id)
+                                ? selectedProjects.filter((p) => p !== project.id)
+                                : [...selectedProjects, project.id];
+                              setSelectedProjects(next);
+                            }}
+                          >
+                            <Checkbox checked={selectedProjects.includes(project.id)} className="mr-2 pointer-events-none" />
+                            {project.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+
+                {/* User */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">User</label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                          selectedUsers.length > 0 ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid="button-filter-user"
+                      >
+                        <span className="truncate">
+                          {selectedUsers.length === 0 ? "All users" : `${selectedUsers.length} selected`}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="max-h-72 overflow-auto">
+                      {users.map((u: any) => (
+                        <DropdownMenuItem
+                          key={u.id}
+                          className="flex items-center"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            const next = selectedUsers.includes(u.id)
+                              ? selectedUsers.filter((x) => x !== u.id)
+                              : [...selectedUsers, u.id];
+                            setSelectedUsers(next);
+                          }}
+                        >
+                          <Checkbox checked={selectedUsers.includes(u.id)} className="mr-2 pointer-events-none" />
+                          {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || u.username}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Status */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Status</label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                          selectedStatuses.length > 0 ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid="button-filter-status"
+                      >
+                        <span className="truncate">
+                          {selectedStatuses.length === 0 ? "All statuses" : `${selectedStatuses.length} selected`}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {[
+                        { key: "submitted", name: "Submitted" },
+                        { key: "approved", name: "Approved" },
+                        { key: "rejected", name: "Rejected" },
+                      ].map((status) => (
+                        <DropdownMenuItem
+                          key={status.key}
+                          className="flex items-center"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            const next = selectedStatuses.includes(status.key)
+                              ? selectedStatuses.filter((s) => s !== status.key)
+                              : [...selectedStatuses, status.key];
+                            setSelectedStatuses(next);
+                          }}
+                        >
+                          <Checkbox checked={selectedStatuses.includes(status.key)} className="mr-2 pointer-events-none" />
+                          {status.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Cost Code */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Cost Code</label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                          selectedCostCodes.length > 0 ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid="button-filter-cost-code"
+                      >
+                        <span className="truncate">
+                          {selectedCostCodes.length === 0 ? "All cost codes" : `${selectedCostCodes.length} selected`}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="max-h-72 overflow-auto">
+                      {costCodes.map((costCode: any) => (
+                        <DropdownMenuItem
+                          key={costCode.id}
+                          className="flex items-center"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            const next = selectedCostCodes.includes(costCode.id)
+                              ? selectedCostCodes.filter((c) => c !== costCode.id)
+                              : [...selectedCostCodes, costCode.id];
+                            setSelectedCostCodes(next);
+                          }}
+                        >
+                          <Checkbox checked={selectedCostCodes.includes(costCode.id)} className="mr-2 pointer-events-none" />
+                          {costCode.code} - {costCode.name ?? costCode.title}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Phase */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Phase</label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                          selectedPhases.length > 0 ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid="button-filter-phase"
+                      >
+                        <span className="truncate">
+                          {selectedPhases.length === 0 ? "All phases" : `${selectedPhases.length} selected`}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {[
+                        { key: "lead", name: "Lead" },
+                        { key: "pre_construction", name: "Pre-Construction" },
+                        { key: "construction", name: "Construction" },
+                        { key: "post_construction", name: "Post-Construction" },
+                        { key: "archive", name: "Archive" },
+                      ].map((phase) => (
+                        <DropdownMenuItem
+                          key={phase.key}
+                          className="flex items-center"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            const next = selectedPhases.includes(phase.key)
+                              ? selectedPhases.filter((p) => p !== phase.key)
+                              : [...selectedPhases, phase.key];
+                            setSelectedPhases(next);
+                          }}
+                        >
+                          <Checkbox checked={selectedPhases.includes(phase.key)} className="mr-2 pointer-events-none" />
+                          {phase.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Date Range */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Date Range</label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`w-full h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between ${
+                          dateRangeType !== "all" ? "bg-primary/10 border-primary/40" : ""
+                        }`}
+                        data-testid="button-filter-date"
+                      >
+                        <span className="truncate flex items-center gap-1">
+                          <CalendarRange className="w-3 h-3" />
+                          {dateRangeType === "all" ? "All Time" :
+                            dateRangeType === "this-week" ? "This Week" :
+                            dateRangeType === "last-week" ? "Last Week" :
+                            "Custom"}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onClick={() => {
+                        setDateRangeType("all");
+                        setCustomStartDate(undefined);
+                        setCustomEndDate(undefined);
+                      }}>All Time</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDateRangeType("this-week")}>This Week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDateRangeType("last-week")}>Last Week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDateRangeType("custom")}>Custom Range</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {dateRangeType === "custom" && (
+                    <div className="flex items-center gap-1 pt-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="h-7 flex-1 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-start-date">
+                            <CalendarIcon className="w-3 h-3" />
+                            <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar mode="single" selected={customStartDate} onSelect={setCustomStartDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                      <span className="text-xs text-muted-foreground">to</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="h-7 flex-1 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-end-date">
+                            <CalendarIcon className="w-3 h-3" />
+                            <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar mode="single" selected={customEndDate} onSelect={setCustomEndDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Running-timer Stop pill stays inline as a status indicator */}
+          {activeTimesheet && (
             <button
               onClick={() => clockOutMutation.mutate()}
               disabled={clockOutMutation.isPending}
@@ -979,54 +1282,64 @@ export default function Timesheets() {
               <span className="font-mono">{elapsedTime}</span>
               <span>Stop</span>
             </button>
-          ) : (
-            <Popover open={isClockInOpen} onOpenChange={setIsClockInOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-green-600 text-white border-green-600/20 hover:bg-green-700 active-elevate-2 flex items-center gap-0.5"
-                  data-testid="button-clock-in"
-                >
-                  <Play className="w-3 h-3" />
-                  Clock In
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72" align="end">
-                <div className="space-y-3">
-                  <h4 className="font-medium text-sm">Start Timer</h4>
-                  <div>
-                    <label className="text-xs font-medium mb-1 block">
-                      Project <span className="text-destructive">*</span>
-                    </label>
-                    <ProjectSelect
-                      value={clockInProjectId}
-                      onValueChange={setClockInProjectId}
-                      placeholder="Select a project"
-                      allowNone={false}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium mb-1 block">
-                      Cost Code (Optional)
-                    </label>
-                    <CostCodeSelect
-                      value={clockInCostCodeId}
-                      onValueChange={setClockInCostCodeId}
-                      placeholder="Select a cost code"
-                    />
-                  </div>
-                  <Button
-                    onClick={() => clockInMutation.mutate()}
-                    disabled={!clockInProjectId || clockInMutation.isPending}
-                    className="w-full bg-green-600 hover:bg-green-700"
-                    size="sm"
-                  >
-                    <Play className="w-3 h-3 mr-1" />
-                    {clockInMutation.isPending ? "Starting..." : "Start Timer"}
-                  </Button>
-                </div>
+          )}
+
+          <div className="flex-1" />
+
+          {/* RIGHT: View · Columns · | · Add Entry · Options */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-view"
+              >
+                {activeView === "table" && <Table2 className="w-3 h-3" />}
+                {activeView === "weekly" && <Users2 className="w-3 h-3" />}
+                {activeView === "calendar" && <CalendarDays className="w-3 h-3" />}
+                <span className="capitalize">{activeView}</span>
+                <ChevronDown className="w-3 h-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setActiveView("table")} data-testid="menu-view-table">
+                <Table2 className="w-3.5 h-3.5 mr-2" />
+                Table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setActiveView("weekly")} data-testid="menu-view-weekly">
+                <Users2 className="w-3.5 h-3.5 mr-2" />
+                Weekly
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setActiveView("calendar")} data-testid="menu-view-calendar">
+                <CalendarDays className="w-3.5 h-3.5 mr-2" />
+                Calendar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {activeView === "table" && (
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                      data-testid="button-columns"
+                      aria-label="Columns"
+                    >
+                      <Settings2 className="w-3 h-3" />
+                    </button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Columns</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-56 p-0" align="end">
+                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={PICKER_COLUMNS} />
               </PopoverContent>
             </Popover>
           )}
+
+          <div className="w-px h-4 bg-border" />
+
           <button
             onClick={() => {
               setSelectedTimesheet(undefined);
@@ -1038,375 +1351,105 @@ export default function Timesheets() {
             <Plus className="w-3 h-3" />
             Add Entry
           </button>
-        </div>
-      </div>
 
-        {/* Row 2: Filters */}
-        <div className="h-8 flex items-center gap-2 px-3">
-        {/* Left: Search + Filter Chips */}
-        <div className="flex items-center gap-2 flex-1">
-          {/* Search */}
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              data-testid="input-search-timesheets"
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-            />
-          </div>
-          
-          <div className="w-px h-4 bg-border" />
-
-          {/* Project Filter (only if not in project context) */}
-          {!projectId && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button 
-                  className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                    selectedProjects.length > 0 
-                      ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                      : ""
-                  }`}
-                  data-testid="button-filter-project"
-                >
-                  <span>Project</span>
-                  {selectedProjects.length > 0 && (
-                    <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                      {selectedProjects.length}
-                    </Badge>
-                  )}
-                  <ChevronDown className="w-3 h-3 opacity-50" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {projects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
-                    className="flex items-center"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      const newProjects = selectedProjects.includes(project.id)
-                        ? selectedProjects.filter(p => p !== project.id)
-                        : [...selectedProjects, project.id];
-                      setSelectedProjects(newProjects);
-                    }}
-                  >
-                    <Checkbox
-                      checked={selectedProjects.includes(project.id)}
-                      className="mr-2 pointer-events-none"
-                    />
-                    {project.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* User Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                  selectedUsers.length > 0 
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                    : ""
-                }`}
-                data-testid="button-filter-user"
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-options"
               >
-                <span>User</span>
-                {selectedUsers.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                    {selectedUsers.length}
-                  </Badge>
-                )}
+                <span>Options</span>
                 <ChevronDown className="w-3 h-3 opacity-50" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {users.map((user) => (
-                <DropdownMenuItem key={user.id} className="flex items-center">
-                  <Checkbox
-                    checked={selectedUsers.includes(user.id)}
-                    onCheckedChange={() => {
-                      const newUsers = selectedUsers.includes(user.id)
-                        ? selectedUsers.filter(u => u !== user.id)
-                        : [...selectedUsers, user.id];
-                      setSelectedUsers(newUsers);
-                    }}
-                    className="mr-2"
-                  />
-                  {`${user.firstName} ${user.lastName}`.trim() || user.username}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Status Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                  selectedStatuses.length > 0 
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                    : ""
-                }`}
-                data-testid="button-filter-status"
-              >
-                <span>Status</span>
-                {selectedStatuses.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                    {selectedStatuses.length}
-                  </Badge>
-                )}
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {[
-                { key: "submitted", name: "Submitted" },
-                { key: "approved", name: "Approved" },
-                { key: "rejected", name: "Rejected" },
-              ].map((status) => (
-                <DropdownMenuItem key={status.key} className="flex items-center">
-                  <Checkbox
-                    checked={selectedStatuses.includes(status.key)}
-                    onCheckedChange={() => {
-                      const newStatuses = selectedStatuses.includes(status.key)
-                        ? selectedStatuses.filter(s => s !== status.key)
-                        : [...selectedStatuses, status.key];
-                      setSelectedStatuses(newStatuses);
-                    }}
-                    className="mr-2"
-                  />
-                  {status.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Cost Code Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                  selectedCostCodes.length > 0 
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                    : ""
-                }`}
-                data-testid="button-filter-cost-code"
-              >
-                <span>Cost Code</span>
-                {selectedCostCodes.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                    {selectedCostCodes.length}
-                  </Badge>
-                )}
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {costCodes.map((costCode) => (
+            <DropdownMenuContent align="end" className="w-52">
+              {!activeTimesheet && (
                 <DropdownMenuItem
-                  key={costCode.id}
-                  className="flex items-center"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    const newCostCodes = selectedCostCodes.includes(costCode.id)
-                      ? selectedCostCodes.filter(c => c !== costCode.id)
-                      : [...selectedCostCodes, costCode.id];
-                    setSelectedCostCodes(newCostCodes);
-                  }}
+                  onClick={() => setIsClockInOpen(true)}
+                  data-testid="menu-clock-in"
                 >
-                  <Checkbox
-                    checked={selectedCostCodes.includes(costCode.id)}
-                    className="mr-2 pointer-events-none"
-                  />
-                  {costCode.code} - {costCode.name}
+                  <Play className="w-3.5 h-3.5 mr-2" />
+                  Clock In
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Phase Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                  selectedPhases.length > 0 
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                    : ""
-                }`}
-                data-testid="button-filter-phase"
-              >
-                <span>Phase</span>
-                {selectedPhases.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                    {selectedPhases.length}
+              )}
+              {canApproveTimesheets && pendingTimesheets.length > 0 && (
+                <DropdownMenuItem
+                  onClick={() => setIsRapidApprovalOpen(true)}
+                  data-testid="menu-rapid-approval"
+                >
+                  <Zap className="w-3.5 h-3.5 mr-2" />
+                  <span className="flex-1">Approve</span>
+                  <Badge variant="secondary" className="h-4 px-1 text-data ml-2">
+                    {pendingTimesheets.length}
                   </Badge>
-                )}
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {[
-                { key: "lead", name: "Lead" },
-                { key: "pre_construction", name: "Pre-Construction" },
-                { key: "construction", name: "Construction" },
-                { key: "post_construction", name: "Post-Construction" },
-                { key: "archive", name: "Archive" },
-              ].map((phase) => (
-                <DropdownMenuItem key={phase.key} className="flex items-center">
-                  <Checkbox
-                    checked={selectedPhases.includes(phase.key)}
-                    onCheckedChange={() => {
-                      const newPhases = selectedPhases.includes(phase.key)
-                        ? selectedPhases.filter(p => p !== phase.key)
-                        : [...selectedPhases, phase.key];
-                      setSelectedPhases(newPhases);
-                    }}
-                    className="mr-2"
-                  />
-                  {phase.name}
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Date Range Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
-                  dateRangeType !== "all" 
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40" 
-                    : ""
-                }`}
-                data-testid="button-filter-date"
+              )}
+              <DropdownMenuItem
+                onClick={() => setIsSubPODialogOpen(true)}
+                data-testid="menu-sub-po"
               >
-                <CalendarRange className="w-3 h-3" />
-                <span>
-                  {dateRangeType === "all" ? "All Time" : 
-                   dateRangeType === "this-week" ? "This Week" :
-                   dateRangeType === "last-week" ? "Last Week" :
-                   "Custom"}
-                </span>
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => {
-                setDateRangeType("all");
-                setCustomStartDate(undefined);
-                setCustomEndDate(undefined);
-              }}>
-                All Time
+                <HardHat className="w-3.5 h-3.5 mr-2" />
+                Sub PO
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setDateRangeType("this-week")}>
-                This Week
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setIsImportOpen(true)}
+                data-testid="menu-import-timesheets"
+              >
+                <Upload className="w-3.5 h-3.5 mr-2" />
+                Import
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setDateRangeType("last-week")}>
-                Last Week
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setDateRangeType("custom")}>
-                Custom Range
+              <DropdownMenuItem
+                onClick={handleExport}
+                disabled={filteredTimesheets.length === 0}
+                data-testid="menu-export-timesheets"
+              >
+                <Download className="w-3.5 h-3.5 mr-2" />
+                Export
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Custom Date Range Pickers */}
-          {dateRangeType === "custom" && (
-            <>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-start-date">
-                    <CalendarIcon className="w-3 h-3" />
-                    <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={customStartDate}
-                    onSelect={setCustomStartDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-
-              <span className="text-xs text-muted-foreground">to</span>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-end-date">
-                    <CalendarIcon className="w-3 h-3" />
-                    <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={customEndDate}
-                    onSelect={setCustomEndDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </>
-          )}
         </div>
+      </div>
 
-        {/* Right: View Tabs + Columns */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setActiveView("table")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
-              data-testid="button-view-table"
+      {/* Clock In dialog — opened from the Options menu */}
+      <Dialog open={isClockInOpen} onOpenChange={setIsClockInOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Start Timer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium mb-1 block">
+                Project <span className="text-destructive">*</span>
+              </label>
+              <ProjectSelect
+                value={clockInProjectId}
+                onValueChange={setClockInProjectId}
+                placeholder="Select a project"
+                allowNone={false}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block">Cost Code (Optional)</label>
+              <CostCodeSelect
+                value={clockInCostCodeId}
+                onValueChange={setClockInCostCodeId}
+                placeholder="Select a cost code"
+              />
+            </div>
+            <Button
+              onClick={() => clockInMutation.mutate()}
+              disabled={!clockInProjectId || clockInMutation.isPending}
+              className="w-full bg-green-600 hover:bg-green-700"
+              size="sm"
             >
-              <Table2 className="w-3 h-3" />
-              Table
-            </button>
-            <button
-              onClick={() => setActiveView("weekly")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
-              data-testid="button-view-weekly"
-            >
-              <Users2 className="w-3 h-3" />
-              Weekly
-            </button>
-            <button
-              onClick={() => setActiveView("calendar")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
-              data-testid="button-view-calendar"
-            >
-              <CalendarDays className="w-3 h-3" />
-              Calendar
-            </button>
+              <Play className="w-3 h-3 mr-1" />
+              {clockInMutation.isPending ? "Starting..." : "Start Timer"}
+            </Button>
           </div>
-
-          <div className="w-px h-4 bg-border" />
-
-          {activeView === "table" && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                  data-testid="button-column-settings"
-                >
-                  <Settings2 className="w-3 h-3" />
-                  Columns
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-0" align="end">
-                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={PICKER_COLUMNS} />
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
-      </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Content Area */}
       <div ref={contentScrollRef} className="flex-1 overflow-auto min-h-0 border-x border-b border-border rounded-b-lg bg-card">
