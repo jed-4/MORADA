@@ -950,7 +950,7 @@ export default function Timesheets() {
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         <div className="h-8 flex items-center gap-2 px-3">
           {/* LEFT: Search + Filters + (Stop pill if running) */}
-          <div className="relative w-64">
+          <div className="relative w-40">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search..."
@@ -963,25 +963,34 @@ export default function Timesheets() {
 
           {/* Filters popover — rolls up Project, User, Status, Cost Code, Phase, Date Range */}
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${
-                  activeFilterCount > 0
-                    ? "bg-primary/10 text-[#8b7ab8] border-primary/40"
-                    : ""
-                }`}
-                data-testid="button-filters"
-              >
-                <Filter className="w-3 h-3" />
-                <span>Filters</span>
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-data bg-primary/20 text-[#8b7ab8]">
-                    {activeFilterCount}
-                  </Badge>
-                )}
-                <ChevronDown className="w-3 h-3 opacity-50" />
-              </button>
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className={`relative h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center ${
+                      activeFilterCount > 0
+                        ? "bg-primary/10 text-[#8b7ab8] border-primary/40"
+                        : ""
+                    }`}
+                    data-testid="button-filters"
+                    aria-label="Filters"
+                  >
+                    <Filter className="w-3 h-3" />
+                    {activeFilterCount > 0 && (
+                      <span
+                        className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                        data-testid="badge-filters-count"
+                      >
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent className="w-72 p-3" align="start">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
