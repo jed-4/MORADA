@@ -130,25 +130,91 @@ export function useUpload(options: UseUploadOptions = {}) {
   );
 
   /**
-   * Upload a file using the presigned URL flow.
+   * Upload a file via the server-side multipart endpoint
+   * (`POST /api/uploads/file`). The browser sends the file to our own
+   * backend, which streams it into object storage. This avoids the CORS
+   * preflight failure that direct-to-GCS uploads hit from the dev origin.
+   */
+  const uploadViaServer = useCallback(
+    async (file: File): Promise<UploadResponse> => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+
+      let response: Response;
+      try {
+        response = await fetch("/api/uploads/file", {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+      } catch (networkErr: any) {
+        const msg = networkErr?.message
+          ? `Network error during upload: ${networkErr.message}`
+          : "Network error during upload";
+        console.error("[useUpload] /api/uploads/file network failure", networkErr);
+        throw new Error(msg);
+      }
+
+      if (!response.ok) {
+        let bodySnippet = "";
+        try {
+          bodySnippet = (await response.text()).slice(0, 400);
+        } catch {
+          /* ignore */
+        }
+        throw new Error(
+          `Server upload failed: ${response.status} ${response.statusText}${
+            bodySnippet ? ` — ${bodySnippet}` : ""
+          }`,
+        );
+      }
+
+      const data = await response.json();
+      // Normalise to the same shape as the presigned-URL flow.
+      return {
+        uploadURL: "", // unused for server-side flow
+        objectPath: data.objectPath,
+        metadata: {
+          name: data.name ?? file.name,
+          size: file.size,
+          contentType: data.contentType ?? file.type ?? "application/octet-stream",
+        },
+      };
+    },
+    [],
+  );
+
+  /**
+   * Upload a file. Uses the server-side endpoint by default to avoid
+   * browser CORS issues with direct GCS uploads. Set
+   * `useDirectUpload: true` to fall back to the legacy presigned-URL flow.
    *
    * @param file - The file to upload
+   * @param opts - Per-call options
    * @returns The upload response containing the object path
    */
   const uploadFile = useCallback(
-    async (file: File): Promise<UploadResponse | null> => {
+    async (
+      file: File,
+      opts: { useDirectUpload?: boolean } = {},
+    ): Promise<UploadResponse | null> => {
       setIsUploading(true);
       setError(null);
       setProgress(0);
 
       try {
-        // Step 1: Request presigned URL (send metadata as JSON)
-        setProgress(10);
-        const uploadResponse = await requestUploadUrl(file);
-
-        // Step 2: Upload file directly to presigned URL
-        setProgress(30);
-        await uploadToPresignedUrl(file, uploadResponse.uploadURL);
+        let uploadResponse: UploadResponse;
+        if (opts.useDirectUpload) {
+          // Legacy: presigned-URL direct-to-GCS (subject to CORS)
+          setProgress(10);
+          uploadResponse = await requestUploadUrl(file);
+          setProgress(30);
+          await uploadToPresignedUrl(file, uploadResponse.uploadURL);
+        } else {
+          // Default: server-side multipart upload (no CORS issues)
+          setProgress(10);
+          uploadResponse = await uploadViaServer(file);
+        }
 
         setProgress(100);
         options.onSuccess?.(uploadResponse);
@@ -162,7 +228,7 @@ export function useUpload(options: UseUploadOptions = {}) {
         setIsUploading(false);
       }
     },
-    [requestUploadUrl, uploadToPresignedUrl, options]
+    [requestUploadUrl, uploadToPresignedUrl, uploadViaServer, options],
   );
 
   /**
