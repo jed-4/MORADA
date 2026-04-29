@@ -1102,6 +1102,18 @@ export class XeroService {
 
     parseSection(report.Rows || [], false, false);
 
+    console.log("[Xero P&L] columns header:", JSON.stringify(columns));
+    console.log("[Xero P&L] periods param:", periods, "monthsDiff:", monthsDiff);
+    console.log("[Xero P&L] uuidToCode size:", uuidToCode.size, "uuidToType size:", uuidToType.size);
+    const byAccountKeys = Object.keys(byAccount);
+    console.log("[Xero P&L] byAccount entries:", byAccountKeys.length);
+    if (byAccountKeys.length > 0) {
+      const sampleKey = byAccountKeys[0];
+      console.log("[Xero P&L] sample byAccount[%s]:", sampleKey, JSON.stringify(byAccount[sampleKey]));
+    }
+    const expenseAcctTotal = byAccountKeys.reduce((sum, k) => sum + Object.values(byAccount[k].amounts).reduce((a, b) => a + b, 0), 0);
+    console.log("[Xero P&L] expense grand total across all accounts:", expenseAcctTotal);
+
     return { byAccount, accounts, incomeTotals, directCostTotals, incomeByAccount };
   }
 
