@@ -63,6 +63,7 @@ import {
   ClipboardList,
   Flag,
   Paperclip,
+  Loader2,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1252,6 +1253,7 @@ interface DroppableStageProps {
   onUnlinkChecklist?: (checklistId: string) => void;
   onAddStageAttachment?: (stageId: string, file: File) => void;
   onDeleteStageAttachment?: (stageId: string, attachmentId: string) => void;
+  isAttachmentUploading?: boolean;
   allProjectTasks?: { id: string; title: string; statusName?: string | null; scopeStageId?: string | null }[];
   onLinkTask?: (taskId: string, stageId: string) => void;
   onUnlinkTask?: (taskId: string) => void;
@@ -1306,6 +1308,7 @@ function DroppableStage({
   onUnlinkChecklist,
   onAddStageAttachment,
   onDeleteStageAttachment,
+  isAttachmentUploading = false,
   allProjectTasks = [],
   onLinkTask,
   onUnlinkTask,
@@ -1917,21 +1920,33 @@ function DroppableStage({
                     Attachments
                   </div>
                   <button
-                    className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2"
-                    title="Attach a file to this stage"
-                    onClick={() => attachFileInputRef.current?.click()}
+                    className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={isAttachmentUploading ? "Uploading…" : "Attach a file to this stage"}
+                    disabled={isAttachmentUploading}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isAttachmentUploading) return;
+                      attachFileInputRef.current?.click();
+                    }}
+                    data-testid={`button-attach-file-${stageData.id}`}
                   >
-                    <Plus className="h-3 w-3" />
+                    {isAttachmentUploading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
                   </button>
                   <input
                     ref={attachFileInputRef}
                     type="file"
                     className="hidden"
+                    disabled={isAttachmentUploading}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) onAddStageAttachment?.(stageData.id, file);
                       e.target.value = '';
+                      if (file) onAddStageAttachment?.(stageData.id, file);
                     }}
+                    data-testid={`input-attach-file-${stageData.id}`}
                   />
                 </div>
                 {stageAttachments.map((att) => (
@@ -3065,6 +3080,7 @@ export default function ProjectScope() {
   };
 
   // Stage file attachments
+  const [uploadingStageIds, setUploadingStageIds] = useState<Set<string>>(new Set());
   const { uploadFile } = useUpload();
 
   const updateStageAttachmentsMutation = useMutation({
@@ -3073,29 +3089,84 @@ export default function ProjectScope() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
     },
-    onError: () => {
-      toast({ title: "Failed to update stage attachments", variant: "destructive" });
-    },
   });
 
   const handleAddStageAttachment = async (stageId: string, file: File) => {
     if (file.size > 20 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum 20MB per file.", variant: "destructive" });
+      toast({
+        title: "File too large",
+        description: "Maximum 20MB per file.",
+        variant: "destructive",
+      });
       return;
     }
-    const result = await uploadFile(file);
-    if (!result) return;
-    const stage = scopeStages.find(s => s.id === stageId);
-    const existing = Array.isArray((stage as any)?.attachments) ? (stage as any).attachments : [];
-    const newAttachment = {
-      id: crypto.randomUUID(),
-      name: result.metadata.name,
-      objectPath: result.objectPath,
-      size: result.metadata.size,
-      uploadedAt: new Date().toISOString(),
-    };
-    updateStageAttachmentsMutation.mutate({ stageId, attachments: [...existing, newAttachment] });
-    toast({ title: "File attached", description: result.metadata.name });
+
+    // One lifecycle toast we update (loading -> success/error) to avoid spam.
+    const lifecycle = toast({
+      title: "Uploading…",
+      description: file.name,
+    });
+
+    setUploadingStageIds(prev => {
+      const next = new Set(prev);
+      next.add(stageId);
+      return next;
+    });
+
+    try {
+      const result = await uploadFile(file);
+      if (!result) {
+        throw new Error("Upload failed. Please try again.");
+      }
+
+      // Read the freshest attachments from the React Query cache so concurrent
+      // uploads don't clobber each other (race-safe append).
+      const stagesKey = [`/api/projects/${projectId}/scope-stages`];
+      const latestStages = queryClient.getQueryData<ScopeStage[]>(stagesKey);
+      const latestStage = latestStages?.find(s => s.id === stageId)
+        ?? scopeStages.find(s => s.id === stageId);
+      const existing = Array.isArray((latestStage as any)?.attachments)
+        ? (latestStage as any).attachments
+        : [];
+
+      const newAttachment = {
+        id: crypto.randomUUID(),
+        name: result.metadata.name,
+        objectPath: result.objectPath,
+        size: result.metadata.size,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      await updateStageAttachmentsMutation.mutateAsync({
+        stageId,
+        attachments: [...existing, newAttachment],
+      });
+
+      lifecycle.update({
+        id: lifecycle.id,
+        title: "File attached",
+        description: result.metadata.name,
+      });
+    } catch (err: any) {
+      console.error('[Scope] Stage attachment failed:', err);
+      const detail =
+        err?.payload?.details ||
+        err?.payload?.error ||
+        err?.message ||
+        "Could not attach file. Please try again.";
+      lifecycle.update({
+        id: lifecycle.id,
+        title: "Upload failed",
+        description: String(detail),
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingStageIds(prev => {
+        const next = new Set(prev);
+        next.delete(stageId);
+        return next;
+      });
+    }
   };
 
   const handleDeleteStageAttachment = (stageId: string, attachmentId: string) => {
@@ -3886,6 +3957,7 @@ export default function ProjectScope() {
                       onUnlinkChecklist={handleUnlinkChecklist}
                       onAddStageAttachment={handleAddStageAttachment}
                       onDeleteStageAttachment={handleDeleteStageAttachment}
+                      isAttachmentUploading={uploadingStageIds.has(stage.id)}
                       allProjectTasks={projectTasks}
                       onLinkTask={handleLinkTask}
                       onUnlinkTask={handleUnlinkTask}
