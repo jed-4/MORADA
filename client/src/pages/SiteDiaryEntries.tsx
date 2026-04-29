@@ -1277,44 +1277,61 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
           ) : null}
         </div>
 
-        {/* Metadata Column */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {projectName && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]" data-testid={`entry-project-${entry.id}`}>
-              {projectName}
+        {/* Metadata Columns — fixed widths so values line up vertically across rows */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {projectName !== undefined && (
+            <div className="w-[140px] flex items-center" data-testid={`entry-project-${entry.id}`}>
+              {projectName ? (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] max-w-full truncate">
+                  {projectName}
+                </Badge>
+              ) : null}
+            </div>
+          )}
+
+          <div className="w-[130px] flex items-center" data-testid={`entry-template-${entry.id}`}>
+            <Badge variant="default" className="h-5 px-1.5 text-[10px] max-w-full truncate">
+              {entry.templateName}
             </Badge>
-          )}
+          </div>
 
-          <Badge variant="default" className="h-5 px-1.5 text-[10px]" data-testid={`entry-template-${entry.id}`}>
-            {entry.templateName}
-          </Badge>
+          <div className="w-[110px] flex items-center" data-testid={`entry-weather-${entry.id}`}>
+            {weatherInfo?.condition ? (
+              <span
+                className={`inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border max-w-full truncate ${weatherChipClass(weatherTone?.tone || "muted")}`}
+              >
+                <WeatherIcon className="w-2.5 h-2.5 shrink-0" />
+                <span className="truncate">{weatherInfo.condition}</span>
+              </span>
+            ) : null}
+          </div>
 
-          {weatherInfo?.condition && (
-            <span
-              className={`inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border ${weatherChipClass(weatherTone?.tone || "muted")}`}
-              data-testid={`entry-weather-${entry.id}`}
-            >
-              <WeatherIcon className="w-2.5 h-2.5" />
-              {weatherInfo.condition}
-            </span>
-          )}
+          <div className="w-[60px] flex items-center" data-testid={`entry-temp-${entry.id}`}>
+            {temperature ? (
+              <span className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border tabular-nums">
+                <Thermometer className="w-2.5 h-2.5 shrink-0" />
+                {temperature}
+              </span>
+            ) : null}
+          </div>
 
-          {temperature && (
-            <span className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border" data-testid={`entry-temp-${entry.id}`}>
-              <Thermometer className="w-2.5 h-2.5" />
-              {temperature}
-            </span>
-          )}
+          <div className="w-[52px] flex items-center">
+            {photoCount > 0 ? (
+              <span
+                className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border tabular-nums"
+                title={`${photoCount} photos`}
+              >
+                <Camera className="w-2.5 h-2.5 shrink-0" />
+                {photoCount}
+              </span>
+            ) : null}
+          </div>
 
-          {photoCount > 0 && (
-            <span className="inline-flex items-center gap-1 h-5 px-1.5 text-[10px] rounded-md border bg-muted/40 text-muted-foreground border-border" title={`${photoCount} photos`}>
-              <Camera className="w-2.5 h-2.5" />
-              {photoCount}
-            </span>
-          )}
-
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums w-[88px] justify-end" data-testid={`entry-date-${entry.id}`}>
-            <CalendarIcon className="h-3 w-3" />
+          <div
+            className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums w-[100px]"
+            data-testid={`entry-date-${entry.id}`}
+          >
+            <CalendarIcon className="h-3 w-3 shrink-0" />
             <span>{format(new Date(entry.entryDateTime), "MMM d, yyyy")}</span>
           </div>
 
