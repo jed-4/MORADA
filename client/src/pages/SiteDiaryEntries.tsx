@@ -611,20 +611,8 @@ export default function SiteDiaryEntries() {
           </Popover>
         </div>
 
-        {/* Right: PDF + Add + Options */}
+        {/* Right: Add + Options (PDF lives inside Options) */}
         <div className="flex items-center gap-1.5">
-          {filteredEntries.length > 0 && (
-            <button
-              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-              onClick={() => handleExportPdf()}
-              disabled={isExportingPdf}
-              data-testid="button-export-pdf"
-              title="Export as PDF"
-            >
-              {isExportingPdf ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-              <span>PDF</span>
-            </button>
-          )}
           <button
             className="h-7 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
             onClick={() => handleAddEntry()}
@@ -647,6 +635,31 @@ export default function SiteDiaryEntries() {
             </PopoverTrigger>
             <PopoverContent className="w-60 p-2" align="end">
               <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
+                  Export
+                </div>
+                <button
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-foreground hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none"
+                  onClick={() => handleExportPdf()}
+                  disabled={isExportingPdf || filteredEntries.length === 0}
+                  data-testid="button-export-pdf"
+                  title={filteredEntries.length === 0 ? "No entries to export" : "Export as PDF"}
+                >
+                  {isExportingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  <span>{isExportingPdf ? "Exporting…" : "Export as PDF"}</span>
+                  {filteredEntries.length > 0 && !isExportingPdf && (
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {filteredEntries.length}
+                    </span>
+                  )}
+                </button>
+
+                <div className="border-t border-border my-1" />
+
                 <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
                   Display
                 </div>
