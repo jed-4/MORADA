@@ -4362,13 +4362,19 @@ export default function ProjectScope() {
                       data-testid="img-attachment-preview"
                     />
                   ) : isPdf ? (
-                    <iframe
-                      src={previewAttachment.objectPath}
-                      title={previewAttachment.name}
-                      sandbox="allow-same-origin allow-scripts"
+                    <object
+                      data={previewAttachment.objectPath}
+                      type="application/pdf"
                       className="w-full h-[60vh] bg-background"
-                      data-testid="iframe-attachment-preview"
-                    />
+                      data-testid="object-attachment-preview"
+                    >
+                      <div className="flex flex-col items-center gap-2 p-8 text-muted-foreground">
+                        <Paperclip className="h-8 w-8" />
+                        <div className="text-sm">
+                          Your browser cannot display this PDF inline. Use the Download button below.
+                        </div>
+                      </div>
+                    </object>
                   ) : isVideo ? (
                     <video
                       src={previewAttachment.objectPath}
