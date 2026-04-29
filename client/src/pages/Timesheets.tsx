@@ -123,7 +123,7 @@ export default function Timesheets() {
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   
   // View state: table, weekly, calendar
-  const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">("table");
+  const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "calendar" ? "calendar" : "table");
 
   // Ref to the main content scroll container — used to jump to 7 am when calendar opens
   const contentScrollRef = useRef<HTMLDivElement>(null);
@@ -1942,6 +1942,7 @@ export default function Timesheets() {
 
                             const top = (clampedStart - CAL_START_HOUR) * HOUR_PX;
                             const height = Math.max((clampedEnd - clampedStart) * HOUR_PX, 18);
+                            console.log('[CAL]', ts.id?.toString().slice(0,8), 'start=', JSON.stringify(ts.startTime), 'end=', JSON.stringify(ts.endTime), '| startDecimal=', startDecimal, 'endDecimal=', endDecimal, '| top=', top, 'height=', height);
 
                             const projColor = getProjectColor(ts.projectId);
                             const dotColor = statusDotColor(ts.status);
