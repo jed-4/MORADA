@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, lazy, Suspense, CSSProperties } from "react";
+
+const PdfInlineViewer = lazy(() => import("@/components/PdfInlineViewer"));
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -4362,12 +4364,15 @@ export default function ProjectScope() {
                       data-testid="img-attachment-preview"
                     />
                   ) : isPdf ? (
-                    <iframe
-                      src={previewAttachment.objectPath}
-                      title={previewAttachment.name}
-                      className="w-full h-[60vh] bg-background"
-                      data-testid="iframe-attachment-preview"
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="p-8 text-sm text-muted-foreground">
+                          Loading PDF…
+                        </div>
+                      }
+                    >
+                      <PdfInlineViewer url={previewAttachment.objectPath} />
+                    </Suspense>
                   ) : isVideo ? (
                     <video
                       src={previewAttachment.objectPath}
