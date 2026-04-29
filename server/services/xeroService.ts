@@ -1012,13 +1012,41 @@ export class XeroService {
     function extractMonthAmounts(cells: any[]): Record<string, number> {
       const result: Record<string, number> = {};
       for (let i = 1; i < cells.length && i < columns.length; i++) {
-        const monthLabel = columns[i];
+        const monthLabel = (columns[i] || "").trim();
         const val = parseFloat(cells[i]?.Value || "0") || 0;
-        const parts = monthLabel.split(" ");
-        if (parts.length === 2) {
-          const mm = MONTH_MAP[parts[0]];
-          const yyyy = parts[1];
-          if (mm && yyyy) result[`${yyyy}-${mm}`] = val;
+        // Xero P&L column headers can come in several shapes:
+        //   "Jan 2025" | "Jan 25" | "30 Apr 26" | "30 Apr 2026" | "30 Apr 2026 YTD"
+        // Find the month token, then take whichever adjacent token looks like a year.
+        const parts = monthLabel.split(/\s+/);
+        let mm: string | undefined;
+        let yearStr: string | undefined;
+        for (let j = 0; j < parts.length; j++) {
+          const p = parts[j];
+          const monthCode = MONTH_MAP[p as keyof typeof MONTH_MAP];
+          if (monthCode) {
+            mm = monthCode;
+            // Year is the next purely-numeric token (covers "Jan 2025" and "30 Apr 26")
+            for (let k = j + 1; k < parts.length; k++) {
+              if (/^\d{2}(\d{2})?$/.test(parts[k])) {
+                yearStr = parts[k];
+                break;
+              }
+            }
+            // Or fall back to the previous numeric token if no trailing year was found
+            if (!yearStr) {
+              for (let k = j - 1; k >= 0; k--) {
+                if (/^\d{2}(\d{2})?$/.test(parts[k])) {
+                  yearStr = parts[k];
+                  break;
+                }
+              }
+            }
+            break;
+          }
+        }
+        if (mm && yearStr) {
+          const yyyy = yearStr.length === 2 ? `20${yearStr}` : yearStr;
+          result[`${yyyy}-${mm}`] = val;
         }
       }
       return result;
