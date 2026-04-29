@@ -1253,10 +1253,110 @@ interface DroppableStageProps {
   onUnlinkChecklist?: (checklistId: string) => void;
   onAddStageAttachment?: (stageId: string, file: File) => void;
   onDeleteStageAttachment?: (stageId: string, attachmentId: string) => void;
+  onPreviewAttachment?: (att: { name: string; objectPath: string; size: number }) => void;
   isAttachmentUploading?: boolean;
   allProjectTasks?: { id: string; title: string; statusName?: string | null; scopeStageId?: string | null }[];
   onLinkTask?: (taskId: string, stageId: string) => void;
   onUnlinkTask?: (taskId: string) => void;
+}
+
+type LinkedChecklistItem = {
+  id: string;
+  description: string;
+  status: string;
+  isRequired?: boolean;
+  groupName?: string | null;
+  order?: number;
+  groupOrder?: number;
+};
+
+function LinkedChecklistPopoverContent({
+  checklistId,
+  checklistName,
+  status,
+  completedCount,
+  totalCount,
+  onOpenFull,
+}: {
+  checklistId: string;
+  checklistName: string;
+  status: string;
+  completedCount?: number;
+  totalCount?: number;
+  onOpenFull?: () => void;
+}) {
+  const { data: items, isLoading } = useQuery<LinkedChecklistItem[]>({
+    queryKey: ["/api/checklist-instances", checklistId, "items"],
+  });
+
+  const sorted = (items ?? [])
+    .slice()
+    .sort((a, b) =>
+      (a.groupOrder ?? 0) - (b.groupOrder ?? 0) || (a.order ?? 0) - (b.order ?? 0),
+    );
+
+  return (
+    <div className="flex flex-col max-h-96">
+      <div className="px-3 py-2 border-b border-border flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{checklistName}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            <span className="capitalize">{status.replace('_', ' ')}</span>
+            {(totalCount ?? 0) > 0 && (
+              <> · {completedCount ?? 0}/{totalCount} complete</>
+            )}
+          </div>
+        </div>
+        {onOpenFull && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onOpenFull}
+            data-testid="button-open-checklist-full"
+          >
+            Open
+          </Button>
+        )}
+      </div>
+      <div className="overflow-y-auto p-2 space-y-1">
+        {isLoading ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground">Loading items…</div>
+        ) : sorted.length === 0 ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground">No items in this checklist.</div>
+        ) : (
+          sorted.map((it) => {
+            const done = it.status === 'completed';
+            const na = it.status === 'na';
+            return (
+              <div
+                key={it.id}
+                className="flex items-start gap-2 px-2 py-1.5 rounded-md"
+                data-testid={`popover-checklist-item-${it.id}`}
+              >
+                {done ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 shrink-0 mt-0.5" />
+                ) : na ? (
+                  <X className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                ) : (
+                  <Circle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div
+                    className={`text-sm ${done ? 'text-muted-foreground line-through' : ''}`}
+                  >
+                    {it.description}
+                  </div>
+                  {it.groupName && (
+                    <div className="text-xs text-muted-foreground">{it.groupName}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 function DroppableStage({ 
@@ -1308,6 +1408,7 @@ function DroppableStage({
   onUnlinkChecklist,
   onAddStageAttachment,
   onDeleteStageAttachment,
+  onPreviewAttachment,
   isAttachmentUploading = false,
   allProjectTasks = [],
   onLinkTask,
@@ -1798,40 +1899,60 @@ function DroppableStage({
                       )}
                     </div>
                     {linkedChecklists.map((cl) => (
-                      <div
-                        key={cl.id}
-                        className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
-                        onClick={() => onNavigateToChecklists?.(stageData.id)}
-                        data-testid={`linked-checklist-${cl.id}`}
-                      >
-                        <ClipboardList className="h-4 w-4 text-violet-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{cl.name}</span>
-                            <span className={`text-data px-1.5 py-0.5 rounded ${
-                              cl.status === 'completed'
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                : cl.status === 'in_progress'
-                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-muted text-secondary '
-                            }`}>
-                              {cl.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          {(cl.totalCount ?? 0) > 0 && (
-                            <div className="text-xs text-muted-foreground">
-                              {cl.completedCount ?? 0}/{cl.totalCount} items
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
-                          title="Unlink checklist from this stage"
-                          onClick={(e) => { e.stopPropagation(); onUnlinkChecklist?.(cl.id); }}
+                      <Popover key={cl.id}>
+                        <div
+                          className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate group"
+                          data-testid={`linked-checklist-${cl.id}`}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
+                          <ClipboardList className="h-4 w-4 text-violet-500 shrink-0" />
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex-1 min-w-0 text-left"
+                              data-testid={`button-open-checklist-popover-${cl.id}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{cl.name}</span>
+                                <span className={`text-data px-1.5 py-0.5 rounded ${
+                                  cl.status === 'completed'
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    : cl.status === 'in_progress'
+                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                      : 'bg-muted text-secondary '
+                                }`}>
+                                  {cl.status.replace('_', ' ')}
+                                </span>
+                              </div>
+                              {(cl.totalCount ?? 0) > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  {cl.completedCount ?? 0}/{cl.totalCount} items
+                                </div>
+                              )}
+                            </button>
+                          </PopoverTrigger>
+                          <button
+                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                            title="Unlink checklist from this stage"
+                            onClick={(e) => { e.stopPropagation(); onUnlinkChecklist?.(cl.id); }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <PopoverContent
+                          align="start"
+                          className="w-96 p-0"
+                          data-testid={`popover-checklist-${cl.id}`}
+                        >
+                          <LinkedChecklistPopoverContent
+                            checklistId={cl.id}
+                            checklistName={cl.name}
+                            status={cl.status}
+                            completedCount={cl.completedCount}
+                            totalCount={cl.totalCount}
+                            onOpenFull={() => onNavigateToChecklists?.(stageData.id)}
+                          />
+                        </PopoverContent>
+                      </Popover>
                     ))}
                   </div>
                 );
@@ -1955,15 +2076,21 @@ function DroppableStage({
                     className="h-9 flex items-center gap-2 px-3 rounded-lg border border-border/50 bg-background/80 group"
                   >
                     <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <a
-                      href={att.objectPath}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 min-w-0 text-sm truncate hover:underline"
-                      title={att.name}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onPreviewAttachment?.({
+                          name: att.name,
+                          objectPath: att.objectPath,
+                          size: att.size,
+                        })
+                      }
+                      className="flex-1 min-w-0 text-left text-sm truncate hover:underline"
+                      title={`Preview ${att.name}`}
+                      data-testid={`button-preview-attachment-${att.id}`}
                     >
                       {att.name}
-                    </a>
+                    </button>
                     <span className="text-data text-muted-foreground shrink-0">
                       {att.size < 1024 * 1024
                         ? `${Math.round(att.size / 1024)}KB`
@@ -3081,6 +3208,11 @@ export default function ProjectScope() {
 
   // Stage file attachments
   const [uploadingStageIds, setUploadingStageIds] = useState<Set<string>>(new Set());
+  const [previewAttachment, setPreviewAttachment] = useState<{
+    name: string;
+    objectPath: string;
+    size: number;
+  } | null>(null);
   const { uploadFile } = useUpload();
 
   const updateStageAttachmentsMutation = useMutation({
@@ -3957,6 +4089,7 @@ export default function ProjectScope() {
                       onUnlinkChecklist={handleUnlinkChecklist}
                       onAddStageAttachment={handleAddStageAttachment}
                       onDeleteStageAttachment={handleDeleteStageAttachment}
+                      onPreviewAttachment={setPreviewAttachment}
                       isAttachmentUploading={uploadingStageIds.has(stage.id)}
                       allProjectTasks={projectTasks}
                       onLinkTask={handleLinkTask}
@@ -4194,6 +4327,90 @@ export default function ProjectScope() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={!!previewAttachment}
+        onOpenChange={(open) => !open && setPreviewAttachment(null)}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6">
+              {previewAttachment?.name ?? 'Attachment'}
+            </DialogTitle>
+            <DialogDescription>
+              {previewAttachment
+                ? previewAttachment.size < 1024 * 1024
+                  ? `${Math.round(previewAttachment.size / 1024)} KB`
+                  : `${(previewAttachment.size / (1024 * 1024)).toFixed(1)} MB`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {previewAttachment && (() => {
+            const ext = previewAttachment.name.split('.').pop()?.toLowerCase() ?? '';
+            const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+            const isPdf = ext === 'pdf';
+            const isVideo = ['mp4', 'webm', 'mov', 'ogv'].includes(ext);
+            const isAudio = ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
+            return (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-md border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-[200px]">
+                  {isImage ? (
+                    <img
+                      src={previewAttachment.objectPath}
+                      alt={previewAttachment.name}
+                      className="max-h-[60vh] w-auto object-contain"
+                      data-testid="img-attachment-preview"
+                    />
+                  ) : isPdf ? (
+                    <iframe
+                      src={previewAttachment.objectPath}
+                      title={previewAttachment.name}
+                      sandbox="allow-same-origin allow-scripts"
+                      className="w-full h-[60vh] bg-background"
+                      data-testid="iframe-attachment-preview"
+                    />
+                  ) : isVideo ? (
+                    <video
+                      src={previewAttachment.objectPath}
+                      controls
+                      className="max-h-[60vh] w-full"
+                      data-testid="video-attachment-preview"
+                    />
+                  ) : isAudio ? (
+                    <audio
+                      src={previewAttachment.objectPath}
+                      controls
+                      className="w-full p-4"
+                      data-testid="audio-attachment-preview"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 p-8 text-muted-foreground">
+                      <Paperclip className="h-8 w-8" />
+                      <div className="text-sm">No inline preview available for this file type.</div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    asChild
+                    data-testid="button-download-attachment"
+                  >
+                    <a
+                      href={previewAttachment.objectPath}
+                      download={previewAttachment.name}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Download
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
