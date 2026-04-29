@@ -1943,7 +1943,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
               </div>
               {/* Messages Area */}
               <ScrollArea className="flex-1 p-4">
-                <div className="space-y-4 max-w-4xl">
+                <div className="space-y-4 max-w-4xl mx-auto">
                   {messagesLoading ? (
                     <div className="flex items-center justify-center p-8">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2015,21 +2015,23 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           className={`flex gap-3 ${isOwn ? 'flex-row-reverse' : ''} justify-start ${showHeader ? '' : 'mt-0.5'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
                           data-testid={`message-${message.id}`}
                         >
-                          {/* Avatar gutter — visible only on first message of a group */}
-                          {showHeader ? (
-                            isBot ? (
-                              <div className="h-8 w-8 shrink-0 rounded-full bg-primary flex items-center justify-center">
-                                <Sparkles className="h-4 w-4 text-white" />
-                              </div>
+                          {/* Avatar gutter — visible only on first message of a group; hidden entirely for own messages */}
+                          {!isOwn && (
+                            showHeader ? (
+                              isBot ? (
+                                <div className="h-8 w-8 shrink-0 rounded-full bg-primary flex items-center justify-center">
+                                  <Sparkles className="h-4 w-4 text-white" />
+                                </div>
+                              ) : (
+                                <Avatar className="h-8 w-8 shrink-0">
+                                  <AvatarFallback className="text-xs bg-muted/60">
+                                    {getInitials(message.userFirstName, message.userLastName, message.userEmail)}
+                                  </AvatarFallback>
+                                </Avatar>
+                              )
                             ) : (
-                              <Avatar className="h-8 w-8 shrink-0">
-                                <AvatarFallback className="text-xs bg-muted/60">
-                                  {getInitials(message.userFirstName, message.userLastName, message.userEmail)}
-                                </AvatarFallback>
-                              </Avatar>
+                              <div className="w-8 shrink-0" aria-hidden="true" />
                             )
-                          ) : (
-                            <div className="w-8 shrink-0" aria-hidden="true" />
                           )}
                           <div className={`flex flex-col gap-1 max-w-[80%] ${isOwn ? 'items-end' : 'items-start'}`}>
                             {showHeader && (
@@ -2309,14 +2311,16 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                           </div>
                                         )}
                                       <div className={`flex gap-2 items-start ${replyShowHeader ? '' : 'mt-0.5'} ${replyIsOwn ? 'flex-row-reverse' : ''} justify-start`}>
-                                        {replyShowHeader ? (
-                                          <Avatar className="h-6 w-6 shrink-0">
-                                            <AvatarFallback className="text-data bg-muted/60">
-                                              {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
-                                            </AvatarFallback>
-                                          </Avatar>
-                                        ) : (
-                                          <div className="w-6 shrink-0" aria-hidden="true" />
+                                        {!replyIsOwn && (
+                                          replyShowHeader ? (
+                                            <Avatar className="h-6 w-6 shrink-0">
+                                              <AvatarFallback className="text-data bg-muted/60">
+                                                {getInitials(reply.userFirstName, reply.userLastName, reply.userEmail)}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                          ) : (
+                                            <div className="w-6 shrink-0" aria-hidden="true" />
+                                          )
                                         )}
                                         <div className={`flex flex-col gap-0.5 flex-1 ${replyIsOwn ? 'items-end' : 'items-start'}`}>
                                           {replyShowHeader && (
