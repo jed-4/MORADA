@@ -2012,7 +2012,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           )}
                         <div
                           ref={(el) => { messageRefs.current[message.id] = el; }}
-                          className={`flex gap-3 justify-start ${showHeader ? '' : 'mt-0.5'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
+                          className={`flex gap-3 ${isOwn ? 'flex-row-reverse' : ''} justify-start ${showHeader ? '' : 'mt-0.5'} ${isHighlighted ? 'animate-pulse' : ''} ${isPinnedHighlight ? 'rounded-lg ring-2 ring-primary/40 bg-primary/5' : ''} group/msg`}
                           data-testid={`message-${message.id}`}
                         >
                           {/* Avatar gutter — visible only on first message of a group */}
@@ -2031,7 +2031,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           ) : (
                             <div className="w-8 shrink-0" aria-hidden="true" />
                           )}
-                          <div className="flex flex-col gap-1 max-w-[80%] items-start">
+                          <div className={`flex flex-col gap-1 max-w-[80%] ${isOwn ? 'items-end' : 'items-start'}`}>
                             {showHeader && (
                               <span className="text-xs font-medium text-foreground">
                                 {authorName}
@@ -2119,7 +2119,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                   absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
                                   bg-background border rounded-lg shadow-sm p-0.5 z-10
                                   invisible group-hover/msg:visible
-                                  left-full ml-2
+                                  ${isOwn ? 'right-full mr-2' : 'left-full ml-2'}
                                 `}
                               >
                                 {/* Single reaction picker trigger */}
@@ -2262,7 +2262,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
 
                             {/* Inline thread expansion */}
                             {threadOpen && (
-                              <div className="mt-1 ml-2 border-l-2 border-border pl-3 w-full space-y-2">
+                              <div className={`mt-1 w-full space-y-2 ${isOwn ? 'mr-2 border-r-2 border-border pr-3' : 'ml-2 border-l-2 border-border pl-3'}`}>
                                 {/* "Replying to [name]" context header */}
                                 <div className="text-table text-muted-foreground flex items-center gap-1">
                                   <MessageSquare className="h-3 w-3" />
@@ -2308,7 +2308,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                             <div className="flex-1 h-px bg-border" />
                                           </div>
                                         )}
-                                      <div className={`flex gap-2 items-start ${replyShowHeader ? '' : 'mt-0.5'}`}>
+                                      <div className={`flex gap-2 items-start ${replyShowHeader ? '' : 'mt-0.5'} ${replyIsOwn ? 'flex-row-reverse' : ''} justify-start`}>
                                         {replyShowHeader ? (
                                           <Avatar className="h-6 w-6 shrink-0">
                                             <AvatarFallback className="text-data bg-muted/60">
@@ -2318,7 +2318,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                         ) : (
                                           <div className="w-6 shrink-0" aria-hidden="true" />
                                         )}
-                                        <div className="flex flex-col gap-0.5 flex-1">
+                                        <div className={`flex flex-col gap-0.5 flex-1 ${replyIsOwn ? 'items-end' : 'items-start'}`}>
                                           {replyShowHeader && (
                                             <span className="text-table font-medium text-foreground">
                                               {replyAuthor}
