@@ -9,7 +9,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
-  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
@@ -222,12 +221,20 @@ const colors = {
         }
       />
 
-      {/* Filter chips — fixed at the bottom */}
-      <View style={[styles.chipBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
+      {/* Floating filter pill — hovers above the bottom tab bar */}
+      <View
+        pointerEvents="box-none"
+        style={styles.pillWrap}
+      >
+        <View
+          style={[
+            styles.pill,
+            {
+              backgroundColor: colors.card,
+              borderColor: isDark ? 'transparent' : colors.border,
+              shadowOpacity: isDark ? 0.45 : 0.12,
+            },
+          ]}
         >
           {phases.map(phase => {
             const isActive = activePhase === phase.key;
@@ -235,22 +242,25 @@ const colors = {
               <TouchableOpacity
                 key={phase.key}
                 style={[
-                  styles.chip,
-                  {
-                    backgroundColor: isActive ? colors.accent + '30' : colors.card,
-                    borderColor: isActive ? colors.accent + '60' : colors.border,
-                  },
+                  styles.pillBtn,
+                  isActive && { backgroundColor: theme.primaryLight },
                 ]}
                 onPress={() => setActivePhase(phase.key)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.chipLabel, { color: isActive ? colors.accent : colors.secondary }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.pillLabel,
+                    { color: isActive ? colors.accent : colors.secondary },
+                  ]}
+                >
                   {phase.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
       </View>
     </View>
   );
@@ -297,7 +307,8 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 12,
+    // Leave room for the floating pill (~52 tall) + clearance above the tab bar
+    paddingBottom: 80,
     gap: 6,
   },
 
@@ -340,27 +351,36 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
 
-  chipBar: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 8,
-  },
-  chipRow: {
+  pillWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 14,
     paddingHorizontal: 16,
-    gap: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
-  chip: {
+  pill: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    height: 40,
-    borderRadius: 10,
+    alignItems: 'stretch',
+    padding: 6,
+    borderRadius: 26,
     borderWidth: 1,
+    gap: 4,
+    // Soft shadow (iOS) + elevation (Android)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 6,
   },
-  chipLabel: {
-    fontSize: 13,
+  pillBtn: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillLabel: {
+    fontSize: 12,
     fontWeight: '600',
   },
   emptyContainer: { alignItems: 'center', paddingVertical: 60 },
