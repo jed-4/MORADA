@@ -1204,7 +1204,7 @@ const colors = {
                       justifyContent: 'center',
                       borderLeftWidth: StyleSheet.hairlineWidth,
                       borderLeftColor: colors.border + '60',
-                      backgroundColor: currentDay ? colors.accent + '12' : 'transparent',
+                      backgroundColor: 'transparent',
                     }}
                   >
                     <Text style={{
@@ -1238,7 +1238,7 @@ const colors = {
               })}
             </View>
 
-            {/* Row 2: All-day chips — measures own height so left label can match */}
+            {/* Row 2: All-day chips — fixed 36px single row when collapsed */}
             {anyAllDayEvents && (
               <View
                 style={{
@@ -1246,12 +1246,14 @@ const colors = {
                   borderBottomWidth: StyleSheet.hairlineWidth,
                   borderBottomColor: colors.border,
                   backgroundColor: colors.card,
+                  height: allDayExpanded ? undefined : 36,
                 }}
                 onLayout={(e) => setAllDayRowHeight(e.nativeEvent.layout.height)}
               >
                 {weekDays.map((day, dayIdx) => {
                   const dayAllEvents = getEventsForDate(day).filter(e => isEventAllDay(e));
-                  const visibleEvents = allDayExpanded ? dayAllEvents : dayAllEvents.slice(0, 3);
+                  const visibleEvents = allDayExpanded ? dayAllEvents : dayAllEvents.slice(0, 1);
+                  const overflowCount = !allDayExpanded ? Math.max(0, dayAllEvents.length - 1) : 0;
                   return (
                     <View
                       key={dayIdx}
@@ -1260,8 +1262,10 @@ const colors = {
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
                         paddingHorizontal: 2,
-                        paddingVertical: 3,
+                        paddingVertical: 5,
                         gap: 2,
+                        overflow: 'hidden',
+                        position: 'relative',
                       }}
                     >
                       {visibleEvents.map(event => (
@@ -1273,7 +1277,8 @@ const colors = {
                             borderRadius: 5,
                             borderLeftWidth: 3,
                             borderLeftColor: event.color || '#94a3b8',
-                            paddingHorizontal: 4,
+                            paddingLeft: 4,
+                            paddingRight: overflowCount > 0 ? 22 : 4,
                             justifyContent: 'center',
                             overflow: 'hidden',
                           }}
@@ -1288,10 +1293,28 @@ const colors = {
                           </Text>
                         </TouchableOpacity>
                       ))}
-                      {!allDayExpanded && dayAllEvents.length > 3 && (
+                      {allDayExpanded && dayAllEvents.length > 1 && (
                         <Text style={{ fontSize: 9, color: colors.secondary, textAlign: 'center' }}>
-                          +{dayAllEvents.length - 3} more
+                          +{dayAllEvents.length - 1} more
                         </Text>
+                      )}
+                      {!allDayExpanded && overflowCount > 0 && (
+                        <View style={{
+                          position: 'absolute',
+                          right: 4,
+                          top: 6,
+                          height: 20,
+                          minWidth: 20,
+                          paddingHorizontal: 4,
+                          borderRadius: 10,
+                          backgroundColor: colors.secondary + '30',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                          <Text style={{ fontSize: 9, fontWeight: '600', color: colors.secondary }}>
+                            +{overflowCount}
+                          </Text>
+                        </View>
                       )}
                     </View>
                   );
@@ -1367,6 +1390,8 @@ const colors = {
 
                   const colPad = 2;
                   const usableWidth = GRID_COL_WIDTH - colPad * 2;
+                  const minLaneWidth = GRID_COL_WIDTH * 0.55;
+                  const STACK_OFFSET = 10;
 
                   return (
                     <View
@@ -1376,7 +1401,7 @@ const colors = {
                         height: TOTAL_GRID_HEIGHT,
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
-                        backgroundColor: currentDay ? colors.accent + '12' : isWeekend ? colors.border + '30' : 'transparent',
+                        backgroundColor: currentDay ? colors.accent + '0D' : isWeekend ? colors.border + '30' : 'transparent',
                       }}
                     >
                       {hourLabels.map((_, hourIdx) => (
@@ -1400,15 +1425,15 @@ const colors = {
                           style={{
                             position: 'absolute',
                             left: 0,
-                            right: 0,
+                            width: GRID_COL_WIDTH,
                             top: (nowMinutes / 60) * HOUR_HEIGHT - 1,
                             zIndex: 10,
                           }}
                         >
                           <View style={{
                             position: 'absolute',
-                            left: -4,
-                            top: -4,
+                            left: 0,
+                            top: -3,
                             width: 8,
                             height: 8,
                             borderRadius: 4,
@@ -1431,8 +1456,16 @@ const colors = {
                         const la = laneAssignment.get(event.id);
                         const lane = la?.lane ?? 0;
                         const tl = la?.totalLanes ?? 1;
-                        const laneWidth = usableWidth / tl;
-                        const left = colPad + lane * laneWidth;
+                        const naturalLaneWidth = usableWidth / tl;
+                        const stacking = naturalLaneWidth < minLaneWidth && tl > 1;
+                        const left = stacking
+                          ? colPad + lane * STACK_OFFSET
+                          : colPad + lane * naturalLaneWidth;
+                        const rawBlockWidth = stacking
+                          ? Math.max(usableWidth - lane * STACK_OFFSET, minLaneWidth)
+                          : naturalLaneWidth - 1;
+                        const blockWidth = Math.min(rawBlockWidth, GRID_COL_WIDTH - left - colPad);
+                        const zIndex = stacking ? 1 + lane : 1;
 
                         return (
                           <TouchableOpacity
@@ -1441,14 +1474,15 @@ const colors = {
                               position: 'absolute',
                               top,
                               left,
-                              width: laneWidth - 1,
+                              width: blockWidth,
                               height,
                               backgroundColor: colors.card,
                               borderRadius: 6,
-                              borderWidth: 1,
+                              borderWidth: StyleSheet.hairlineWidth,
                               borderColor: colors.border,
                               overflow: 'hidden',
                               flexDirection: 'row',
+                              zIndex,
                             }}
                             onPress={() => handleEventTap(event)}
                             activeOpacity={0.75}
