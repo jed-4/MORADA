@@ -8,6 +8,7 @@ import {
   TextInput,
   RefreshControl,
   ActivityIndicator,
+  ScrollView,
   useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +16,10 @@ import { apiFetch } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, lightTheme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
+
+const toTitleCase = (str: string) =>
+  str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 interface Project {
   id: string;
   name: string;
@@ -49,6 +54,9 @@ const phases = [
 export default function ProjectsScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { user } = useAuth();
+  const canViewFinancials =
+    user?.role === 'admin' || user?.role === 'manager' || user?.role === 'owner';
   const [projects, setProjects] = useState<Project[]>([]);
   const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
@@ -178,20 +186,20 @@ const colors = {
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[styles.card, { backgroundColor: colors.card }]}
       >
-        {/* Left vertical colour stripe */}
-        <View style={[styles.cardStripe, { backgroundColor: projectColor }]} />
+        {/* Top colour band */}
+        <View style={[styles.cardTopBand, { backgroundColor: projectColor }]} />
 
-        {/* Card body */}
+        {/* Card body below the band */}
         <View style={styles.cardBody}>
 
-          {/* Row 1: Project name + value */}
+          {/* Row 1: Project name + value (financial fields role-gated) */}
           <View style={styles.cardRow}>
             <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
               {item.name}
             </Text>
-            {valueStr && (
+            {canViewFinancials && valueStr && (
               <Text style={[styles.cardValue, { color: colors.text }]}>{valueStr}</Text>
             )}
           </View>
@@ -200,17 +208,20 @@ const colors = {
           <View style={[styles.cardRow, { marginTop: 6 }]}>
             <View style={[styles.chip, { backgroundColor: chip.bg }]}>
               <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
-              <Text style={[styles.chipLabel, { color: chip.text }]}>{chipLabel}</Text>
+              <Text style={[styles.chipLabel, { color: chip.text }]}>{toTitleCase(chipLabel)}</Text>
             </View>
             {dateStr && (
               <Text style={[styles.cardDate, { color: colors.secondary }]}>{dateStr}</Text>
             )}
           </View>
 
-          {/* Row 3: Progress bar (only if completion data exists) */}
-          {hasProgress && (
+          {/* Row 3: Progress bar (role-gated alongside contract value) */}
+          {canViewFinancials && hasProgress && (
             <View style={[styles.progressBg, { backgroundColor: colors.border, marginTop: 10 }]}>
-              <View style={[styles.progressFill, { backgroundColor: projectColor, width: `${progress * 100}%` }]} />
+              <View style={[styles.progressFill, {
+                backgroundColor: projectColor,
+                width: `${Math.round(progress * 100)}%`,
+              }]} />
             </View>
           )}
 
@@ -229,10 +240,12 @@ const colors = {
 
   const filteredProjects = getFilteredProjects();
 
+  const screenBg = isDark ? theme.background : '#FAFAF8';
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* Header — matches Dashboard header exactly */}
-      <View style={[styles.header, { backgroundColor: colors.bg }]}>
+      <View style={[styles.header, { backgroundColor: screenBg }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Projects</Text>
         <TouchableOpacity
           style={styles.searchIconBtn}
@@ -280,45 +293,38 @@ const colors = {
         }
       />
 
-      {/* Floating filter pill — hovers above the bottom tab bar */}
+      {/* Solid opaque filter dock — cards stop cleanly below it */}
       <View
-        pointerEvents="box-none"
-        style={styles.pillWrap}
+        style={[
+          styles.pillWrap,
+          {
+            backgroundColor: screenBg,
+            borderTopColor: colors.border,
+          },
+        ]}
       >
-        <View
-          style={[
-            styles.pill,
-            {
-              backgroundColor: colors.card,
-              borderColor: isDark ? 'transparent' : colors.border,
-              shadowOpacity: isDark ? 0.45 : 0.12,
-            },
-          ]}
-        >
-          {phases.map(phase => {
-            const isActive = activePhase === phase.key;
-            return (
-              <TouchableOpacity
-                key={phase.key}
-                style={[
-                  styles.pillBtn,
-                  isActive && { backgroundColor: colors.accent },
-                ]}
-                onPress={() => setActivePhase(phase.key)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.pillLabel,
-                    { color: isActive ? '#FFFFFF' : colors.secondary },
-                  ]}
+        <View style={[styles.pill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillScroll}
+          >
+            {phases.map(phase => {
+              const isActive = activePhase === phase.key;
+              return (
+                <TouchableOpacity
+                  key={phase.key}
+                  style={[styles.pillBtn, isActive && { backgroundColor: colors.accent }]}
+                  onPress={() => setActivePhase(phase.key)}
+                  activeOpacity={0.7}
                 >
-                  {phase.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Text style={[styles.pillLabel, { color: isActive ? '#FFFFFF' : colors.secondary }]}>
+                    {phase.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       </View>
     </View>
@@ -339,7 +345,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
   },
   searchIconBtn: {
@@ -366,20 +372,22 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 90,
+    paddingBottom: 120,
     gap: 10,
   },
 
   card: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'stretch',
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#EAEAE8',
     overflow: 'hidden',
     minHeight: 84,
   },
-  cardStripe: {
-    width: 4,
+  cardTopBand: {
+    height: 4,
+    width: '100%',
   },
   cardBody: {
     flex: 1,
@@ -435,27 +443,26 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 14,
+    bottom: 0,
     paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   pill: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
     padding: 6,
     borderRadius: 26,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  pillScroll: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     gap: 4,
-    // Soft shadow (iOS) + elevation (Android)
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 6,
   },
   pillBtn: {
-    flex: 1,
     minHeight: 36,
     borderRadius: 18,
-    paddingHorizontal: 6,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
