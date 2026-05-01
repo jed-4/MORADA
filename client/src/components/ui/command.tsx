@@ -9,9 +9,16 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive>
->(({ className, ...props }, ref) => (
+>(({ className, disablePointerSelection = true, ...props }, ref) => (
+  // disablePointerSelection defaults to true to keep wheel scrolling working
+  // inside <CommandList>. Without it, cmdk auto-selects whichever item the
+  // pointer happens to pass over during a scroll and then calls
+  // scrollIntoView({ block: "nearest" }) on it — which can snap the scroll
+  // back and make the list feel unscrollable. Callers can opt back in by
+  // passing disablePointerSelection={false}.
   <CommandPrimitive
     ref={ref}
+    disablePointerSelection={disablePointerSelection}
     className={cn(
       "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
       className
