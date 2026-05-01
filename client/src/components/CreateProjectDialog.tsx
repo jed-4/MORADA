@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertProjectSchema, InsertProject, Project, type FieldCategoryWithOptions } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
+import { PROJECT_COLORS, getProjectColor } from "@/lib/taskColors";
 
 type CreateProjectDialogProps = {
   open: boolean;
@@ -26,7 +27,7 @@ type CreateProjectDialogProps = {
 };
 
 const formSchema = insertProjectSchema.extend({
-  color: insertProjectSchema.shape.color.default("#3b82f6"),
+  color: insertProjectSchema.shape.color.default(PROJECT_COLORS[0]),
 });
 
 type FormData = {
@@ -72,6 +73,13 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
     enabled: open,
   });
 
+  // Used only to derive the cyclic auto-assigned colour for new projects.
+  // Dedupes against the cached list maintained by ProjectContext.
+  const { data: existingProjects = [], isSuccess: projectsLoaded } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: open,
+  });
+
   useEffect(() => {
     if (open && assignableUsers.length > 0) {
       const autoAddIds = new Set<string>();
@@ -93,12 +101,28 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
     defaultValues: {
       name: "",
       description: "",
-      color: "#3b82f6",
+      color: PROJECT_COLORS[0],
       isActive: true,
       invoicingMethod: "progress_payments",
       projectSubStatus: "lead_new",
     },
   });
+
+  // Seed the colour field once per open cycle with the next cyclic palette
+  // colour, based on the count of existing projects at the moment the dialog
+  // opens. Guarded by a ref so a background refetch (which can change
+  // existingProjects.length while the dialog is open) cannot overwrite the
+  // user's manual swatch / custom-hex selection mid-edit.
+  const hasSeededColorRef = useRef(false);
+  useEffect(() => {
+    if (open && projectsLoaded && !hasSeededColorRef.current) {
+      form.setValue("color", getProjectColor(existingProjects.length));
+      hasSeededColorRef.current = true;
+    }
+    if (!open) {
+      hasSeededColorRef.current = false;
+    }
+  }, [open, projectsLoaded, existingProjects, form]);
 
   const filteredUsers = useMemo(() => {
     if (!userSearch) return assignableUsers;
@@ -294,20 +318,38 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                 <FormItem>
                   <FormLabel>Project Color</FormLabel>
                   <FormControl>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        type="color"
-                        className="w-16 h-10 p-1 border rounded"
-                        data-testid="input-project-color"
-                        {...field}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#3b82f6"
-                        className="flex-1"
-                        data-testid="input-project-color-hex"
-                        {...field}
-                      />
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {PROJECT_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => field.onChange(color)}
+                            className={`w-8 h-8 rounded-md border-2 ${
+                              field.value === color ? "border-foreground" : "border-border"
+                            }`}
+                            style={{ backgroundColor: color }}
+                            title={color}
+                            data-testid={`button-color-${color}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">Custom</Label>
+                        <Input
+                          type="text"
+                          placeholder="#A890D4"
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          className="flex-1 max-w-[160px] font-mono text-sm"
+                          data-testid="input-project-color-hex"
+                        />
+                        <div
+                          className="w-8 h-8 rounded-md border border-border"
+                          style={{ backgroundColor: field.value || PROJECT_COLORS[0] }}
+                          data-testid="color-preview"
+                        />
+                      </div>
                     </div>
                   </FormControl>
                   <FormMessage />

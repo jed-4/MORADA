@@ -44,6 +44,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, FieldOption, Estimate, FieldCategoryWithOptions, Contact, Company } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { PROJECT_COLORS } from "@/lib/taskColors";
 import AddContactDialog from "@/components/AddContactDialog";
 import * as LucideIcons from "lucide-react";
 
@@ -72,7 +73,7 @@ export default function ProjectSettings() {
     proposedEndDate: currentProject?.proposedEndDate || null,
     contractCost: currentProject?.contractCost || null,
     selectedEstimateId: currentProject?.selectedEstimateId || null,
-    color: currentProject?.color || "#3b82f6",
+    color: currentProject?.color || "#A890D4",
     icon: currentProject?.icon || "Building2",
     isActive: currentProject?.isActive ?? true,
     invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
@@ -249,7 +250,7 @@ export default function ProjectSettings() {
         proposedEndDate: currentProject.proposedEndDate || null,
         contractCost: currentProject.contractCost || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
-        color: currentProject.color || "#3b82f6",
+        color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         invoicingMethod: currentProject.invoicingMethod || "progress_payments",
@@ -325,7 +326,7 @@ export default function ProjectSettings() {
         proposedEndDate: currentProject.proposedEndDate || null,
         contractCost: currentProject.contractCost || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
-        color: currentProject.color || "#3b82f6",
+        color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         invoicingMethod: currentProject.invoicingMethod || "progress_payments",
@@ -372,16 +373,7 @@ export default function ProjectSettings() {
     );
   }
 
-  const colorOptions = [
-    "#A890D4",
-    "#8AA5DE",
-    "#70CAD0",
-    "#82C8A2",
-    "#D4B670",
-    "#DA988A",
-    "#D08AAF",
-    "#B294D0",
-  ];
+  const colorOptions = PROJECT_COLORS;
 
   return (
     <div className="p-6 space-y-6">
@@ -1037,11 +1029,11 @@ export default function ProjectSettings() {
               <div className="flex items-center gap-2">
                 <div
                   className="w-6 h-6 rounded-md border border-border"
-                  style={{ backgroundColor: currentProject.color || "#3b82f6" }}
+                  style={{ backgroundColor: currentProject.color || "#A890D4" }}
                   data-testid="color-preview"
                 />
                 <span className="text-sm font-mono" data-testid="text-project-color">
-                  {currentProject.color || "#3b82f6"}
+                  {currentProject.color || "#A890D4"}
                 </span>
               </div>
             )}

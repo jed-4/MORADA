@@ -750,7 +750,7 @@ export const projects = pgTable("projects", {
   description: text("description"),
   jobNumber: text("job_number"), // Project reference number (displayed as "Project Number")
   projectType: text("project_type"), // References PROJECT_TYPES
-  color: text("color").default("#3b82f6"), // Default blue
+  color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
   icon: text("icon").default("Building2"), // Lucide icon name
   location: text("location"), // Project address/location (displayed as "Address")
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
@@ -811,7 +811,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
 }).extend({
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["active", "on_hold", "completed"]).default("active"),
-  color: z.string().default("#3b82f6"),
+  color: z.string().default("#A890D4"),
   icon: z.string().default("Building2"),
   projectSubStatus: z.string().min(1, "Status is required"), // Required - must select a status
 });

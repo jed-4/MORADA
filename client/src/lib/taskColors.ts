@@ -24,19 +24,18 @@ export const TYPE_COLORS_HEX = {
 
 export type ScheduleItemType = keyof typeof TYPE_COLORS;
 
-// Project auto-colour palette — assigned cyclically as new projects are created.
-// Picked from the warm organic accent system to feel coherent with the app design language.
+// Project colour palette — used as the swatch picker in Create / Edit Project,
+// and assigned cyclically as new projects are created (see getProjectColor below).
+// Organised in four hue families so the swatch grid reads as a coherent palette.
 export const PROJECT_COLORS = [
-  '#70CAD0', // teal
-  '#A890D4', // lavender
-  '#82C8A2', // sage
-  '#D4B670', // amber
-  '#DA988A', // coral
-  '#D08AAF', // rose
-  '#9278C4', // lavender deep
-  '#4ECAC8', // teal bright
-  '#B8D48A', // lime sage
-  '#E8A87C', // warm orange
+  // Warm
+  "#E8A0A8", "#DA988A", "#E09878", "#C87878", "#D484A0", "#E8B0C0",
+  // Earthy
+  "#E8B480", "#E09868", "#F0B964", "#EAD070", "#D4A840", "#C89050",
+  // Natural
+  "#96D4A8", "#82C8A2", "#68B088", "#80C8C0", "#70CAD0", "#58A8B0",
+  // Cool
+  "#80B8D8", "#7890C8", "#8888C4", "#A890D4", "#B0A0C8", "#C090B4",
 ] as const;
 
 // Cyclic project-colour selector — always returns a colour from PROJECT_COLORS for any non-negative index.
