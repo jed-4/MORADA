@@ -26,6 +26,12 @@ interface Project {
   address?: string;
   color?: string;
   createdAt?: string;
+  budget?: number;
+  contractValue?: number;
+  completionPercentage?: number;
+  startDate?: string;
+  endDate?: string;
+  targetCompletionDate?: string;
 }
 
 type Props = {
@@ -102,7 +108,6 @@ const colors = {
 
   const GREY = lightTheme.textMuted;
   const getProjectColor = (project: Project): string => project.color || GREY;
-  const mutedColor = (hex: string): string => hex + '45';
 
   const getSubStatusLabel = (key?: string): string => {
     if (!key) return '';
@@ -137,25 +142,79 @@ const colors = {
   const renderProjectCard = ({ item }: { item: Project }) => {
     const projectColor = getProjectColor(item);
 
+    // Status chip colour mapping
+    const chipColors: Record<string, { bg: string; dot: string; text: string }> = {
+      construction:      { bg: '#E8F5F0', dot: '#68B088', text: '#3A7A5A' },
+      pre_construction:  { bg: '#FEF3E2', dot: '#F0B964', text: '#8A6020' },
+      lead:              { bg: '#F0EAFA', dot: '#A890D4', text: '#6A4A9A' },
+      post_construction: { bg: '#E8F5F0', dot: '#70CAD0', text: '#3A7A80' },
+    };
+    const chip = chipColors[item.currentSystemPhase ?? ''] ?? { bg: '#F0EAFA', dot: '#A890D4', text: '#6A4A9A' };
+    const chipLabel = item.projectSubStatus
+      ? getSubStatusLabel(item.projectSubStatus)
+      : item.currentSystemPhase
+      ? getSubStatusLabel(item.currentSystemPhase)
+      : 'Active';
+
+    // Progress (0–100 → 0.0–1.0)
+    const progress = Math.min(Math.max((item.completionPercentage ?? 0) / 100, 0), 1);
+    const hasProgress = (item.completionPercentage ?? 0) > 0;
+
+    // Value display
+    const value = item.contractValue ?? item.budget;
+    const valueStr = value
+      ? value >= 1_000_000
+        ? `$${(value / 1_000_000).toFixed(1)}M`
+        : `$${Math.round(value / 1000)}k`
+      : null;
+
+    // Date display
+    const dueDate = item.targetCompletionDate ?? item.endDate;
+    const dateStr = dueDate
+      ? new Date(dueDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+      : null;
+
     return (
       <TouchableOpacity
-        style={[styles.card, { backgroundColor: colors.card }]}
-        onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
         activeOpacity={0.7}
+        onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
-        <View style={[styles.colorSquare, { backgroundColor: mutedColor(projectColor) }]} />
+        {/* Left vertical colour stripe */}
+        <View style={[styles.cardStripe, { backgroundColor: projectColor }]} />
+
+        {/* Card body */}
         <View style={styles.cardBody}>
-          {item.projectNumber && (
-            <Text style={[styles.cardNumber, { color: colors.secondary }]} numberOfLines={1}>#{item.projectNumber}</Text>
+
+          {/* Row 1: Project name + value */}
+          <View style={styles.cardRow}>
+            <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {valueStr && (
+              <Text style={[styles.cardValue, { color: colors.text }]}>{valueStr}</Text>
+            )}
+          </View>
+
+          {/* Row 2: Status chip + date */}
+          <View style={[styles.cardRow, { marginTop: 6 }]}>
+            <View style={[styles.chip, { backgroundColor: chip.bg }]}>
+              <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
+              <Text style={[styles.chipLabel, { color: chip.text }]}>{chipLabel}</Text>
+            </View>
+            {dateStr && (
+              <Text style={[styles.cardDate, { color: colors.secondary }]}>{dateStr}</Text>
+            )}
+          </View>
+
+          {/* Row 3: Progress bar (only if completion data exists) */}
+          {hasProgress && (
+            <View style={[styles.progressBg, { backgroundColor: colors.border, marginTop: 10 }]}>
+              <View style={[styles.progressFill, { backgroundColor: projectColor, width: `${progress * 100}%` }]} />
+            </View>
           )}
-          <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-          {item.clientName && (
-            <Text style={[styles.cardSub, { color: colors.secondary }]} numberOfLines={1}>{item.clientName}</Text>
-          )}
+
         </View>
-        <Text style={[styles.cardStatus, { color: colors.secondary }]} numberOfLines={1}>
-          {getSubStatusLabel(item.projectSubStatus)}
-        </Text>
       </TouchableOpacity>
     );
   };
@@ -173,7 +232,7 @@ const colors = {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header — matches Dashboard header exactly */}
-      <View style={[styles.header, { backgroundColor: colors.accent + '30' }]}>
+      <View style={[styles.header, { backgroundColor: colors.bg }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Projects</Text>
         <TouchableOpacity
           style={styles.searchIconBtn}
@@ -243,7 +302,7 @@ const colors = {
                 key={phase.key}
                 style={[
                   styles.pillBtn,
-                  isActive && { backgroundColor: theme.primaryLight },
+                  isActive && { backgroundColor: colors.accent },
                 ]}
                 onPress={() => setActivePhase(phase.key)}
                 activeOpacity={0.7}
@@ -252,7 +311,7 @@ const colors = {
                   numberOfLines={1}
                   style={[
                     styles.pillLabel,
-                    { color: isActive ? colors.accent : colors.secondary },
+                    { color: isActive ? '#FFFFFF' : colors.secondary },
                   ]}
                 >
                   {phase.label}
@@ -307,48 +366,69 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    // Leave room for the floating pill (~52 tall) + clearance above the tab bar
-    paddingBottom: 80,
-    gap: 6,
+    paddingBottom: 90,
+    gap: 10,
   },
 
   card: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: lightTheme.borderStrong,
-    height: 50,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    minHeight: 84,
   },
-  colorSquare: {
-    width: 50,
-    alignSelf: 'stretch',
-    borderRadius: 9,
+  cardStripe: {
+    width: 4,
   },
   cardBody: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    justifyContent: 'flex-start',
-    gap: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  cardNumber: {
-    fontSize: 10,
-    fontWeight: '500',
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   cardName: {
     fontSize: 13,
     fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
   },
-  cardSub: {
+  cardValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cardDate: {
     fontSize: 11,
   },
-  cardStatus: {
-    fontSize: 11,
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 9,
+  },
+  chipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  chipLabel: {
+    fontSize: 9,
     fontWeight: '500',
-    paddingRight: 12,
-    paddingTop: 8,
-    alignSelf: 'flex-start',
+  },
+  progressBg: {
+    height: 3,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 3,
+    borderRadius: 2,
   },
 
   pillWrap: {
