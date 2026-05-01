@@ -31,12 +31,18 @@ interface Project {
   address?: string;
   color?: string;
   createdAt?: string;
-  budget?: number;
-  contractValue?: number;
-  completionPercentage?: number;
+  // Financial fields — server stores ALL values in cents.
+  budget?: number;          // legacy internal budget (cents)
+  clientBudget?: number;    // client's budget (cents)
+  contractCost?: number;    // agreed contract cost (cents)
+  contractPrice?: number;   // locked contract price set at construction (cents)
+  // Completion (0–100 integer, NOT NULL default 0 on server)
+  percentComplete?: number;
+  // Dates
   startDate?: string;
   endDate?: string;
-  targetCompletionDate?: string;
+  proposedStartDate?: string;
+  proposedEndDate?: string;
 }
 
 type Props = {
@@ -55,8 +61,17 @@ export default function ProjectsScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
-  const canViewFinancials =
-    user?.role === 'admin' || user?.role === 'manager' || user?.role === 'owner';
+  // Mirror server-side authority check used by GET /api/projects in
+  // server/routes.ts: roleName matched case-insensitively against
+  // admin / owner / general manager. The backend remains authoritative.
+  const canViewFinancials = (() => {
+    const r = (user?.roleName ?? '').toLowerCase();
+    return (
+      r.includes('admin') ||
+      r.includes('owner') ||
+      r.includes('general manager')
+    );
+  })();
   const [projects, setProjects] = useState<Project[]>([]);
   const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
@@ -164,20 +179,24 @@ const colors = {
       ? getSubStatusLabel(item.currentSystemPhase)
       : 'Active';
 
-    // Progress (0–100 → 0.0–1.0)
-    const progress = Math.min(Math.max((item.completionPercentage ?? 0) / 100, 0), 1);
-    const hasProgress = (item.completionPercentage ?? 0) > 0;
+    // Progress (server stores as `percentComplete`, 0–100, NOT NULL default 0)
+    const pct = typeof item.percentComplete === 'number' ? item.percentComplete : 0;
+    const hasProgress = pct > 0;
 
-    // Value display
-    const value = item.contractValue ?? item.budget;
-    const valueStr = value
-      ? value >= 1_000_000
-        ? `$${(value / 1_000_000).toFixed(1)}M`
-        : `$${Math.round(value / 1000)}k`
+    // Value display — server stores ALL financial fields in CENTS.
+    // Pick the most "headline" value available, in priority order.
+    const valueCents = item.contractPrice ?? item.contractCost ?? item.clientBudget ?? item.budget;
+    const valueStr = valueCents
+      ? (() => {
+          const dollars = valueCents / 100;
+          if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
+          if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}k`;
+          return `$${Math.round(dollars)}`;
+        })()
       : null;
 
-    // Date display
-    const dueDate = item.targetCompletionDate ?? item.endDate;
+    // Date display — schema uses proposedEndDate (and legacy endDate).
+    const dueDate = item.proposedEndDate ?? item.endDate;
     const dateStr = dueDate
       ? new Date(dueDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
       : null;
@@ -215,13 +234,19 @@ const colors = {
             )}
           </View>
 
-          {/* Row 3: Progress bar (role-gated alongside contract value) */}
+          {/* Row 3: Progress bar in the project's own colour + % label.
+              Role-gated alongside contract value. */}
           {canViewFinancials && hasProgress && (
-            <View style={[styles.progressBg, { backgroundColor: colors.border, marginTop: 10 }]}>
-              <View style={[styles.progressFill, {
-                backgroundColor: projectColor,
-                width: `${Math.round(progress * 100)}%`,
-              }]} />
+            <View style={{ marginTop: 10 }}>
+              <View style={[styles.progressBg, { backgroundColor: '#EAEAE8' }]}>
+                <View style={[styles.progressFill, {
+                  backgroundColor: projectColor,
+                  width: `${Math.min(pct, 100)}%`,
+                }]} />
+              </View>
+              <Text style={[styles.progressLabel, { color: colors.secondary }]}>
+                {Math.round(pct)}% complete
+              </Text>
             </View>
           )}
 
@@ -254,6 +279,8 @@ const colors = {
         >
           <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.secondary} />
         </TouchableOpacity>
+        {/* Hairline divider beneath the header */}
+        <View style={[styles.headerDivider, { backgroundColor: '#EAEAE8' }]} />
       </View>
 
       {/* Expandable search */}
@@ -280,6 +307,7 @@ const colors = {
       <FlatList
         data={filteredProjects}
         keyExtractor={item => item.id}
+        style={{ backgroundColor: screenBg }}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         renderItem={renderProjectCard}
@@ -343,10 +371,18 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 14,
     borderBottomWidth: 0,
+    position: 'relative',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  headerDivider: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
   },
   searchIconBtn: {
     padding: 8,
@@ -433,10 +469,15 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     overflow: 'hidden',
+    width: '100%',
   },
   progressFill: {
     height: 3,
     borderRadius: 2,
+  },
+  progressLabel: {
+    fontSize: 10,
+    marginTop: 4,
   },
 
   pillWrap: {
