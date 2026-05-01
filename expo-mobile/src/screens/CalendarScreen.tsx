@@ -1351,11 +1351,28 @@ const colors = {
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                   const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
 
-                  const layoutEvents = dayEvents.map(event => {
+                  const allLayoutEvents = dayEvents.map(event => {
                     const startMin = timeToMinutes(event.startTime!);
                     const durationMin = getEventDurationMinutes(event.startTime!, event.endTime);
                     return { event, startMin, endMin: startMin + durationMin };
                   }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+
+                  // Collapse events that share the exact same start time:
+                  // keep only the first one and remember how many were hidden.
+                  const overlapCounts = new Map<string, number>();
+                  const seenStartMin = new Set<number>();
+                  const layoutEvents: typeof allLayoutEvents = [];
+                  for (const le of allLayoutEvents) {
+                    if (seenStartMin.has(le.startMin)) {
+                      const prev = layoutEvents.find(x => x.startMin === le.startMin);
+                      if (prev) {
+                        overlapCounts.set(prev.event.id, (overlapCounts.get(prev.event.id) ?? 0) + 1);
+                      }
+                      continue;
+                    }
+                    seenStartMin.add(le.startMin);
+                    layoutEvents.push(le);
+                  }
 
                   // Assign each event to the first available column (lane)
                   const laneEndTimes: number[] = [];
@@ -1467,6 +1484,8 @@ const colors = {
                         const blockWidth = Math.min(rawBlockWidth, GRID_COL_WIDTH - left - colPad);
                         const zIndex = stacking ? 1 + lane : 1;
 
+                        const overlapCount = overlapCounts.get(event.id) ?? 0;
+
                         return (
                           <TouchableOpacity
                             key={event.id}
@@ -1476,10 +1495,8 @@ const colors = {
                               left,
                               width: blockWidth,
                               height,
-                              backgroundColor: colors.card,
+                              backgroundColor: eventColor,
                               borderRadius: 6,
-                              borderWidth: StyleSheet.hairlineWidth,
-                              borderColor: colors.border,
                               overflow: 'hidden',
                               flexDirection: 'row',
                               zIndex,
@@ -1488,8 +1505,8 @@ const colors = {
                             activeOpacity={0.75}
                           >
                             <View style={{
-                              width: 3,
-                              backgroundColor: eventColor,
+                              width: 4,
+                              backgroundColor: 'rgba(0,0,0,0.22)',
                               borderTopLeftRadius: 6,
                               borderBottomLeftRadius: 6,
                             }} />
@@ -1498,7 +1515,7 @@ const colors = {
                                 style={{
                                   fontSize: 10,
                                   fontWeight: '600',
-                                  color: colors.text,
+                                  color: '#FFFFFF',
                                   lineHeight: 13,
                                 }}
                                 numberOfLines={2}
@@ -1506,11 +1523,26 @@ const colors = {
                                 {event.title}
                               </Text>
                               {height > 34 && event.startTime && (
-                                <Text style={{ fontSize: 9, color: colors.secondary, marginTop: 1 }}>
+                                <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.8)', marginTop: 1 }}>
                                   {formatTimeShort(event.startTime)}
                                 </Text>
                               )}
                             </View>
+                            {overlapCount > 0 && (
+                              <View style={{
+                                position: 'absolute',
+                                bottom: 4,
+                                right: 4,
+                                backgroundColor: 'rgba(0,0,0,0.25)',
+                                borderRadius: 8,
+                                paddingHorizontal: 5,
+                                paddingVertical: 2,
+                              }}>
+                                <Text style={{ fontSize: 8, color: '#FFFFFF', fontWeight: '600' }}>
+                                  +{overlapCount}
+                                </Text>
+                              </View>
+                            )}
                           </TouchableOpacity>
                         );
                       })}
@@ -1685,7 +1717,7 @@ const colors = {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.accent + '30' }]}>
+      <View style={[styles.header, { backgroundColor: colors.bg }]}>
         <View style={styles.headerLeft}>
           <Ionicons name="menu" size={22} color={colors.secondary + '80'} style={{ marginRight: 10 }} />
           <View>
@@ -1746,7 +1778,7 @@ const colors = {
                 {
                   backgroundColor: allDayExpanded
                     ? colors.accent
-                    : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
+                    : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
                 },
               ]}
               onPress={() => setAllDayExpanded(v => !v)}
@@ -1774,7 +1806,7 @@ const colors = {
                   {
                     backgroundColor: isSelected
                       ? colors.accent
-                      : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
+                      : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
                   },
                 ]}
                 onPress={() => {
@@ -1805,7 +1837,7 @@ const colors = {
               {
                 backgroundColor: activeFilterCount > 0
                   ? colors.accent
-                  : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
+                  : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
               },
             ]}
             onPress={() => setShowFilterModal(true)}
@@ -2319,7 +2351,6 @@ const styles = StyleSheet.create({
   chipBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 8,
   },
   chipRow: {
     paddingHorizontal: 16,
