@@ -554,11 +554,9 @@ export async function syncOverheadActualsNightly() {
     console.log("[ReminderProcessor] Running nightly overhead actuals Xero sync...");
     // Lazy import to avoid circular deps
     const { db } = await import("../db");
-    const { eq, and, isNotNull } = await import("drizzle-orm");
-    const { xeroService } = await import("../services/xeroService");
-    const { xeroConnections, overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals } = await import("@shared/schema");
+    const { xeroConnections } = await import("@shared/schema");
+    const { syncOverheadActualsForCompany } = await import("./syncOverheadActuals");
 
-    // Get all companies that have Xero connected
     const allConnections = await db.select().from(xeroConnections);
     let totalSynced = 0;
     let totalDrifted = 0;
@@ -566,73 +564,9 @@ export async function syncOverheadActualsNightly() {
     for (const connection of allConnections) {
       const companyId = connection.companyId;
       try {
-        const now = new Date();
-        const fyYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-        const fromDate = `${fyYear}-07-01`;
-        const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
-
-        const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
-
-        const companyItemRows = await db.select({ id: overheadItems.id, code: overheadItems.xeroAccountCode })
-          .from(overheadItems)
-          .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
-          .where(and(eq(overheadCategories.companyId, companyId), isNotNull(overheadItems.xeroAccountCode)));
-        const itemByCode = new Map(companyItemRows.map(i => [i.code as string, i.id]));
-
-        const confirmedStatuses = await db.select({ year: overheadMonthStatus.year, month: overheadMonthStatus.month })
-          .from(overheadMonthStatus)
-          .where(and(eq(overheadMonthStatus.companyId, companyId), isNotNull(overheadMonthStatus.confirmedAt)));
-        const confirmedSet = new Set(confirmedStatuses.map(s => `${s.year}__${s.month}`));
-
-        for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
-          const itemId = itemByCode.get(accountCode);
-          if (!itemId) continue;
-          for (const [monthKey, amount] of Object.entries((accountData as any).amounts)) {
-            const [yyyy, mm] = monthKey.split("-").map(Number);
-            if (!yyyy || !mm) continue;
-            const actualCents = Math.round((amount as number) * 100);
-            const isConfirmed = confirmedSet.has(`${yyyy}__${mm}`);
-            const [existing] = await db.select({ actualCents: overheadMonthActuals.actualCents })
-              .from(overheadMonthActuals)
-              .where(and(eq(overheadMonthActuals.itemId, itemId), eq(overheadMonthActuals.year, yyyy), eq(overheadMonthActuals.month, mm)));
-            const hasDrift = isConfirmed && existing && existing.actualCents !== actualCents;
-            if (hasDrift) totalDrifted++;
-            await db.insert(overheadMonthActuals)
-              .values({ itemId, year: yyyy, month: mm, actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() })
-              .onConflictDoUpdate({
-                target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
-                set: { actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() },
-              });
-            totalSynced++;
-          }
-        }
-
-        // Upsert income totals
-        for (const [monthKey, amount] of Object.entries(result.incomeTotals)) {
-          const [yyyy, mm] = monthKey.split("-").map(Number);
-          if (!yyyy || !mm || amount <= 0) continue;
-          const incomeCents = Math.round((amount as number) * 100);
-          await db.insert(companyIncomeActuals)
-            .values({ companyId, year: yyyy, month: mm, incomeCents, xeroImported: true, updatedAt: new Date() })
-            .onConflictDoUpdate({
-              target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
-              set: { incomeCents, xeroImported: true, updatedAt: new Date() },
-            });
-        }
-
-        // Upsert direct cost totals
-        const { companyDirectCostActuals } = await import("@shared/schema");
-        for (const [monthKey, amount] of Object.entries(result.directCostTotals)) {
-          const [yyyy, mm] = monthKey.split("-").map(Number);
-          if (!yyyy || !mm || amount <= 0) continue;
-          const directCostCents = Math.round((amount as number) * 100);
-          await db.insert(companyDirectCostActuals)
-            .values({ companyId, year: yyyy, month: mm, directCostCents, xeroImported: true, updatedAt: new Date() })
-            .onConflictDoUpdate({
-              target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
-              set: { directCostCents, xeroImported: true, updatedAt: new Date() },
-            });
-        }
+        const result = await syncOverheadActualsForCompany(companyId, connection.id);
+        totalSynced += result.synced;
+        totalDrifted += result.drifted;
       } catch (err) {
         console.error(`[ReminderProcessor] Overhead actuals sync failed for company ${companyId}:`, err);
       }

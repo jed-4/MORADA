@@ -6069,6 +6069,7 @@ export const companyDirectCostActuals = pgTable("company_direct_cost_actuals", {
   year: integer("year").notNull(),
   month: integer("month").notNull(),
   directCostCents: integer("direct_cost_cents").notNull().default(0),
+  breakdown: jsonb("breakdown").$type<Record<string, number>>(),
   xeroImported: boolean("xero_imported").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

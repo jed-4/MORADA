@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -91,7 +92,7 @@ interface ContractedProject {
   remainingCents: number;
 }
 interface CompanyIncomeActual { id: string; companyId: string; year: number; month: number; incomeCents: number; breakdown?: Record<string, number>; xeroImported: boolean; }
-interface CompanyDirectCostActual { id: string; companyId: string; year: number; month: number; directCostCents: number; xeroImported: boolean; }
+interface CompanyDirectCostActual { id: string; companyId: string; year: number; month: number; directCostCents: number; breakdown?: Record<string, number>; xeroImported: boolean; }
 
 interface OverheadsData {
   categories: OverheadCategory[];
@@ -172,17 +173,22 @@ function buildOverrideMap(overrides: OverheadForecastOverride[]): Map<string, nu
   return m;
 }
 
-// Rolling 12-month window ending at the most recently elapsed month
-function rollingLast12(): Array<{ year: number; month: number }> {
+// Rolling N-month window ending at the most recently elapsed month
+function rollingLastN(n: number): Array<{ year: number; month: number }> {
   const today = new Date();
   const months: Array<{ year: number; month: number }> = [];
   let y = today.getFullYear(); let m = today.getMonth(); // 0-based; last complete month
   if (m === 0) { m = 12; y--; } // wrap
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < n; i++) {
     months.unshift({ year: y, month: m });
     m--; if (m === 0) { m = 12; y--; }
   }
   return months;
+}
+
+// Backwards-compatible 12-month helper (used by Prev 12 Summary view)
+function rollingLast12(): Array<{ year: number; month: number }> {
+  return rollingLastN(12);
 }
 
 // Next 12 months starting from current month
@@ -214,8 +220,8 @@ function rollingPrev12(): Array<{ year: number; month: number }> {
 
 function ActualCell({ cents, highlight = false }: { cents: number; highlight?: boolean }) {
   return (
-    <div className={`w-full h-full text-right text-xs tabular-nums px-1 flex items-center justify-end ${highlight ? "text-destructive" : cents > 0 ? "" : "text-muted-foreground/30"}`}>
-      {cents > 0 ? fmtK(cents) : "—"}
+    <div className={`w-full h-full text-right text-xs tabular-nums px-1 flex items-center justify-end ${highlight ? "text-destructive" : cents !== 0 ? "" : "text-muted-foreground/30"}`}>
+      {cents !== 0 ? fmtK(cents) : "—"}
     </div>
   );
 }
@@ -881,13 +887,35 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
   const [view, setView] = useState<"monthly" | "prev12">("monthly");
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
-  const [editingIncome, setEditingIncome] = useState<string | null>(null); // "year__month"
-  const [incomeInput, setIncomeInput] = useState("");
-  const [editingDirectCost, setEditingDirectCost] = useState<string | null>(null); // "year__month"
-  const [directCostInput, setDirectCostInput] = useState("");
   const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
 
+  // Persisted display preferences
+  const [displayMonths, setDisplayMonths] = useState<number>(() => {
+    if (typeof window === "undefined") return 12;
+    const v = parseInt(localStorage.getItem("bp_overheads_display_months") || "12", 10);
+    return [6, 12, 18].includes(v) ? v : 12;
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_display_months", String(displayMonths)); }, [displayMonths]);
+
+  const [hideZeroCats, setHideZeroCats] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bp_overheads_hide_zero") === "1";
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_hide_zero", hideZeroCats ? "1" : "0"); }, [hideZeroCats]);
+
+  // Per-section open state. Defaults: Income+DC collapsed, Overheads expanded.
+  const [openIncome, setOpenIncome] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("bp_overheads_open_income") === "1");
+  const [openDC, setOpenDC] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("bp_overheads_open_dc") === "1");
+  const [openOH, setOpenOH] = useState<boolean>(() =>
+    typeof window === "undefined" || localStorage.getItem("bp_overheads_open_oh") !== "0");
+  useEffect(() => { localStorage.setItem("bp_overheads_open_income", openIncome ? "1" : "0"); }, [openIncome]);
+  useEffect(() => { localStorage.setItem("bp_overheads_open_dc", openDC ? "1" : "0"); }, [openDC]);
+  useEffect(() => { localStorage.setItem("bp_overheads_open_oh", openOH ? "1" : "0"); }, [openOH]);
+
   const rolling12 = useMemo(() => rollingLast12(), []);
+  const months = useMemo(() => rollingLastN(displayMonths), [displayMonths]);
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
   const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
@@ -946,24 +974,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       toast({ title: drifted > 0 ? `Synced — ${drifted} confirmed month${drifted !== 1 ? "s" : ""} have changed figures` : "Xero actuals synced" });
     },
     onError: () => toast({ title: "Failed to sync Xero actuals", variant: "destructive" }),
-  });
-
-  const incomeActualMut = useMutation({
-    mutationFn: (p: { year: number; month: number; incomeCents: number }) => apiRequest("/api/overheads/income-actual", "PUT", p),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
-      setEditingIncome(null);
-    },
-    onError: () => toast({ title: "Failed to save income", variant: "destructive" }),
-  });
-
-  const directCostActualMut = useMutation({
-    mutationFn: (p: { year: number; month: number; directCostCents: number }) => apiRequest("/api/overheads/direct-cost-actual", "PUT", p),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/overheads"] });
-      setEditingDirectCost(null);
-    },
-    onError: () => toast({ title: "Failed to save direct costs", variant: "destructive" }),
   });
 
   const monthBudget = useMemo(() => data.items.reduce((s, i) => s + toMonthlyCents(i), 0), [data.items]);
@@ -1218,11 +1228,50 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   }
 
   // ─── Monthly Grid View ───────────────────────────────────────────────────────
+
+  // Per-month aggregates for the displayed window
+  const monthlyIncome = months.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
+  const monthlyDC = months.map(({ year, month }) => directCostMap.get(`${year}__${month}`) || 0);
+  const monthlyOH = months.map(({ year, month }) => data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
+
+  // Income / DC per-account breakdown names across the visible window
+  const incomeBreakdownNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const { year, month } of months) {
+      const a = data.incomeActuals.find(x => x.year === year && x.month === month);
+      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
+    }
+    return Array.from(names).sort();
+  }, [months, data.incomeActuals]);
+
+  const dcBreakdownNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const { year, month } of months) {
+      const a = data.directCostActuals.find(x => x.year === year && x.month === month);
+      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
+    }
+    return Array.from(names).sort();
+  }, [months, data.directCostActuals]);
+
+  // Optionally hide overhead groups whose items have no actuals in the visible window
+  const visibleGroups = useMemo(() => {
+    if (!hideZeroCats) return groupedData;
+    return groupedData.filter(g => g.items.some(item =>
+      months.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)));
+  }, [groupedData, hideZeroCats, months, actualMap]);
+
+  // Total overheads vs budget (whole window)
+  const totalOhActual = monthlyOH.reduce((s, v) => s + v, 0);
+  const monthsWithOh = monthlyOH.filter(v => v !== 0).length;
+  const totalOhBudget = monthsWithOh * monthBudget;
+  const ohVarianceDollars = totalOhBudget > 0 ? totalOhBudget - totalOhActual : 0;
+  const ohVariancePct = totalOhBudget > 0 ? (ohVarianceDollars / totalOhBudget) * 100 : 0;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <p className="text-xs text-muted-foreground">Rolling 12-month P&L — last 12 complete months</p>
+          <p className="text-xs text-muted-foreground">Rolling P&L — last {displayMonths} complete months</p>
           <p className="text-xs text-muted-foreground/60">Budget: {fmtDollars(monthBudget)}/mo overheads</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -1234,6 +1283,16 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               </button>
             ))}
           </div>
+          <Select value={String(displayMonths)} onValueChange={v => setDisplayMonths(parseInt(v, 10))}>
+            <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-overhead-months">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="6">6 months</SelectItem>
+              <SelectItem value="12">12 months</SelectItem>
+              <SelectItem value="18">18 months</SelectItem>
+            </SelectContent>
+          </Select>
           <Button size="sm" variant="outline" onClick={() => setView("prev12")}>
             <Activity className="w-3.5 h-3.5 mr-1" />
             Prev 12 Summary
@@ -1242,15 +1301,27 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
             {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" data-testid="button-overheads-menu">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
+                Hide categories with no entries
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <div style={{ minWidth: 960 }}>
+        <div style={{ minWidth: Math.max(960, 240 + months.length * 60 + 130) }}>
           {/* Column headers */}
           <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
             <div className="w-44 flex-shrink-0 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
-            {rolling12.map(({ year, month }) => {
+            {months.map(({ year, month }) => {
               const key = `${year}__${month}`;
               const isConfirmed = statusSet.has(key);
               const hasData = monthsWithActuals.has(key);
@@ -1288,247 +1359,236 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             <div className="w-32 flex-shrink-0 text-center px-1 py-2 text-data uppercase tracking-wide text-muted-foreground">OH vs Budget</div>
           </div>
 
-          {/* Income row */}
-          <div className="flex items-center border-b border-border/40 bg-green-500/5" style={{ height: 34 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
-              <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Income
-            </div>
-            {rolling12.map(({ year, month }) => {
-              const key = `${year}__${month}`;
-              const cents = incomeMap.get(key) || 0;
-              const isXero = incomeXeroSet.has(key);
-              const isEditing = editingIncome === key;
-              return (
-                <div key={key} className="flex-1 min-w-0 h-full flex items-center justify-center px-0.5">
-                  {isXero ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-data tabular-nums text-status-success dark:text-green-400 flex items-center gap-0.5">
-                            <Lock className="w-2.5 h-2.5 opacity-50" />
-                            {cents > 0 ? fmtK(cents) : "—"}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent><p className="text-xs">Synced from Xero</p></TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : isEditing ? (
-                    <input
-                      autoFocus
-                      className="w-full text-data text-right bg-transparent outline-none border-b border-primary tabular-nums"
-                      value={incomeInput}
-                      onChange={e => setIncomeInput(e.target.value)}
-                      onBlur={() => {
-                        const val = parseFloat(incomeInput.replace(/[^0-9.]/g, "")) || 0;
-                        incomeActualMut.mutate({ year, month, incomeCents: Math.round(val * 100) });
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") {
-                          const val = parseFloat(incomeInput.replace(/[^0-9.]/g, "")) || 0;
-                          incomeActualMut.mutate({ year, month, incomeCents: Math.round(val * 100) });
-                        }
-                        if (e.key === "Escape") setEditingIncome(null);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => { setEditingIncome(key); setIncomeInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
-                      className="w-full text-data tabular-nums text-right text-status-success dark:text-green-400 hover:opacity-80 transition-opacity">
-                      {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
-                    </button>
-                  )}
+          {/* ─── Income section (collapsible) ─────────────────────────── */}
+          <div className="border-b border-border/40">
+            <div role="button" tabIndex={0} onClick={() => setOpenIncome(v => !v)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenIncome(v => !v); } }}
+              className="flex items-center bg-green-500/5 hover-elevate cursor-pointer select-none"
+              style={{ height: 34 }} data-testid="toggle-income-section">
+              <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
+                {openIncome ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />
+                Income
+              </div>
+              {monthlyIncome.map((cents, idx) => (
+                <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-status-success dark:text-green-400">
+                  {cents !== 0 ? fmtK(cents) : <span className="text-muted-foreground/20">—</span>}
                 </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0" />
+              ))}
+              <div className="w-32 flex-shrink-0" />
+            </div>
+            {openIncome && incomeBreakdownNames.length > 0 && (
+              <div className="bg-green-500/[0.02]">
+                {incomeBreakdownNames.map(name => (
+                  <div key={name} className="flex items-center border-t border-border/20" style={{ height: 28 }}>
+                    <div className="w-44 flex-shrink-0 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
+                    {months.map(({ year, month }) => {
+                      const a = data.incomeActuals.find(x => x.year === year && x.month === month);
+                      const cents = a?.breakdown?.[name] || 0;
+                      return (
+                        <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
+                          {cents !== 0 ? fmtK(cents) : "—"}
+                        </div>
+                      );
+                    })}
+                    <div className="w-32 flex-shrink-0" />
+                  </div>
+                ))}
+                <div className="flex items-center border-t border-border/30 bg-muted/10" style={{ height: 26 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Income</div>
+                  {monthlyIncome.map((cents, idx) => (
+                    <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
+                      {cents !== 0 ? fmtK(cents) : "—"}
+                    </div>
+                  ))}
+                  <div className="w-32 flex-shrink-0" />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Direct Costs row */}
-          <div className="flex items-center border-b border-border/40" style={{ height: 34 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
-              <TrendingDown className="w-3 h-3 text-orange-500 dark:text-orange-400" />Direct Costs
-            </div>
-            {rolling12.map(({ year, month }) => {
-              const key = `${year}__${month}`;
-              const cents = directCostMap.get(key) || 0;
-              const isXero = directCostXeroSet.has(key);
-              const isEditing = editingDirectCost === key;
-              return (
-                <div key={key} className="flex-1 min-w-0 h-full flex items-center justify-center px-0.5">
-                  {isXero ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-data tabular-nums text-orange-500 dark:text-orange-400 flex items-center gap-0.5">
-                            <Lock className="w-2.5 h-2.5 opacity-50" />
-                            {cents > 0 ? fmtK(cents) : "—"}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent><p className="text-xs">Synced from Xero</p></TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : isEditing ? (
-                    <input
-                      autoFocus
-                      className="w-full text-data text-right bg-transparent outline-none border-b border-primary tabular-nums"
-                      value={directCostInput}
-                      onChange={e => setDirectCostInput(e.target.value)}
-                      onBlur={() => {
-                        const val = parseFloat(directCostInput.replace(/[^0-9.]/g, "")) || 0;
-                        directCostActualMut.mutate({ year, month, directCostCents: Math.round(val * 100) });
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") {
-                          const val = parseFloat(directCostInput.replace(/[^0-9.]/g, "")) || 0;
-                          directCostActualMut.mutate({ year, month, directCostCents: Math.round(val * 100) });
-                        }
-                        if (e.key === "Escape") setEditingDirectCost(null);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => { setEditingDirectCost(key); setDirectCostInput(cents > 0 ? (cents / 100).toFixed(0) : ""); }}
-                      className="w-full text-data tabular-nums text-right text-orange-500 dark:text-orange-400 hover:opacity-80 transition-opacity">
-                      {cents > 0 ? fmtK(cents) : <span className="text-muted-foreground/20">+</span>}
-                    </button>
-                  )}
+          {/* ─── Direct Costs section (collapsible) ───────────────────── */}
+          <div className="border-b border-border/40">
+            <div role="button" tabIndex={0} onClick={() => setOpenDC(v => !v)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenDC(v => !v); } }}
+              className="flex items-center hover-elevate cursor-pointer select-none"
+              style={{ height: 34 }} data-testid="toggle-dc-section">
+              <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
+                {openDC ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                <TrendingDown className="w-3 h-3 text-orange-500 dark:text-orange-400" />
+                Direct Costs
+              </div>
+              {monthlyDC.map((cents, idx) => (
+                <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-orange-500 dark:text-orange-400">
+                  {cents !== 0 ? fmtK(cents) : <span className="text-muted-foreground/20">—</span>}
                 </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0" />
+              ))}
+              <div className="w-32 flex-shrink-0" />
+            </div>
+            {openDC && dcBreakdownNames.length > 0 && (
+              <div className="bg-orange-500/[0.02]">
+                {dcBreakdownNames.map(name => (
+                  <div key={name} className="flex items-center border-t border-border/20" style={{ height: 28 }}>
+                    <div className="w-44 flex-shrink-0 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
+                    {months.map(({ year, month }) => {
+                      const a = data.directCostActuals.find(x => x.year === year && x.month === month);
+                      const cents = a?.breakdown?.[name] || 0;
+                      return (
+                        <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
+                          {cents !== 0 ? fmtK(cents) : "—"}
+                        </div>
+                      );
+                    })}
+                    <div className="w-32 flex-shrink-0" />
+                  </div>
+                ))}
+                <div className="flex items-center border-t border-border/30 bg-muted/10" style={{ height: 26 }}>
+                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Direct Costs</div>
+                  {monthlyDC.map((cents, idx) => (
+                    <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
+                      {cents !== 0 ? fmtK(cents) : "—"}
+                    </div>
+                  ))}
+                  <div className="w-32 flex-shrink-0" />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Gross Profit row */}
-          {(() => {
-            const gpVals = rolling12.map(({ year, month }) => (incomeMap.get(`${year}__${month}`) || 0) - (directCostMap.get(`${year}__${month}`) || 0));
-            const hasData = gpVals.some(v => v !== 0);
-            return (
-              <div className="flex items-center border-b border-border/50 bg-muted/10 font-medium" style={{ height: 28 }}>
-                <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5 text-muted-foreground">Gross Profit</div>
-                {gpVals.map((gp, idx) => {
-                  const income = incomeMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
-                  const dc = directCostMap.get(`${rolling12[idx].year}__${rolling12[idx].month}`) || 0;
-                  return (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
-                      {income || dc ? fmtK(gp) : "—"}
-                    </div>
-                  );
-                })}
-                <div className="w-32 flex-shrink-0" />
+          <div className="flex items-center border-b border-border/50 bg-muted/10 font-medium" style={{ height: 28 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5 text-muted-foreground">Gross Profit</div>
+            {months.map((_, idx) => {
+              const income = monthlyIncome[idx];
+              const dc = monthlyDC[idx];
+              const gp = income - dc;
+              return (
+                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
+                  {income || dc ? fmtK(gp) : "—"}
+                </div>
+              );
+            })}
+            <div className="w-32 flex-shrink-0" />
+          </div>
+
+          {/* ─── Overheads section (collapsible, default expanded) ────── */}
+          <div className="border-b border-border/40">
+            <div role="button" tabIndex={0} onClick={() => setOpenOH(v => !v)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenOH(v => !v); } }}
+              className="flex items-center bg-muted/30 hover-elevate cursor-pointer select-none font-semibold border-t-2 border-border"
+              style={{ height: 34 }} data-testid="toggle-oh-section">
+              <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5">
+                {openOH ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                Overheads
               </div>
-            );
-          })()}
-
-          {/* Overhead groups */}
-          {groupedData.map(group => {
-            const catItems = group.items;
-            if (!catItems.length) return null;
-            return (
-              <div key={group.label}>
-                <div className="flex items-center bg-muted/20 border-b border-border/40">
-                  <div className="w-44 flex-shrink-0 px-3 py-1.5 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
-                  {rolling12.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
-                  <div className="w-32 flex-shrink-0 h-5" />
+              {monthlyOH.map((actual, idx) => (
+                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > monthBudget * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>
+                  {actual > 0 ? fmtK(actual) : "—"}
                 </div>
-                {catItems.map(item => {
-                  const itemBudgetMonthly = toMonthlyCents(item);
-                  const totalActual = rolling12.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
-                  const confirmedMonths = rolling12.filter(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) > 0).length;
-                  const totalBudgetForActualMonths = confirmedMonths * itemBudgetMonthly;
-                  const varianceDollars = confirmedMonths > 0 ? totalBudgetForActualMonths - totalActual : 0;
-                  const variancePct = totalBudgetForActualMonths > 0 ? (varianceDollars / totalBudgetForActualMonths) * 100 : 0;
-                  return (
-                    <div key={item.id} className="flex items-center border-b border-border/30 hover-elevate" style={{ height: 32 }}>
-                      <div className="w-44 flex-shrink-0 px-3 text-xs truncate">{item.name}</div>
-                      {rolling12.map(({ year, month }) => {
-                        const cents = actualMap.get(getKey(item.id, year, month)) || 0;
-                        const over = cents > 0 && itemBudgetMonthly > 0 && cents > itemBudgetMonthly * 1.1;
-                        const drifted = driftMap.has(getKey(item.id, year, month));
-                        return (
-                          <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : drifted ? "bg-orange-500/8" : ""}`}>
-                            <ActualCell cents={cents} highlight={over} />
-                          </div>
-                        );
-                      })}
-                      <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                        {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="flex items-center border-b border-border/40 bg-muted/10" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Subtotal</div>
-                  {rolling12.map(({ year, month }) => {
-                    const total = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0);
-                    return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
-                  })}
-                  <div className="w-32 flex-shrink-0" />
-                </div>
+              ))}
+              <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${monthsWithOh === 0 ? "text-muted-foreground/30" : ohVarianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
+                {monthsWithOh > 0 ? <span>{ohVarianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(ohVarianceDollars))} <span className="text-data opacity-70">({ohVariancePct.toFixed(0)}%)</span></span> : "—"}
               </div>
-            );
-          })}
-
-          {/* Total overheads + budget rows */}
-          {(() => {
-            const grandActuals = rolling12.map(({ year, month }) => data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
-            const grandBudgets = rolling12.map(() => monthBudget);
-            const totalActual = grandActuals.reduce((a, b) => a + b, 0);
-            const confirmedMonths = grandActuals.filter(v => v > 0).length;
-            const totalBudget = confirmedMonths * monthBudget;
-            const varianceDollars = totalBudget > 0 ? totalBudget - totalActual : 0;
-            const variancePct = totalBudget > 0 ? (varianceDollars / totalBudget) * 100 : 0;
-
-            const incomeActuals = rolling12.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
-            const netProfits = rolling12.map(({ year, month }, i) => (incomeMap.get(`${year}__${month}`) || 0) - (directCostMap.get(`${year}__${month}`) || 0) - grandActuals[i]);
-            const ohPcts = rolling12.map(({ year, month }, i) => {
-              const income = incomeMap.get(`${year}__${month}`) || 0;
-              return income > 0 ? (grandActuals[i] / income) * 100 : null;
-            });
-
-            return (
-              <>
-                <div className="flex items-center border-t-2 border-border bg-muted/30 font-semibold" style={{ height: 34 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-xs">Total Overheads</div>
-                  {grandActuals.map((actual, idx) => (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > grandBudgets[idx] * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{actual > 0 ? fmtK(actual) : "—"}</div>
-                  ))}
-                  <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                    {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
+            </div>
+            {openOH && visibleGroups.map(group => {
+              const catItems = group.items;
+              if (!catItems.length) return null;
+              return (
+                <div key={group.label}>
+                  <div className="flex items-center bg-muted/20 border-t border-border/40">
+                    <div className="w-44 flex-shrink-0 px-3 py-1.5 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                    {months.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
+                    <div className="w-32 flex-shrink-0 h-5" />
                   </div>
-                </div>
-                <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground">OH Budget</div>
-                  {grandBudgets.map((b, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data text-muted-foreground tabular-nums">{fmtK(b)}</div>)}
-                  <div className="w-32 flex-shrink-0" />
-                </div>
-                {/* OH% row */}
-                <div className="flex items-center border-t border-border/30" style={{ height: 24 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
-                  {ohPcts.map((pct, idx) => (
-                    <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
-                      {pct !== null ? `${pct.toFixed(0)}%` : "—"}
-                    </div>
-                  ))}
-                  <div className="w-32 flex-shrink-0" />
-                </div>
-                {/* Net Profit row */}
-                <div className="flex items-center border-t border-border/40 bg-muted/10 rounded-b-md font-medium" style={{ height: 30 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Net Profit
-                  </div>
-                  {netProfits.map((np, idx) => {
-                    const hasIncome = incomeActuals[idx] > 0;
+                  {catItems.map(item => {
+                    const itemBudgetMonthly = toMonthlyCents(item);
+                    const totalActual = months.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
+                    const confirmedMonths = months.filter(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) > 0).length;
+                    const totalBudgetForActualMonths = confirmedMonths * itemBudgetMonthly;
+                    const varianceDollars = confirmedMonths > 0 ? totalBudgetForActualMonths - totalActual : 0;
+                    const variancePct = totalBudgetForActualMonths > 0 ? (varianceDollars / totalBudgetForActualMonths) * 100 : 0;
                     return (
-                      <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
-                        {hasIncome ? fmtK(np) : "—"}
+                      <div key={item.id} className="flex items-center border-t border-border/30 hover-elevate" style={{ height: 32 }}>
+                        <div className="w-44 flex-shrink-0 px-3 text-xs truncate">{item.name}</div>
+                        {months.map(({ year, month }) => {
+                          const cents = actualMap.get(getKey(item.id, year, month)) || 0;
+                          const over = cents > 0 && itemBudgetMonthly > 0 && cents > itemBudgetMonthly * 1.1;
+                          const drifted = driftMap.has(getKey(item.id, year, month));
+                          return (
+                            <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : drifted ? "bg-orange-500/8" : ""}`}>
+                              <ActualCell cents={cents} highlight={over} />
+                            </div>
+                          );
+                        })}
+                        <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
+                          {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
+                        </div>
                       </div>
                     );
                   })}
-                  <div className="w-32 flex-shrink-0" />
+                  <div className="flex items-center border-t border-border/40 bg-muted/10" style={{ height: 26 }}>
+                    <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Subtotal</div>
+                    {months.map(({ year, month }) => {
+                      const total = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0);
+                      return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
+                    })}
+                    <div className="w-32 flex-shrink-0" />
+                  </div>
                 </div>
-              </>
-            );
-          })()}
+              );
+            })}
+            {openOH && (
+              <div className="flex items-center border-t border-border/40 bg-muted/10" style={{ height: 26 }}>
+                <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Overheads</div>
+                {monthlyOH.map((actual, idx) => (
+                  <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
+                    {actual > 0 ? fmtK(actual) : "—"}
+                  </div>
+                ))}
+                <div className="w-32 flex-shrink-0" />
+              </div>
+            )}
+          </div>
+
+          {/* OH Budget row */}
+          <div className="flex items-center border-b border-border/30" style={{ height: 24 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground">OH Budget</div>
+            {months.map((_, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data text-muted-foreground tabular-nums">{fmtK(monthBudget)}</div>)}
+            <div className="w-32 flex-shrink-0" />
+          </div>
+
+          {/* OH% row */}
+          <div className="flex items-center border-b border-border/30" style={{ height: 24 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
+            {months.map((_, idx) => {
+              const income = monthlyIncome[idx];
+              const pct = income > 0 ? (monthlyOH[idx] / income) * 100 : null;
+              return (
+                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
+                  {pct !== null ? `${pct.toFixed(0)}%` : "—"}
+                </div>
+              );
+            })}
+            <div className="w-32 flex-shrink-0" />
+          </div>
+
+          {/* Net Profit row */}
+          <div className="flex items-center border-t border-border/40 bg-muted/10 rounded-b-md font-medium" style={{ height: 30 }}>
+            <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1">
+              <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Net Profit
+            </div>
+            {months.map((_, idx) => {
+              const income = monthlyIncome[idx];
+              const np = income - monthlyDC[idx] - monthlyOH[idx];
+              const hasIncome = income > 0;
+              return (
+                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
+                  {hasIncome ? fmtK(np) : "—"}
+                </div>
+              );
+            })}
+            <div className="w-32 flex-shrink-0" />
+          </div>
         </div>
       </div>
     </div>

@@ -25290,145 +25290,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero not connected" });
 
-      const { overheadMonthActuals, overheadItems, overheadCategories, overheadMonthStatus, companyIncomeActuals, companyDirectCostActuals } = await import("@shared/schema");
-
-      // Use Australian financial year (Jul 1 – Jun 30) to stay within Xero's 365-day P&L limit
-      const now = new Date();
-      const fyYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-      const fromDate = `${fyYear}-07-01`;
-      const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
-
-      const result = await xeroService.getProfitAndLossReport(connection.id, fromDate, toDate);
-
-      // Build itemByCode map for this company
-      const companyItems = await db.select({ id: overheadItems.id, code: overheadItems.xeroAccountCode })
-        .from(overheadItems)
-        .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
-        .where(and(eq(overheadCategories.companyId, companyId), isNotNull(overheadItems.xeroAccountCode)));
-      const itemByCode = new Map(companyItems.map(i => [i.code as string, i.id]));
-
-      // Get confirmed months for this company (to detect drift)
-      const confirmedStatuses = await db.select({ year: overheadMonthStatus.year, month: overheadMonthStatus.month })
-        .from(overheadMonthStatus)
-        .where(and(eq(overheadMonthStatus.companyId, companyId), isNotNull(overheadMonthStatus.confirmedAt)));
-      const confirmedSet = new Set(confirmedStatuses.map(s => `${s.year}__${s.month}`));
-
-      let synced = 0;
-      let drifted = 0;
-
-      for (const [accountCode, accountData] of Object.entries(result.byAccount)) {
-        const itemId = itemByCode.get(accountCode);
-        if (!itemId) continue;
-
-        for (const [monthKey, amount] of Object.entries(accountData.amounts)) {
-          const [yyyy, mm] = monthKey.split("-").map(Number);
-          if (!yyyy || !mm) continue;
-          const actualCents = Math.round(amount * 100);
-          const isConfirmed = confirmedSet.has(`${yyyy}__${mm}`);
-
-          const [existing] = await db.select({ actualCents: overheadMonthActuals.actualCents })
-            .from(overheadMonthActuals)
-            .where(and(eq(overheadMonthActuals.itemId, itemId), eq(overheadMonthActuals.year, yyyy), eq(overheadMonthActuals.month, mm)));
-
-          const hasDrift = isConfirmed && existing && existing.actualCents !== actualCents;
-          if (hasDrift) drifted++;
-
-          await db.insert(overheadMonthActuals)
-            .values({ itemId, year: yyyy, month: mm, actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() })
-            .onConflictDoUpdate({
-              target: [overheadMonthActuals.itemId, overheadMonthActuals.year, overheadMonthActuals.month],
-              set: { actualCents, xeroImported: true, driftedSinceConfirmed: hasDrift || false, updatedAt: new Date() },
-            });
-          synced++;
-        }
-      }
-
-      // Upsert income totals from P&L report (with per-account breakdown)
-      for (const [monthKey, amount] of Object.entries(result.incomeTotals)) {
-        const [yyyy, mm] = monthKey.split("-").map(Number);
-        if (!yyyy || !mm || amount <= 0) continue;
-        const incomeCents = Math.round(amount * 100);
-        // Build per-account breakdown for this month (values in cents)
-        const breakdown: Record<string, number> = {};
-        for (const [accountName, monthAmounts] of Object.entries(result.incomeByAccount)) {
-          const accountTotal = monthAmounts[monthKey];
-          if (accountTotal && accountTotal > 0) {
-            breakdown[accountName] = Math.round(accountTotal * 100);
-          }
-        }
-        await db.insert(companyIncomeActuals)
-          .values({ companyId, year: yyyy, month: mm, incomeCents, breakdown, xeroImported: true, updatedAt: new Date() })
-          .onConflictDoUpdate({
-            target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
-            set: { incomeCents, breakdown, xeroImported: true, updatedAt: new Date() },
-          });
-      }
-
-      // Upsert direct cost totals from P&L report
-      for (const [monthKey, amount] of Object.entries(result.directCostTotals)) {
-        const [yyyy, mm] = monthKey.split("-").map(Number);
-        if (!yyyy || !mm || amount <= 0) continue;
-        const directCostCents = Math.round(amount * 100);
-        await db.insert(companyDirectCostActuals)
-          .values({ companyId, year: yyyy, month: mm, directCostCents, xeroImported: true, updatedAt: new Date() })
-          .onConflictDoUpdate({
-            target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
-            set: { directCostCents, xeroImported: true, updatedAt: new Date() },
-          });
-      }
-
-      res.json({ synced, drifted });
+      const { syncOverheadActualsForCompany } = await import("./utils/syncOverheadActuals");
+      const result = await syncOverheadActualsForCompany(companyId, connection.id);
+      res.json(result);
     } catch (error: any) {
       console.error("Error syncing Xero overhead actuals:", error);
       res.status(500).json({ error: error.message || "Failed to sync actuals" });
-    }
-  });
-
-  // Manual income actual entry (PUT upserts for a given year/month)
-  app.put("/api/overheads/income-actual", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const companyId = user?.companyId;
-      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-
-      const { year, month, incomeCents } = req.body;
-      if (!year || !month || incomeCents === undefined) return res.status(400).json({ error: "year, month, incomeCents required" });
-
-      const { companyIncomeActuals } = await import("@shared/schema");
-      const [upserted] = await db.insert(companyIncomeActuals)
-        .values({ companyId, year, month, incomeCents, xeroImported: false, updatedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [companyIncomeActuals.companyId, companyIncomeActuals.year, companyIncomeActuals.month],
-          set: { incomeCents, xeroImported: false, updatedAt: new Date() },
-        })
-        .returning();
-      res.json(upserted);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Failed to save income actual" });
-    }
-  });
-
-  // Manual direct cost actual entry (PUT upserts for a given year/month)
-  app.put("/api/overheads/direct-cost-actual", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const companyId = user?.companyId;
-      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
-
-      const { year, month, directCostCents } = req.body;
-      if (!year || !month || directCostCents === undefined) return res.status(400).json({ error: "year, month, directCostCents required" });
-
-      const { companyDirectCostActuals } = await import("@shared/schema");
-      const [upserted] = await db.insert(companyDirectCostActuals)
-        .values({ companyId, year, month, directCostCents, xeroImported: false, updatedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [companyDirectCostActuals.companyId, companyDirectCostActuals.year, companyDirectCostActuals.month],
-          set: { directCostCents, xeroImported: false, updatedAt: new Date() },
-        })
-        .returning();
-      res.json(upserted);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Failed to save direct cost actual" });
     }
   });
 
@@ -25754,11 +25621,31 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         .innerJoin(overheadCategories, eq(overheadItems.categoryId, overheadCategories.id))
         .where(eq(overheadCategories.companyId, companyId));
 
-      // Simplified category mapping: builders only need Overheads vs Direct Costs
+      // Cleanup: remove any existing overhead items that originated from a Xero
+      // direct-cost account. Direct costs have their own collapsible section in
+      // the UI now and must not double-count under Overheads. Cascading delete
+      // wipes their overhead_month_actuals rows automatically.
+      const directCostItemIds = existingItems
+        .filter(r => r.overhead_items.xeroAccountType === "DIRECTCOSTS")
+        .map(r => r.overhead_items.id);
+      if (directCostItemIds.length > 0) {
+        await db.delete(overheadItems).where(inArray(overheadItems.id, directCostItemIds));
+      }
+      // Drop any "Direct Costs" category that's now empty after the deletion
+      const directCostCats = existingCats.filter(c => c.name.toLowerCase() === "direct costs");
+      for (const cat of directCostCats) {
+        const remaining = await db.select({ id: overheadItems.id }).from(overheadItems).where(eq(overheadItems.categoryId, cat.id));
+        if (remaining.length === 0) {
+          await db.delete(overheadCategories).where(eq(overheadCategories.id, cat.id));
+        }
+      }
+
+      // Simplified category mapping: only EXPENSE-style accounts become overhead items.
+      // DIRECTCOSTS accounts are intentionally omitted — they're handled by the
+      // Direct Costs section and pulled directly from the P&L breakdown JSONB.
       const TYPE_LABEL: Record<string, string> = {
         EXPENSE: "Overheads",
         OVERHEADS: "Overheads",
-        DIRECTCOSTS: "Direct Costs",
         CURRLIAB: "Overheads",
       };
 
@@ -25805,6 +25692,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         if (!accCode) continue; // skip accounts with no code — no stable upsert key
         const accName: string = acc.Name || "";
         const accType: string = acc.Type || "EXPENSE";
+        // Skip direct-cost accounts entirely — they belong in the Direct Costs section, not Overheads
+        if (accType === "DIRECTCOSTS") continue;
         const catLabel = TYPE_LABEL[accType] || "Overheads";
 
         // Upsert category by name
