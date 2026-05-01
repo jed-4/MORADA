@@ -916,11 +916,19 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    // Calculate months in range, capped at 11 (Xero's maximum for the periods param)
+    // We need single-month columns. Sending fromDate+toDate together with
+    // periods+timeframe makes Xero treat the date range as the period length
+    // and return periods+1 sliding-window columns of that length (e.g. a
+    // 10-month range with periods=10 → 11 columns each summing 10 months).
+    // Instead, send a single `date` (anchored to the last day of toDate's
+    // month for clean MONTH bucketing) plus `periods` (number of months − 1,
+    // since Xero returns periods+1 columns) capped at 11 (Xero's max).
     const from = new Date(fromDate);
     const to = new Date(toDate);
     const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
-    const periods = String(Math.min(11, Math.max(1, monthsDiff)));
+    const periods = String(Math.min(11, Math.max(0, monthsDiff - 1)));
+    const endOfMonth = new Date(to.getFullYear(), to.getMonth() + 1, 0);
+    const reportDate = `${endOfMonth.getFullYear()}-${String(endOfMonth.getMonth() + 1).padStart(2, "0")}-${String(endOfMonth.getDate()).padStart(2, "0")}`;
 
     const headers = {
       Authorization: `Bearer ${accessToken}`,
@@ -931,8 +939,7 @@ export class XeroService {
     // Fetch P&L report and full accounts list in parallel
     // Accounts list is needed to resolve Xero AccountIDs (UUIDs) → account code numbers
     const params = new URLSearchParams({
-      fromDate,
-      toDate,
+      date: reportDate,
       periods,
       timeframe: "MONTH",
       standardLayout: "true",
@@ -1129,18 +1136,6 @@ export class XeroService {
     }
 
     parseSection(report.Rows || [], false, false);
-
-    console.log("[Xero P&L] columns header:", JSON.stringify(columns));
-    console.log("[Xero P&L] periods param:", periods, "monthsDiff:", monthsDiff);
-    console.log("[Xero P&L] uuidToCode size:", uuidToCode.size, "uuidToType size:", uuidToType.size);
-    const byAccountKeys = Object.keys(byAccount);
-    console.log("[Xero P&L] byAccount entries:", byAccountKeys.length);
-    if (byAccountKeys.length > 0) {
-      const sampleKey = byAccountKeys[0];
-      console.log("[Xero P&L] sample byAccount[%s]:", sampleKey, JSON.stringify(byAccount[sampleKey]));
-    }
-    const expenseAcctTotal = byAccountKeys.reduce((sum, k) => sum + Object.values(byAccount[k].amounts).reduce((a, b) => a + b, 0), 0);
-    console.log("[Xero P&L] expense grand total across all accounts:", expenseAcctTotal);
 
     return { byAccount, accounts, incomeTotals, directCostTotals, incomeByAccount };
   }

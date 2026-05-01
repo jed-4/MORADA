@@ -25307,22 +25307,6 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         .where(and(eq(overheadCategories.companyId, companyId), isNotNull(overheadItems.xeroAccountCode)));
       const itemByCode = new Map(companyItems.map(i => [i.code as string, i.id]));
 
-      // Diagnostic logging — helps pinpoint why a sync returns synced:0
-      const xeroCodes = Object.keys(result.byAccount);
-      const xeroIncomeMonths = Object.keys(result.incomeTotals);
-      const xeroDirectCostMonths = Object.keys(result.directCostTotals);
-      const itemCodes = companyItems.map(i => i.code as string);
-      const matchedCodes = xeroCodes.filter(c => itemByCode.has(c));
-      const unmatchedXeroCodes = xeroCodes.filter(c => !itemByCode.has(c));
-      const unmatchedItemCodes = itemCodes.filter(c => !result.byAccount[c]);
-      console.log("[Xero sync] companyId=%s fromDate=%s toDate=%s", companyId, fromDate, toDate);
-      console.log("[Xero sync] dateRange=%s→%s | itemsWithXeroCode=%d | xeroExpenseAccounts=%d | matched=%d", fromDate, toDate, itemCodes.length, xeroCodes.length, matchedCodes.length);
-      console.log("[Xero sync] xeroIncomeMonths=%d xeroDirectCostMonths=%d", xeroIncomeMonths.length, xeroDirectCostMonths.length);
-      console.log("[Xero sync] sample xeroCodes(10):", xeroCodes.slice(0, 10));
-      console.log("[Xero sync] sample itemCodes(10):", itemCodes.slice(0, 10));
-      console.log("[Xero sync] sample unmatchedXeroCodes(10):", unmatchedXeroCodes.slice(0, 10));
-      console.log("[Xero sync] sample unmatchedItemCodes(10):", unmatchedItemCodes.slice(0, 10));
-
       // Get confirmed months for this company (to detect drift)
       const confirmedStatuses = await db.select({ year: overheadMonthStatus.year, month: overheadMonthStatus.month })
         .from(overheadMonthStatus)
