@@ -699,7 +699,23 @@ export default function Bills() {
         enableSorting: false,
         cell: ({ row }) => {
           const bill = row.original;
-          const attachmentCount = Array.isArray(bill.attachmentUrls) ? bill.attachmentUrls.length : 0;
+          // attachmentUrls may contain either legacy string entries or rich
+          // attachment record objects ({objectPath, filename, ...}). Normalize
+          // to a list of URL strings so the popover never crashes.
+          type AttachmentEntry = string | { objectPath?: string; filename?: string };
+          const rawAttachments: AttachmentEntry[] = Array.isArray(bill.attachmentUrls)
+            ? (bill.attachmentUrls as AttachmentEntry[])
+            : [];
+          const attachments = rawAttachments
+            .map((a) => {
+              if (typeof a === "string") return { url: a, filename: undefined as string | undefined };
+              if (a && typeof a === "object" && typeof a.objectPath === "string") {
+                return { url: a.objectPath, filename: a.filename };
+              }
+              return null;
+            })
+            .filter((a): a is { url: string; filename: string | undefined } => a !== null && a.url.length > 0);
+          const attachmentCount = attachments.length;
           if (attachmentCount === 0) return null;
           return (
             <Popover>
@@ -712,8 +728,8 @@ export default function Bills() {
               <PopoverContent side="left" align="center" className="w-72 p-2" onClick={(e) => e.stopPropagation()}>
                 <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({attachmentCount})</p>
                 <div className="flex flex-col gap-1">
-                  {(bill.attachmentUrls as string[]).map((url, idx) => {
-                    const filename = url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
+                  {attachments.map(({ url, filename: providedFilename }, idx) => {
+                    const filename = providedFilename || url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
                     const isImage = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
                     return (
                       <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-md p-1.5 hover-elevate">
