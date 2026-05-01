@@ -2746,10 +2746,21 @@ export class MemStorage implements IStorage {
       invitedAt: invitation.createdAt,
     });
 
-    // Grant project access
+    // Grant project access from invitation.projectIds. Mirrors DbStorage:
+    //  - tenant check (project.companyId must match invitation.companyId)
+    //  - dedupe against existing access
+    //  - "edit" access level (matches admin manual-assign default)
     if (invitation.projectIds && Array.isArray(invitation.projectIds)) {
-      for (const projectId of invitation.projectIds as string[]) {
-        await this.grantProjectAccess(newUser.id, projectId, "view", invitation.invitedBy);
+      const requestedProjectIds = (invitation.projectIds as unknown[]).filter(
+        (p): p is string => typeof p === "string" && p.length > 0,
+      );
+      const existing = await this.getUserProjectAccess(newUser.id);
+      const existingProjectIds = new Set(existing.map((a) => a.projectId));
+      for (const projectId of Array.from(new Set(requestedProjectIds))) {
+        if (existingProjectIds.has(projectId)) continue;
+        const project = await this.getProject(projectId);
+        if (!project || project.companyId !== invitation.companyId) continue;
+        await this.grantProjectAccess(newUser.id, projectId, "edit", invitation.invitedBy);
       }
     }
 
@@ -8108,6 +8119,69 @@ export class DbStorage implements IStorage {
         acceptedAt: new Date(),
         createdUserId: newUser.id,
       });
+
+      // Grant project access from invitation.projectIds.
+      // The admin selected these projects in InviteUserDialog; persist them now
+      // so the new user can see/edit those projects on first login.
+      try {
+        const rawProjectIds = invitation.projectIds;
+        const requestedProjectIds: string[] = Array.isArray(rawProjectIds)
+          ? rawProjectIds.filter((p: unknown): p is string => typeof p === "string" && p.length > 0)
+          : [];
+
+        if (requestedProjectIds.length > 0) {
+          // SECURITY: Only grant access to projects that belong to the
+          // invitation's company. This blocks any cross-tenant escalation
+          // path where an invitation row was created with foreign projectIds
+          // (the create-invitation endpoint does not currently enforce this).
+          const tenantSafeIds: string[] = [];
+          for (const projectId of Array.from(new Set(requestedProjectIds))) {
+            try {
+              const project = await this.getProject(projectId);
+              if (project && project.companyId === invitation.companyId) {
+                tenantSafeIds.push(projectId);
+              } else {
+                console.warn(
+                  `[DbStorage.acceptInvitation] Skipping project ${projectId} for user ${newUser.id}: not in invitation company ${invitation.companyId}`,
+                );
+              }
+            } catch (lookupErr) {
+              console.error(
+                `[DbStorage.acceptInvitation] Failed to look up project ${projectId}:`,
+                lookupErr,
+              );
+            }
+          }
+
+          // Dedupe against any access this user already has (covers the
+          // existing-user-re-invited path; never downgrades existing rows).
+          const existing = await this.getUserProjectAccess(newUser.id);
+          const existingProjectIds = new Set(existing.map((a) => a.projectId));
+          const toGrant = tenantSafeIds.filter((pid) => !existingProjectIds.has(pid));
+
+          for (const projectId of toGrant) {
+            try {
+              await this.createUserProjectAccess({
+                userId: newUser.id,
+                projectId,
+                accessLevel: "edit",
+                grantedBy: invitation.invitedBy,
+              });
+            } catch (grantErr) {
+              console.error(
+                `[DbStorage.acceptInvitation] Failed to grant access to project ${projectId} for user ${newUser.id}:`,
+                grantErr,
+              );
+            }
+          }
+          console.log(
+            `[DbStorage.acceptInvitation] Granted ${toGrant.length}/${requestedProjectIds.length} project access rows to user ${newUser.id} (${requestedProjectIds.length - tenantSafeIds.length} skipped for tenant mismatch, ${tenantSafeIds.length - toGrant.length} already existed)`,
+          );
+        }
+      } catch (accessErr) {
+        // Never fail invitation acceptance because of a project-access grant problem.
+        console.error("[DbStorage.acceptInvitation] Error granting project access:", accessErr);
+      }
 
       console.log(`[DbStorage.acceptInvitation] Success! User ${newUser.id} joined company ${newUser.companyId}`);
       return { user: newUser, invitation: updatedInvitation! };
