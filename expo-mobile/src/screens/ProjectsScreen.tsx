@@ -95,6 +95,17 @@ const colors = {
   const fetchProjects = useCallback(async () => {
     try {
       const data = await apiFetch<Project[]>('/api/projects');
+      // DIAGNOSTIC: dump the first project so we can see exactly what
+      // fields the /api/projects endpoint returns at runtime.
+      if (data && data.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log('PROJECT RAW:', JSON.stringify(data[0], null, 2));
+        // eslint-disable-next-line no-console
+        console.log('PROJECT KEYS:', Object.keys(data[0] as any).sort().join(', '));
+      } else {
+        // eslint-disable-next-line no-console
+        console.log('PROJECT RAW: (empty list returned by /api/projects)');
+      }
       setProjects(data || []);
     } catch (e) {
       console.error('Failed to fetch projects:', e);
