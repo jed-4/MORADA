@@ -113,28 +113,28 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const EVENT_COLORS: Record<string, string> = {
-  task: '#3b82f6',
-  schedule: '#10b981',
-  timesheet: '#f59e0b',
-  site_diary: '#14b8a6',
-  google_cal: '#4285f4',
+  task:       '#A890D4',
+  schedule:   '#82C8A2',
+  timesheet:  '#70CAD0',
+  site_diary: '#DA988A',
+  google_cal: '#A890D4',
 };
 
 const SCHEDULE_STATUS_COLORS: Record<string, string> = {
-  'not-started':   '#94a3b8',
-  'not_started':   '#94a3b8',
-  'in-progress':   '#3b82f6',
-  'in_progress':   '#3b82f6',
-  'completed':     '#22c55e',
-  'complete':      '#22c55e',
-  'done':          '#22c55e',
-  'on-hold':       '#f59e0b',
-  'on_hold':       '#f59e0b',
-  'delayed':       '#ef4444',
-  'blocked':       '#ef4444',
-  'cancelled':     '#6b7280',
-  'booked':        '#8b5cf6',
-  'requested':     '#f59e0b',
+  'not-started':   '#8A8680',
+  'not_started':   '#8A8680',
+  'in-progress':   '#A890D4',
+  'in_progress':   '#A890D4',
+  'completed':     '#82C8A2',
+  'complete':      '#82C8A2',
+  'done':          '#82C8A2',
+  'on-hold':       '#F0B964',
+  'on_hold':       '#F0B964',
+  'delayed':       '#DA988A',
+  'blocked':       '#DA988A',
+  'cancelled':     '#8A8680',
+  'booked':        '#70CAD0',
+  'requested':     '#F0B964',
 };
 
 const SCHEDULE_STATUS_LABELS: Record<string, string> = {
@@ -198,12 +198,12 @@ const EVENT_TYPE_OPTIONS = [
   { value: 'google_cal', label: 'Google', icon: 'calendar-outline' as const },
 ];
 
-const HOUR_HEIGHT = 60;
-const TIME_LABEL_WIDTH = 44;
+const HOUR_HEIGHT = 56;
+const TIME_LABEL_WIDTH = 50;
 const GRID_COL_WIDTH = Math.floor((SCREEN_WIDTH - TIME_LABEL_WIDTH) / 3);
 const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
-const MIN_EVENT_HEIGHT = 22;
-const DAY_HEADER_HEIGHT = 38;
+const MIN_EVENT_HEIGHT = 24;
+const DAY_HEADER_HEIGHT = 56;
 
 function isSameDay(d1: Date, d2: Date): boolean {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
@@ -980,10 +980,10 @@ const colors = {
     });
 
     const sortedDates = Object.keys(byDate).sort();
-    type FeedItem = { type: 'header'; dateKey: string } | { type: 'event'; event: CalendarEvent; dateKey: string };
+    type FeedItem = { type: 'header'; dateKey: string; count: number } | { type: 'event'; event: CalendarEvent; dateKey: string };
     const items: FeedItem[] = [];
     sortedDates.forEach(dateKey => {
-      items.push({ type: 'header', dateKey });
+      items.push({ type: 'header', dateKey, count: byDate[dateKey].length });
       byDate[dateKey].forEach(event => items.push({ type: 'event', event, dateKey }));
     });
 
@@ -1004,63 +1004,95 @@ const colors = {
         renderItem={({ item }) => {
           if (item.type === 'header') {
             const d = new Date(item.dateKey + 'T12:00:00');
+            const headerIsToday = isToday(d);
             return (
-              <View style={[styles.feedDateHeader, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.feedDateHeaderText, { color: colors.accent }]}>
-                  {formatDayHeader(d)}
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginHorizontal: 16,
+                marginTop: 20,
+                marginBottom: 8,
+              }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text, flex: 1 }}>
+                  {headerIsToday ? "Today's Events" : formatDayHeader(d)}
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.accent }}>
+                  {item.count} {item.count === 1 ? 'event' : 'events'}
                 </Text>
               </View>
             );
           }
           const { event } = item as { type: 'event'; event: CalendarEvent; dateKey: string };
-          const taskStatusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
-          const schedStatusColor = event.statusColor;
-          const schedStatusLabel = event.status ? (SCHEDULE_STATUS_LABELS[event.status] || event.status) : null;
           const barColor = event.color;
           const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
+          const timesheetHours = event.type === 'timesheet'
+            ? (() => {
+                const h = parseFloat(event.raw?.duration ?? event.raw?.totalHours ?? '');
+                if (!isFinite(h) || h <= 0) return '';
+                return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
+              })()
+            : '';
           return (
             <TouchableOpacity
-              style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: barColor + '50' }]}
+              style={{
+                flexDirection: 'row',
+                backgroundColor: colors.card,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginHorizontal: 16,
+                marginBottom: 10,
+                overflow: 'hidden',
+                minHeight: 64,
+              }}
               activeOpacity={0.7}
               onPress={() => handleEventTap(event)}
             >
-              <View style={[styles.feedEventColorBar, { backgroundColor: barColor }]} />
-              <View style={[styles.feedEventContent, { backgroundColor: barColor + '12' }]}>
-                <View style={styles.feedEventTop}>
-                  <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
-                    {event.title}
-                  </Text>
-                </View>
-                {showStatusChips && taskStatusOpt && (
-                  <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                    <View style={{ backgroundColor: taskStatusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '600', color: taskStatusOpt.color }}>{taskStatusOpt.label}</Text>
-                    </View>
-                  </View>
-                )}
-                {showStatusChips && event.type === 'schedule' && schedStatusColor && schedStatusLabel && (
-                  <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                    <View style={{ backgroundColor: schedStatusColor + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '600', color: schedStatusColor }}>{schedStatusLabel}</Text>
-                    </View>
-                  </View>
-                )}
-                {dateRange && (
-                  <Text style={{ fontSize: 10, color: colors.secondary, marginTop: 3 }}>{dateRange}</Text>
-                )}
-                <View style={styles.feedEventMeta}>
-                  {event.projectName && (
-                    <Text style={[styles.feedEventProject, { color: colors.accent }]} numberOfLines={1}>
+              <View style={{ width: 4, backgroundColor: barColor }} />
+              <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 4 }} numberOfLines={2}>
+                  {event.title}
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.secondary }}>
+                  {event.startTime
+                    ? `${formatTime(event.startTime)}${event.endTime ? ` – ${formatTime(event.endTime)}` : ''}`
+                    : (dateRange || 'All day')}
+                </Text>
+                {event.projectName && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 6,
+                    backgroundColor: barColor + '20',
+                    alignSelf: 'flex-start',
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 8,
+                  }}>
+                    <View style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: barColor,
+                      marginRight: 5,
+                    }} />
+                    <Text style={{ fontSize: 9, fontWeight: '500', color: colors.secondary }}>
                       {event.projectName}
                     </Text>
-                  )}
-                  {event.startTime && (
-                    <Text style={[styles.feedEventTime, { color: colors.secondary }]}>
-                      {formatTime(event.startTime)}{event.endTime ? ` – ${formatTime(event.endTime)}` : ''}
-                    </Text>
-                  )}
-                </View>
+                  </View>
+                )}
               </View>
+              {!!timesheetHours && (
+                <Text style={{
+                  fontSize: 15,
+                  fontWeight: '700',
+                  color: colors.text,
+                  paddingRight: 14,
+                  alignSelf: 'center',
+                }}>
+                  {timesheetHours}
+                </Text>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -1091,7 +1123,7 @@ const colors = {
           {/* Row 1 spacer — same height as day-header row */}
           <View style={{
             height: DAY_HEADER_HEIGHT,
-            backgroundColor: colors.accent + '30',
+            backgroundColor: 'transparent',
             borderBottomWidth: StyleSheet.hairlineWidth,
             borderBottomColor: colors.border + '60',
           }} />
@@ -1122,10 +1154,12 @@ const colors = {
             {hourLabels.map((label, i) => (
               <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
                 <Text style={{
-                  fontSize: 10,
+                  fontSize: 9,
                   color: colors.secondary,
                   textAlign: 'right',
-                  paddingRight: 6,
+                  paddingRight: 8,
+                  fontWeight: '400',
+                  lineHeight: 12,
                   marginTop: -6,
                 }}>
                   {i > 0 ? label : ''}
@@ -1153,14 +1187,14 @@ const colors = {
             <View style={{
               flexDirection: 'row',
               height: DAY_HEADER_HEIGHT,
-              backgroundColor: colors.accent + '30',
+              backgroundColor: 'transparent',
               borderBottomWidth: StyleSheet.hairlineWidth,
               borderBottomColor: colors.border + '60',
             }}>
               {weekDays.map((day, idx) => {
                 const currentDay = isToday(day);
-                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
+                const dowName = (DAY_NAMES[(day.getDay() + 6) % 7] || '').toUpperCase();
+                const dateNum = day.getDate();
                 return (
                   <View
                     key={idx}
@@ -1170,16 +1204,35 @@ const colors = {
                       justifyContent: 'center',
                       borderLeftWidth: StyleSheet.hairlineWidth,
                       borderLeftColor: colors.border + '60',
-                      backgroundColor: currentDay ? colors.accent + '20' : isWeekend ? colors.border + '40' : 'transparent',
+                      backgroundColor: currentDay ? colors.accent + '12' : 'transparent',
                     }}
                   >
                     <Text style={{
-                      fontSize: 13,
-                      fontWeight: '600',
-                      color: currentDay ? colors.accent : isWeekend ? colors.secondary : colors.text,
+                      fontSize: 10,
+                      fontWeight: '500',
+                      color: currentDay ? colors.accent : colors.secondary,
+                      marginBottom: 4,
                     }}>
-                      {dowName} {day.getDate()}
+                      {dowName}
                     </Text>
+                    {currentDay ? (
+                      <View style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 16,
+                        backgroundColor: colors.accent,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
+                          {dateNum}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 17, fontWeight: '400', color: colors.text }}>
+                        {dateNum}
+                      </Text>
+                    )}
                   </View>
                 );
               })}
@@ -1323,7 +1376,7 @@ const colors = {
                         height: TOTAL_GRID_HEIGHT,
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
-                        backgroundColor: currentDay ? colors.accent + '06' : isWeekend ? colors.border + '30' : 'transparent',
+                        backgroundColor: currentDay ? colors.accent + '12' : isWeekend ? colors.border + '30' : 'transparent',
                       }}
                     >
                       {hourLabels.map((_, hourIdx) => (
@@ -1334,8 +1387,9 @@ const colors = {
                             top: hourIdx * HOUR_HEIGHT,
                             left: 0,
                             right: 0,
-                            height: StyleSheet.hairlineWidth,
+                            height: 1,
                             backgroundColor: colors.border,
+                            opacity: 0.6,
                           }}
                         />
                       ))}
@@ -1349,19 +1403,21 @@ const colors = {
                             right: 0,
                             top: (nowMinutes / 60) * HOUR_HEIGHT - 1,
                             zIndex: 10,
-                            flexDirection: 'row',
-                            alignItems: 'center',
                           }}
                         >
                           <View style={{
-                            width: 9,
-                            height: 9,
-                            borderRadius: 5,
+                            position: 'absolute',
+                            left: -4,
+                            top: -4,
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
                             backgroundColor: colors.accent,
-                            marginLeft: -4,
                           }} />
                           <View style={{
-                            flex: 1,
+                            position: 'absolute',
+                            left: 0,
+                            width: GRID_COL_WIDTH,
                             height: 2,
                             backgroundColor: colors.accent,
                           }} />
@@ -1387,41 +1443,40 @@ const colors = {
                               left,
                               width: laneWidth - 1,
                               height,
-                              backgroundColor: eventColor + '45',
-                              borderRadius: 5,
-                              borderLeftWidth: 3,
-                              borderLeftColor: eventColor,
-                              paddingHorizontal: 4,
-                              paddingVertical: 2,
+                              backgroundColor: colors.card,
+                              borderRadius: 6,
+                              borderWidth: 1,
+                              borderColor: colors.border,
                               overflow: 'hidden',
+                              flexDirection: 'row',
                             }}
                             onPress={() => handleEventTap(event)}
                             activeOpacity={0.75}
                           >
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                fontWeight: '600',
-                                color: colors.text,
-                                lineHeight: 15,
-                              }}
-                              numberOfLines={height >= 36 ? 2 : 1}
-                            >
-                              {event.title}
-                            </Text>
-                            {height >= 36 && event.startTime && (
+                            <View style={{
+                              width: 3,
+                              backgroundColor: eventColor,
+                              borderTopLeftRadius: 6,
+                              borderBottomLeftRadius: 6,
+                            }} />
+                            <View style={{ flex: 1, paddingHorizontal: 5, paddingTop: 4, overflow: 'hidden' }}>
                               <Text
                                 style={{
-                                  fontSize: 9,
-                                  color: colors.secondary,
-                                  marginTop: 1,
+                                  fontSize: 10,
+                                  fontWeight: '600',
+                                  color: colors.text,
+                                  lineHeight: 13,
                                 }}
-                                numberOfLines={1}
+                                numberOfLines={2}
                               >
-                                {formatTimeShort(event.startTime)}
-                                {event.endTime ? ` – ${formatTimeShort(event.endTime)}` : ''}
+                                {event.title}
                               </Text>
-                            )}
+                              {height > 34 && event.startTime && (
+                                <Text style={{ fontSize: 9, color: colors.secondary, marginTop: 1 }}>
+                                  {formatTimeShort(event.startTime)}
+                                </Text>
+                              )}
+                            </View>
                           </TouchableOpacity>
                         );
                       })}
@@ -1513,41 +1568,66 @@ const colors = {
         ) : (
           selectedEvents.map(event => {
             const statusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
+            const schedStatusColor = event.statusColor;
+            const schedStatusLabel = event.status ? (SCHEDULE_STATUS_LABELS[event.status] || event.status) : null;
+            const barColor = event.color;
             const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
             return (
               <TouchableOpacity
                 key={event.id}
-                style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: (event.color || colors.border) + '50' }]}
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: colors.card,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  marginBottom: 10,
+                  overflow: 'hidden',
+                  minHeight: 64,
+                }}
                 activeOpacity={0.7}
                 onPress={() => handleEventTap(event)}
               >
-                <View style={[styles.feedEventColorBar, { backgroundColor: event.color }]} />
-                <View style={[styles.feedEventContent, { backgroundColor: (event.color || '') + '12' }]}>
-                  <View style={styles.feedEventTop}>
-                    <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
-                      {event.title}
-                    </Text>
-                    <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
-                      <Ionicons name={getTypeIcon(event.type)} size={11} color={event.color} />
-                      <Text style={[styles.feedEventBadgeText, { color: event.color }]}>
-                        {getEventTypeLabel(event.type)}
-                      </Text>
-                    </View>
-                  </View>
-                  {statusOpt && (
-                    <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                      <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <View style={{ width: 4, backgroundColor: barColor }} />
+                <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 4 }} numberOfLines={2}>
+                    {event.title}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.secondary }}>
+                    {event.startTime
+                      ? `${formatTime(event.startTime)}${event.endTime ? ` – ${formatTime(event.endTime)}` : ''}`
+                      : (dateRange || 'All day')}
+                  </Text>
+                  {showStatusChips && statusOpt && (
+                    <View style={{ flexDirection: 'row', marginTop: 6 }}>
+                      <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                         <Text style={{ fontSize: 10, fontWeight: '600', color: statusOpt.color }}>{statusOpt.label}</Text>
                       </View>
                     </View>
                   )}
-                  {dateRange && (
-                    <Text style={{ fontSize: 10, color: colors.secondary, marginTop: 3 }}>{dateRange}</Text>
+                  {showStatusChips && event.type === 'schedule' && schedStatusColor && schedStatusLabel && (
+                    <View style={{ flexDirection: 'row', marginTop: 6 }}>
+                      <View style={{ backgroundColor: schedStatusColor + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: schedStatusColor }}>{schedStatusLabel}</Text>
+                      </View>
+                    </View>
                   )}
                   {event.projectName && (
-                    <Text style={[styles.feedEventProject, { color: colors.accent }]} numberOfLines={1}>
-                      {event.projectName}
-                    </Text>
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginTop: 6,
+                      backgroundColor: barColor + '20',
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 8,
+                    }}>
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: barColor, marginRight: 5 }} />
+                      <Text style={{ fontSize: 9, fontWeight: '500', color: colors.secondary }}>
+                        {event.projectName}
+                      </Text>
+                    </View>
                   )}
                 </View>
               </TouchableOpacity>
@@ -1588,9 +1668,9 @@ const colors = {
               paddingHorizontal: 12,
               paddingVertical: 6,
               borderRadius: 14,
-              backgroundColor: colors.card,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
+              backgroundColor: colors.accent + '10',
+              borderWidth: 1,
+              borderColor: colors.accent,
             }}
             onPress={() => {
               const modes: ViewMode[] = ['list', 'week', 'month'];
@@ -1599,7 +1679,7 @@ const colors = {
             }}
             activeOpacity={0.7}
           >
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.secondary }}>
+            <Text style={{ fontSize: 12, fontWeight: '500', color: colors.accent }}>
               {viewMode === 'list' ? 'List' : viewMode === 'week' ? 'Week' : 'Month'}
             </Text>
           </TouchableOpacity>
@@ -1630,14 +1710,21 @@ const colors = {
               style={[
                 styles.chip,
                 {
-                  backgroundColor: allDayExpanded ? colors.accent + '30' : colors.card,
-                  borderColor: allDayExpanded ? colors.accent + '60' : colors.border,
+                  backgroundColor: allDayExpanded
+                    ? colors.accent
+                    : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
                 },
               ]}
               onPress={() => setAllDayExpanded(v => !v)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.chipLabel, { color: allDayExpanded ? colors.accent : colors.secondary }]}>
+              <Text style={[
+                styles.chipLabel,
+                {
+                  color: allDayExpanded ? '#FFFFFF' : colors.secondary,
+                  fontWeight: allDayExpanded ? '600' : '400',
+                },
+              ]}>
                 All Day
               </Text>
             </TouchableOpacity>
@@ -1651,8 +1738,9 @@ const colors = {
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: isSelected ? EVENT_COLORS[opt.value] + '25' : colors.card,
-                    borderColor: isSelected ? EVENT_COLORS[opt.value] + '60' : colors.border,
+                    backgroundColor: isSelected
+                      ? colors.accent
+                      : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
                   },
                 ]}
                 onPress={() => {
@@ -1664,7 +1752,13 @@ const colors = {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.chipLabel, { color: isSelected ? EVENT_COLORS[opt.value] : colors.secondary }]}>
+                <Text style={[
+                  styles.chipLabel,
+                  {
+                    color: isSelected ? '#FFFFFF' : colors.secondary,
+                    fontWeight: isSelected ? '600' : '400',
+                  },
+                ]}>
                   {opt.label}
                 </Text>
               </TouchableOpacity>
@@ -1675,8 +1769,9 @@ const colors = {
             style={[
               styles.chip,
               {
-                backgroundColor: activeFilterCount > 0 ? colors.accent + '25' : colors.card,
-                borderColor: activeFilterCount > 0 ? colors.accent + '60' : colors.border,
+                backgroundColor: activeFilterCount > 0
+                  ? colors.accent
+                  : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
               },
             ]}
             onPress={() => setShowFilterModal(true)}
@@ -1685,9 +1780,15 @@ const colors = {
             <Ionicons
               name="options-outline"
               size={14}
-              color={activeFilterCount > 0 ? colors.accent : colors.secondary}
+              color={activeFilterCount > 0 ? '#FFFFFF' : colors.secondary}
             />
-            <Text style={[styles.chipLabel, { color: activeFilterCount > 0 ? colors.accent : colors.secondary }]}>
+            <Text style={[
+              styles.chipLabel,
+              {
+                color: activeFilterCount > 0 ? '#FFFFFF' : colors.secondary,
+                fontWeight: activeFilterCount > 0 ? '600' : '400',
+              },
+            ]}>
               Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
             </Text>
           </TouchableOpacity>
@@ -2152,12 +2253,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
   },
   headerMonthLabel: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '400',
+    marginTop: 1,
   },
   headerRight: {
     flexDirection: 'row',
@@ -2196,13 +2298,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 14,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
+    paddingVertical: 7,
+    borderRadius: 18,
   },
   chipLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '400',
   },
 
   feedDateHeader: {
