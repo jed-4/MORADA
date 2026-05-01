@@ -10840,7 +10840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
       if (bill.projectId) {
-        const project = await storage.getProjectById(bill.projectId);
+        const project = await storage.getProject(bill.projectId);
         if (!project) return res.status(403).json({ error: "Forbidden" });
         if (userRole !== "admin" && project.companyId !== userCompanyId) {
           return res.status(403).json({ error: "Forbidden" });
@@ -10883,7 +10883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userRole = (req as any).user?.role;
       if (!userCompanyId && userRole !== "admin") return res.status(403).json({ error: "Forbidden" });
       if (bill.projectId) {
-        const project = await storage.getProjectById(bill.projectId);
+        const project = await storage.getProject(bill.projectId);
         if (!project) return res.status(403).json({ error: "Forbidden" });
         if (userRole !== "admin" && project.companyId !== userCompanyId) {
           return res.status(403).json({ error: "Forbidden" });
@@ -14026,7 +14026,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userCompanyId = (req as any).user?.companyId;
       const userRole = (req as any).user?.role;
       if (bill.projectId) {
-        const project = await storage.getProjectById(bill.projectId);
+        const project = await storage.getProject(bill.projectId);
         if (!project) return res.status(403).json({ error: "Forbidden" });
         if (userRole !== "admin" && project.companyId !== userCompanyId) {
           return res.status(403).json({ error: "Forbidden" });
