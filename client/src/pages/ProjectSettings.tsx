@@ -1100,30 +1100,47 @@ export default function ProjectSettings() {
             <p className="text-sm text-muted-foreground mb-3">
               Customize the background style for this project's dashboard
             </p>
-            <div className="grid grid-cols-4 gap-2">
-              {dashboardBackgroundOptions.map((bg) => (
-                <button
-                  key={bg.id}
-                  className={`relative p-2 rounded-md border-2 hover-elevate active-elevate-2 transition-all ${
-                    dashboardBackgroundId === bg.id 
-                      ? 'border-primary ring-1 ring-primary/20' 
-                      : 'border-border'
-                  }`}
-                  onClick={() => saveDashboardBackground(bg.id)}
-                  data-testid={`button-bg-${bg.id}`}
-                >
-                  <div 
-                    className={`h-10 rounded ${bg.preview} border border-border/50`}
-                  />
-                  <span className="text-xs mt-1 block text-center truncate">{bg.name}</span>
-                  {dashboardBackgroundId === bg.id && (
-                    <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5">
-                      <Check className="h-2.5 w-2.5" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
+            {isEditing ? (
+              <div className="grid grid-cols-4 gap-2">
+                {dashboardBackgroundOptions.map((bg) => (
+                  <button
+                    key={bg.id}
+                    className={`relative p-2 rounded-md border-2 hover-elevate active-elevate-2 transition-all ${
+                      dashboardBackgroundId === bg.id 
+                        ? 'border-primary ring-1 ring-primary/20' 
+                        : 'border-border'
+                    }`}
+                    onClick={() => saveDashboardBackground(bg.id)}
+                    data-testid={`button-bg-${bg.id}`}
+                  >
+                    <div 
+                      className={`h-10 rounded ${bg.preview} border border-border/50`}
+                    />
+                    <span className="text-xs mt-1 block text-center truncate">{bg.name}</span>
+                    {dashboardBackgroundId === bg.id && (
+                      <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                        <Check className="h-2.5 w-2.5" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              (() => {
+                const currentBg = dashboardBackgroundOptions.find(b => b.id === dashboardBackgroundId) || dashboardBackgroundOptions[0];
+                return (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-12 h-8 rounded ${currentBg.preview} border border-border`}
+                      data-testid="dashboard-bg-preview"
+                    />
+                    <span className="text-sm" data-testid="text-dashboard-background">
+                      {currentBg.name}
+                    </span>
+                  </div>
+                );
+              })()
+            )}
           </div>
         </CardContent>
       </Card>
