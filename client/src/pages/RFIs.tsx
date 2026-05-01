@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -39,6 +39,7 @@ import {
   Plus,
   HelpCircle,
   MoreHorizontal,
+  MoreVertical,
   Search,
   Send,
   CalendarIcon,
@@ -50,8 +51,10 @@ import { type Rfi, type Project, type Contact, type User } from "@shared/schema"
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format, isPast } from "date-fns";
 import { useRfiStatusOptions } from "@/hooks/useRfiStatusOptions";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -78,8 +81,36 @@ export default function RFIs() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const { statusOptions, getStatusInfo } = useRfiStatusOptions();
+  const { toolbarVisible } = useToolbarVisible();
+
+  // Focus the search input when expanded
+  useEffect(() => {
+    if (searchOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [searchOpen]);
+
+  // Close the search on outside click (only when there is no query text)
+  useEffect(() => {
+    if (!searchOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node) &&
+        !searchQuery
+      ) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [searchOpen, searchQuery]);
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) {
@@ -128,9 +159,6 @@ export default function RFIs() {
   };
 
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
-  const pageTitle = currentProject
-    ? `${currentProject.name} - Requests for Information`
-    : "Requests for Information";
 
   const getNavigationPath = (path: string) => {
     return projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
@@ -150,6 +178,25 @@ export default function RFIs() {
       return matchesSearch && matchesStatus;
     });
   }, [rfis, searchQuery, statusFilter]);
+
+  // Status tabs — "all" hardcoded + every status returned by useRfiStatusOptions().
+  const statusTabs = useMemo(() => {
+    const tabs: { key: string; label: string }[] = [{ key: "all", label: "All" }];
+    statusOptions.forEach((option) => {
+      tabs.push({ key: option.key, label: option.name });
+    });
+    return tabs;
+  }, [statusOptions]);
+
+  // Per-status counts (memoised) — total in "all".
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: rfis.length };
+    statusTabs.forEach((tab) => {
+      if (tab.key === "all") return;
+      counts[tab.key] = rfis.filter((r) => r.status === tab.key).length;
+    });
+    return counts;
+  }, [rfis, statusTabs]);
 
   const handleSubmit = async (values: RFIFormValues) => {
     if (!projectIdFromUrl) {
@@ -433,70 +480,136 @@ export default function RFIs() {
   }, [projectIdFromUrl]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {pageTitle}
-          </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-rfi-count">
-            {filteredRFIs.length} RFIs
-          </Badge>
-        </div>
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setLocation(getNavigationPath("/rfis/new"))}
-          data-testid="button-create-rfi"
-        >
-          <Plus className="w-3 h-3" />
-          <span>Create RFI</span>
-        </button>
-      </div>
+    <div className="flex flex-col h-full" data-testid="page-rfis">
+      {/* Toolbar — single h-9 row inside rounded card */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+        <div className="h-9 flex items-center px-3 gap-2">
+          {/* Fallback context prefix — only shown when global app bar is hidden */}
+          {!toolbarVisible && (
+            <span
+              className="text-xs text-muted-foreground font-medium pr-2 mr-1 border-r border-border/50 truncate max-w-[160px] flex-shrink-0"
+              data-testid="text-toolbar-context"
+            >
+              {currentProject ? currentProject.name : "RFIs"}
+            </span>
+          )}
 
-      {/* Row 2 - Search & Filters (36px) */}
-      <div className="h-9 bg-background flex items-center px-2 border-b border-border flex-shrink-0 gap-1.5">
-        <div className="relative w-48">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input
-            placeholder="Search RFIs..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-7 pr-2 py-0 h-6 text-xs border"
-            data-testid="input-search-rfis"
-          />
-        </div>
-        <div className="w-px h-4 bg-border" />
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-6 w-[130px] text-xs" data-testid="select-status-filter">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {statusOptions.map((status) => (
-              <SelectItem key={status.key} value={status.key}>
-                {status.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ml-auto">
-          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs gap-1"
-                data-testid="button-column-picker"
-              >
-                <Columns3 className="w-3 h-3" />
-                Columns
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="p-0 w-auto">
-              <DataTableColumnPicker storageKey="rfis" columns={pickerColumns} />
-            </PopoverContent>
-          </Popover>
+          {/* Status tabs — left, scrollable when narrow */}
+          <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
+            {statusTabs.map((status) => {
+              const isActive = statusFilter === status.key;
+              const count = statusCounts[status.key] ?? 0;
+              return (
+                <button
+                  key={status.key}
+                  type="button"
+                  onClick={() => setStatusFilter(status.key)}
+                  className={cn(
+                    "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
+                    isActive
+                      ? "text-foreground border-primary"
+                      : "text-muted-foreground hover:text-foreground border-transparent"
+                  )}
+                  data-testid={`tab-status-${status.key}`}
+                >
+                  {status.label}
+                  {status.key !== "all" && count > 0 && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-data font-semibold",
+                        isActive
+                          ? "bg-primary/20 text-[#8b6bb1]"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Icon-expand search */}
+          <div ref={searchContainerRef} className="flex items-center flex-shrink-0">
+            <Input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setSearchQuery("");
+                  setSearchOpen(false);
+                }
+              }}
+              placeholder="Search RFIs..."
+              aria-hidden={!searchOpen}
+              tabIndex={searchOpen ? 0 : -1}
+              className={cn(
+                "h-6 text-xs transition-all duration-200 ease-in-out",
+                searchOpen
+                  ? "w-48 mr-1 px-2 opacity-100 border"
+                  : "w-0 mr-0 px-0 opacity-0 border-0 pointer-events-none"
+              )}
+              data-testid="input-search-rfis"
+            />
+            <button
+              type="button"
+              onClick={() => setSearchOpen((o) => !o)}
+              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+              data-testid="button-search-toggle"
+              aria-label="Search RFIs"
+            >
+              <Search className="h-3 w-3" />
+            </button>
+          </div>
+
+          {/* Right side: Columns, Create RFI, Options */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-column-picker"
+                  aria-label="Columns"
+                >
+                  <Columns3 className="h-3 w-3" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="p-0 w-auto">
+                <DataTableColumnPicker storageKey="rfis" columns={pickerColumns} />
+              </PopoverContent>
+            </Popover>
+
+            <button
+              type="button"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setLocation(getNavigationPath("/rfis/new"))}
+              data-testid="button-create-rfi"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Create RFI</span>
+            </button>
+
+            <DropdownMenu open={optionsOpen} onOpenChange={setOptionsOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-rfis-options"
+                  aria-label="Options"
+                >
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  No options
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 

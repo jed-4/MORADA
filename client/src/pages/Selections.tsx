@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
+import { cn } from "@/lib/utils";
 import {
   type Selection,
   type InsertSelection,
@@ -19,6 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Package,
@@ -35,6 +38,7 @@ import {
   Check,
   MessageSquare,
   Paperclip,
+  X,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -519,6 +523,38 @@ export default function Selections() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
+  const { toolbarVisible } = useToolbarVisible();
+
+  const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
+    const stored = localStorage.getItem("selections-cards-visible");
+    return stored === null ? true : stored === "true";
+  });
+  useEffect(() => {
+    localStorage.setItem("selections-cards-visible", String(showSummaryCards));
+  }, [showSummaryCards]);
+
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchExpanded]);
+  useEffect(() => {
+    if (!searchExpanded) return;
+    const onClick = (e: MouseEvent) => {
+      if (
+        searchWrapRef.current &&
+        !searchWrapRef.current.contains(e.target as Node) &&
+        !searchTerm
+      ) {
+        setSearchExpanded(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [searchExpanded, searchTerm]);
 
   const projectId = currentProject?.id;
 
@@ -704,173 +740,257 @@ export default function Selections() {
   const varianceMeta = formatVarianceCents(stats.variance);
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Top bar - page title + add button */}
-      <div className="h-9 bg-background flex items-center justify-between px-4 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {currentProject.name} / Selections
-          </h2>
-          <span className="text-xs text-muted-foreground" data-testid="text-selection-count">
-            {filtered.length} of {stats.total} items
-          </span>
-        </div>
-        <button
-          className="h-7 px-2.5 text-xs rounded-md bg-primary text-white hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-          onClick={handleAddSelection}
-          disabled={createSelectionMutation.isPending}
-          data-testid="button-add-selection"
-        >
-          {createSelectionMutation.isPending ? (
-            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Plus className="w-3 h-3" />
-          )}
-          <span>Add Selection</span>
-        </button>
-      </div>
-
-      {/* Summary strip */}
-      <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0 flex-wrap">
-        {/* Left: stat cards */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <StatCard
-            value={stats.total}
-            label="Total"
-            variant="default"
-            active={statusTab === "all"}
-            onClick={() => setStatusTab("all")}
-            testId="stat-total"
-          />
-          <StatCard
-            value={stats.open}
-            label="Open"
-            variant="primary"
-            active={statusTab === "open"}
-            onClick={() => setStatusTab("open")}
-            testId="stat-open"
-          />
-          <StatCard
-            value={stats.submitted}
-            label="Submitted"
-            variant="amber"
-            active={statusTab === "submitted"}
-            onClick={() => setStatusTab("submitted")}
-            testId="stat-submitted"
-          />
-          <StatCard
-            value={stats.approved}
-            label="Approved"
-            variant="sage"
-            active={statusTab === "approved"}
-            onClick={() => setStatusTab("approved")}
-            testId="stat-approved"
-          />
-          <StatCard
-            value={stats.overdue}
-            label="Overdue"
-            variant="coral"
-            active={statusTab === "overdue"}
-            onClick={() => setStatusTab("overdue")}
-            testId="stat-overdue"
-          />
-        </div>
-
-        {/* Right: budget summary */}
-        <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center gap-6">
-          <div>
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Allowance</div>
-            <div className="text-[13px] font-bold text-foreground tabular-nums" data-testid="text-total-allowance">
-              {formatMoneyCents(stats.totalAllowance)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Actual</div>
-            <div
-              className={`text-[13px] font-bold tabular-nums ${
-                stats.variance > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"
-              }`}
-              data-testid="text-total-actual"
-            >
-              {formatMoneyCents(stats.totalActual)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Variance</div>
-            <div
-              className={`text-[13px] font-bold tabular-nums ${
-                varianceMeta.tone === "over"
-                  ? "text-[hsl(var(--coral))]"
-                  : varianceMeta.tone === "under"
-                    ? "text-[hsl(var(--sage))]"
-                    : "text-foreground"
-              }`}
-              data-testid="text-total-variance"
-            >
-              {varianceMeta.text}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="h-11 bg-background flex items-center justify-between px-4 gap-3 border-b border-border flex-shrink-0">
-        {/* Status tabs */}
-        <div className="flex items-center gap-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setStatusTab(tab.key)}
-              data-testid={`tab-${tab.key}`}
-              className={`rounded-md px-3 py-1.5 text-xs flex items-center gap-1.5 ${
-                statusTab === tab.key
-                  ? "bg-primary/10 text-primary font-semibold"
-                  : "text-muted-foreground hover:text-foreground hover-elevate"
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className="opacity-70 tabular-nums">{tab.count}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Search + category */}
-        <div className="flex items-center gap-2">
-          <div className="relative w-56">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search selections…"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 h-7 text-xs"
-              data-testid="input-search-selections"
+    <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+      {/* Summary strip (hideable) */}
+      {showSummaryCards && (
+        <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0 flex-wrap">
+          {/* Left: stat cards */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <StatCard
+              value={stats.total}
+              label="Total"
+              variant="default"
+              active={statusTab === "all"}
+              onClick={() => setStatusTab("all")}
+              testId="stat-total"
+            />
+            <StatCard
+              value={stats.open}
+              label="Open"
+              variant="primary"
+              active={statusTab === "open"}
+              onClick={() => setStatusTab("open")}
+              testId="stat-open"
+            />
+            <StatCard
+              value={stats.submitted}
+              label="Submitted"
+              variant="amber"
+              active={statusTab === "submitted"}
+              onClick={() => setStatusTab("submitted")}
+              testId="stat-submitted"
+            />
+            <StatCard
+              value={stats.approved}
+              label="Approved"
+              variant="sage"
+              active={statusTab === "approved"}
+              onClick={() => setStatusTab("approved")}
+              testId="stat-approved"
+            />
+            <StatCard
+              value={stats.overdue}
+              label="Overdue"
+              variant="coral"
+              active={statusTab === "overdue"}
+              onClick={() => setStatusTab("overdue")}
+              testId="stat-overdue"
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-7 px-2.5 text-xs border border-border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-category-filter"
+
+          {/* Right: budget summary */}
+          <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center gap-6">
+            <div>
+              <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Allowance</div>
+              <div className="text-[13px] font-bold text-foreground tabular-nums" data-testid="text-total-allowance">
+                {formatMoneyCents(stats.totalAllowance)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Actual</div>
+              <div
+                className={`text-[13px] font-bold tabular-nums ${
+                  stats.variance > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"
+                }`}
+                data-testid="text-total-actual"
               >
-                <span>{categoryFilter || "Category"}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setCategoryFilter("")}>
-                <span className={!categoryFilter ? "font-medium" : ""}>All Categories</span>
-              </DropdownMenuItem>
-              {selectionCategories?.options?.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.key}
-                  onClick={() => setCategoryFilter(opt.name)}
-                  className={categoryFilter === opt.name ? "bg-accent" : ""}
+                {formatMoneyCents(stats.totalActual)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Variance</div>
+              <div
+                className={`text-[13px] font-bold tabular-nums ${
+                  varianceMeta.tone === "over"
+                    ? "text-[hsl(var(--coral))]"
+                    : varianceMeta.tone === "under"
+                      ? "text-[hsl(var(--sage))]"
+                      : "text-foreground"
+                }`}
+                data-testid="text-total-variance"
+              >
+                {varianceMeta.text}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single-row toolbar */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+        <div className="h-9 flex items-center px-2 gap-2">
+          {/* Hidden-global-bar fallback context prefix */}
+          {!toolbarVisible && (
+            <span
+              className="text-xs text-muted-foreground font-medium truncate max-w-[160px] pr-1 border-r border-border/50 mr-1"
+              data-testid="text-toolbar-context"
+            >
+              {currentProject?.name ?? "Selections"}
+            </span>
+          )}
+
+          {/* Left: status pill tabs (scroll on narrow) */}
+          <div className="flex items-center gap-1 overflow-x-auto min-w-0">
+            {tabs.map((tab) => {
+              const isActive = statusTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setStatusTab(tab.key)}
+                  data-testid={`tab-${tab.key}`}
+                  className={cn(
+                    "h-6 rounded-md px-2 text-xs flex items-center gap-1.5 whitespace-nowrap border border-transparent hover-elevate active-elevate-2",
+                    isActive
+                      ? "bg-primary text-white"
+                      : "text-muted-foreground"
+                  )}
                 >
-                  {opt.name}
+                  <span>{tab.label}</span>
+                  <span
+                    className={cn(
+                      "tabular-nums text-[10px] px-1 rounded",
+                      isActive ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Icon-expand search */}
+          <div ref={searchWrapRef} className="flex items-center flex-shrink-0">
+            <div
+              className={cn(
+                "flex items-center transition-all duration-200 overflow-hidden",
+                searchExpanded ? "w-56" : "w-6"
+              )}
+            >
+              {searchExpanded ? (
+                <div className="relative w-full">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Search selections…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setSearchTerm("");
+                        setSearchExpanded(false);
+                      }
+                    }}
+                    className="pl-7 pr-7 h-6 text-xs"
+                    data-testid="input-search-selections"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm("");
+                        searchInputRef.current?.focus();
+                      }}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover-elevate text-muted-foreground"
+                      aria-label="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSearchExpanded(true)}
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2 text-muted-foreground"
+                  data-testid="button-search-toggle"
+                  aria-label="Search"
+                >
+                  <Search className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right side */}
+          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {/* Category dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="h-6 px-2 text-xs border border-border/50 rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-muted-foreground"
+                  data-testid="button-category-filter"
+                >
+                  <span className="truncate max-w-[140px]">
+                    {categoryFilter || "Category"}
+                  </span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setCategoryFilter("")}>
+                  <span className={!categoryFilter ? "font-medium" : ""}>All Categories</span>
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {selectionCategories?.options?.map((opt) => (
+                  <DropdownMenuItem
+                    key={opt.key}
+                    onClick={() => setCategoryFilter(opt.name)}
+                    className={categoryFilter === opt.name ? "bg-accent" : ""}
+                  >
+                    {opt.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Add Selection primary */}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
+              onClick={handleAddSelection}
+              disabled={createSelectionMutation.isPending}
+              data-testid="button-add-selection"
+            >
+              {createSelectionMutation.isPending ? (
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Plus className="w-3 h-3" />
+              )}
+              <span>Add Selection</span>
+            </button>
+
+            {/* Options dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2 text-muted-foreground"
+                  data-testid="button-selections-options"
+                  aria-label="Selections options"
+                >
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuCheckboxItem
+                  checked={showSummaryCards}
+                  onCheckedChange={(c) => setShowSummaryCards(!!c)}
+                  onSelect={(e) => e.preventDefault()}
+                  data-testid="option-show-summary-cards"
+                >
+                  Show summary cards
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 

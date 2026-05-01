@@ -103,6 +103,7 @@ import { ImportScheduleDialog } from "@/components/schedule/ImportScheduleDialog
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ScheduleParams {
   projectId: string;
@@ -1663,481 +1664,416 @@ export default function Schedule() {
             </button>
           </div>
         )}
-        {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
-        
-        {/* Row 1 - Project Controls (36px) */}
-        <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-          {/* Left: Project Name + Lock/Unlock Toggle + Online/Offline Indicator */}
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold">{pageTitle}</h2>
-            
-            {/* Online/Offline toggle (controls visibility, independent of lock state) */}
-            <button
-              onClick={() => {
-                if (toggleOnlineMutation.isPending) return;
-                if (schedule?.isOnline) {
-                  // Going offline — require confirmation
-                  setShowOfflineConfirm(true);
-                } else {
-                  toggleOnlineMutation.mutate(true);
-                }
-              }}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs text-muted-foreground hover-elevate active-elevate-2"
-              disabled={toggleOnlineMutation.isPending}
-              data-testid="button-toggle-online"
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${schedule?.isOnline ? "bg-green-500" : "bg-muted-foreground"}`} />
-              <span>{schedule?.isOnline ? "Online" : "Offline"}</span>
-            </button>
-          </div>
-
-          {/* Right: Action Buttons */}
-          <div className="flex items-center gap-1.5">
-            {schedule?.id && (
-              <ScheduleActivityFeedPopover
-                scheduleId={schedule.id}
-                onSelectItem={(itemId) => {
-                  const target = scheduleItems.find((i: any) => i.id === itemId);
-                  if (target) {
-                    setEditingItem(target);
-                    setShowItemDialog(true);
-                  }
-                }}
-              />
-            )}
-            {/* Lock/Unlock Toggle */}
-            {schedule?.status === "locked" ? (
-              <button
-                onClick={() => {
-                  updateStatusMutation.mutate("online");
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
-                data-testid="button-unlock-schedule"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                Locked
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowLockConfirm(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
-                data-testid="button-lock-schedule"
-              >
-                <Unlock className="w-3.5 h-3.5" />
-                Unlocked (Edit)
-              </button>
-            )}
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-primary-foreground border-primary/20 hover:bg-primary/90 active-elevate-2"
-              onClick={() => { setEditingItem(null); resetForm(); setShowItemDialog(true); }}
-              disabled={schedule?.status === "locked"}
-              data-testid="button-add-item"
-            >
-              <Plus className="w-3 h-3 inline mr-0.5" />
-              Add Item
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center" data-testid="button-more-actions">
-                  <MoreVertical className="w-3 h-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowLoadTemplateDialog(true)} disabled={schedule?.status === "locked"}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Load Template
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowSaveTemplateDialog(true)} disabled={schedule?.status === "locked" || scheduleItems.length === 0}>
-                  <Download className="w-4 h-4 mr-2" />
-                  Save as Template
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setShowImportDialog(true)} disabled={schedule?.status === "locked"}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Import Schedule
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportSchedule} data-testid="button-export-pdf">
-                  <Download className="w-4 h-4 mr-2" />
-                  Export Schedule
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setShowBaselineDialog(true)}>
-                  <Bookmark className="w-4 h-4 mr-2" />
-                  Create Baseline
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => sortByDateMutation.mutate()}
-                  disabled={sortByDateMutation.isPending}
-                >
-                  <ArrowUpDown className="w-4 h-4 mr-2" />
-                  {sortByDateMutation.isPending ? "Sorting..." : "Sort by Date"}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem data-testid="button-settings" onClick={() => setShowWorkingDaysDialog(true)}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Schedule Settings
-                </DropdownMenuItem>
-                {!hasPreconstruction && scheduleCategory === "construction" && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => createPreconstructionMutation.mutate()}
-                      disabled={createPreconstructionMutation.isPending}
+        {/* Single-row toolbar — replaces the previous two-row block. */}
+        {(() => {
+          const activeFilterCount =
+            (filters.assignee !== 'all' ? 1 : 0) +
+            (filters.status !== 'all' ? 1 : 0) +
+            (filters.type !== 'all' ? 1 : 0) +
+            (filters.dateRange !== 'all' ? 1 : 0) +
+            (activeBaselineId ? 1 : 0);
+          const hasActiveFilters = activeFilterCount > 0;
+          const scaleValue = activeView === 'calendar' ? calendarView : zoomLevel;
+          const scaleLabel = scaleValue.charAt(0).toUpperCase() + scaleValue.slice(1);
+          const setScale = (v: 'day' | 'week' | 'month' | 'agenda') => {
+            if (activeView === 'calendar') {
+              setCalendarView(v);
+            } else if (v !== 'agenda') {
+              setZoomLevel(v);
+            }
+          };
+          return (
+            <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border/50 flex-shrink-0">
+              {/* Left side */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                {/* Online/Offline chip */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        if (toggleOnlineMutation.isPending) return;
+                        if (schedule?.isOnline) {
+                          setShowOfflineConfirm(true);
+                        } else {
+                          toggleOnlineMutation.mutate(true);
+                        }
+                      }}
+                      disabled={toggleOnlineMutation.isPending}
+                      className="h-6 inline-flex items-center gap-1 px-1.5 rounded-md border border-border/50 text-xs text-muted-foreground hover-elevate active-elevate-2"
+                      data-testid="button-toggle-online"
+                      aria-label={schedule?.isOnline ? 'Online' : 'Offline'}
                     >
-                      <HardHat className="w-4 h-4 mr-2" />
-                      {createPreconstructionMutation.isPending ? "Creating..." : "Open Preconstruction Schedule"}
+                      <span className={`w-1.5 h-1.5 rounded-full ${schedule?.isOnline ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                      <span className="hidden sm:inline">{schedule?.isOnline ? 'Online' : 'Offline'}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{schedule?.isOnline ? 'Online' : 'Offline'}</TooltipContent>
+                </Tooltip>
+
+                {/* View segmented control */}
+                <div className="flex items-center gap-0.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setActiveView('gantt')}
+                        className={`h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                          activeView === 'gantt'
+                            ? 'bg-primary/10 text-primary border-primary/20'
+                            : 'border-border/50 text-muted-foreground'
+                        }`}
+                        data-testid="button-view-gantt"
+                        aria-label="Gantt view"
+                      >
+                        <GanttChart className="w-3 h-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Gantt</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setActiveView('calendar')}
+                        className={`h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                          activeView === 'calendar'
+                            ? 'bg-primary/10 text-primary border-primary/20'
+                            : 'border-border/50 text-muted-foreground'
+                        }`}
+                        data-testid="button-view-calendar"
+                        aria-label="Calendar view"
+                      >
+                        <CalendarIcon className="w-3 h-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Calendar</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setActiveView('list')}
+                        className={`h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                          activeView === 'list'
+                            ? 'bg-primary/10 text-primary border-primary/20'
+                            : 'border-border/50 text-muted-foreground'
+                        }`}
+                        data-testid="button-view-list"
+                        aria-label="List view"
+                      >
+                        <ListIcon className="w-3 h-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">List</TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {/* Divider */}
+                <div className="w-px h-4 bg-border" />
+
+                {/* Filter popover */}
+                <Popover open={showFilters} onOpenChange={setShowFilters}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <button
+                          className={`relative h-6 w-6 flex items-center justify-center rounded-md border transition-all hover-elevate active-elevate-2 ${
+                            hasActiveFilters
+                              ? 'bg-primary/10 text-primary border-primary/20'
+                              : 'border-border/50 text-muted-foreground'
+                          }`}
+                          data-testid="button-filter"
+                          aria-label="Filter"
+                        >
+                          <Filter className="w-3 h-3" />
+                          {hasActiveFilters && (
+                            <span
+                              className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-white text-[9px] leading-[14px] font-semibold text-center"
+                              data-testid="badge-filter-count"
+                            >
+                              {activeFilterCount}
+                            </span>
+                          )}
+                        </button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {hasActiveFilters ? `Filter (${activeFilterCount})` : 'Filter'}
+                    </TooltipContent>
+                  </Tooltip>
+                  <PopoverContent align="start" className="w-72 p-3 space-y-3" data-testid="popover-filters">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Assignee</Label>
+                      <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-filter-assignee">
+                          <SelectValue placeholder="All Assignees" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Assignees</SelectItem>
+                          {contacts.map((contact) => (
+                            <SelectItem key={contact.id} value={contact.id}>
+                              {contact.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Status</Label>
+                      <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-filter-status">
+                          <SelectValue placeholder="All Statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Statuses</SelectItem>
+                          {statusOptions.length > 0 ? (
+                            statusOptions.map((opt: any) => (
+                              <SelectItem key={opt.id} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <>
+                              <SelectItem value="not_started">Not Started</SelectItem>
+                              <SelectItem value="in_progress">In Progress</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="on_hold">On Hold</SelectItem>
+                              <SelectItem value="cancelled">Cancelled</SelectItem>
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Type</Label>
+                      <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-filter-type">
+                          <SelectValue placeholder="All Types" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="task">Task</SelectItem>
+                          <SelectItem value="milestone">Milestone</SelectItem>
+                          <SelectItem value="inspection">Inspection</SelectItem>
+                          <SelectItem value="delivery">Delivery</SelectItem>
+                          <SelectItem value="meeting">Meeting</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Date Range</Label>
+                      <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-filter-date-range">
+                          <SelectValue placeholder="All Dates" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Dates</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="this_week">This Week</SelectItem>
+                          <SelectItem value="this_month">This Month</SelectItem>
+                          <SelectItem value="overdue">Overdue</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(baselines as any[]).length > 0 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Baseline</Label>
+                        <Select
+                          value={activeBaselineId || 'none'}
+                          onValueChange={(v) => setActiveBaselineId(v === 'none' ? null : v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-filter-baseline">
+                            <SelectValue placeholder="No Baseline" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No Baseline</SelectItem>
+                            {(baselines as any[]).map((b: any) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name} ({new Date(b.createdAt).toLocaleDateString('en-AU')})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilters({ status: 'all', assignee: 'all', type: 'all', dateRange: 'all' });
+                          setActiveBaselineId(null);
+                        }}
+                        className="w-full text-xs text-primary hover:underline pt-1"
+                        data-testid="button-clear-filters"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </PopoverContent>
+                </Popover>
+
+                {/* Timeline scale dropdown */}
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="h-6 inline-flex items-center gap-1 px-2 rounded-md border border-border/50 text-xs text-muted-foreground hover-elevate active-elevate-2"
+                          data-testid="button-timeline-scale"
+                          aria-label="Timeline scale"
+                        >
+                          <span>{scaleLabel}</span>
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Timeline scale</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="start" className="w-32">
+                    <DropdownMenuItem onClick={() => setScale('day')} data-testid="menu-scale-day">
+                      Day
                     </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+                    <DropdownMenuItem onClick={() => setScale('week')} data-testid="menu-scale-week">
+                      Week
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setScale('month')} data-testid="menu-scale-month">
+                      Month
+                    </DropdownMenuItem>
+                    {activeView === 'calendar' && (
+                      <DropdownMenuItem onClick={() => setScale('agenda')} data-testid="menu-scale-agenda">
+                        Agenda
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-        {/* Row 2 - Views, Filters & Timeline Scale (consolidated) */}
-        <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border flex-shrink-0">
-          {/* Left: View Buttons + Separator + Filter Pills */}
-          <div className="flex items-center gap-1.5 flex-1">
-            {/* View Toggle Buttons */}
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => setActiveView('gantt')}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-                data-testid="button-view-gantt"
-              >
-                <GanttChart className="w-3 h-3 inline mr-0.5" />
-                Gantt
-              </button>
-              <button
-                onClick={() => setActiveView('calendar')}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-                data-testid="button-view-calendar"
-              >
-                <CalendarIcon className="w-3 h-3 inline mr-0.5" />
-                Calendar
-              </button>
-              <button
-                onClick={() => setActiveView('list')}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-                data-testid="button-view-list"
-              >
-                <ListIcon className="w-3 h-3 inline mr-0.5" />
-                List
-              </button>
-            </div>
-
-            {/* Separator */}
-            <div className="w-px h-4 bg-border" />
-
-            {/* Collapse/Expand all + Search bar - only show for List/Calendar views */}
-            {activeView !== 'gantt' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setAllCollapsed(prev => !prev)}
-                title={allCollapsed ? "Expand all" : "Collapse all"}
-              >
-                {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
-              </Button>
-            )}
-            {activeView !== 'gantt' && (
-              <div className="relative w-40">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-7 pr-2 py-0 h-6 text-xs border rounded-md"
-                  data-testid="input-search-items"
-                />
-              </div>
-            )}
-
-            {/* Filter Pills - distinct pill style */}
-            <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.assignee !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-assignee">
-                <span>{filters.assignee !== 'all' ? contacts.find(c => c.id === filters.assignee)?.name || 'Assignee' : 'Assignee'}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Assignees</SelectItem>
-                {contacts.map((contact) => (
-                  <SelectItem key={contact.id} value={contact.id}>
-                    {contact.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.status !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-status">
-                <span>{filters.status !== 'all' ? statusOptions.find(o => o.value === filters.status)?.label || filters.status : 'Status'}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {statusOptions.length > 0 ? (
-                  statusOptions.map((opt: any) => (
-                    <SelectItem key={opt.id} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <>
-                    <SelectItem value="not_started">Not Started</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="on_hold">On Hold</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-
-            <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.type !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-type">
-                <span>{filters.type !== 'all' ? filters.type.charAt(0).toUpperCase() + filters.type.slice(1) : 'Type'}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="task">Task</SelectItem>
-                <SelectItem value="milestone">Milestone</SelectItem>
-                <SelectItem value="inspection">Inspection</SelectItem>
-                <SelectItem value="delivery">Delivery</SelectItem>
-                <SelectItem value="meeting">Meeting</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.dateRange !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-date-range">
-                <span>{filters.dateRange !== 'all' ? filters.dateRange.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Date'}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Dates</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="this_week">This Week</SelectItem>
-                <SelectItem value="this_month">This Month</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {(baselines as any[]).length > 0 && (
-              <Select 
-                value={activeBaselineId || "none"} 
-                onValueChange={(v) => setActiveBaselineId(v === "none" ? null : v)}
-              >
-                <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${activeBaselineId ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700' : 'border-border'} [&>svg]:hidden`}>
-                  <span>{activeBaselineId ? (baselines as any[]).find((b: any) => b.id === activeBaselineId)?.name || 'Baseline' : 'Baseline'}</span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Baseline</SelectItem>
-                  {(baselines as any[]).map((b: any) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name} ({new Date(b.createdAt).toLocaleDateString('en-AU')})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          {/* Right: Today + Columns + Day/Week/Month */}
-          <div className="flex items-center gap-1.5">
-            {/* Calendar Navigation - only show for Calendar */}
-            {activeView === 'calendar' && (
-              <div className="flex items-center gap-0.5">
+                {/* Today */}
                 <button
                   onClick={() => {
-                    const newDate = new Date(calendarDate);
-                    if (calendarView === 'day') {
-                      newDate.setDate(newDate.getDate() - 1);
-                    } else if (calendarView === 'week') {
-                      newDate.setDate(newDate.getDate() - 7);
-                    } else if (calendarView === 'month') {
-                      newDate.setMonth(newDate.getMonth() - 1);
+                    if (activeView === 'calendar') {
+                      setCalendarDate(new Date());
+                    } else {
+                      scrollToTodayRef.current?.();
                     }
-                    setCalendarDate(newDate);
                   }}
-                  className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                  data-testid="button-calendar-prev"
-                >
-                  <ChevronLeft className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => setCalendarDate(new Date())}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                  className="h-6 px-2 text-xs rounded-md border border-border/50 text-muted-foreground hover-elevate active-elevate-2"
                   data-testid="button-scroll-to-today"
                 >
                   Today
                 </button>
-                <button
-                  onClick={() => {
-                    const newDate = new Date(calendarDate);
-                    if (calendarView === 'day') {
-                      newDate.setDate(newDate.getDate() + 1);
-                    } else if (calendarView === 'week') {
-                      newDate.setDate(newDate.getDate() + 7);
-                    } else if (calendarView === 'month') {
-                      newDate.setMonth(newDate.getMonth() + 1);
-                    }
-                    setCalendarDate(newDate);
-                  }}
-                  className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                  data-testid="button-calendar-next"
-                >
-                  <ChevronRight className="w-3 h-3" />
-                </button>
               </div>
-            )}
 
-            {/* Today Button - only show for Gantt/List */}
-            {activeView !== 'calendar' && (
-              <button
-                onClick={() => scrollToTodayRef.current?.()}
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-                data-testid="button-scroll-to-today"
-              >
-                Today
-              </button>
-            )}
+              {/* Right side */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {schedule?.id && (
+                  <ScheduleActivityFeedPopover
+                    scheduleId={schedule.id}
+                    onSelectItem={(itemId) => {
+                      const target = scheduleItems.find((i: any) => i.id === itemId);
+                      if (target) {
+                        setEditingItem(target);
+                        setShowItemDialog(true);
+                      }
+                    }}
+                  />
+                )}
 
-            {/* Columns Icon Button - only show for List view (Gantt has its own column config) */}
-            {activeView === 'list' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button 
-                    className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                    data-testid="button-column-config"
+                <div className="w-px h-4 bg-border" />
+
+                {/* Lock/Unlock */}
+                {schedule?.status === 'locked' ? (
+                  <button
+                    onClick={() => updateStatusMutation.mutate('online')}
+                    className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2"
+                    data-testid="button-unlock-schedule"
                   >
-                    <Columns3 className="w-3.5 h-3.5" />
+                    <Lock className="w-3 h-3" />
+                    Locked
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44 p-1 border-2">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-medium px-2 py-1">Visible Columns</DropdownMenuLabel>
-                  <DropdownMenuSeparator className="my-1" />
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('item')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                    data-testid="checkbox-column-item"
+                ) : (
+                  <button
+                    onClick={() => setShowLockConfirm(true)}
+                    className="h-6 inline-flex items-center gap-1 px-2 rounded-md bg-green-100 dark:bg-green-900/30 text-status-success dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2"
+                    data-testid="button-lock-schedule"
                   >
-                    <Checkbox checked={visibleColumns.item} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Item</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('assignee')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                    data-testid="checkbox-column-assignee"
-                  >
-                    <Checkbox checked={visibleColumns.assignee} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Assignee</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('type')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                  >
-                    <Checkbox checked={visibleColumns.type} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Type</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('dueDate')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                    data-testid="checkbox-column-duedate"
-                  >
-                    <Checkbox checked={visibleColumns.dueDate} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Due Date & Duration</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('status')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                    data-testid="checkbox-column-status"
-                  >
-                    <Checkbox checked={visibleColumns.status} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Status</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => toggleColumn('completion')}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
-                    data-testid="checkbox-column-completion"
-                  >
-                    <Checkbox checked={visibleColumns.completion} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Completion %</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                    <Unlock className="w-3 h-3" />
+                    Unlocked
+                  </button>
+                )}
 
-            {/* Separator */}
-            <div className="w-px h-4 bg-border" />
-
-            {/* Timeline Scale Buttons */}
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => {
-                  if (activeView === 'calendar') {
-                    setCalendarView('day');
-                  } else {
-                    setZoomLevel('day');
-                  }
-                }}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  (activeView === 'calendar' && calendarView === 'day') || (activeView !== 'calendar' && zoomLevel === 'day')
-                    ? 'bg-primary text-primary-foreground border-primary/20'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-zoom-day"
-              >
-                Day
-              </button>
-              <button
-                onClick={() => {
-                  if (activeView === 'calendar') {
-                    setCalendarView('week');
-                  } else {
-                    setZoomLevel('week');
-                  }
-                }}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  (activeView === 'calendar' && calendarView === 'week') || (activeView !== 'calendar' && zoomLevel === 'week')
-                    ? 'bg-primary text-primary-foreground border-primary/20'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-zoom-week"
-              >
-                Week
-              </button>
-              <button
-                onClick={() => {
-                  if (activeView === 'calendar') {
-                    setCalendarView('month');
-                  } else {
-                    setZoomLevel('month');
-                  }
-                }}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  (activeView === 'calendar' && calendarView === 'month') || (activeView !== 'calendar' && zoomLevel === 'month')
-                    ? 'bg-primary text-primary-foreground border-primary/20'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-zoom-month"
-              >
-                Month
-              </button>
-              {activeView === 'calendar' && (
+                {/* Add Item primary */}
                 <button
-                  onClick={() => setCalendarView('agenda')}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                    calendarView === 'agenda'
-                      ? 'bg-primary text-primary-foreground border-primary/20'
-                      : 'hover-elevate'
-                  } active-elevate-2`}
-                  data-testid="button-zoom-agenda"
+                  className="h-6 inline-flex items-center gap-0.5 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 disabled:opacity-60 disabled:pointer-events-none"
+                  onClick={() => { setEditingItem(null); resetForm(); setShowItemDialog(true); }}
+                  disabled={schedule?.status === 'locked'}
+                  data-testid="button-add-item"
                 >
-                  Agenda
+                  <Plus className="w-3 h-3" />
+                  <span>Add Item</span>
                 </button>
-              )}
+
+                {/* Options */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                      data-testid="button-more-actions"
+                      aria-label="Schedule options"
+                    >
+                      <MoreVertical className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setShowLoadTemplateDialog(true)} disabled={schedule?.status === 'locked'}>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Load Template
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowSaveTemplateDialog(true)} disabled={schedule?.status === 'locked' || scheduleItems.length === 0}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Save as Template
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setShowImportDialog(true)} disabled={schedule?.status === 'locked'}>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Schedule
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportSchedule} data-testid="button-export-pdf">
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Schedule
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setShowBaselineDialog(true)}>
+                      <Bookmark className="w-4 h-4 mr-2" />
+                      Create Baseline
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => sortByDateMutation.mutate()}
+                      disabled={sortByDateMutation.isPending}
+                    >
+                      <ArrowUpDown className="w-4 h-4 mr-2" />
+                      {sortByDateMutation.isPending ? 'Sorting...' : 'Sort by Date'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem data-testid="button-settings" onClick={() => setShowWorkingDaysDialog(true)}>
+                      <Settings className="w-4 h-4 mr-2" />
+                      Schedule Settings
+                    </DropdownMenuItem>
+                    {!hasPreconstruction && scheduleCategory === 'construction' && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => createPreconstructionMutation.mutate()}
+                          disabled={createPreconstructionMutation.isPending}
+                        >
+                          <HardHat className="w-4 h-4 mr-2" />
+                          {createPreconstructionMutation.isPending ? 'Creating...' : 'Open Preconstruction Schedule'}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Content - conditional rendering based on activeView */}
         {scheduleItems.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   Plus,
   FileText,
   MoreHorizontal,
+  MoreVertical,
   Search,
   Download,
   Send,
@@ -38,6 +39,7 @@ import {
   ImageIcon,
   FileIcon,
 } from "lucide-react";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
@@ -272,6 +274,15 @@ export default function RFQs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [colPopoverOpen, setColPopoverOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const { toolbarVisible } = useToolbarVisible();
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [isSearchOpen]);
 
   // Attachment preview modal
   const [attachmentModal, setAttachmentModal] = useState<{
@@ -550,84 +561,132 @@ export default function RFQs() {
 
       {/* Unified header card */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-
-        {/* Row 1 — Title & Create button */}
-        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-          <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
-            {currentProject
-              ? <>{currentProject.name} <span className="text-muted-foreground font-normal">· RFQs</span></>
-              : "Requests for Quote"}
-          </h2>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
-            onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
-            data-testid="button-create-rfq"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Create RFQ</span>
-          </button>
-        </div>
-
-        {/* Row 2 — Status tabs */}
-        <div className="flex items-center px-3 border-b border-border/50 overflow-x-auto">
-          {STATUS_OPTIONS.map((status) => {
-            const isActive = selectedStatus === status.key;
-            const count = statusCounts[status.key as keyof typeof statusCounts];
-            return (
-              <button
-                key={status.key}
-                onClick={() => setSelectedStatus(status.key)}
-                className={cn(
-                  "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
-                  isActive
-                    ? "text-foreground border-primary"
-                    : "text-muted-foreground hover:text-foreground border-transparent"
-                )}
-                data-testid={`tab-status-${status.key}`}
+        {/* Single h-9 toolbar row */}
+        <div className="h-9 flex items-center px-3 gap-2">
+          {/* Left: optional collapsed-bar context prefix + status tabs */}
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+            {!toolbarVisible && (
+              <span
+                className="text-xs text-muted-foreground font-medium pr-2 flex-shrink-0 truncate max-w-[160px]"
+                data-testid="text-toolbar-context"
               >
-                {status.label}
-                {status.key !== "all" && count > 0 && (
-                  <span className={cn(
-                    "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-data font-semibold",
+                {currentProject ? currentProject.name : "RFQs"}
+              </span>
+            )}
+            {STATUS_OPTIONS.map((status) => {
+              const isActive = selectedStatus === status.key;
+              const count = statusCounts[status.key as keyof typeof statusCounts];
+              return (
+                <button
+                  key={status.key}
+                  onClick={() => setSelectedStatus(status.key)}
+                  className={cn(
+                    "relative flex items-center gap-1.5 h-9 px-3 text-xs font-medium whitespace-nowrap transition-colors border-b-2 flex-shrink-0",
                     isActive
-                      ? "bg-primary/20 text-[#8b6bb1]"
-                      : "bg-muted text-muted-foreground"
-                  )}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                      ? "text-foreground border-primary"
+                      : "text-muted-foreground hover:text-foreground border-transparent"
+                  )}
+                  data-testid={`tab-status-${status.key}`}
+                >
+                  {status.label}
+                  {status.key !== "all" && count > 0 && (
+                    <span className={cn(
+                      "inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-sm text-data font-semibold",
+                      isActive
+                        ? "bg-primary/20 text-[#8b6bb1]"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-        {/* Row 3 — Search + columns */}
-        <div className="h-8 flex items-center justify-between px-3 gap-2">
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          {/* Search — icon-expand */}
+          <div className="flex items-center flex-shrink-0 ml-1">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen((o) => !o)}
+              className={cn(
+                "h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2",
+                isSearchOpen && "bg-primary/10 text-primary border-primary/20"
+              )}
+              data-testid="button-search-toggle"
+              aria-label="Search"
+            >
+              <Search className="h-3 w-3" />
+            </button>
             <Input
-              placeholder="Search RFQs..."
+              ref={searchInputRef}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSearchQuery("");
+                  setIsSearchOpen(false);
+                }
+              }}
+              onBlur={() => {
+                if (!searchQuery) setIsSearchOpen(false);
+              }}
+              placeholder="Search RFQs…"
+              className={cn(
+                "h-6 text-xs transition-all duration-200 overflow-hidden",
+                isSearchOpen
+                  ? "w-48 ml-1 px-2 opacity-100"
+                  : "w-0 ml-0 px-0 opacity-0 pointer-events-none border-0"
+              )}
               data-testid="input-search-rfqs"
             />
           </div>
-          <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="h-6 px-2 text-xs border rounded-md flex items-center gap-1 hover-elevate"
-                data-testid="button-columns"
-              >
-                <Columns3 className="w-3 h-3" />
-                <span>Columns</span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <DataTableColumnPicker storageKey="rfqs" columns={pickerColumns} />
-            </PopoverContent>
-          </Popover>
+
+          {/* Right side */}
+          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-columns"
+                  aria-label="Columns"
+                >
+                  <Columns3 className="h-3 w-3" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <DataTableColumnPicker storageKey="rfqs" columns={pickerColumns} />
+              </PopoverContent>
+            </Popover>
+
+            <button
+              type="button"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
+              data-testid="button-create-rfq"
+            >
+              <Plus className="h-3 w-3" />
+              <span>Create RFQ</span>
+            </button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-rfqs-options"
+                  aria-label="More options"
+                >
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem disabled>No options</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 

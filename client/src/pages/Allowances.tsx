@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Separator } from "@/components/ui/separator";
 import {
   DollarSign,
   Search,
@@ -29,6 +30,8 @@ import {
   FolderOpen,
   SlidersHorizontal,
   X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { type Estimate } from "@shared/schema";
 
@@ -232,6 +235,19 @@ export default function Allowances() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<"all" | "pc" | "ps">("all");
   const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
+  const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem("allowances-cards-visible");
+      return raw === null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("allowances-cards-visible", String(showSummaryCards));
+  }, [showSummaryCards]);
+
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(GROUP_STATE_KEY);
@@ -427,7 +443,39 @@ export default function Allowances() {
     "grid grid-cols-[24px_minmax(220px,2fr)_60px_110px_110px_90px_110px_110px_minmax(160px,1fr)_32px] gap-3 items-center";
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+      {/* Summary strip (60px) */}
+      {showSummaryCards && (
+        <div className="h-[60px] flex items-center gap-3 px-6 border-b border-border flex-shrink-0">
+          <StatCard
+            value={formatCurrency(stats.totalEstimate)}
+            label="Total Estimate"
+            variant="default"
+            testId="stat-total-estimate"
+          />
+          <StatCard
+            value={formatCurrency(stats.totalActual)}
+            label="Total Actual"
+            variant="sage"
+            testId="stat-total-actual"
+          />
+          <StatCard
+            value={formatCurrency(stats.outstanding)}
+            label="Outstanding"
+            variant="amber"
+            testId="stat-outstanding"
+          />
+          <StatCard
+            value={formatCurrency(stats.overBudget)}
+            label="Over Budget"
+            variant="coral"
+            testId="stat-over-budget"
+          />
+          <StatCard value={String(pcCount)} label="PC Items" variant="primary" testId="stat-pc-count" />
+          <StatCard value={String(psCount)} label="PS Items" variant="muted" testId="stat-ps-count" />
+        </div>
+      )}
+
       {/* Top bar (consolidated toolbar) */}
       <div className="h-9 bg-background flex items-center justify-between px-4 gap-1 flex-shrink-0">
         {/* PC / PS / All segmented toggle (left) */}
@@ -552,6 +600,34 @@ export default function Allowances() {
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-64 p-3">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowSummaryCards((v) => !v);
+              }}
+              className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover-elevate active-elevate-2"
+              data-testid="button-toggle-summary-cards"
+            >
+              {showSummaryCards ? (
+                <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+              <span className="flex-1">Show summary cards</span>
+              <span
+                className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                  showSummaryCards ? "bg-primary border-primary text-white" : "border-border"
+                }`}
+              >
+                {showSummaryCards && (
+                  <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 6l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+            </button>
+            <Separator className="my-2" />
             <div className="space-y-2">
               <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Estimate version
@@ -579,36 +655,6 @@ export default function Allowances() {
           </PopoverContent>
         </Popover>
         </div>
-      </div>
-
-      {/* Summary strip (60px) */}
-      <div className="h-[60px] flex items-center gap-3 px-6 border-b border-border flex-shrink-0">
-        <StatCard
-          value={formatCurrency(stats.totalEstimate)}
-          label="Total Estimate"
-          variant="default"
-          testId="stat-total-estimate"
-        />
-        <StatCard
-          value={formatCurrency(stats.totalActual)}
-          label="Total Actual"
-          variant="sage"
-          testId="stat-total-actual"
-        />
-        <StatCard
-          value={formatCurrency(stats.outstanding)}
-          label="Outstanding"
-          variant="amber"
-          testId="stat-outstanding"
-        />
-        <StatCard
-          value={formatCurrency(stats.overBudget)}
-          label="Over Budget"
-          variant="coral"
-          testId="stat-over-budget"
-        />
-        <StatCard value={String(pcCount)} label="PC Items" variant="primary" testId="stat-pc-count" />
-        <StatCard value={String(psCount)} label="PS Items" variant="muted" testId="stat-ps-count" />
       </div>
 
       {/* Table */}
