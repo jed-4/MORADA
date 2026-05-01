@@ -2504,6 +2504,29 @@ export default function ProjectScope() {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
       toast({ title: "Stage added successfully" });
     },
+    onError: (err: any) => {
+      // Surface server-side rejections (most importantly 409 from the
+      // unique index when a duplicate slips past the client-side check
+      // due to a race or a stale cache).
+      const status = err?.status;
+      const details = err?.payload?.details;
+      const errorMsg = err?.payload?.error;
+      if (status === 409) {
+        toast({
+          title: errorMsg || "Duplicate stage name",
+          description: details || "A stage with that name already exists in this project",
+          variant: "destructive",
+        });
+        // Refresh so the existing stage shows up in the UI
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+        return;
+      }
+      toast({
+        title: "Failed to add stage",
+        description: details || errorMsg || "Please try again",
+        variant: "destructive",
+      });
+    },
   });
 
   // Update stage mutation with optimistic updates to prevent flickering
@@ -2526,17 +2549,35 @@ export default function ProjectScope() {
       
       return { previousStages };
     },
-    onError: (err, variables, context) => {
+    onError: (err: any, _variables, context) => {
       // Rollback on error
       if (context?.previousStages) {
         queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
       }
-      toast({ title: "Failed to update stage", variant: "destructive" });
+      const status = err?.status;
+      const details = err?.payload?.details;
+      const errorMsg = err?.payload?.error;
+      if (status === 409) {
+        toast({
+          title: errorMsg || "Duplicate stage name",
+          description: details || "A stage with that name already exists in this project",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Failed to update stage",
+        description: details || errorMsg,
+        variant: "destructive",
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
     },
     onSuccess: () => {
+      // Cascade rename also updated scope_items.stage on the server, so
+      // refresh the items query as well to keep the UI in sync.
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
       toast({ title: "Stage updated" });
     },
   });

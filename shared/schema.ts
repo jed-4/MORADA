@@ -3555,7 +3555,15 @@ export const scopeStages = pgTable("scope_stages", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  // Enforce one stage per (project, normalized name) at the database layer.
+  // Normalization (lowercase + trim) keeps "Prelim", "prelim ", " PRELIM"
+  // from coexisting on the same project.
+  uniqueIndex("scope_stages_project_normalized_name_unique").on(
+    table.projectId,
+    sql`lower(btrim(${table.name}))`,
+  ),
+]);
 
 // Scope stage checklist item schema
 const scopeStageChecklistItemSchema = z.object({

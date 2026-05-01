@@ -178,5 +178,17 @@ app.use((req, res, next) => {
     // overwritten by the old key-person fallback. Idempotent — safe to
     // run on every startup.
     healContactNames();
+
+    // Repair any pre-existing duplicate scope stages before the unique
+    // index can possibly trip on legacy rows. Idempotent — exits cheaply
+    // when there are no duplicates.
+    try {
+      const repair = await storage.repairDuplicateScopeStages();
+      if (repair.duplicatesRemoved > 0) {
+        log(`Scope stages repaired: removed ${repair.duplicatesRemoved} duplicate(s) across ${repair.projectsScanned} project(s)`);
+      }
+    } catch (error) {
+      console.error('Failed to repair duplicate scope stages:', error);
+    }
   });
 })();

@@ -5907,28 +5907,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const companyId = req.user!.companyId!;
       const projectId = req.params.projectId;
-      
-      // Check for duplicate stage name in the same project
-      const existingStages = await storage.getScopeStages(projectId);
-      const normalizedName = validationResult.data.name?.toLowerCase().trim();
-      const isDuplicate = existingStages.some(s => 
-        s.name.toLowerCase().trim() === normalizedName
-      );
-      
-      if (isDuplicate) {
-        return res.status(409).json({ 
-          error: "Duplicate stage name", 
-          details: `A stage named "${validationResult.data.name}" already exists in this project`
-        });
-      }
-      
-      const newStage = await storage.createScopeStage({
-        ...validationResult.data,
-        projectId,
-        companyId,
-      });
 
-      res.status(201).json(newStage);
+      try {
+        const newStage = await storage.createScopeStage({
+          ...validationResult.data,
+          projectId,
+          companyId,
+        });
+        return res.status(201).json(newStage);
+      } catch (insertError: any) {
+        // Translate the DB-level unique-violation (scope_stages_project_normalized_name_unique)
+        // into a 409 so the client can show a friendly toast. This guards
+        // against rapid double-submits / retries that previously produced
+        // duplicate rows because the read-then-write check had a TOCTOU window.
+        const code = insertError?.code || insertError?.cause?.code;
+        const constraint = insertError?.constraint || insertError?.cause?.constraint;
+        if (
+          code === '23505' ||
+          (typeof constraint === 'string' && constraint.includes('scope_stages_project_normalized_name_unique'))
+        ) {
+          return res.status(409).json({
+            error: "Duplicate stage name",
+            details: `A stage named "${validationResult.data.name}" already exists in this project`,
+          });
+        }
+        throw insertError;
+      }
     } catch (error) {
       console.error("Error creating scope stage:", error);
       res.status(500).json({ error: "Failed to create scope stage" });
@@ -5947,7 +5951,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const updatedStage = await storage.updateScopeStage(req.params.id, validationResult.data);
+      let updatedStage;
+      try {
+        updatedStage = await storage.updateScopeStage(req.params.id, validationResult.data);
+      } catch (renameError: any) {
+        const code = renameError?.code || renameError?.cause?.code;
+        const constraint = renameError?.constraint || renameError?.cause?.constraint;
+        const isDuplicate =
+          code === 'STAGE_NAME_DUPLICATE' ||
+          code === '23505' ||
+          (typeof constraint === 'string' && constraint.includes('scope_stages_project_normalized_name_unique'));
+        if (isDuplicate) {
+          return res.status(409).json({
+            error: "Duplicate stage name",
+            details: renameError?.message || "A stage with that name already exists in this project",
+          });
+        }
+        if (code === 'STAGE_NAME_EMPTY') {
+          return res.status(400).json({ error: "Stage name cannot be empty" });
+        }
+        throw renameError;
+      }
       if (!updatedStage) {
         return res.status(404).json({ error: "Scope stage not found" });
       }

@@ -489,6 +489,7 @@ export interface IStorage {
   deleteScopeStage(id: string): Promise<boolean>;
   reorderScopeStages(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void>;
   initializeDefaultStages(projectId: string, companyId: string): Promise<ScopeStage[]>;
+  repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }>;
   
   // Scope Templates CRUD
   getScopeTemplates(companyId: string): Promise<ScopeTemplate[]>;
@@ -11269,12 +11270,95 @@ export class DbStorage implements IStorage {
 
   async updateScopeStage(id: string, stage: Partial<InsertScopeStage>): Promise<ScopeStage | undefined> {
     try {
+      // If the name is changing we need to (a) cascade the new name onto
+      // every scope_items.stage that referenced the old text name and
+      // (b) reject the update with a tagged error if it would collide
+      // with another stage on the same project. Both of those need to
+      // happen atomically with the update on scope_stages itself.
+      const willRename = typeof stage.name === 'string';
+
+      if (willRename) {
+        const newName = (stage.name as string).trim();
+        if (newName.length === 0) {
+          const err: any = new Error("Stage name cannot be empty");
+          err.code = 'STAGE_NAME_EMPTY';
+          throw err;
+        }
+
+        const [current] = await db.select().from(schema.scopeStages)
+          .where(eq(schema.scopeStages.id, id))
+          .limit(1);
+        if (!current) return undefined;
+
+        const oldName = current.name;
+        const normalizedNew = newName.toLowerCase();
+        const normalizedOld = oldName.toLowerCase().trim();
+
+        if (normalizedNew !== normalizedOld) {
+          // Pre-check: would the rename collide with another stage on
+          // this project? The DB index would catch it, but we surface a
+          // clear error before opening a transaction.
+          const collisions = await db.select().from(schema.scopeStages)
+            .where(and(
+              eq(schema.scopeStages.projectId, current.projectId),
+              ne(schema.scopeStages.id, id),
+              sql`lower(btrim(${schema.scopeStages.name})) = ${normalizedNew}`,
+            ))
+            .limit(1);
+          if (collisions.length > 0) {
+            const err: any = new Error(`A stage named "${newName}" already exists in this project`);
+            err.code = 'STAGE_NAME_DUPLICATE';
+            throw err;
+          }
+
+          return await db.transaction(async (tx) => {
+            const [updated] = await tx.update(schema.scopeStages)
+              .set({ ...stage, name: newName, updatedAt: new Date() })
+              .where(eq(schema.scopeStages.id, id))
+              .returning();
+
+            // Cascade onto scope_items.stage so items follow the rename
+            // instead of being orphaned by name. Match on the OLD name
+            // (exact, since that is what the items currently store).
+            await tx.update(schema.scopeItems)
+              .set({ stage: newName, updatedAt: new Date() })
+              .where(and(
+                eq(schema.scopeItems.projectId, current.projectId),
+                eq(schema.scopeItems.stage, oldName),
+              ));
+
+            return updated;
+          });
+        }
+      }
+
       const [updated] = await db.update(schema.scopeStages)
         .set({ ...stage, updatedAt: new Date() })
         .where(eq(schema.scopeStages.id, id))
         .returning();
       return updated;
-    } catch (error) {
+    } catch (error: any) {
+      // Re-throw tagged errors so the route layer can translate them
+      // (e.g. STAGE_NAME_DUPLICATE → 409). Swallow other DB errors as
+      // before to preserve existing behavior.
+      if (error?.code === 'STAGE_NAME_DUPLICATE' || error?.code === 'STAGE_NAME_EMPTY') {
+        throw error;
+      }
+      // Re-throw the underlying PG unique-violation too, in case the
+      // pre-check raced and the index was the one that caught it. Match
+      // both bare driver errors and Drizzle wrappers (DrizzleQueryError),
+      // and constraint-name fallbacks for safety.
+      const causeCode = error?.cause?.code;
+      const constraint = error?.constraint || error?.cause?.constraint;
+      const message = String(error?.message || error?.cause?.message || '');
+      if (
+        error?.code === '23505' ||
+        causeCode === '23505' ||
+        constraint === 'scope_stages_project_normalized_name_unique' ||
+        message.includes('scope_stages_project_normalized_name_unique')
+      ) {
+        throw error;
+      }
       console.error("Database error in updateScopeStage:", error);
       return undefined;
     }
@@ -11325,6 +11409,124 @@ export class DbStorage implements IStorage {
       console.error("Database error in initializeDefaultStages:", error);
       return [];
     }
+  }
+
+  // One-shot repair: collapse scope_stages whose (project_id, lower(trim(name)))
+  // collide. Picks the oldest row as the survivor, re-points anything that
+  // referenced a duplicate's id (parentId on sibling stages, scopeStageId on
+  // checklist_instances/schedule_items/task_templates/purchase_orders), merges
+  // inline checklist + attachments arrays, and deletes the duplicate row.
+  // Idempotent — safe to run on every startup.
+  async repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }> {
+    let projectsScanned = 0;
+    let duplicatesRemoved = 0;
+    try {
+      const allStages = await db.select().from(schema.scopeStages)
+        .orderBy(asc(schema.scopeStages.createdAt));
+
+      // Group by project + normalized name
+      const groups = new Map<string, typeof allStages>();
+      const projectIds = new Set<string>();
+      for (const stage of allStages) {
+        projectIds.add(stage.projectId);
+        const key = `${stage.projectId}::${stage.name.toLowerCase().trim()}`;
+        const arr = groups.get(key) || [];
+        arr.push(stage);
+        groups.set(key, arr);
+      }
+      projectsScanned = projectIds.size;
+
+      for (const [, stagesInGroup] of groups) {
+        if (stagesInGroup.length <= 1) continue;
+
+        // Survivor = oldest (groups are already sorted by createdAt asc)
+        const survivor = stagesInGroup[0];
+        const duplicates = stagesInGroup.slice(1);
+        const dupIds = duplicates.map(d => d.id);
+
+        // Merge inline arrays from duplicates onto survivor
+        const mergedChecklist: any[] = Array.isArray(survivor.checklist) ? [...survivor.checklist] : [];
+        const mergedAttachments: any[] = Array.isArray(survivor.attachments) ? [...survivor.attachments] : [];
+        for (const dup of duplicates) {
+          if (Array.isArray(dup.checklist)) mergedChecklist.push(...dup.checklist);
+          if (Array.isArray(dup.attachments)) mergedAttachments.push(...dup.attachments);
+        }
+
+        // De-dup checklist by id, attachments by id
+        const seenChecklist = new Set<string>();
+        const dedupedChecklist = mergedChecklist.filter((c: any) => {
+          if (!c?.id) return true;
+          if (seenChecklist.has(c.id)) return false;
+          seenChecklist.add(c.id);
+          return true;
+        });
+        const seenAttach = new Set<string>();
+        const dedupedAttachments = mergedAttachments.filter((a: any) => {
+          if (!a?.id) return true;
+          if (seenAttach.has(a.id)) return false;
+          seenAttach.add(a.id);
+          return true;
+        });
+
+        await db.transaction(async (tx) => {
+          // Re-point everything that references the duplicate stage ids
+          await tx.update(schema.checklistInstances)
+            .set({ scopeStageId: survivor.id })
+            .where(inArray(schema.checklistInstances.scopeStageId, dupIds));
+
+          await tx.update(schema.scheduleItems)
+            .set({ scopeStageId: survivor.id })
+            .where(inArray(schema.scheduleItems.scopeStageId, dupIds));
+
+          await tx.update(schema.taskTemplates)
+            .set({ scopeStageId: survivor.id })
+            .where(inArray(schema.taskTemplates.scopeStageId, dupIds));
+
+          await tx.update(schema.purchaseOrders)
+            .set({ scopeStageId: survivor.id })
+            .where(inArray(schema.purchaseOrders.scopeStageId, dupIds));
+
+          // Re-parent any sub-stages that pointed at a duplicate as their parent
+          await tx.update(schema.scopeStages)
+            .set({ parentId: survivor.id })
+            .where(inArray(schema.scopeStages.parentId, dupIds));
+
+          // scope_items.stage is a denormalized text field (matched by name,
+          // scoped per project). When duplicates differ only by case/whitespace
+          // (e.g. "Prelim" vs "Prelim "), items pointing at the duplicate's
+          // raw name would be orphaned from the survivor's grouping. Re-point
+          // them to the survivor's exact name so they stay visible.
+          for (const dup of duplicates) {
+            if (dup.name === survivor.name) continue;
+            await tx.update(schema.scopeItems)
+              .set({ stage: survivor.name, updatedAt: new Date() })
+              .where(and(
+                eq(schema.scopeItems.projectId, survivor.projectId),
+                eq(schema.scopeItems.stage, dup.name),
+              ));
+          }
+
+          // Persist merged inline arrays on survivor
+          await tx.update(schema.scopeStages)
+            .set({
+              checklist: dedupedChecklist,
+              attachments: dedupedAttachments,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.scopeStages.id, survivor.id));
+
+          // Drop the duplicate stage rows
+          await tx.delete(schema.scopeStages)
+            .where(inArray(schema.scopeStages.id, dupIds));
+        });
+
+        duplicatesRemoved += duplicates.length;
+        console.log(`[scope-stage-repair] project=${survivor.projectId} merged ${duplicates.length} duplicate(s) of "${survivor.name}" into ${survivor.id}`);
+      }
+    } catch (error) {
+      console.error("Database error in repairDuplicateScopeStages:", error);
+    }
+    return { projectsScanned, duplicatesRemoved };
   }
 
   // Scope Templates CRUD
@@ -11409,9 +11611,15 @@ export class DbStorage implements IStorage {
       }
       const companyId = project.companyId;
 
-      // Get existing stages for this project
-      const existingStages = await this.getScopeStages(projectId);
-      const existingStageNames = new Set(existingStages.map(s => s.name.toLowerCase().trim()));
+      // Get existing stages for this project. Track them in a name-keyed
+      // map so collisions during template apply re-use the existing row
+      // instead of trying (and failing) to insert a duplicate.
+      let existingStages = await this.getScopeStages(projectId);
+      const stagesByNormalizedName = new Map<string, ScopeStage>();
+      for (const s of existingStages) {
+        stagesByNormalizedName.set(s.name.toLowerCase().trim(), s);
+      }
+      const existingStageNames = new Set(stagesByNormalizedName.keys());
 
       // Determine template format and extract stages/items
       const rawData = template.templateData as any;
@@ -11445,20 +11653,44 @@ export class DbStorage implements IStorage {
       for (let i = 0; i < templateStages.length; i++) {
         const stageData = templateStages[i];
         const normalizedName = stageData.name.toLowerCase().trim();
-        
+
         if (!existingStageNames.has(normalizedName)) {
-          // Create new stage
-          const newStage = await this.createScopeStage({
-            projectId,
-            companyId,
-            name: stageData.name,
-            displayOrder: maxExistingOrder + i,
-          });
-          createdStageMap[stageData.name] = newStage.name;
-          existingStageNames.add(normalizedName);
+          // Try to create the new stage. If the unique index trips
+          // (concurrent template apply, or a duplicate within the
+          // template payload itself), fall back to the existing row.
+          try {
+            const newStage = await this.createScopeStage({
+              projectId,
+              companyId,
+              name: stageData.name,
+              displayOrder: maxExistingOrder + i,
+            });
+            createdStageMap[stageData.name] = newStage.name;
+            existingStageNames.add(normalizedName);
+            stagesByNormalizedName.set(normalizedName, newStage);
+          } catch (insertError: any) {
+            const code = insertError?.code || insertError?.cause?.code;
+            const constraint = insertError?.constraint || insertError?.cause?.constraint;
+            const isUniqueViolation =
+              code === '23505' ||
+              (typeof constraint === 'string' && constraint.includes('scope_stages_project_normalized_name_unique'));
+            if (!isUniqueViolation) throw insertError;
+
+            // Refresh from DB once and re-resolve via the survivor
+            existingStages = await this.getScopeStages(projectId);
+            stagesByNormalizedName.clear();
+            for (const s of existingStages) {
+              stagesByNormalizedName.set(s.name.toLowerCase().trim(), s);
+              existingStageNames.add(s.name.toLowerCase().trim());
+            }
+            const survivor = stagesByNormalizedName.get(normalizedName);
+            if (survivor) {
+              createdStageMap[stageData.name] = survivor.name;
+            }
+          }
         } else {
           // Stage already exists - map to existing name
-          const existing = existingStages.find(s => s.name.toLowerCase().trim() === normalizedName);
+          const existing = stagesByNormalizedName.get(normalizedName);
           if (existing) {
             createdStageMap[stageData.name] = existing.name;
           }
