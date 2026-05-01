@@ -358,6 +358,7 @@ export function TimesheetDialog({
         status: "submitted",
         invoiced: false,
         labels: data.labels || [],
+        costCodeId: isSplit ? null : (data.costCodeId || null),
       };
 
       if (timesheet) {
