@@ -40,7 +40,6 @@ import { type Rfi, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format, isPast } from "date-fns";
 import { useRfiStatusOptions } from "@/hooks/useRfiStatusOptions";
-import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -60,7 +59,6 @@ export default function RFIs() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const { statusOptions, getStatusInfo } = useRfiStatusOptions();
-  const { toolbarVisible } = useToolbarVisible();
 
   // Focus the search input when expanded
   useEffect(() => {
@@ -376,15 +374,6 @@ export default function RFIs() {
       {/* Toolbar — single h-9 row inside rounded card */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
         <div className="h-9 flex items-center px-3 gap-2">
-          {/* Fallback context prefix — only when global toolbar is hidden */}
-          {!toolbarVisible && (
-            <span
-              className="text-xs text-muted-foreground font-medium whitespace-nowrap flex-shrink-0 mr-1 truncate max-w-[160px]"
-              data-testid="text-toolbar-context"
-            >
-              {currentProject?.name ?? "RFIs"}
-            </span>
-          )}
           {/* Status tabs — left, scrollable when narrow */}
           <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
             {statusTabs.map((status) => {

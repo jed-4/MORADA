@@ -39,7 +39,6 @@ import {
   ImageIcon,
   FileIcon,
 } from "lucide-react";
-import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
@@ -276,7 +275,6 @@ export default function RFQs() {
   const [colPopoverOpen, setColPopoverOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { toolbarVisible } = useToolbarVisible();
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -565,15 +563,6 @@ export default function RFQs() {
         <div className="h-9 flex items-center px-3 gap-2">
           {/* Left: optional context prefix (only when global bar hidden) + status tabs + search */}
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
-            {!toolbarVisible && (
-              <span
-                className="text-xs text-muted-foreground font-medium truncate flex-shrink-0 pr-2 mr-1 border-r border-border/50"
-                data-testid="text-toolbar-context"
-              >
-                {currentProject ? currentProject.name : "RFQs"}
-              </span>
-            )}
-
             {STATUS_OPTIONS.map((status) => {
               const isActive = selectedStatus === status.key;
               const count = statusCounts[status.key as keyof typeof statusCounts];
