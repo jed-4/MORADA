@@ -889,13 +889,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
   const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
 
-  // Persisted display preferences
-  const [displayMonths, setDisplayMonths] = useState<number>(() => {
-    if (typeof window === "undefined") return 12;
-    const v = parseInt(localStorage.getItem("bp_overheads_display_months") || "12", 10);
-    return [6, 12, 18].includes(v) ? v : 12;
+  // Display mode: $k vs $
+  const [displayMode, setDisplayMode] = useState<'k' | 'dollars'>(() => {
+    if (typeof window === "undefined") return 'k';
+    return localStorage.getItem("bp_overheads_display_mode") === 'dollars' ? 'dollars' : 'k';
   });
-  useEffect(() => { localStorage.setItem("bp_overheads_display_months", String(displayMonths)); }, [displayMonths]);
+  useEffect(() => { localStorage.setItem("bp_overheads_display_mode", displayMode); }, [displayMode]);
 
   const [hideZeroCats, setHideZeroCats] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -915,7 +914,26 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   useEffect(() => { localStorage.setItem("bp_overheads_open_oh", openOH ? "1" : "0"); }, [openOH]);
 
   const rolling12 = useMemo(() => rollingLast12(), []);
-  const months = useMemo(() => rollingLastN(displayMonths), [displayMonths]);
+  // Fixed 12 trailing months (NOT including current) + a separate current-month column
+  const trailingMonths = useMemo<{ year: number; month: number }[]>(() => {
+    const today = new Date();
+    const cy = today.getFullYear();
+    const cm = today.getMonth() + 1; // 1-12
+    const arr: { year: number; month: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      let m = cm - 1 - i;
+      let y = cy;
+      while (m <= 0) { m += 12; y--; }
+      arr.push({ year: y, month: m });
+    }
+    return arr;
+  }, []);
+  const currentCol = useMemo(() => {
+    const today = new Date();
+    return { year: today.getFullYear(), month: today.getMonth() + 1 };
+  }, []);
+  // Backwards-compat alias used by downstream useMemos in this component
+  const months = trailingMonths;
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
   const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
@@ -1028,6 +1046,37 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     }
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [data.incomeActuals, rolling12]);
+
+  // ─── MonthlyActualsTab hooks (must come BEFORE the prev12 early-return to satisfy Rules of Hooks) ───
+  const incomeBreakdownNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const { year, month } of months) {
+      const a = data.incomeActuals.find(x => x.year === year && x.month === month);
+      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
+    }
+    const cur = data.incomeActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
+    if (cur?.breakdown) for (const k of Object.keys(cur.breakdown)) names.add(k);
+    return Array.from(names).sort();
+  }, [months, currentCol, data.incomeActuals]);
+
+  const dcBreakdownNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const { year, month } of months) {
+      const a = data.directCostActuals.find(x => x.year === year && x.month === month);
+      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
+    }
+    const cur = data.directCostActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
+    if (cur?.breakdown) for (const k of Object.keys(cur.breakdown)) names.add(k);
+    return Array.from(names).sort();
+  }, [months, currentCol, data.directCostActuals]);
+
+  const visibleGroups = useMemo(() => {
+    if (!hideZeroCats) return groupedData;
+    return groupedData.filter(g => g.items.some(item =>
+      months.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)
+      || (actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0) !== 0
+    ));
+  }, [groupedData, hideZeroCats, months, currentCol, actualMap]);
 
   if (view === "prev12") {
     const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
@@ -1229,75 +1278,169 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   // ─── Monthly Grid View ───────────────────────────────────────────────────────
 
-  // Per-month aggregates for the displayed window
+  // Per-month aggregates for the trailing 12-month window
   const monthlyIncome = months.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
   const monthlyDC = months.map(({ year, month }) => directCostMap.get(`${year}__${month}`) || 0);
   const monthlyOH = months.map(({ year, month }) => data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
 
-  // Income / DC per-account breakdown names across the visible window
-  const incomeBreakdownNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const { year, month } of months) {
-      const a = data.incomeActuals.find(x => x.year === year && x.month === month);
-      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
+  // Current-month aggregates (separate column)
+  const curKey = `${currentCol.year}__${currentCol.month}`;
+  const curIncome = incomeMap.get(curKey) || 0;
+  const curDC = directCostMap.get(curKey) || 0;
+  const curOH = data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, currentCol.year, currentCol.month)) || 0), 0);
+
+  // T12 totals
+  const t12Income = monthlyIncome.reduce((s, v) => s + v, 0);
+  const t12DC = monthlyDC.reduce((s, v) => s + v, 0);
+  const t12OH = monthlyOH.reduce((s, v) => s + v, 0);
+
+  // (Note: incomeBreakdownNames, dcBreakdownNames, visibleGroups are now declared
+  // above the prev12 early-return to satisfy React's Rules of Hooks.)
+
+  // ─── Design tokens ──────────────────────────────────────────────────────────
+  const C = {
+    bg:          '#FAFAF8',
+    white:       '#FFFFFF',
+    purple:      '#A890D4',
+    purpleLight: '#F5F3FF',
+    purpleTint:  '#EDE9F8',
+    coral:       '#DA988A',
+    greenTint:   '#EAF4EE',
+    greenNum:    '#5A9E72',
+    redNum:      '#C07060',
+    border:      '#EAEAE8',
+    text:        '#1A1A1A',
+    textMid:     '#6B6B6B',
+    textLight:   '#9B9B9B',
+    zebraRow:    '#F5F4F2',
+    totalRow:    '#F0EEED',
+    sectionHdr:  '#F5F3FF',
+    amber:       '#F0B964',
+    dotGreen:    '#68B088',
+    dotCoral:    '#DA988A',
+    dotGray:     '#D0CCC8',
+  };
+
+  // Number formatter: 0 → em-dash, otherwise absolute-value k or full dollars
+  function fmtCell(cents: number, mode: 'k' | 'dollars'): string {
+    if (cents === 0) return '—';
+    if (mode === 'k') {
+      const k = Math.abs(cents) / 100000;
+      return `$${k.toFixed(1)}k`;
     }
-    return Array.from(names).sort();
-  }, [months, data.incomeActuals]);
+    return `$${Math.abs(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  }
 
-  const dcBreakdownNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const { year, month } of months) {
-      const a = data.directCostActuals.find(x => x.year === year && x.month === month);
-      if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
-    }
-    return Array.from(names).sort();
-  }, [months, data.directCostActuals]);
+  // Render the 12 trailing month cells + T12 + current month for a row.
+  // colorOf can be a fixed string or function-of-value (used for sign-coloured rows like Net Profit).
+  type RowColor = string | ((v: number) => string);
+  const renderCells = (
+    monthVals: number[],
+    t12Val: number,
+    curVal: number,
+    opts: {
+      color?: RowColor;
+      fontWeight?: number;
+      isPct?: boolean;
+      bg?: string; // row background — used for sticky inheritance and current-month column
+    } = {}
+  ) => {
+    const colorFor = (v: number) => {
+      if (v === 0 && !opts.isPct) return C.textLight;
+      if (typeof opts.color === 'function') return opts.color(v);
+      return opts.color || C.text;
+    };
+    const fmt = (v: number) => {
+      if (opts.isPct) return v === 0 ? '—' : `${v.toFixed(0)}%`;
+      return fmtCell(v, displayMode);
+    };
+    const fw = opts.fontWeight || 400;
+    return (
+      <>
+        {monthVals.map((v, i) => (
+          <div key={i} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <span style={{ color: colorFor(v), fontSize: 12, fontWeight: fw, fontVariantNumeric: 'tabular-nums' }}>{fmt(v)}</span>
+          </div>
+        ))}
+        <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <span style={{ color: colorFor(t12Val), fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(t12Val)}</span>
+        </div>
+        <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <span style={{ color: colorFor(curVal), fontSize: 12, fontWeight: fw, fontVariantNumeric: 'tabular-nums' }}>{fmt(curVal)}</span>
+        </div>
+      </>
+    );
+  };
 
-  // Optionally hide overhead groups whose items have no actuals in the visible window
-  const visibleGroups = useMemo(() => {
-    if (!hideZeroCats) return groupedData;
-    return groupedData.filter(g => g.items.some(item =>
-      months.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)));
-  }, [groupedData, hideZeroCats, months, actualMap]);
+  // Empty trailing/T12/current cells with row bg (used for OH group label row)
+  const renderEmptyCells = () => (
+    <>
+      {months.map((_, i) => <div key={i} style={{ width: 72, minWidth: 72 }} />)}
+      <div style={{ width: 90, minWidth: 90, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}` }} />
+      <div style={{ width: 90, minWidth: 90, borderLeft: `1px solid ${C.border}` }} />
+    </>
+  );
 
-  // Total overheads vs budget (whole window)
-  const totalOhActual = monthlyOH.reduce((s, v) => s + v, 0);
-  const monthsWithOh = monthlyOH.filter(v => v !== 0).length;
-  const totalOhBudget = monthsWithOh * monthBudget;
-  const ohVarianceDollars = totalOhBudget > 0 ? totalOhBudget - totalOhActual : 0;
-  const ohVariancePct = totalOhBudget > 0 ? (ohVarianceDollars / totalOhBudget) * 100 : 0;
+  // Helper: render the sticky label cell for a row
+  const labelCell = (content: React.ReactNode, opts: { bg: string; fontWeight?: number; color?: string; pl?: number } = { bg: C.white }) => (
+    <div style={{
+      width: 200, minWidth: 200, position: 'sticky', left: 0, zIndex: 1,
+      backgroundColor: opts.bg, paddingLeft: opts.pl ?? 16, paddingRight: 8,
+      display: 'flex', alignItems: 'center', gap: 6,
+      fontSize: 12, fontWeight: opts.fontWeight || 400, color: opts.color || C.text,
+    }}>
+      {content}
+    </div>
+  );
+
+  const totalCols = 12;
+  const gridMinWidth = 200 + totalCols * 72 + 90 + 90; // 1244
+  const monthShortYr = (year: number) => `'${String(year).slice(-2)}`;
+
+  // Track row index for zebra striping (excluding section headers)
+  let rowIdx = 0;
+  const nextZebra = () => (rowIdx++ % 2 === 0 ? C.white : C.zebraRow);
+  // Reset zebra rowIdx at start of each render (closure pattern: assignment inside JSX is fine here)
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <p className="text-xs text-muted-foreground">Rolling P&L — last {displayMonths} complete months</p>
-          <p className="text-xs text-muted-foreground/60">Budget: {fmtDollars(monthBudget)}/mo overheads</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
-            {(["category", "xero", "buildpro"] as GroupBy[]).map((g, i) => (
-              <button key={g} onClick={() => setGroupBy(g)}
-                className={`px-2.5 py-1 transition-colors ${groupBy === g ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover-elevate"} ${i > 0 ? "border-l border-border" : ""}`}>
-                {g === "category" ? "By Category" : g === "xero" ? "Xero Group" : "BuildPro Group"}
+      {/* ─── Toolbar ───────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 16px', backgroundColor: C.white,
+        borderBottom: `1px solid ${C.border}`, borderRadius: 4, gap: 12, flexWrap: 'wrap',
+      }}>
+        {/* Left: consolidated view pill */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['category', 'xero', 'buildpro'] as const).map(opt => {
+            const labels = { category: 'By Category', xero: 'Xero Group', buildpro: 'BuildPro Group' };
+            const active = groupBy === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => setGroupBy(opt)}
+                data-testid={`pill-groupby-${opt}`}
+                style={{
+                  padding: '4px 14px', borderRadius: 14, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: active ? 600 : 500,
+                  backgroundColor: active ? C.purple : '#F0EEF8',
+                  color: active ? '#FFFFFF' : C.textMid,
+                  transition: 'background-color 120ms ease',
+                }}
+              >
+                {labels[opt]}
               </button>
-            ))}
-          </div>
-          <Select value={String(displayMonths)} onValueChange={v => setDisplayMonths(parseInt(v, 10))}>
-            <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-overhead-months">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="6">6 months</SelectItem>
-              <SelectItem value="12">12 months</SelectItem>
-              <SelectItem value="18">18 months</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button size="sm" variant="outline" onClick={() => setView("prev12")}>
+            );
+          })}
+        </div>
+
+        {/* Right: actions + display mode */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12">
             <Activity className="w-3.5 h-3.5 mr-1" />
             Prev 12 Summary
           </Button>
-          <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
+          <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero">
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
             {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
           </Button>
@@ -1313,282 +1456,391 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: C.textMid }}>Display:</span>
+            <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden' }}>
+              {(['k', 'dollars'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setDisplayMode(mode)}
+                  data-testid={`button-display-${mode}`}
+                  style={{
+                    padding: '4px 14px', border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: displayMode === mode ? 600 : 500,
+                    backgroundColor: displayMode === mode ? C.purpleLight : C.white,
+                    color: displayMode === mode ? C.purple : C.textMid,
+                  }}
+                >
+                  {mode === 'k' ? '$k' : '$'}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div style={{ minWidth: Math.max(960, 240 + months.length * 60 + 130) }}>
-          {/* Column headers */}
-          <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
-            <div className="w-44 flex-shrink-0 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
-            {months.map(({ year, month }) => {
-              const key = `${year}__${month}`;
-              const isConfirmed = statusSet.has(key);
-              const hasData = monthsWithActuals.has(key);
-              const hasDrift = monthsWithDrift.has(key);
-              const chipCls = hasDrift
-                ? "text-orange-500 dark:text-orange-400"
-                : isConfirmed
-                  ? "text-status-success dark:text-green-400"
-                  : hasData
-                    ? "text-amber-500 dark:text-amber-400"
-                    : "text-muted-foreground/30 hover:text-muted-foreground/60";
-              const tipText = hasDrift
-                ? "Xero figures changed since confirmed — re-confirm to accept"
-                : isConfirmed ? "Confirmed — click to unconfirm"
-                : hasData ? "Actuals entered but not yet confirmed — click to confirm"
-                : "No actuals entered — click to confirm";
-              return (
-                <div key={`${year}-${month}`} className="flex-1 min-w-0 text-center px-0.5 py-1">
-                  <p className="text-data font-medium text-muted-foreground">{MONTH_NAMES[month - 1]}</p>
-                  <p className="text-label text-muted-foreground/40">{year}</p>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button onClick={() => toggleMonthMut.mutate({ year, month, confirmed: !isConfirmed })}
-                          className={`mt-0.5 w-full flex items-center justify-center transition-colors ${chipCls}`}>
-                          <CheckCircle2 className="w-3 h-3" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent><p className="text-xs">{tipText}</p></TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0 text-center px-1 py-2 text-data uppercase tracking-wide text-muted-foreground">OH vs Budget</div>
-          </div>
-
-          {/* ─── Income section (collapsible) ─────────────────────────── */}
-          <div className="border-b border-border/40">
-            <div role="button" tabIndex={0} onClick={() => setOpenIncome(v => !v)}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenIncome(v => !v); } }}
-              className="flex items-center bg-green-500/5 hover-elevate cursor-pointer select-none"
-              style={{ height: 34 }} data-testid="toggle-income-section">
-              <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
-                {openIncome ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />
-                Income
+      {/* ─── Grid container ────────────────────────────────────────────────── */}
+      <div style={{ overflowX: 'auto', backgroundColor: C.white, borderRadius: 4, border: `1px solid ${C.border}` }}>
+        <div style={{ minWidth: gridMinWidth }}>
+          {/* Sticky header row */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10,
+            backgroundColor: C.white, borderBottom: `1px solid ${C.border}`,
+          }}>
+            <div style={{ display: 'flex', minHeight: 52 }}>
+              {/* Label header (sticky) */}
+              <div style={{
+                width: 200, minWidth: 200, position: 'sticky', left: 0, zIndex: 2,
+                backgroundColor: C.white, paddingLeft: 16, paddingBottom: 8,
+                display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: C.textLight, textTransform: 'uppercase', letterSpacing: 0.4 }}>Category</span>
+                <span style={{ fontSize: 10, color: C.textLight, marginTop: 2 }}>Trailing 12 months</span>
               </div>
-              {monthlyIncome.map((cents, idx) => (
-                <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-status-success dark:text-green-400">
-                  {cents !== 0 ? fmtK(cents) : <span className="text-muted-foreground/20">—</span>}
-                </div>
-              ))}
-              <div className="w-32 flex-shrink-0" />
-            </div>
-            {openIncome && incomeBreakdownNames.length > 0 && (
-              <div className="bg-green-500/[0.02]">
-                {incomeBreakdownNames.map(name => (
-                  <div key={name} className="flex items-center border-t border-border/20" style={{ height: 28 }}>
-                    <div className="w-44 flex-shrink-0 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
-                    {months.map(({ year, month }) => {
-                      const a = data.incomeActuals.find(x => x.year === year && x.month === month);
-                      const cents = a?.breakdown?.[name] || 0;
-                      return (
-                        <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
-                          {cents !== 0 ? fmtK(cents) : "—"}
-                        </div>
-                      );
-                    })}
-                    <div className="w-32 flex-shrink-0" />
+
+              {/* 12 trailing months */}
+              {trailingMonths.map(({ year, month }) => {
+                const k = `${year}__${month}`;
+                const isConfirmed = statusSet.has(k);
+                const hasData = monthsWithActuals.has(k);
+                const hasDrift = monthsWithDrift.has(k);
+                const dotColor = hasDrift ? C.dotCoral : isConfirmed ? C.dotGreen : C.dotGray;
+                const dotTooltip = hasDrift
+                  ? "Xero figures changed since confirmed — re-confirm to accept"
+                  : isConfirmed ? "Confirmed — click to unconfirm"
+                  : hasData ? "Actuals entered but not yet confirmed — click to confirm"
+                  : "No actuals entered — click to confirm";
+                return (
+                  <div key={k} style={{ width: 72, minWidth: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{MONTH_NAMES[month - 1]}</span>
+                    <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{monthShortYr(year)}</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => toggleMonthMut.mutate({ year, month, confirmed: !isConfirmed })}
+                            data-testid={`button-confirm-${year}-${month}`}
+                            style={{
+                              width: 8, height: 8, borderRadius: '50%',
+                              backgroundColor: dotColor, marginTop: 6, cursor: 'pointer',
+                              border: 'none', padding: 0,
+                            }}
+                            aria-label={dotTooltip}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent><p className="text-xs">{dotTooltip}</p></TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
-                ))}
-                <div className="flex items-center border-t border-border/30 bg-muted/10" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Income</div>
-                  {monthlyIncome.map((cents, idx) => (
-                    <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
-                      {cents !== 0 ? fmtK(cents) : "—"}
-                    </div>
-                  ))}
-                  <div className="w-32 flex-shrink-0" />
-                </div>
-              </div>
-            )}
-          </div>
+                );
+              })}
 
-          {/* ─── Direct Costs section (collapsible) ───────────────────── */}
-          <div className="border-b border-border/40">
-            <div role="button" tabIndex={0} onClick={() => setOpenDC(v => !v)}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenDC(v => !v); } }}
-              className="flex items-center hover-elevate cursor-pointer select-none"
-              style={{ height: 34 }} data-testid="toggle-dc-section">
-              <div className="w-44 flex-shrink-0 px-3 text-xs font-semibold flex items-center gap-1.5">
-                {openDC ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                <TrendingDown className="w-3 h-3 text-orange-500 dark:text-orange-400" />
-                Direct Costs
+              {/* T12 header */}
+              <div style={{
+                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', paddingBottom: 8,
+                backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>T12</span>
+                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>Trailing</span>
+                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>12 months</span>
               </div>
-              {monthlyDC.map((cents, idx) => (
-                <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-orange-500 dark:text-orange-400">
-                  {cents !== 0 ? fmtK(cents) : <span className="text-muted-foreground/20">—</span>}
-                </div>
-              ))}
-              <div className="w-32 flex-shrink-0" />
-            </div>
-            {openDC && dcBreakdownNames.length > 0 && (
-              <div className="bg-orange-500/[0.02]">
-                {dcBreakdownNames.map(name => (
-                  <div key={name} className="flex items-center border-t border-border/20" style={{ height: 28 }}>
-                    <div className="w-44 flex-shrink-0 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
-                    {months.map(({ year, month }) => {
-                      const a = data.directCostActuals.find(x => x.year === year && x.month === month);
-                      const cents = a?.breakdown?.[name] || 0;
-                      return (
-                        <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
-                          {cents !== 0 ? fmtK(cents) : "—"}
-                        </div>
-                      );
-                    })}
-                    <div className="w-32 flex-shrink-0" />
-                  </div>
-                ))}
-                <div className="flex items-center border-t border-border/30 bg-muted/10" style={{ height: 26 }}>
-                  <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Direct Costs</div>
-                  {monthlyDC.map((cents, idx) => (
-                    <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
-                      {cents !== 0 ? fmtK(cents) : "—"}
-                    </div>
-                  ))}
-                  <div className="w-32 flex-shrink-0" />
-                </div>
-              </div>
-            )}
-          </div>
 
-          {/* Gross Profit row */}
-          <div className="flex items-center border-b border-border/50 bg-muted/10 font-medium" style={{ height: 28 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5 text-muted-foreground">Gross Profit</div>
-            {months.map((_, idx) => {
-              const income = monthlyIncome[idx];
-              const dc = monthlyDC[idx];
-              const gp = income - dc;
-              return (
-                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${!income && !dc ? "text-muted-foreground/20" : gp >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
-                  {income || dc ? fmtK(gp) : "—"}
-                </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0" />
-          </div>
-
-          {/* ─── Overheads section (collapsible, default expanded) ────── */}
-          <div className="border-b border-border/40">
-            <div role="button" tabIndex={0} onClick={() => setOpenOH(v => !v)}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenOH(v => !v); } }}
-              className="flex items-center bg-muted/30 hover-elevate cursor-pointer select-none font-semibold border-t-2 border-border"
-              style={{ height: 34 }} data-testid="toggle-oh-section">
-              <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1.5">
-                {openOH ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                Overheads
-              </div>
-              {monthlyOH.map((actual, idx) => (
-                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums ${actual > monthBudget * 1.1 && actual > 0 ? "text-destructive" : actual > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>
-                  {actual > 0 ? fmtK(actual) : "—"}
-                </div>
-              ))}
-              <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${monthsWithOh === 0 ? "text-muted-foreground/30" : ohVarianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                {monthsWithOh > 0 ? <span>{ohVarianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(ohVarianceDollars))} <span className="text-data opacity-70">({ohVariancePct.toFixed(0)}%)</span></span> : "—"}
+              {/* Current month header w/ amber stripe */}
+              <div style={{
+                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', paddingBottom: 8,
+                borderLeft: `1px solid ${C.border}`, position: 'relative',
+              }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 12 }}>{MONTH_NAMES[currentCol.month - 1]}</span>
+                <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{monthShortYr(currentCol.year)}</span>
+                <span style={{ fontSize: 9, fontWeight: 500, color: C.amber, marginTop: 4 }}>In Progress</span>
               </div>
             </div>
-            {openOH && visibleGroups.map(group => {
-              const catItems = group.items;
-              if (!catItems.length) return null;
-              return (
-                <div key={group.label}>
-                  <div className="flex items-center bg-muted/20 border-t border-border/40">
-                    <div className="w-44 flex-shrink-0 px-3 py-1.5 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
-                    {months.map(({ year, month }) => <div key={`${year}-${month}`} className="flex-1 min-w-0 h-5" />)}
-                    <div className="w-32 flex-shrink-0 h-5" />
-                  </div>
-                  {catItems.map(item => {
-                    const itemBudgetMonthly = toMonthlyCents(item);
-                    const totalActual = months.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
-                    const confirmedMonths = months.filter(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) > 0).length;
-                    const totalBudgetForActualMonths = confirmedMonths * itemBudgetMonthly;
-                    const varianceDollars = confirmedMonths > 0 ? totalBudgetForActualMonths - totalActual : 0;
-                    const variancePct = totalBudgetForActualMonths > 0 ? (varianceDollars / totalBudgetForActualMonths) * 100 : 0;
-                    return (
-                      <div key={item.id} className="flex items-center border-t border-border/30 hover-elevate" style={{ height: 32 }}>
-                        <div className="w-44 flex-shrink-0 px-3 text-xs truncate">{item.name}</div>
-                        {months.map(({ year, month }) => {
-                          const cents = actualMap.get(getKey(item.id, year, month)) || 0;
-                          const over = cents > 0 && itemBudgetMonthly > 0 && cents > itemBudgetMonthly * 1.1;
-                          const drifted = driftMap.has(getKey(item.id, year, month));
-                          return (
-                            <div key={`${year}-${month}`} className={`flex-1 min-w-0 h-full flex items-center ${over ? "bg-destructive/5" : drifted ? "bg-orange-500/8" : ""}`}>
-                              <ActualCell cents={cents} highlight={over} />
-                            </div>
-                          );
-                        })}
-                        <div className={`w-32 flex-shrink-0 text-right pr-3 text-xs tabular-nums ${confirmedMonths === 0 ? "text-muted-foreground/30" : varianceDollars < 0 ? "text-destructive" : "text-status-success dark:text-green-400"}`}>
-                          {confirmedMonths > 0 ? <span>{varianceDollars < 0 ? "-" : "+"}{fmtK(Math.abs(varianceDollars))} <span className="text-data opacity-70">({variancePct.toFixed(0)}%)</span></span> : "—"}
-                        </div>
+          </div>
+
+          {/* ─── Income section ───────────────────────────────────────────── */}
+          {(() => {
+            const bg = C.sectionHdr;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, opacity: 1, cursor: 'pointer' }}
+                onClick={() => setOpenIncome(v => !v)}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenIncome(v => !v); } }}
+                data-testid="toggle-income-section"
+              >
+                {labelCell(
+                  <>
+                    {openIncome ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <TrendingUp className="w-3 h-3" style={{ color: C.purple }} />
+                    <span style={{ textTransform: 'uppercase', letterSpacing: 0.4 }}>Income</span>
+                  </>,
+                  { bg, fontWeight: 700, color: C.purple }
+                )}
+                {renderCells(monthlyIncome, t12Income, curIncome, { color: C.greenNum, fontWeight: 600 })}
+              </div>
+            );
+          })()}
+
+          {openIncome && incomeBreakdownNames.map(name => {
+            const bg = nextZebra();
+            const monthVals = months.map(({ year, month }) => {
+              const a = data.incomeActuals.find(x => x.year === year && x.month === month);
+              return a?.breakdown?.[name] || 0;
+            });
+            const t12 = monthVals.reduce((s, v) => s + v, 0);
+            const curA = data.incomeActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
+            const cur = curA?.breakdown?.[name] || 0;
+            return (
+              <div key={`inc-${name}`} style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
+                {labelCell(
+                  <span style={{ paddingLeft: 16, color: C.textMid, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>,
+                  { bg, fontWeight: 400 }
+                )}
+                {renderCells(monthVals, t12, cur, { color: C.greenNum })}
+              </div>
+            );
+          })}
+
+          {/* ─── Direct Costs section ─────────────────────────────────────── */}
+          {(() => {
+            const bg = C.sectionHdr;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+                onClick={() => setOpenDC(v => !v)}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenDC(v => !v); } }}
+                data-testid="toggle-dc-section"
+              >
+                {labelCell(
+                  <>
+                    {openDC ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <TrendingDown className="w-3 h-3" style={{ color: C.purple }} />
+                    <span style={{ textTransform: 'uppercase', letterSpacing: 0.4 }}>Direct Costs</span>
+                  </>,
+                  { bg, fontWeight: 700, color: C.purple }
+                )}
+                {renderCells(monthlyDC, t12DC, curDC, { color: C.redNum, fontWeight: 600 })}
+              </div>
+            );
+          })()}
+
+          {openDC && dcBreakdownNames.map(name => {
+            const bg = nextZebra();
+            const monthVals = months.map(({ year, month }) => {
+              const a = data.directCostActuals.find(x => x.year === year && x.month === month);
+              return a?.breakdown?.[name] || 0;
+            });
+            const t12 = monthVals.reduce((s, v) => s + v, 0);
+            const curA = data.directCostActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
+            const cur = curA?.breakdown?.[name] || 0;
+            return (
+              <div key={`dc-${name}`} style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
+                {labelCell(
+                  <span style={{ paddingLeft: 16, color: C.textMid, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>,
+                  { bg, fontWeight: 400 }
+                )}
+                {renderCells(monthVals, t12, cur, { color: C.redNum })}
+              </div>
+            );
+          })}
+
+          {/* ─── Gross Profit row ─────────────────────────────────────────── */}
+          {(() => {
+            const bg = C.greenTint;
+            const gpVals = monthlyIncome.map((v, i) => v - monthlyDC[i]);
+            const t12GP = t12Income - t12DC;
+            const curGP = curIncome - curDC;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 32, borderBottom: `1px solid ${C.border}80` }}>
+                {labelCell(<span>Gross Profit</span>, { bg, fontWeight: 600, color: C.text })}
+                {renderCells(gpVals, t12GP, curGP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 600 })}
+              </div>
+            );
+          })()}
+
+          {/* ─── Overheads section header ─────────────────────────────────── */}
+          {(() => {
+            const bg = C.sectionHdr;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+                onClick={() => setOpenOH(v => !v)}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenOH(v => !v); } }}
+                data-testid="toggle-oh-section"
+              >
+                {labelCell(
+                  <>
+                    {openOH ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <span style={{ textTransform: 'uppercase', letterSpacing: 0.4 }}>Overheads</span>
+                  </>,
+                  { bg, fontWeight: 700, color: C.purple }
+                )}
+                {renderCells(monthlyOH, t12OH, curOH, { color: C.redNum, fontWeight: 600 })}
+              </div>
+            );
+          })()}
+
+          {openOH && visibleGroups.map(group => {
+            const catItems = group.items;
+            if (!catItems.length) return null;
+            const groupBg = C.purpleTint;
+            return (
+              <div key={group.label}>
+                {/* Group label row */}
+                <div style={{ display: 'flex', backgroundColor: groupBg, minHeight: 26, borderBottom: `1px solid ${C.border}80` }}>
+                  {labelCell(
+                    <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 10, color: C.purple }}>{group.label}</span>,
+                    { bg: groupBg, fontWeight: 700 }
+                  )}
+                  {renderEmptyCells()}
+                </div>
+
+                {/* Item rows */}
+                {catItems.map(item => {
+                  const bg = nextZebra();
+                  const itemBudgetMonthly = toMonthlyCents(item);
+                  const monthVals = months.map(({ year, month }) => actualMap.get(getKey(item.id, year, month)) || 0);
+                  const t12V = monthVals.reduce((s, v) => s + v, 0);
+                  const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
+                  // per-cell color: drift → coral, over budget → red, else default red expense color
+                  const colorOf = (v: number, year?: number, month?: number) => {
+                    if (v === 0) return C.textLight;
+                    if (year !== undefined && month !== undefined && driftMap.has(getKey(item.id, year, month))) return C.coral;
+                    if (itemBudgetMonthly > 0 && v > itemBudgetMonthly * 1.1) return C.redNum;
+                    return C.redNum;
+                  };
+                  return (
+                    <div key={item.id} style={{ display: 'flex', backgroundColor: bg, minHeight: 30, borderBottom: `1px solid ${C.border}80` }}>
+                      {labelCell(
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>,
+                        { bg, fontWeight: 400, pl: 24 }
+                      )}
+                      {months.map(({ year, month }, i) => {
+                        const v = monthVals[i];
+                        return (
+                          <div key={`${year}-${month}`} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                            <span style={{ color: colorOf(v, year, month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(v, displayMode)}</span>
+                          </div>
+                        );
+                      })}
+                      {/* T12 */}
+                      <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <span style={{ color: t12V === 0 ? C.textLight : C.redNum, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(t12V, displayMode)}</span>
                       </div>
-                    );
-                  })}
-                  <div className="flex items-center border-t border-border/40 bg-muted/10" style={{ height: 26 }}>
-                    <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Subtotal</div>
-                    {months.map(({ year, month }) => {
-                      const total = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0);
-                      return <div key={`${year}-${month}`} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">{total > 0 ? fmtK(total) : "—"}</div>;
-                    })}
-                    <div className="w-32 flex-shrink-0" />
-                  </div>
-                </div>
-              );
-            })}
-            {openOH && (
-              <div className="flex items-center border-t border-border/40 bg-muted/10" style={{ height: 26 }}>
-                <div className="w-44 flex-shrink-0 px-3 text-data uppercase tracking-wide text-muted-foreground">Total Overheads</div>
-                {monthlyOH.map((actual, idx) => (
-                  <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data tabular-nums text-muted-foreground">
-                    {actual > 0 ? fmtK(actual) : "—"}
-                  </div>
-                ))}
-                <div className="w-32 flex-shrink-0" />
+                      {/* Current */}
+                      <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <span style={{ color: colorOf(curV, currentCol.year, currentCol.month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(curV, displayMode)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Subtotal row */}
+                {(() => {
+                  const bg = C.totalRow;
+                  const subVals = months.map(({ year, month }) => catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
+                  const t12Sub = subVals.reduce((s, v) => s + v, 0);
+                  const curSub = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, currentCol.year, currentCol.month)) || 0), 0);
+                  return (
+                    <div style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}` }}>
+                      {labelCell(
+                        <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 10, color: C.textMid }}>Subtotal</span>,
+                        { bg, fontWeight: 600 }
+                      )}
+                      {renderCells(subVals, t12Sub, curSub, { color: C.redNum, fontWeight: 600 })}
+                    </div>
+                  );
+                })()}
               </div>
-            )}
-          </div>
+            );
+          })}
+
+          {/* Total Overheads row */}
+          {openOH && (() => {
+            const bg = C.totalRow;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 32, borderBottom: `1px solid ${C.border}` }}>
+                {labelCell(
+                  <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 11 }}>Total Overheads</span>,
+                  { bg, fontWeight: 700 }
+                )}
+                {renderCells(monthlyOH, t12OH, curOH, { color: C.redNum, fontWeight: 700 })}
+              </div>
+            );
+          })()}
 
           {/* OH Budget row */}
-          <div className="flex items-center border-b border-border/30" style={{ height: 24 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground">OH Budget</div>
-            {months.map((_, idx) => <div key={idx} className="flex-1 min-w-0 text-right pr-1 text-data text-muted-foreground tabular-nums">{fmtK(monthBudget)}</div>)}
-            <div className="w-32 flex-shrink-0" />
-          </div>
+          {(() => {
+            const bg = C.totalRow;
+            const budgetVals = months.map(() => monthBudget);
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
+                {labelCell(<span>OH Budget</span>, { bg, fontWeight: 600, color: C.text })}
+                {renderCells(budgetVals, monthBudget * 12, monthBudget, { color: C.textMid, fontWeight: 500 })}
+              </div>
+            );
+          })()}
 
           {/* OH% row */}
-          <div className="flex items-center border-b border-border/30" style={{ height: 24 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-data text-muted-foreground flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" />OH%</div>
-            {months.map((_, idx) => {
-              const income = monthlyIncome[idx];
-              const pct = income > 0 ? (monthlyOH[idx] / income) * 100 : null;
-              return (
-                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-data tabular-nums ${pct !== null && pct > 30 ? "text-destructive/70" : "text-muted-foreground"}`}>
-                  {pct !== null ? `${pct.toFixed(0)}%` : "—"}
-                </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0" />
-          </div>
+          {(() => {
+            const bg = C.zebraRow;
+            const pctVals = months.map((_, i) => monthlyIncome[i] > 0 ? (monthlyOH[i] / monthlyIncome[i]) * 100 : 0);
+            const t12Pct = t12Income > 0 ? (t12OH / t12Income) * 100 : 0;
+            const curPct = curIncome > 0 ? (curOH / curIncome) * 100 : 0;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 26, borderBottom: `1px solid ${C.border}80` }}>
+                {labelCell(
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <DollarSign className="w-3 h-3" style={{ color: C.textMid }} />OH%
+                  </span>,
+                  { bg, fontWeight: 400, color: C.textMid }
+                )}
+                {renderCells(pctVals, t12Pct, curPct, { color: C.textMid, isPct: true })}
+              </div>
+            );
+          })()}
 
           {/* Net Profit row */}
-          <div className="flex items-center border-t border-border/40 bg-muted/10 rounded-b-md font-medium" style={{ height: 30 }}>
-            <div className="w-44 flex-shrink-0 px-3 text-xs flex items-center gap-1">
-              <TrendingUp className="w-3 h-3 text-status-success dark:text-green-400" />Net Profit
+          {(() => {
+            const bg = C.white;
+            const npVals = monthlyIncome.map((v, i) => v - monthlyDC[i] - monthlyOH[i]);
+            const t12NP = t12Income - t12DC - t12OH;
+            const curNP = curIncome - curDC - curOH;
+            return (
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 38, borderTop: `2px solid ${C.border}`, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: C.purple, zIndex: 3 }} />
+                {labelCell(
+                  <>
+                    <TrendingUp className="w-3.5 h-3.5" style={{ color: C.purple }} />
+                    <span>Net Profit</span>
+                  </>,
+                  { bg, fontWeight: 700, color: C.purple, pl: 20 }
+                )}
+                {renderCells(npVals, t12NP, curNP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 700 })}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Legend */}
+        <div style={{
+          display: 'flex', gap: 24, padding: '12px 16px', alignItems: 'center',
+          backgroundColor: C.white, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap',
+        }}>
+          {[
+            { color: C.dotGreen, label: 'Month confirmed' },
+            { color: C.dotCoral, label: 'Cost drifted from Xero — review needed' },
+            { color: C.dotGray,  label: 'Awaiting confirmation' },
+            { color: C.amber,    label: 'Current month (in progress)' },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color }} />
+              <span style={{ fontSize: 11, color: C.textMid }}>{label}</span>
             </div>
-            {months.map((_, idx) => {
-              const income = monthlyIncome[idx];
-              const np = income - monthlyDC[idx] - monthlyOH[idx];
-              const hasIncome = income > 0;
-              return (
-                <div key={idx} className={`flex-1 min-w-0 text-right pr-1 text-xs tabular-nums font-medium ${!hasIncome ? "text-muted-foreground/30" : np >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
-                  {hasIncome ? fmtK(np) : "—"}
-                </div>
-              );
-            })}
-            <div className="w-32 flex-shrink-0" />
-          </div>
+          ))}
         </div>
       </div>
     </div>
@@ -2110,16 +2362,34 @@ export default function BusinessOverheads() {
   if (error || !data) return <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">Failed to load overhead data.</div>;
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-0 border-b border-border/50">
+    <div className="flex flex-col gap-4 p-4" style={{ backgroundColor: '#FAFAF8', minHeight: '100%' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 0,
+        backgroundColor: '#FFFFFF', borderBottom: '1px solid #EAEAE8',
+      }}>
         {TABS.map(({ id, label, Icon }) => {
           const isActive = activeTab === id;
           return (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-t-sm transition-colors flex-shrink-0 ${isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}>
-              <Icon className="w-3 h-3" />
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              data-testid={`tab-${id}`}
+              style={{
+                position: 'relative',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', height: 36,
+                fontSize: 13,
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#A890D4' : '#6B6B6B',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <Icon className="w-3.5 h-3.5" />
               {label}
-              {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+              {isActive && (
+                <div style={{ position: 'absolute', bottom: -1, left: 0, right: 0, height: 3, backgroundColor: '#A890D4' }} />
+              )}
             </button>
           );
         })}
