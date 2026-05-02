@@ -1604,27 +1604,29 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   // above the prev12 early-return to satisfy React's Rules of Hooks.)
 
   // ─── Design tokens ──────────────────────────────────────────────────────────
+  // Every value resolves to a CSS variable so the grid follows the global
+  // light/dark theme automatically (matches Project → Scope visual language).
   const C = {
-    bg:          '#FAFAF8',
-    white:       '#FFFFFF',
-    purple:      '#A890D4',
-    purpleLight: '#F5F3FF',
-    purpleTint:  '#EDE9F8',
-    coral:       '#DA988A',
-    greenTint:   '#EAF4EE',
-    greenNum:    '#5A9E72',
-    redNum:      '#C07060',
-    border:      '#EAEAE8',
-    text:        '#1A1A1A',
-    textMid:     '#6B6B6B',
-    textLight:   '#9B9B9B',
-    zebraRow:    '#F5F4F2',
-    totalRow:    '#F0EEED',
-    sectionHdr:  '#F5F3FF',
-    amber:       '#F0B964',
-    dotGreen:    '#68B088',
-    dotCoral:    '#DA988A',
-    dotGray:     '#D0CCC8',
+    bg:          'hsl(var(--background))',
+    white:       'hsl(var(--card))',
+    purple:      'hsl(var(--primary))',
+    purpleLight: 'hsl(var(--primary) / 0.08)',
+    purpleTint:  'hsl(var(--primary) / 0.12)',
+    coral:       'hsl(var(--destructive))',
+    greenTint:   'hsl(var(--status-success-bg))',
+    greenNum:    'hsl(var(--status-success-fg))',
+    redNum:      'hsl(var(--destructive))',
+    border:      'hsl(var(--border))',
+    text:        'hsl(var(--foreground))',
+    textMid:     'hsl(var(--muted-foreground))',
+    textLight:   'hsl(var(--muted-foreground) / 0.65)',
+    zebraRow:    'hsl(var(--muted) / 0.35)',
+    totalRow:    'hsl(var(--muted) / 0.55)',
+    sectionHdr:  'hsl(var(--muted) / 0.5)',
+    amber:       'hsl(var(--amber))',
+    dotGreen:    'hsl(var(--status-success-fg))',
+    dotCoral:    'hsl(var(--destructive))',
+    dotGray:     'hsl(var(--muted-foreground) / 0.35)',
   };
 
   // Number formatter: 0 → em-dash, otherwise absolute-value k or full dollars
@@ -1833,170 +1835,153 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const nextZebra = () => (rowIdx++ % 2 === 0 ? C.white : C.zebraRow);
   // Reset zebra rowIdx at start of each render (closure pattern: assignment inside JSX is fine here)
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* ─── Toolbar ───────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 8,
-        padding: '10px 16px', backgroundColor: C.white,
-        borderBottom: `1px solid ${C.border}`, borderRadius: 4,
-      }}>
-        {/* Row 1: data source pill + actions */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          {/* Left: consolidated view pill (Xero | BuildPro) */}
-          <div style={{ display: 'flex', gap: 4 }}>
-            {(['xero', 'buildpro'] as const).map(opt => {
-              const labels = { xero: 'Xero', buildpro: 'BuildPro' };
-              const active = groupBy === opt;
-              return (
-                <button
-                  key={opt}
-                  onClick={() => setGroupBy(opt)}
-                  data-testid={`pill-groupby-${opt}`}
-                  style={{
-                    padding: '4px 14px', borderRadius: 14, border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: active ? 600 : 500,
-                    backgroundColor: active ? C.purple : '#F0EEF8',
-                    color: active ? '#FFFFFF' : C.textMid,
-                    transition: 'background-color 120ms ease',
-                  }}
-                >
-                  {labels[opt]}
-                </button>
-              );
-            })}
-          </div>
+  // View-mode picker options (used in toolbar segmented control)
+  const viewModeOpts = [
+    { key: "12months", label: "12M",      full: "12 Months" },
+    { key: "fy",        label: "FY",       full: "Financial Year" },
+    { key: "quarterly", label: "Quarterly", full: "Quarterly" },
+    { key: "compareFy", label: "Compare FYs", full: "Compare FYs" },
+    { key: "compareCy", label: "Compare CYs", full: "Compare CYs" },
+  ] as const;
 
-          {/* Right: actions + kebab (display mode + visibility toggles) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12">
-              <Activity className="w-3.5 h-3.5 mr-1" />
-              Prev 12 Summary
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero">
-              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
-              {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" data-testid="button-overheads-menu">
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Display amounts as</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={displayMode} onValueChange={v => setDisplayMode(v as 'k' | 'dollars')}>
-                  <DropdownMenuRadioItem value="k" data-testid="display-mode-k">Thousands ($k)</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dollars" data-testid="display-mode-dollars">Full dollars ($)</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                {(viewMode === "compareFy" || viewMode === "compareCy") && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel>Compare last</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup value={String(compareCount)} onValueChange={v => setCompareCount(parseInt(v, 10))}>
-                      <DropdownMenuRadioItem value="3" data-testid="compare-count-3">3 years</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="5" data-testid="compare-count-5">5 years</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="7" data-testid="compare-count-7">7 years</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
-                  Hide categories with no entries
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem checked={showColumnPct} onCheckedChange={v => setShowColumnPct(!!v)} data-testid="toggle-show-column-pct">
-                  Show % of income per column
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
-                  Hide rows with no entries
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+  return (
+    <div className="flex flex-col gap-3">
+      {/* ─── Toolbar (single h-9 row, matches Project → Scope) ─────────────── */}
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-border/50 bg-card flex-wrap">
+        {/* Data source segmented control */}
+        <div className="inline-flex items-center gap-0.5 rounded-md border border-border/50 bg-muted/30 p-0.5">
+          {(['xero', 'buildpro'] as const).map(opt => {
+            const labels = { xero: 'Xero', buildpro: 'BuildPro' };
+            const active = groupBy === opt;
+            return (
+              <Button
+                key={opt}
+                size="sm"
+                variant={active ? 'default' : 'ghost'}
+                onClick={() => setGroupBy(opt)}
+                data-testid={`pill-groupby-${opt}`}
+                className="h-6 px-2.5 text-xs"
+              >
+                {labels[opt]}
+              </Button>
+            );
+          })}
         </div>
 
-        {/* Row 2: view-mode picker + period stepper */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          {/* View picker pill */}
-          <div style={{ display: 'flex', gap: 4 }}>
-            {([
-              { key: "12months", label: "12 Months" },
-              { key: "fy", label: "Financial Year" },
-              { key: "quarterly", label: "Quarterly" },
-              { key: "compareFy", label: "Compare FYs" },
-              { key: "compareCy", label: "Compare CYs" },
-            ] as const).map(opt => {
-              const active = viewMode === opt.key;
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => { setViewMode(opt.key); if (opt.key !== "fy" && opt.key !== "quarterly") setFyOffset(0); }}
-                  data-testid={`pill-viewmode-${opt.key}`}
-                  aria-pressed={active}
-                  aria-label={`View mode: ${opt.label}`}
-                  style={{
-                    padding: '4px 12px', borderRadius: 14, border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: active ? 600 : 500,
-                    backgroundColor: active ? C.purple : '#F0EEF8',
-                    color: active ? '#FFFFFF' : C.textMid,
-                    transition: 'background-color 120ms ease',
-                  }}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
+        <div className="w-px h-4 bg-border/60" />
 
-          {/* Period stepper (FY + Quarterly only) */}
-          {showStepper && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {/* View mode segmented control */}
+        <div className="inline-flex items-center gap-0.5 rounded-md border border-border/50 bg-muted/30 p-0.5">
+          {viewModeOpts.map(opt => {
+            const active = viewMode === opt.key;
+            return (
               <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setFyOffset(o => o - 1)}
-                data-testid="button-period-prev"
-                aria-label="Previous period"
+                key={opt.key}
+                size="sm"
+                variant={active ? 'default' : 'ghost'}
+                onClick={() => { setViewMode(opt.key); if (opt.key !== "fy" && opt.key !== "quarterly") setFyOffset(0); }}
+                data-testid={`pill-viewmode-${opt.key}`}
+                aria-pressed={active}
+                aria-label={`View mode: ${opt.full}`}
+                className="h-6 px-2.5 text-xs"
               >
-                <ChevronLeft className="w-4 h-4" />
+                {opt.label}
               </Button>
-              <span
-                style={{
-                  fontSize: 12, fontWeight: 600, color: C.text,
-                  minWidth: 80, textAlign: 'center', fontVariantNumeric: 'tabular-nums',
-                }}
-                data-testid="text-period-label"
-              >
-                {(() => {
-                  const today = new Date();
-                  const cy = today.getFullYear(); const cm = today.getMonth() + 1;
-                  const currentFyStart = getFyStartYearForDate(cy, cm);
-                  return fyLabel(currentFyStart + fyOffset);
-                })()}
-              </span>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setFyOffset(o => o + 1)}
-                disabled={fyOffset >= 0}
-                data-testid="button-period-next"
-                aria-label="Next period"
-              >
-                <ChevronRight className="w-4 h-4" />
+            );
+          })}
+        </div>
+
+        {/* Period stepper (FY + Quarterly only) */}
+        {showStepper && (
+          <div className="flex items-center gap-0.5 ml-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setFyOffset(o => o - 1)}
+              data-testid="button-period-prev"
+              aria-label="Previous period"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </Button>
+            <span
+              className="text-xs font-semibold tabular-nums text-foreground min-w-[64px] text-center"
+              data-testid="text-period-label"
+            >
+              {(() => {
+                const today = new Date();
+                const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+                const currentFyStart = getFyStartYearForDate(cy, cm);
+                return fyLabel(currentFyStart + fyOffset);
+              })()}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setFyOffset(o => o + 1)}
+              disabled={fyOffset >= 0}
+              data-testid="button-period-next"
+              aria-label="Next period"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        )}
+
+        {/* Right-side actions */}
+        <div className="ml-auto flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12" className="h-7 text-xs">
+            <Activity className="w-3.5 h-3.5 mr-1" />
+            Prev 12 Summary
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero" className="h-7 text-xs">
+            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
+            {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="button-overheads-menu">
+                <MoreVertical className="w-3.5 h-3.5" />
               </Button>
-            </div>
-          )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Display amounts as</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={displayMode} onValueChange={v => setDisplayMode(v as 'k' | 'dollars')}>
+                <DropdownMenuRadioItem value="k" data-testid="display-mode-k">Thousands ($k)</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dollars" data-testid="display-mode-dollars">Full dollars ($)</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              {(viewMode === "compareFy" || viewMode === "compareCy") && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Compare last</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={String(compareCount)} onValueChange={v => setCompareCount(parseInt(v, 10))}>
+                    <DropdownMenuRadioItem value="3" data-testid="compare-count-3">3 years</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="5" data-testid="compare-count-5">5 years</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="7" data-testid="compare-count-7">7 years</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
+                Hide categories with no entries
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={showColumnPct} onCheckedChange={v => setShowColumnPct(!!v)} data-testid="toggle-show-column-pct">
+                Show % of income per column
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
+                Hide rows with no entries
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* ─── Grid container ────────────────────────────────────────────────── */}
-      <div style={{ overflowX: 'auto', backgroundColor: C.white, borderRadius: 4, border: `1px solid ${C.border}` }}>
+      <div className="overflow-x-auto rounded-md border border-border/50 bg-card">
         <div style={{ minWidth: gridMinWidth }}>
           {/* Sticky header row — driven by dataColumns so it adapts per view */}
-          <div style={{
-            position: 'sticky', top: 0, zIndex: 10,
-            backgroundColor: C.white, borderBottom: `1px solid ${C.border}`,
-          }}>
+          <div className="sticky top-0 z-10 bg-card border-b border-border/50">
             <div style={{ display: 'flex', minHeight: 52 }}>
               {/* Label header (sticky) */}
               <div style={{
@@ -2092,7 +2077,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {(() => {
             const bg = C.sectionHdr;
             return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, opacity: 1, cursor: 'pointer' }}
+              <div className="hover-elevate cursor-pointer"
+                style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}` }}
                 onClick={() => setOpenIncome(v => !v)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenIncome(v => !v); } }}
@@ -2132,7 +2118,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {(() => {
             const bg = C.sectionHdr;
             return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+              <div className="hover-elevate cursor-pointer"
+                style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}` }}
                 onClick={() => setOpenDC(v => !v)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenDC(v => !v); } }}
@@ -2184,7 +2171,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {(() => {
             const bg = C.sectionHdr;
             return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+              <div className="hover-elevate cursor-pointer"
+                style={{ display: 'flex', backgroundColor: bg, minHeight: 36, borderBottom: `1px solid ${C.border}` }}
                 onClick={() => setOpenOH(v => !v)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenOH(v => !v); } }}
@@ -2270,19 +2258,16 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         </div>
 
         {/* Legend */}
-        <div style={{
-          display: 'flex', gap: 24, padding: '12px 16px', alignItems: 'center',
-          backgroundColor: C.white, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap',
-        }}>
+        <div className="flex items-center flex-wrap gap-x-6 gap-y-2 px-4 py-3 border-t border-border/50 bg-card">
           {[
             { color: C.dotGreen, label: 'Month confirmed' },
             { color: C.dotCoral, label: 'Cost drifted from Xero — review needed' },
             { color: C.dotGray,  label: 'Awaiting confirmation' },
             { color: C.amber,    label: 'Current month (in progress)' },
           ].map(({ color, label }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color }} />
-              <span style={{ fontSize: 11, color: C.textMid }}>{label}</span>
+            <div key={label} className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+              <span className="text-[11px] text-muted-foreground">{label}</span>
             </div>
           ))}
         </div>
