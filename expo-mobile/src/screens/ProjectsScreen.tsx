@@ -332,22 +332,15 @@ const colors = {
         }
       />
 
-      {/* Floating filter pill — hovers above the bottom tab bar.
-          The list scrolls freely behind it; FlatList contentContainer
-          has extra bottom padding so the last card isn't clipped. */}
-      <View
-        pointerEvents="box-none"
-        style={styles.pillWrap}
-      >
+      {/* Floating filter pill — hovers above the bottom tab bar */}
+      <View pointerEvents="box-none" style={styles.pillWrap}>
         <View
           style={[
             styles.pill,
             {
               backgroundColor: colors.card,
-              // Subtle 1px border in light mode, none in dark mode
               borderWidth: isDark ? 0 : StyleSheet.hairlineWidth,
               borderColor: colors.border,
-              // Drop shadow — slightly stronger in dark mode
               shadowOpacity: isDark ? 0.4 : 0.12,
               shadowRadius: isDark ? 16 : 12,
               elevation: isDark ? 12 : 8,
@@ -373,9 +366,6 @@ const colors = {
                   style={[
                     styles.pillLabel,
                     {
-                      // Active label uses the white card surface token from
-                      // the light theme (a constant white in both modes);
-                      // inactive uses the muted text token of the active theme.
                       color: isActive ? lightTheme.card : colors.muted,
                       fontWeight: isActive ? '600' : '500',
                     },
@@ -441,8 +431,7 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    // Pill height (~52) + bottom offset (14) + clearance so the last card
-    // is never hidden behind the floating filter pill.
+    // Clears the floating filter pill (pill ~52 + 14 offset + clearance).
     paddingBottom: 96,
     gap: 10,
   },
@@ -519,8 +508,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    // ~14px above the bottom tab bar (the screen renders above the tab bar,
-    // so bottom: 14 sits 14px above where the tab bar begins).
     bottom: 14,
     zIndex: 10,
   },
@@ -528,11 +515,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 8,
     borderRadius: 26,
-    // Slightly tighter than the ~6px target so all five labels fit on a
-    // ~390pt phone width without horizontal scroll or ellipsis.
     gap: 4,
-    // Shadow uses the theme's primary text colour (near-black in light theme)
-    // as a token-derived shadow source; opacity/radius vary by mode (set inline).
     shadowColor: lightTheme.textPrimary,
     shadowOffset: { width: 0, height: 4 },
   },
