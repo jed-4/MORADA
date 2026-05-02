@@ -1020,6 +1020,13 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   });
   useEffect(() => { localStorage.setItem("bp_overheads_hide_zero", hideZeroCats ? "1" : "0"); }, [hideZeroCats]);
 
+  // Show per-column "% of income" sub-line under each cell value
+  const [showColumnPct, setShowColumnPct] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bp_overheads_show_col_pct") === "1";
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_show_col_pct", showColumnPct ? "1" : "0"); }, [showColumnPct]);
+
   const [hideZeroItems, setHideZeroItems] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("bp_overheads_hide_zero_items") === "1";
@@ -1571,6 +1578,19 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accentCol, incomeMap]);
 
+  // Per-column income totals — used as denominators when the
+  // "Show % of income per column" toggle is on.
+  const colIncomes = useMemo(() => {
+    return dataColumns.map(col => {
+      if (col.variant === "accentPct") return 0;
+      let s = 0;
+      for (const { year, month } of col.months) s += incomeForMonth(year, month);
+      if (col.divisor) s /= col.divisor;
+      return s;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataColumns, incomeMap]);
+
   // (Note: incomeBreakdownNames, dcBreakdownNames, visibleGroups are now declared
   // above the prev12 early-return to satisfy React's Rules of Hooks.)
 
@@ -1619,6 +1639,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     pctOverride?: number | null; // for accentPct column. null = blank, undefined = auto
     // For per-cell colouring (e.g. drift detection on OH item rows)
     colorAt?: (year: number, month: number, value: number) => string | undefined;
+    // Suppress the per-column % of income sub-line (e.g. on the Income row itself,
+    // where it'd always read 100%).
+    skipColPct?: boolean;
   };
 
   // Renders all cells for one row given a per-month value getter.
@@ -1683,13 +1706,23 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           } else if (col.variant === "current") {
             borderLeft = `1px solid ${C.border}`;
           }
+          // Optional per-column "% of income" sub-line.
+          const showPctLine =
+            showColumnPct && !opts.skipColPct && !opts.isPct && v !== 0 && (colIncomes[i] ?? 0) > 0;
+          const pctLineVal = showPctLine ? (v / colIncomes[i]) * 100 : 0;
           return (
             <div key={col.key} style={{
               width: col.width, minWidth: col.width, paddingRight: 8,
               backgroundColor: bg, borderLeft,
-              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center',
+              lineHeight: 1.15,
             }}>
               <span style={{ color: cellColor, fontSize: 12, fontWeight: weight, fontVariantNumeric: 'tabular-nums' }}>{fmt(v)}</span>
+              {showPctLine && (
+                <span style={{ color: C.textLight, fontSize: 9, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+                  {pctLineVal.toFixed(1)}%
+                </span>
+              )}
             </div>
           );
         })}
@@ -1853,6 +1886,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
                   Hide categories with no entries
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={showColumnPct} onCheckedChange={v => setShowColumnPct(!!v)} data-testid="toggle-show-column-pct">
+                  Show % of income per column
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
                   Hide rows with no entries
@@ -2043,7 +2079,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple }
                 )}
-                {renderRow(incomeForMonth, { color: C.greenNum, fontWeight: 600, pctOverride: accentIncome > 0 ? 100 : null })}
+                {renderRow(incomeForMonth, { color: C.greenNum, fontWeight: 600, pctOverride: accentIncome > 0 ? 100 : null, skipColPct: true })}
               </div>
             );
           })()}
