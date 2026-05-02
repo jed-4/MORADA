@@ -37,7 +37,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import {
   Dialog,
   DialogContent,
@@ -262,7 +261,6 @@ export default function Tasks() {
   const { currentProject } = useProject();
   const { toast } = useToast();
   const weekStartDay = useWeekStartDay();
-  const { toolbarVisible } = useToolbarVisible();
   const params = useParams<TasksParams>();
   const [location, setLocation] = useLocation();
   const searchInputRef = useRef<HTMLInputElement>(null);

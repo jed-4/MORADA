@@ -233,6 +233,8 @@ export default function ProjectChecklists() {
 
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showActivityLog, setShowActivityLog] = useState<string | null>(null);
@@ -898,15 +900,51 @@ export default function ProjectChecklists() {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar: Search, Filter, Options */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 gap-2 border-b border-border/50 flex-shrink-0">
+      <div className="h-9 bg-card flex items-center justify-between px-3 gap-2 rounded-lg border border-border flex-shrink-0 mx-2 mt-2">
         <div className="flex items-center gap-1.5 flex-1">
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          {/* Icon-expand search */}
+          <div className="flex items-center flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen((o) => {
+                  const next = !o;
+                  if (next) setTimeout(() => searchInputRef.current?.focus(), 0);
+                  return next;
+                });
+              }}
+              className={cn(
+                "h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2",
+                searchOpen && "bg-primary/10 text-primary border-primary/20"
+              )}
+              data-testid="button-search-toggle"
+              aria-label="Search"
+            >
+              <Search className="h-3 w-3" />
+            </button>
             <Input
+              ref={searchInputRef}
               placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSearchTerm("");
+                  setSearchOpen(false);
+                }
+              }}
+              onBlur={() => {
+                if (!searchTerm) setSearchOpen(false);
+              }}
+              aria-hidden={!searchOpen}
+              tabIndex={searchOpen ? 0 : -1}
+              className={cn(
+                "h-6 text-xs transition-all duration-200 overflow-hidden",
+                searchOpen
+                  ? "w-48 ml-1 px-2 opacity-100 border"
+                  : "w-0 ml-0 px-0 opacity-0 pointer-events-none border-0"
+              )}
               data-testid="input-search"
             />
           </div>

@@ -829,6 +829,14 @@ export default function Selections() {
       {/* Single-row toolbar */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
         <div className="h-9 flex items-center px-2 gap-2">
+          {!toolbarVisible && (
+            <span
+              className="text-xs text-muted-foreground truncate max-w-[180px] flex-shrink-0 pl-1"
+              data-testid="text-toolbar-context-prefix"
+            >
+              {currentProject?.name ?? "Selections"}
+            </span>
+          )}
           {/* Left: status pill tabs (scroll on narrow) */}
           <div className="flex items-center gap-1 overflow-x-auto min-w-0">
             {tabs.map((tab) => {

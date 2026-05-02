@@ -24,16 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus,
@@ -42,33 +32,18 @@ import {
   MoreVertical,
   Search,
   Send,
-  CalendarIcon,
   AlertCircle,
   Users,
   Columns3,
 } from "lucide-react";
-import { type Rfi, type Project, type Contact, type User } from "@shared/schema";
+import { type Rfi, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format, isPast } from "date-fns";
 import { useRfiStatusOptions } from "@/hooks/useRfiStatusOptions";
 import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-
-const rfiFormSchema = z.object({
-  subject: z.string().min(1, "Subject is required"),
-  question: z.string().min(10, "Question must be at least 10 characters"),
-  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
-  dueDate: z.date().optional(),
-  directedToType: z.enum(["user", "contact", "supplier"]),
-  directedToId: z.string().min(1, "Please select who this is directed to"),
-});
-
-type RFIFormValues = z.infer<typeof rfiFormSchema>;
 
 export default function RFIs() {
   const [, setLocation] = useLocation();
@@ -78,8 +53,6 @@ export default function RFIs() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -135,24 +108,6 @@ export default function RFIs() {
     queryKey: ["/api/projects"],
   });
 
-  const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts"],
-  });
-
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/team-members"],
-  });
-
-  const form = useForm<RFIFormValues>({
-    resolver: zodResolver(rfiFormSchema),
-    defaultValues: {
-      subject: "",
-      question: "",
-      priority: "normal",
-      directedToType: "contact",
-      directedToId: "",
-    },
-  });
 
   const getProject = (projectId: string) => {
     return projects.find((p) => p.id === projectId);
@@ -198,75 +153,12 @@ export default function RFIs() {
     return counts;
   }, [rfis, statusTabs]);
 
-  const handleSubmit = async (values: RFIFormValues) => {
-    if (!projectIdFromUrl) {
-      toast({
-        title: "Error",
-        description: "Please select a project first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      let directedToName = "";
-      if (values.directedToType === "contact") {
-        const contact = contacts.find(c => c.id === values.directedToId);
-        directedToName = contact?.name || "";
-      } else if (values.directedToType === "user") {
-        const user = users.find(u => u.id === values.directedToId);
-        directedToName = user?.name || user?.email || "";
-      }
-
-      const response = await apiRequest("/api/rfis", "POST", {
-        projectId: projectIdFromUrl,
-        subject: values.subject,
-        question: values.question,
-        priority: values.priority,
-        dueDate: values.dueDate?.toISOString(),
-        directedToType: values.directedToType,
-        directedToId: values.directedToId,
-        directedToName,
-      });
-
-      queryClient.invalidateQueries({ queryKey: ["/api/rfis"] });
-
-      toast({
-        title: "RFI Created",
-        description: `Created RFI "${response.rfiNumber}"`,
-      });
-
-      setIsCreateDialogOpen(false);
-      form.reset();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create RFI",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleRowClick = (rfiId: string) => {
     if (projectIdFromUrl) {
       setLocation(`/projects/${projectIdFromUrl}/rfis/${rfiId}`);
     } else {
       setLocation(`/rfis/${rfiId}`);
     }
-  };
-
-  const getDirectedToOptions = () => {
-    const directedToType = form.watch("directedToType");
-    if (directedToType === "contact") {
-      return contacts.map(c => ({ id: c.id, name: c.name, email: c.email }));
-    }
-    if (directedToType === "user") {
-      return users.map(u => ({ id: u.id, name: u.name || u.email, email: u.email }));
-    }
-    return [];
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -484,6 +376,15 @@ export default function RFIs() {
       {/* Toolbar — single h-9 row inside rounded card */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
         <div className="h-9 flex items-center px-3 gap-2">
+          {/* Fallback context prefix — only when global toolbar is hidden */}
+          {!toolbarVisible && (
+            <span
+              className="text-xs text-muted-foreground font-medium whitespace-nowrap flex-shrink-0 mr-1 truncate max-w-[160px]"
+              data-testid="text-toolbar-context"
+            >
+              {currentProject?.name ?? "RFIs"}
+            </span>
+          )}
           {/* Status tabs — left, scrollable when narrow */}
           <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
             {statusTabs.map((status) => {
@@ -647,146 +548,6 @@ export default function RFIs() {
         )}
       </div>
 
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Create New RFI</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="subject">Subject</Label>
-              <Input
-                id="subject"
-                {...form.register("subject")}
-                placeholder="e.g., Clarification needed on foundation specs"
-                data-testid="input-rfi-subject"
-              />
-              {form.formState.errors.subject && (
-                <p className="text-sm text-destructive">{form.formState.errors.subject.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question">Question / Details</Label>
-              <Textarea
-                id="question"
-                {...form.register("question")}
-                placeholder="Describe the information you need..."
-                className="min-h-[120px]"
-                data-testid="textarea-rfi-question"
-              />
-              {form.formState.errors.question && (
-                <p className="text-sm text-destructive">{form.formState.errors.question.message}</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Priority</Label>
-                <Select
-                  value={form.watch("priority")}
-                  onValueChange={(val) => form.setValue("priority", val as any)}
-                >
-                  <SelectTrigger data-testid="select-rfi-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Due Date (Optional)</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start text-left font-normal"
-                      data-testid="button-rfi-due-date"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {form.watch("dueDate") ? (
-                        format(form.watch("dueDate")!, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={form.watch("dueDate")}
-                      onSelect={(date) => form.setValue("dueDate", date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Directed To (Type)</Label>
-                <Select
-                  value={form.watch("directedToType")}
-                  onValueChange={(val) => {
-                    form.setValue("directedToType", val as any);
-                    form.setValue("directedToId", "");
-                  }}
-                >
-                  <SelectTrigger data-testid="select-directed-to-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="contact">Contact</SelectItem>
-                    <SelectItem value="user">Team Member</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Directed To</Label>
-                <Select
-                  value={form.watch("directedToId")}
-                  onValueChange={(val) => form.setValue("directedToId", val)}
-                >
-                  <SelectTrigger data-testid="select-directed-to-id">
-                    <SelectValue placeholder="Select person..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getDirectedToOptions().map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.name} {option.email && `(${option.email})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.directedToId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.directedToId.message}</p>
-                )}
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsCreateDialogOpen(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting} data-testid="button-submit-rfi">
-                {isSubmitting ? "Creating..." : "Create RFI"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
