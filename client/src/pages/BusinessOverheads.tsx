@@ -2034,22 +2034,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             });
           })()}
 
-          {/* OH% row — ratios per column */}
-          {(() => {
-            const bg = C.zebraRow;
-            return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 26, borderBottom: `1px solid ${C.border}80` }}>
-                {labelCell(
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <DollarSign className="w-3 h-3" style={{ color: C.textMid }} />OH%
-                  </span>,
-                  { bg, fontWeight: 400, color: C.textMid }
-                )}
-                {renderRatioRow(ohForMonth, incomeForMonth, { color: C.textMid })}
-              </div>
-            );
-          })()}
-
           {/* Net Profit row */}
           {(() => {
             const bg = C.white;
