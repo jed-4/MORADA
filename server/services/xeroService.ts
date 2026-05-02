@@ -979,46 +979,48 @@ export class XeroService {
     // Parse column headers to extract month labels (format: "Jan 2025")
     const columns: string[] = (report.Rows?.[0]?.Cells || []).map((c: any) => c.Value || "");
 
-    // [DIAGNOSTIC] Log Xero P&L request, raw column headers, AND the parsed month keys
-    // (using the same logic as extractMonthAmounts below) to investigate missing months
-    // (e.g., May 2025). Remove after investigation.
-    const _diagMonthMap: Record<string, string> = {
-      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
-      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
-    };
-    const parsedMonthKeys: string[] = columns.slice(1).map((label) => {
-      const parts = (label || "").trim().split(/\s+/);
-      let mm: string | undefined;
-      let yearStr: string | undefined;
-      for (let j = 0; j < parts.length; j++) {
-        const code = _diagMonthMap[parts[j] as keyof typeof _diagMonthMap];
-        if (code) {
-          mm = code;
-          for (let k = j + 1; k < parts.length; k++) {
-            if (/^\d{2}(\d{2})?$/.test(parts[k])) { yearStr = parts[k]; break; }
-          }
-          if (!yearStr) {
-            for (let k = j - 1; k >= 0; k--) {
+    // Optional diagnostic logging for investigating missing-month issues in the
+    // Xero P&L response (e.g. an absent May 2025 column). Off by default; enable
+    // by setting XERO_PL_DIAGNOSTIC=1 in the server environment when needed.
+    if (process.env.XERO_PL_DIAGNOSTIC === "1") {
+      const diagMonthMap: Record<string, string> = {
+        Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+        Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+      };
+      const parsedMonthKeys: string[] = columns.slice(1).map((label) => {
+        const parts = (label || "").trim().split(/\s+/);
+        let mm: string | undefined;
+        let yearStr: string | undefined;
+        for (let j = 0; j < parts.length; j++) {
+          const code = diagMonthMap[parts[j] as keyof typeof diagMonthMap];
+          if (code) {
+            mm = code;
+            for (let k = j + 1; k < parts.length; k++) {
               if (/^\d{2}(\d{2})?$/.test(parts[k])) { yearStr = parts[k]; break; }
             }
+            if (!yearStr) {
+              for (let k = j - 1; k >= 0; k--) {
+                if (/^\d{2}(\d{2})?$/.test(parts[k])) { yearStr = parts[k]; break; }
+              }
+            }
+            break;
           }
-          break;
         }
-      }
-      if (!mm || !yearStr) return `<unparsed:"${label}">`;
-      const yyyy = yearStr.length === 2 ? `20${yearStr}` : yearStr;
-      return `${yyyy}-${mm}`;
-    });
-    console.log("[Xero P&L diagnostic]", {
-      fromDate,
-      toDate,
-      reportDate,
-      periods,
-      monthsDiff,
-      columnsCount: columns.length,
-      columns,
-      parsedMonthKeys,
-    });
+        if (!mm || !yearStr) return `<unparsed:"${label}">`;
+        const yyyy = yearStr.length === 2 ? `20${yearStr}` : yearStr;
+        return `${yyyy}-${mm}`;
+      });
+      console.log("[Xero P&L diagnostic]", {
+        fromDate,
+        toDate,
+        reportDate,
+        periods,
+        monthsDiff,
+        columnsCount: columns.length,
+        columns,
+        parsedMonthKeys,
+      });
+    }
 
     const byAccount: Record<string, { name: string; amounts: Record<string, number> }> = {};
     const accounts: any[] = [];
