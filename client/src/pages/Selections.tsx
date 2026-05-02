@@ -827,8 +827,7 @@ export default function Selections() {
       )}
 
       {/* Single-row toolbar */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-        <div className="h-9 flex items-center px-2 gap-2">
+      <div className="h-9 flex items-center px-2 gap-2 border-b border-border flex-shrink-0">
           {!toolbarVisible && (
             <span
               className="text-xs text-muted-foreground truncate max-w-[180px] flex-shrink-0 pl-1"
@@ -990,7 +989,6 @@ export default function Selections() {
             </DropdownMenu>
           </div>
         </div>
-      </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
