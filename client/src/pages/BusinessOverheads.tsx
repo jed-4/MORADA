@@ -1228,6 +1228,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
 
+  // A column is "WIP" (work-in-progress) when at least one of the months it
+  // spans hasn't been confirmed yet. Used to flag quarterly / FYTD / compare
+  // columns that include the current (or otherwise unconfirmed) month with
+  // the same amber styling as the current-month column in the 12-month view.
+  const colIsWip = (col: ColSpec): boolean => {
+    if (col.variant === "accentPct") return false;
+    return col.months.some(({ year, month }) => !statusSet.has(`${year}__${month}`));
+  };
+
   // Income actuals map: "year__month" → cents
   const incomeMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -1699,12 +1708,17 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           let bg: string | undefined;
           let borderLeft: string | undefined;
           let weight: number = fw;
+          const isWip = colIsWip(col);
           if (col.variant === "accent") {
             bg = C.purpleLight;
             borderLeft = `4px solid ${C.purple}`;
             weight = Math.max(fw, 600);
           } else if (col.variant === "current") {
             borderLeft = `1px solid ${C.border}`;
+          } else if (isWip) {
+            // Multi-month / past-month columns containing unconfirmed months
+            // get a thin amber left border to flag them as WIP.
+            borderLeft = `1px solid ${C.amber}`;
           }
           // Optional per-column "% of income" sub-line.
           const showPctLine =
@@ -1762,10 +1776,13 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           let bg: string | undefined;
           let borderLeft: string | undefined;
           let weight: number = fw;
+          const isWip = colIsWip(col);
           if (col.variant === "accent") {
             bg = C.purpleLight; borderLeft = `4px solid ${C.purple}`; weight = Math.max(fw, 600);
           } else if (col.variant === "current") {
             borderLeft = `1px solid ${C.border}`;
+          } else if (isWip) {
+            borderLeft = `1px solid ${C.amber}`;
           }
           return (
             <div key={col.key} style={{
@@ -2008,15 +2025,22 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     : hasData ? "Actuals entered but not yet confirmed — click to confirm"
                     : "No actuals entered — click to confirm";
                   const isCurrent = col.variant === "current";
+                  const isWip = colIsWip(col);
+                  // Show the amber stripe + "WIP" mini-label on the current
+                  // month and on any multi-month column (Quarterly / FYTD /
+                  // Compare) that contains an unconfirmed month.
+                  const showWipStripe = isCurrent || (isWip && !isSingleMonth);
                   return (
                     <div key={col.key} style={{
                       width: col.width, minWidth: col.width,
                       display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8,
-                      borderLeft: isCurrent ? `1px solid ${C.border}` : undefined,
-                      position: isCurrent ? 'relative' : undefined,
+                      borderLeft: isCurrent
+                        ? `1px solid ${C.border}`
+                        : (isWip && !isSingleMonth ? `1px solid ${C.amber}` : undefined),
+                      position: showWipStripe ? 'relative' : undefined,
                     }}>
-                      {isCurrent && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />}
-                      <span style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: isCurrent ? 12 : 0 }}>{col.shortLabel}</span>
+                      {showWipStripe && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />}
+                      <span style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: showWipStripe ? 12 : 0 }}>{col.shortLabel}</span>
                       {col.subLabel && <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{col.subLabel}</span>}
                       {col.miniLabel && <span style={{ fontSize: 9, fontWeight: 500, color: C.amber, marginTop: 4 }}>{col.miniLabel}</span>}
                       {showDot && ym && (
@@ -2045,14 +2069,17 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 // Accent + accentPct columns (T12 / FYTD / Avg / pct cells)
                 const isAccent = col.variant === "accent";
                 const isAccentPct = col.variant === "accentPct";
+                const isWip = colIsWip(col);
                 return (
                   <div key={col.key} style={{
                     width: col.width, minWidth: col.width,
                     display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8,
                     backgroundColor: C.purpleLight,
                     borderLeft: isAccent ? `4px solid ${C.purple}` : undefined,
+                    position: isWip ? 'relative' : undefined,
                   }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>{col.shortLabel}</span>
+                    {isWip && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: isWip ? 12 : 8 }}>{col.shortLabel}</span>
                     {col.subLabel && <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>{col.subLabel}</span>}
                     {col.miniLabel && <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>{col.miniLabel}</span>}
                   </div>
