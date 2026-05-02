@@ -8,7 +8,7 @@ import {
   TextInput,
   RefreshControl,
   ActivityIndicator,
-  ScrollView,
+  Pressable,
   useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -332,38 +332,57 @@ const colors = {
         }
       />
 
-      {/* Solid opaque filter dock — cards stop cleanly below it */}
+      {/* Floating filter pill — hovers above the bottom tab bar.
+          The list scrolls freely behind it; FlatList contentContainer
+          has extra bottom padding so the last card isn't clipped. */}
       <View
-        style={[
-          styles.pillWrap,
-          {
-            backgroundColor: screenBg,
-            borderTopColor: colors.border,
-          },
-        ]}
+        pointerEvents="box-none"
+        style={styles.pillWrap}
       >
-        <View style={[styles.pill, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillScroll}
-          >
-            {phases.map(phase => {
-              const isActive = activePhase === phase.key;
-              return (
-                <TouchableOpacity
-                  key={phase.key}
-                  style={[styles.pillBtn, isActive && { backgroundColor: colors.accent }]}
-                  onPress={() => setActivePhase(phase.key)}
-                  activeOpacity={0.7}
+        <View
+          style={[
+            styles.pill,
+            {
+              backgroundColor: colors.card,
+              // Subtle 1px border in light mode, none in dark mode
+              borderWidth: isDark ? 0 : StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              // Drop shadow — slightly stronger in dark mode
+              shadowOpacity: isDark ? 0.4 : 0.12,
+              shadowRadius: isDark ? 16 : 12,
+              elevation: isDark ? 12 : 8,
+            },
+          ]}
+        >
+          {phases.map(phase => {
+            const isActive = activePhase === phase.key;
+            return (
+              <Pressable
+                key={phase.key}
+                onPress={() => setActivePhase(phase.key)}
+                style={({ pressed }) => [
+                  styles.pillBtn,
+                  isActive && { backgroundColor: colors.accent },
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                  style={[
+                    styles.pillLabel,
+                    {
+                      color: isActive ? '#FFFFFF' : colors.muted,
+                      fontWeight: isActive ? '600' : '500',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.pillLabel, { color: isActive ? '#FFFFFF' : colors.secondary }]}>
-                    {phase.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                  {phase.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
     </View>
@@ -419,7 +438,9 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 120,
+    // Pill height (~52) + bottom offset (14) + clearance so the last card
+    // is never hidden behind the floating filter pill.
+    paddingBottom: 96,
     gap: 10,
   },
 
@@ -493,34 +514,36 @@ const styles = StyleSheet.create({
 
   pillWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    left: 16,
+    right: 16,
+    // ~14px above the bottom tab bar (the screen renders above the tab bar,
+    // so bottom: 14 sits 14px above where the tab bar begins).
+    bottom: 14,
+    zIndex: 10,
   },
   pill: {
-    padding: 6,
-    borderRadius: 26,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  pillScroll: {
     flexDirection: 'row',
-    alignItems: 'stretch',
+    padding: 8,
+    borderRadius: 26,
+    // Slightly tighter than the ~6px target so all five labels fit on a
+    // ~390pt phone width without horizontal scroll or ellipsis.
     gap: 4,
+    // Shadow — colour is constant; opacity/radius vary by mode (set inline).
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
   },
   pillBtn: {
+    flex: 1,
     minHeight: 36,
     borderRadius: 18,
-    paddingHorizontal: 14,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+    textAlign: 'center',
   },
   emptyContainer: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 14, textAlign: 'center', marginTop: 12 },
