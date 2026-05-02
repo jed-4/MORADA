@@ -306,8 +306,8 @@ export default function Timesheets() {
   });
 
   // Duplicate a single timesheet — copies the source's fields onto today's
-  // date as a fresh draft, then opens the dialog on the new entry so the
-  // user can adjust before saving.
+  // date as a fresh submitted entry, then opens the dialog on the new entry
+  // so the user can adjust before saving.
   const duplicateMutation = useMutation({
     mutationFn: async (source: Timesheet) => {
       const payload = {
@@ -326,7 +326,7 @@ export default function Timesheets() {
         total: source.total || "0",
         description: source.description || "",
         labels: Array.isArray(source.labels) ? (source.labels as string[]) : [],
-        status: "draft",
+        status: "submitted",
       };
       return apiRequest("/api/timesheets", "POST", payload) as Promise<Timesheet>;
     },
@@ -337,7 +337,7 @@ export default function Timesheets() {
       }
       toast({
         title: "Timesheet duplicated",
-        description: "New draft entry created for today.",
+        description: "New entry created for today.",
       });
       setSelectedTimesheet(newTs);
       setIsDialogOpen(true);

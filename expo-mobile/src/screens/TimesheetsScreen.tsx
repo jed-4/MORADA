@@ -959,7 +959,7 @@ export default function TimesheetsScreen() {
         hourlyRate: formHourlyRate !== '' ? formHourlyRate : null,
         description: formDescription,
         costCodeId: formCostCodeId,
-        status: 'draft',
+        status: 'submitted',
       };
 
       const online = await isOnline();
@@ -1020,7 +1020,7 @@ export default function TimesheetsScreen() {
             hourlyRate: formHourlyRate !== '' ? formHourlyRate : null,
             description: formDescription,
             costCodeId: formCostCodeId,
-            status: 'draft',
+            status: 'submitted',
           },
         });
         Alert.alert('Saved Offline', 'Timesheet saved and will sync when connection is restored.');
