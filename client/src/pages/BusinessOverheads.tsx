@@ -65,8 +65,6 @@ import {
   RefreshCw,
   Lock,
   TrendingDown,
-  ArrowUpRight,
-  ArrowDownRight,
   DollarSign,
   SlidersHorizontal,
 } from "lucide-react";
@@ -982,7 +980,6 @@ type ColSpec = {
 
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
-  const [view, setView] = useState<"monthly" | "prev12">("monthly");
   const [groupBy, setGroupBy] = useState<GroupBy>(() => {
     if (typeof window === "undefined") return "xero";
     const saved = localStorage.getItem("bp_overheads_group_by");
@@ -1063,9 +1060,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() + 1 };
   }, []);
-  // Backwards-compat alias used by Prev 12 Summary view & breakdown-name discovery
-  const months = trailingMonths;
-
   // Build the active grid columns for the current view mode + period offset.
   // 12months view = 12 month cols + T12 + T12% + Current (existing layout).
   // fy view       = 12 FY months (Jul→Jun) + FYTD + FYTD%.
@@ -1327,9 +1321,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return sorted.map(([label, items]) => ({ label, items }));
   }, [groupBy, data.items]);
 
-  if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
+  // (Empty-state early return is below, AFTER all useMemo hooks, to comply
+  //  with React's Rules of Hooks. Do not move this above any hook.)
 
-  // ─── Prev 12 Summary View ────────────────────────────────────────────────────
   // Compute income breakdown across rolling 12 months (from breakdown JSONB field)
   const incomeBreakdown12 = useMemo(() => {
     const map: Record<string, number> = {};
@@ -1343,7 +1337,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [data.incomeActuals, rolling12]);
 
-  // ─── MonthlyActualsTab hooks (must come BEFORE the prev12 early-return to satisfy Rules of Hooks) ───
   const incomeBreakdownNames = useMemo(() => {
     const names = new Set<string>();
     for (const { year, month } of monthsInView) {
@@ -1369,203 +1362,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     ));
   }, [groupedData, hideZeroCats, monthsInView, actualMap]);
 
-  if (view === "prev12") {
-    const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
-    const totalDC12 = rolling12.reduce((s, { year, month }) => s + (directCostMap.get(`${year}__${month}`) || 0), 0);
-    const totalOH12 = rolling12.reduce((s, { year, month }) => s + data.items.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
-    const avgIncome = totalIncome12 / 12;
-    const avgDC = totalDC12 / 12;
-    const avgOH = totalOH12 / 12;
-    const grossProfit12 = totalIncome12 - totalDC12;
-    const avgGrossProfit = grossProfit12 / 12;
-    const netProfit12 = grossProfit12 - totalOH12;
-    const avgNetProfit = netProfit12 / 12;
-    const dcPct = totalIncome12 > 0 ? (totalDC12 / totalIncome12) * 100 : 0;
-    const ohPct = totalIncome12 > 0 ? (totalOH12 / totalIncome12) * 100 : 0;
-    const gpPct = totalIncome12 > 0 ? (grossProfit12 / totalIncome12) * 100 : 0;
-
-    // MoM: compare last month vs month before
-    const lastM = rolling12[rolling12.length - 1];
-    const prevM = rolling12[rolling12.length - 2];
-    const lastIncome = lastM ? (incomeMap.get(`${lastM.year}__${lastM.month}`) || 0) : 0;
-    const prevIncome = prevM ? (incomeMap.get(`${prevM.year}__${prevM.month}`) || 0) : 0;
-    const lastDC = lastM ? (directCostMap.get(`${lastM.year}__${lastM.month}`) || 0) : 0;
-    const prevDC = prevM ? (directCostMap.get(`${prevM.year}__${prevM.month}`) || 0) : 0;
-    const lastOH = lastM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, lastM.year, lastM.month)) || 0), 0) : 0;
-    const prevOH = prevM ? data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
-
-    function MoMArrow({ cur, prev, invert = false }: { cur: number; prev: number; invert?: boolean }) {
-      if (!prev) return <span className="text-muted-foreground/30 text-data">—</span>;
-      const diff = cur - prev;
-      const pct = Math.abs((diff / prev) * 100).toFixed(0);
-      const up = diff > 0;
-      const good = invert ? !up : up;
-      return (
-        <span className={`inline-flex items-center gap-0.5 text-data tabular-nums ${good ? "text-status-success dark:text-green-400" : "text-destructive"}`}>
-          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-          {pct}%
-        </span>
-      );
-    }
-
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <p className="text-xs text-muted-foreground">Previous 12 months — totals, averages, and OH% of income</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
-              {(["xero", "buildpro"] as GroupBy[]).map((g, i) => (
-                <button key={g} onClick={() => setGroupBy(g)}
-                  className={`px-2.5 py-1 transition-colors ${groupBy === g ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover-elevate"} ${i > 0 ? "border-l border-border" : ""}`}>
-                  {g === "xero" ? "Xero" : "BuildPro"}
-                </button>
-              ))}
-            </div>
-            <Button size="sm" variant="outline" onClick={() => setView("monthly")}>Monthly Grid</Button>
-            <Button size="sm" variant="outline" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending}>
-              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
-              {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: 560 }}>
-            {/* Header */}
-            <div className="flex border-b border-border/50 bg-muted/30 rounded-t-md">
-              <div className="flex-1 px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Item</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Total (12m)</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">Avg / Month</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">% of Income</div>
-              <div className="w-20 flex-shrink-0 text-right px-3 py-2 text-data uppercase tracking-wide text-muted-foreground">MoM</div>
-            </div>
-
-            {/* Income row */}
-            <div className="border-b border-border/40 bg-green-500/5">
-              <div className="flex items-center" style={{ height: 36 }}>
-                <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" />
-                  Income
-                  {incomeBreakdown12.length > 0 && (
-                    <button
-                      onClick={() => setShowIncomeBreakdown(v => !v)}
-                      className="ml-1 p-0.5 rounded hover-elevate text-muted-foreground/60"
-                      title="Show income breakdown"
-                    >
-                      <ChevronDown className={`w-3 h-3 transition-transform ${showIncomeBreakdown ? "rotate-180" : ""}`} />
-                    </button>
-                  )}
-                </div>
-                <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-status-success dark:text-green-400 tabular-nums">{totalIncome12 > 0 ? fmtK(totalIncome12) : "—"}</div>
-                <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/80 dark:text-green-400/80 tabular-nums">{avgIncome > 0 ? fmtK(avgIncome) : "—"}</div>
-                <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">100%</div>
-                <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome} prev={prevIncome} /></div>
-              </div>
-              {/* Income breakdown sub-rows */}
-              {showIncomeBreakdown && incomeBreakdown12.length > 0 && (
-                <div className="border-t border-green-200/40 dark:border-green-800/30">
-                  {incomeBreakdown12.map(([name, cents]) => (
-                    <div key={name} className="flex items-center" style={{ height: 28 }}>
-                      <div className="flex-1 pl-8 pr-3 text-xs text-muted-foreground truncate">{name}</div>
-                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-status-success/70 dark:text-green-400/70 tabular-nums">{fmtK(cents)}</div>
-                      <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-muted-foreground/50 tabular-nums">{fmtK(Math.round(cents / 12))}</div>
-                      <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground/50 tabular-nums">{totalIncome12 > 0 ? `${((cents / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
-                      <div className="w-20 flex-shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Direct Costs row */}
-            <div className="flex items-center border-b border-border/40" style={{ height: 36 }}>
-              <div className="flex-1 px-3 text-xs font-semibold flex items-center gap-1.5"><TrendingDown className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />Direct Costs</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 text-sm font-semibold text-orange-500 dark:text-orange-400 tabular-nums">{totalDC12 > 0 ? fmtK(totalDC12) : "—"}</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 text-xs text-orange-500/80 dark:text-orange-400/80 tabular-nums">{avgDC > 0 ? fmtK(avgDC) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{dcPct > 0 ? `${dcPct.toFixed(1)}%` : "—"}</div>
-              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastDC} prev={prevDC} invert /></div>
-            </div>
-
-            {/* Gross Profit row */}
-            <div className={`flex items-center border-b border-border/50 font-semibold ${grossProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
-              <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
-                {grossProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
-                Gross Profit
-              </div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${grossProfit12 >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(grossProfit12) : "—"}</div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${grossProfit12 >= 0 ? "text-status-success/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalDC12 > 0 ? fmtK(avgGrossProfit) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{totalIncome12 > 0 ? `${gpPct.toFixed(1)}%` : "—"}</div>
-              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastIncome - lastDC} prev={prevIncome - prevDC} /></div>
-            </div>
-
-            {/* Group rows */}
-            {groupedData.map(group => {
-              const catItems = group.items;
-              if (!catItems.length) return null;
-              const catTotal = rolling12.reduce((s, { year, month }) => s + catItems.reduce((is, i) => is + (actualMap.get(getKey(i.id, year, month)) || 0), 0), 0);
-              const catAvg = catTotal / 12;
-              const catPct = totalIncome12 > 0 ? (catTotal / totalIncome12) * 100 : 0;
-              const lastCat = lastM ? catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, lastM.year, lastM.month)) || 0), 0) : 0;
-              const prevCat = prevM ? catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, prevM.year, prevM.month)) || 0), 0) : 0;
-
-              return (
-                <div key={group.label}>
-                  <div className="flex items-center bg-muted/20 border-b border-border/40" style={{ height: 28 }}>
-                    <div className="flex-1 px-3 text-data font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
-                    <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums font-medium">{catTotal > 0 ? fmtK(catTotal) : "—"}</div>
-                    <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{catAvg > 0 ? fmtK(catAvg) : "—"}</div>
-                    <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{catPct > 0 ? `${catPct.toFixed(1)}%` : "—"}</div>
-                    <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastCat} prev={prevCat} invert /></div>
-                  </div>
-                  {catItems.map(item => {
-                    const itemTotal = rolling12.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
-                    const itemAvg = itemTotal / 12;
-                    const itemPct = totalIncome12 > 0 ? (itemTotal / totalIncome12) * 100 : 0;
-                    const lastItem = lastM ? (actualMap.get(getKey(item.id, lastM.year, lastM.month)) || 0) : 0;
-                    const prevItem = prevM ? (actualMap.get(getKey(item.id, prevM.year, prevM.month)) || 0) : 0;
-                    return (
-                      <div key={item.id} className="flex items-center border-b border-border/20 hover-elevate" style={{ height: 30 }}>
-                        <div className="flex-1 px-3 pl-6 text-xs truncate text-muted-foreground">{item.name}</div>
-                        <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums">{itemTotal > 0 ? fmtK(itemTotal) : "—"}</div>
-                        <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{itemAvg > 0 ? fmtK(itemAvg) : "—"}</div>
-                        <div className="w-24 flex-shrink-0 text-right px-3 text-data text-muted-foreground">{itemPct > 0 ? `${itemPct.toFixed(1)}%` : "—"}</div>
-                        <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastItem} prev={prevItem} invert /></div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-
-            {/* Total OH */}
-            <div className="flex items-center border-t-2 border-border bg-muted/30 font-semibold" style={{ height: 36 }}>
-              <div className="flex-1 px-3 text-xs">Total Overheads</div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${totalOH12 > 0 ? "text-foreground" : "text-muted-foreground/40"}`}>{totalOH12 > 0 ? fmtK(totalOH12) : "—"}</div>
-              <div className="w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{avgOH > 0 ? fmtK(avgOH) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{ohPct > 0 ? `${ohPct.toFixed(1)}%` : "—"}</div>
-              <div className="w-20 flex-shrink-0 text-right px-3"><MoMArrow cur={lastOH} prev={prevOH} invert /></div>
-            </div>
-
-            {/* Net Profit */}
-            <div className={`flex items-center border-t border-border/40 rounded-b-md font-semibold ${netProfit12 >= 0 ? "bg-green-500/5" : "bg-destructive/5"}`} style={{ height: 36 }}>
-              <div className="flex-1 px-3 text-xs flex items-center gap-1.5">
-                {netProfit12 >= 0 ? <TrendingUp className="w-3.5 h-3.5 text-status-success dark:text-green-400" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
-                Net Profit
-              </div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-sm tabular-nums ${netProfit12 >= 0 ? "text-status-success dark:text-green-400" : "text-destructive"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(netProfit12) : "—"}</div>
-              <div className={`w-28 flex-shrink-0 text-right px-3 text-xs tabular-nums ${netProfit12 >= 0 ? "text-status-success/80 dark:text-green-400/80" : "text-destructive/80"}`}>{totalIncome12 > 0 || totalOH12 > 0 ? fmtK(avgNetProfit) : "—"}</div>
-              <div className="w-24 flex-shrink-0 text-right px-3 text-xs tabular-nums text-muted-foreground">{totalIncome12 > 0 ? `${((netProfit12 / totalIncome12) * 100).toFixed(1)}%` : "—"}</div>
-              <div className="w-20 flex-shrink-0 text-right px-3">
-                <MoMArrow cur={lastIncome - lastDC - lastOH} prev={prevIncome - prevDC - prevOH} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // ─── Monthly Grid View ───────────────────────────────────────────────────────
 
@@ -1599,9 +1395,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataColumns, incomeMap]);
-
-  // (Note: incomeBreakdownNames, dcBreakdownNames, visibleGroups are now declared
-  // above the prev12 early-return to satisfy React's Rules of Hooks.)
 
   // ─── Design tokens ──────────────────────────────────────────────────────────
   // Every value resolves to a CSS variable so the grid follows the global
@@ -1844,52 +1637,62 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     { key: "compareCy", label: "Compare CYs", full: "Compare CYs" },
   ] as const;
 
+  // Empty-state early return — placed AFTER all hooks above to comply with
+  // React's Rules of Hooks. Adding more hooks below this line is unsafe.
+  if (!data.categories.length) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Add categories and items in the Register tab first.
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* ─── Toolbar (single h-9 row, matches Project → Scope) ─────────────── */}
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border/50 bg-card flex-wrap">
-        {/* Data source segmented control */}
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-border/50 bg-muted/30 p-0.5">
-          {(['xero', 'buildpro'] as const).map(opt => {
-            const labels = { xero: 'Xero', buildpro: 'BuildPro' };
-            const active = groupBy === opt;
-            return (
-              <Button
-                key={opt}
-                size="sm"
-                variant={active ? 'default' : 'ghost'}
-                onClick={() => setGroupBy(opt)}
-                data-testid={`pill-groupby-${opt}`}
-                className="h-6 px-2.5 text-xs"
-              >
-                {labels[opt]}
-              </Button>
-            );
-          })}
-        </div>
+        {/* Data source dropdown */}
+        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
+          <SelectTrigger
+            className="h-7 w-auto gap-1.5 border-border/50 bg-muted/30 px-2.5 py-0 text-xs font-medium [&_svg]:opacity-60"
+            data-testid="select-source"
+            aria-label="Data source"
+          >
+            <span className="text-muted-foreground">Source:</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="xero" data-testid="select-source-xero">Xero</SelectItem>
+            <SelectItem value="buildpro" data-testid="select-source-buildpro">BuildPro</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div className="w-px h-4 bg-border/60" />
-
-        {/* View mode segmented control */}
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-border/50 bg-muted/30 p-0.5">
-          {viewModeOpts.map(opt => {
-            const active = viewMode === opt.key;
-            return (
-              <Button
-                key={opt.key}
-                size="sm"
-                variant={active ? 'default' : 'ghost'}
-                onClick={() => { setViewMode(opt.key); if (opt.key !== "fy" && opt.key !== "quarterly") setFyOffset(0); }}
-                data-testid={`pill-viewmode-${opt.key}`}
-                aria-pressed={active}
-                aria-label={`View mode: ${opt.full}`}
-                className="h-6 px-2.5 text-xs"
-              >
-                {opt.label}
-              </Button>
-            );
-          })}
-        </div>
+        {/* View-mode dropdown */}
+        <Select
+          value={viewMode}
+          onValueChange={(v) => {
+            setViewMode(v as ViewMode);
+            if (v !== "fy" && v !== "quarterly") setFyOffset(0);
+          }}
+        >
+          <SelectTrigger
+            className="h-7 w-auto gap-1.5 border-border/50 bg-muted/30 px-2.5 py-0 text-xs font-medium [&_svg]:opacity-60"
+            data-testid="select-viewmode"
+            aria-label="View mode"
+          >
+            <span className="text-muted-foreground">View:</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {viewModeOpts.map(opt => (
+              <SelectItem key={opt.key} value={opt.key} data-testid={`select-viewmode-${opt.key}`}>
+                {opt.full}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {/* Period stepper (FY + Quarterly only) */}
         {showStepper && (
@@ -1931,14 +1734,24 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
         {/* Right-side actions */}
         <div className="ml-auto flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12" className="h-7 text-xs">
-            <Activity className="w-3.5 h-3.5 mr-1" />
-            Prev 12 Summary
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero" className="h-7 text-xs">
-            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
-            {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => syncActualsMut.mutate()}
+                  disabled={syncActualsMut.isPending}
+                  data-testid="button-sync-xero"
+                  aria-label={syncActualsMut.isPending ? "Syncing from Xero" : "Sync from Xero"}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="button-overheads-menu">
@@ -2791,11 +2604,9 @@ export default function BusinessOverheads() {
   if (error || !data) return <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">Failed to load overhead data.</div>;
 
   return (
-    <div className="flex flex-col gap-4 p-4" style={{ backgroundColor: '#FAFAF8', minHeight: '100%' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 0,
-        backgroundColor: '#FFFFFF', borderBottom: '1px solid #EAEAE8',
-      }}>
+    <div className="flex flex-col gap-4 p-4 min-h-full bg-background">
+      {/* Floating parent tabs — sit on the page background, single divider beneath */}
+      <div className="flex items-center gap-1 border-b border-border">
         {TABS.map(({ id, label, Icon }) => {
           const isActive = activeTab === id;
           return (
@@ -2803,21 +2614,16 @@ export default function BusinessOverheads() {
               key={id}
               onClick={() => setActiveTab(id)}
               data-testid={`tab-${id}`}
-              style={{
-                position: 'relative',
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 14px', height: 36,
-                fontSize: 13,
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? '#A890D4' : '#6B6B6B',
-                background: 'transparent', border: 'none', cursor: 'pointer',
-                flexShrink: 0,
-              }}
+              className={`relative flex items-center gap-1.5 px-3 py-2 text-xs transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0 ${
+                isActive
+                  ? "text-primary font-semibold"
+                  : "text-muted-foreground hover:text-foreground font-medium"
+              }`}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
               {isActive && (
-                <div style={{ position: 'absolute', bottom: -1, left: 0, right: 0, height: 3, backgroundColor: '#A890D4' }} />
+                <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
               )}
             </button>
           );
