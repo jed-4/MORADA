@@ -1112,9 +1112,21 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         variant: "data",
         showDot: true,
       }));
+      // T12 = trailing 12 *complete* months, i.e. the previous 12 calendar
+      // months EXCLUDING the in-progress current month. The current month is
+      // surfaced separately via the dedicated "current" column to its right,
+      // so including it in T12 would double-count it and bury whichever month
+      // just rolled off the back of the window (e.g. May '25 disappearing on
+      // 2 May '26 because the current May '26 has almost no data yet).
+      const t12Months: { year: number; month: number }[] = [];
+      for (let i = 12; i >= 1; i--) {
+        let m = cm - i; let y = cy;
+        while (m <= 0) { m += 12; y--; }
+        t12Months.push({ year: y, month: m });
+      }
       cols.push({
         key: "t12", shortLabel: "T12", subLabel: "Trailing", miniLabel: "12 months",
-        width: 90, months: [...trailingMonths], variant: "accent",
+        width: 90, months: t12Months, variant: "accent",
       });
       cols.push({
         key: "t12pct", shortLabel: "T12 %", subLabel: "% of", miniLabel: "income",
@@ -1157,16 +1169,19 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     }
 
     if (viewMode === "rollingT12") {
-      // 12 trailing-12-month windows side by side.
-      // Anchor month slides from (current − 11) at the leftmost column
-      // up to current at the rightmost. Each column's `months[]` is the
-      // 12 calendar months ending at that anchor. WIP/amber treatment
-      // is automatic via colIsWip when the window contains an
-      // unconfirmed month.
+      // 12 trailing-12-month windows side by side. Each window is a
+      // CLOSED T12 (excludes the in-progress current month), matching
+      // the T12 column in the 12-Months view. Anchor slides from
+      // (current − 12) at the leftmost column up to (current − 1) at
+      // the rightmost — so the rightmost rolling column equals the
+      // standalone T12 column in the 12-Months view (cross-view
+      // sanity check from #227 still holds). WIP/amber treatment is
+      // automatic via colIsWip when a window contains an unconfirmed
+      // month.
       const cols: ColSpec[] = [];
       for (let i = 0; i < 12; i++) {
-        // anchor month for this column (sliding from current-11 → current)
-        let am = cm - (11 - i);
+        // anchor month for this column (sliding from current-12 → current-1)
+        let am = cm - (12 - i);
         let ay = cy;
         while (am <= 0) { am += 12; ay--; }
         // build the 12-month window ending at (ay, am)
@@ -1211,26 +1226,25 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
     if (viewMode === "compareFy") {
       const fys = buildLastNFys(compareCount, currentFyStart);
-      const dataCols: ColSpec[] = fys.map(fy => {
-        // Clamp current FY to elapsed months only (so we're comparing apples-to-apples-ish for YTD).
-        const isCurrent = fy.key === `fy-${currentFyStart}`;
-        const months = isCurrent ? clampMonthsToToday(fy.months, today) : fy.months;
-        return {
+      // Compare-FYs is intended for apples-to-apples whole-FY comparison,
+      // so only show columns for FYs that have a full 12 calendar months.
+      // The in-progress current FY is filtered out (would otherwise render
+      // as a misleading short YTD column next to closed full FYs).
+      const dataCols: ColSpec[] = fys
+        .filter(fy => fy.key !== `fy-${currentFyStart}` && fy.months.length === 12)
+        .map(fy => ({
           key: fy.key,
           shortLabel: fy.shortLabel,
-          subLabel: isCurrent ? "FYTD" : undefined,
-          width: 110, months, variant: "data",
-        };
-      });
-      // "Avg" = annualised mean across the N FYs.
-      // Sum every month present in the comparison (current FY clamped to YTD) then
-      // divide by (totalMonths / 12) so a partial current FY contributes only its
-      // fractional weight — otherwise a 4-month YTD would dilute a 5-FY avg by 60%.
+          width: 110, months: fy.months, variant: "data",
+        }));
+      // "Avg" = annualised mean across the displayed FYs (all are full years
+      // after the filter, so divisor is simply the count of FYs shown).
       const allMonths = dataCols.flatMap(c => c.months);
+      const fyCount = dataCols.length;
       dataCols.push({
-        key: "avg", shortLabel: "Avg", subLabel: `${compareCount}-FY`, miniLabel: "annualised",
+        key: "avg", shortLabel: "Avg", subLabel: `${fyCount}-FY`, miniLabel: "annualised",
         width: 100, months: allMonths, variant: "accent",
-        divisor: allMonths.length / 12,
+        divisor: Math.max(fyCount, 1),
       });
       dataCols.push({
         key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
@@ -1239,23 +1253,22 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       return dataCols;
     }
 
-    // compareCy
+    // compareCy — same whole-year filter as compareFy: drop the in-progress
+    // current calendar year so we only show full 12-month CYs.
     const cys = buildLastNCys(compareCount, cy);
-    const dataCols: ColSpec[] = cys.map(c => {
-      const isCurrent = c.key === `cy-${cy}`;
-      const months = isCurrent ? clampMonthsToToday(c.months, today) : c.months;
-      return {
+    const dataCols: ColSpec[] = cys
+      .filter(c => c.key !== `cy-${cy}` && c.months.length === 12)
+      .map(c => ({
         key: c.key,
         shortLabel: c.shortLabel,
-        subLabel: isCurrent ? "YTD" : undefined,
-        width: 110, months, variant: "data",
-      };
-    });
+        width: 110, months: c.months, variant: "data",
+      }));
     const allMonthsCy = dataCols.flatMap(c => c.months);
+    const cyCount = dataCols.length;
     dataCols.push({
-      key: "avg", shortLabel: "Avg", subLabel: `${compareCount}-CY`, miniLabel: "annualised",
+      key: "avg", shortLabel: "Avg", subLabel: `${cyCount}-CY`, miniLabel: "annualised",
       width: 100, months: allMonthsCy, variant: "accent",
-      divisor: allMonthsCy.length / 12,
+      divisor: Math.max(cyCount, 1),
     });
     dataCols.push({
       key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
