@@ -557,10 +557,8 @@ export default function RFQs() {
   return (
     <div className="flex flex-col h-full" data-testid="page-rfqs">
 
-      {/* Unified header card */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-        {/* Single h-9 toolbar row */}
-        <div className="h-9 flex items-center px-3 gap-2">
+      {/* Toolbar — flush h-9 row with bottom divider */}
+      <div className="h-9 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
           {/* Left: optional context prefix (only when global bar hidden) + status tabs + search */}
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
             {STATUS_OPTIONS.map((status) => {
@@ -592,21 +590,22 @@ export default function RFQs() {
                 </button>
               );
             })}
+          </div>
 
-            {/* Search — icon-expand (input expands rightward) */}
-            <div className="flex items-center flex-shrink-0 ml-1">
-              <button
-                type="button"
-                onClick={() => setIsSearchOpen((o) => !o)}
-                className={cn(
-                  "h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2",
-                  isSearchOpen && "bg-primary/10 text-primary border-primary/20"
-                )}
-                data-testid="button-search-toggle"
-                aria-label="Search"
-              >
-                <Search className="h-3 w-3" />
-              </button>
+          {/* Right side: Create RFQ, Search, Columns, Options */}
+          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
+              data-testid="button-create-rfq"
+            >
+              <Plus className="h-3 w-3" />
+              <span>Create RFQ</span>
+            </button>
+
+            {/* Search — icon-expand (input expands leftward) */}
+            <div className="flex items-center flex-shrink-0">
               <Input
                 ref={searchInputRef}
                 value={searchQuery}
@@ -622,19 +621,30 @@ export default function RFQs() {
                   if (!searchQuery) setIsSearchOpen(false);
                 }}
                 placeholder="Search RFQs…"
+                aria-hidden={!isSearchOpen}
+                tabIndex={isSearchOpen ? 0 : -1}
                 className={cn(
-                  "h-6 text-xs transition-all duration-200 overflow-hidden",
+                  "h-6 text-xs transition-all duration-200 ease-in-out",
                   isSearchOpen
-                    ? "w-48 ml-1 px-2 opacity-100"
-                    : "w-0 ml-0 px-0 opacity-0 pointer-events-none border-0"
+                    ? "w-48 mr-1 px-2 opacity-100 border"
+                    : "w-0 mr-0 px-0 opacity-0 border-0 pointer-events-none"
                 )}
                 data-testid="input-search-rfqs"
               />
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen((o) => !o)}
+                className={cn(
+                  "h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2",
+                  isSearchOpen && "bg-primary/10 text-primary border-primary/20"
+                )}
+                data-testid="button-search-toggle"
+                aria-label="Search"
+              >
+                <Search className="h-3 w-3" />
+              </button>
             </div>
-          </div>
 
-          {/* Right side: Columns, Create RFQ, Options */}
-          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
             <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -650,16 +660,6 @@ export default function RFQs() {
                 <DataTableColumnPicker storageKey="rfqs" columns={pickerColumns} />
               </PopoverContent>
             </Popover>
-
-            <button
-              type="button"
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
-              data-testid="button-create-rfq"
-            >
-              <Plus className="h-3 w-3" />
-              <span>Create RFQ</span>
-            </button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -677,7 +677,6 @@ export default function RFQs() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
       </div>
 
       {/* Content */}

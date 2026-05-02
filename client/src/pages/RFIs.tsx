@@ -371,9 +371,8 @@ export default function RFIs() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-rfis">
-      {/* Toolbar — single h-9 row inside rounded card */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
-        <div className="h-9 flex items-center px-3 gap-2">
+      {/* Toolbar — flush h-9 row with bottom divider */}
+      <div className="h-9 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
           {/* Status tabs — left, scrollable when narrow */}
           <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
             {statusTabs.map((status) => {
@@ -490,7 +489,6 @@ export default function RFIs() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
       </div>
 
       {/* Content */}

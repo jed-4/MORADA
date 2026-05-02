@@ -899,8 +899,8 @@ export default function ProjectChecklists() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar: Search, Filter, Options */}
-      <div className="h-9 bg-card flex items-center justify-between px-3 gap-2 rounded-lg border border-border flex-shrink-0 mx-2 mt-2">
+      {/* Toolbar: Search, Filter, Options — flush h-9 row with bottom divider */}
+      <div className="h-9 flex items-center justify-between px-3 gap-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5 flex-1">
           {/* Icon-expand search */}
           <div className="flex items-center flex-shrink-0">
