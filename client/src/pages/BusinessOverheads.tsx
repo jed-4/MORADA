@@ -1033,6 +1033,17 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const [fyOffset, setFyOffset] = useState<number>(0);
   // Number of periods to compare in compareFy / compareCy views (default 5).
   const [compareCount, setCompareCount] = useState<number>(5);
+  // When false (default), Compare-FY/CY views hide the in-progress current
+  // year so we only compare full 12-month periods. Toggle on to also surface
+  // the partial year (clamped to YTD/FYTD) for a quick "where are we tracking
+  // vs prior years" glance.
+  const [includePartialCompareYears, setIncludePartialCompareYears] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bp_overheads_include_partial_compare") === "1";
+  });
+  useEffect(() => {
+    localStorage.setItem("bp_overheads_include_partial_compare", includePartialCompareYears ? "1" : "0");
+  }, [includePartialCompareYears]);
 
   // Display mode: $k vs $
   const [displayMode, setDisplayMode] = useState<'k' | 'dollars'>(() => {
@@ -1226,25 +1237,36 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
     if (viewMode === "compareFy") {
       const fys = buildLastNFys(compareCount, currentFyStart);
-      // Compare-FYs is intended for apples-to-apples whole-FY comparison,
-      // so only show columns for FYs that have a full 12 calendar months.
-      // The in-progress current FY is filtered out (would otherwise render
-      // as a misleading short YTD column next to closed full FYs).
+      // Default: apples-to-apples whole-FY comparison only — drop the
+      // in-progress current FY and any FY that doesn't have 12 calendar
+      // months. When the user opts in via "Include partial years",
+      // current FY is shown clamped to FYTD and contributes a fractional
+      // weight to the Avg.
       const dataCols: ColSpec[] = fys
-        .filter(fy => fy.key !== `fy-${currentFyStart}` && fy.months.length === 12)
-        .map(fy => ({
-          key: fy.key,
-          shortLabel: fy.shortLabel,
-          width: 110, months: fy.months, variant: "data",
-        }));
-      // "Avg" = annualised mean across the displayed FYs (all are full years
-      // after the filter, so divisor is simply the count of FYs shown).
+        .filter(fy => {
+          if (fy.months.length !== 12) return false;
+          const isCurrent = fy.key === `fy-${currentFyStart}`;
+          return includePartialCompareYears ? true : !isCurrent;
+        })
+        .map(fy => {
+          const isCurrent = fy.key === `fy-${currentFyStart}`;
+          const months = isCurrent ? clampMonthsToToday(fy.months, today) : fy.months;
+          return {
+            key: fy.key,
+            shortLabel: fy.shortLabel,
+            subLabel: isCurrent ? "FYTD" : undefined,
+            width: 110, months, variant: "data" as const,
+          };
+        });
+      // "Avg" = annualised mean across the displayed FYs. Divide total months
+      // by 12 so a partial current FY contributes only its fractional weight
+      // (e.g. a 4-month FYTD adds 4/12 of a year, not a full year).
       const allMonths = dataCols.flatMap(c => c.months);
-      const fyCount = dataCols.length;
+      const fyEquivalent = allMonths.length / 12;
       dataCols.push({
-        key: "avg", shortLabel: "Avg", subLabel: `${fyCount}-FY`, miniLabel: "annualised",
+        key: "avg", shortLabel: "Avg", subLabel: `${dataCols.length}-FY`, miniLabel: "annualised",
         width: 100, months: allMonths, variant: "accent",
-        divisor: Math.max(fyCount, 1),
+        divisor: Math.max(fyEquivalent, 1),
       });
       dataCols.push({
         key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
@@ -1253,29 +1275,39 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       return dataCols;
     }
 
-    // compareCy — same whole-year filter as compareFy: drop the in-progress
-    // current calendar year so we only show full 12-month CYs.
+    // compareCy — same whole-year semantics as compareFy: by default only
+    // closed 12-month CYs are shown; the in-progress current CY appears
+    // (clamped to YTD) only when "Include partial years" is on.
     const cys = buildLastNCys(compareCount, cy);
     const dataCols: ColSpec[] = cys
-      .filter(c => c.key !== `cy-${cy}` && c.months.length === 12)
-      .map(c => ({
-        key: c.key,
-        shortLabel: c.shortLabel,
-        width: 110, months: c.months, variant: "data",
-      }));
+      .filter(c => {
+        if (c.months.length !== 12) return false;
+        const isCurrent = c.key === `cy-${cy}`;
+        return includePartialCompareYears ? true : !isCurrent;
+      })
+      .map(c => {
+        const isCurrent = c.key === `cy-${cy}`;
+        const months = isCurrent ? clampMonthsToToday(c.months, today) : c.months;
+        return {
+          key: c.key,
+          shortLabel: c.shortLabel,
+          subLabel: isCurrent ? "YTD" : undefined,
+          width: 110, months, variant: "data" as const,
+        };
+      });
     const allMonthsCy = dataCols.flatMap(c => c.months);
-    const cyCount = dataCols.length;
+    const cyEquivalent = allMonthsCy.length / 12;
     dataCols.push({
-      key: "avg", shortLabel: "Avg", subLabel: `${cyCount}-CY`, miniLabel: "annualised",
+      key: "avg", shortLabel: "Avg", subLabel: `${dataCols.length}-CY`, miniLabel: "annualised",
       width: 100, months: allMonthsCy, variant: "accent",
-      divisor: Math.max(cyCount, 1),
+      divisor: Math.max(cyEquivalent, 1),
     });
     dataCols.push({
       key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
       width: 90, months: [], variant: "accentPct",
     });
     return dataCols;
-  }, [viewMode, fyOffset, compareCount, trailingMonths]);
+  }, [viewMode, fyOffset, compareCount, trailingMonths, includePartialCompareYears]);
 
   // Quick lookup: union of every (year, month) appearing in any data column.
   // Used by hideZeroItems / hideZeroCats predicates so that filtering follows the active view.
@@ -1867,6 +1899,13 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                     <DropdownMenuRadioItem value="5" data-testid="compare-count-5">5 years</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="7" data-testid="compare-count-7">7 years</DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
+                  <DropdownMenuCheckboxItem
+                    checked={includePartialCompareYears}
+                    onCheckedChange={v => setIncludePartialCompareYears(!!v)}
+                    data-testid="toggle-include-partial-compare"
+                  >
+                    Include partial years
+                  </DropdownMenuCheckboxItem>
                 </>
               )}
               <DropdownMenuSeparator />
