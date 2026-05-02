@@ -50,6 +50,7 @@ import {
   X,
   Pencil,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   AlertTriangle,
   CheckCircle2,
@@ -218,6 +219,83 @@ function rollingPrev12(): Array<{ year: number; month: number }> {
     m--; if (m === 0) { m = 12; y--; }
   }
   return months;
+}
+
+// ─── Financial year helpers (AU: FY runs Jul→Jun) ─────────────────────────────
+// TODO: make FY_START_MONTH a per-company setting once multi-region is needed.
+const FY_START_MONTH = 7;
+
+function getFyStartYearForDate(year: number, month: number, fyStartMonth = FY_START_MONTH): number {
+  return month >= fyStartMonth ? year : year - 1;
+}
+
+function fyLabel(fyStartYear: number): string {
+  return `FY ${String(fyStartYear).slice(-2)}/${String(fyStartYear + 1).slice(-2)}`;
+}
+
+function buildFyMonths(fyStartYear: number, fyStartMonth = FY_START_MONTH): Array<{ year: number; month: number }> {
+  const result: Array<{ year: number; month: number }> = [];
+  for (let i = 0; i < 12; i++) {
+    let m = fyStartMonth + i;
+    let y = fyStartYear;
+    while (m > 12) { m -= 12; y++; }
+    result.push({ year: y, month: m });
+  }
+  return result;
+}
+
+function buildQuartersOfFy(fyStartYear: number, fyStartMonth = FY_START_MONTH): Array<{
+  key: string; shortLabel: string; subLabel: string; months: Array<{ year: number; month: number }>;
+}> {
+  const monthsArr = buildFyMonths(fyStartYear, fyStartMonth);
+  const quarters: Array<{ key: string; shortLabel: string; subLabel: string; months: Array<{ year: number; month: number }> }> = [];
+  for (let q = 0; q < 4; q++) {
+    const qMonths = monthsArr.slice(q * 3, q * 3 + 3);
+    const first = qMonths[0]; const last = qMonths[qMonths.length - 1];
+    quarters.push({
+      key: `q${q + 1}-${fyStartYear}`,
+      shortLabel: `Q${q + 1}`,
+      subLabel: `${MONTH_NAMES[first.month - 1]}–${MONTH_NAMES[last.month - 1]}`,
+      months: qMonths,
+    });
+  }
+  return quarters;
+}
+
+function buildLastNFys(n: number, currentFyStartYear: number, fyStartMonth = FY_START_MONTH): Array<{
+  key: string; shortLabel: string; months: Array<{ year: number; month: number }>;
+}> {
+  const result: Array<{ key: string; shortLabel: string; months: Array<{ year: number; month: number }> }> = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const fyStartYear = currentFyStartYear - i;
+    result.push({
+      key: `fy-${fyStartYear}`,
+      shortLabel: fyLabel(fyStartYear),
+      months: buildFyMonths(fyStartYear, fyStartMonth),
+    });
+  }
+  return result;
+}
+
+function buildLastNCys(n: number, currentYear: number): Array<{
+  key: string; shortLabel: string; months: Array<{ year: number; month: number }>;
+}> {
+  const result: Array<{ key: string; shortLabel: string; months: Array<{ year: number; month: number }> }> = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const y = currentYear - i;
+    const months: Array<{ year: number; month: number }> = [];
+    for (let m = 1; m <= 12; m++) months.push({ year: y, month: m });
+    result.push({ key: `cy-${y}`, shortLabel: String(y), months });
+  }
+  return result;
+}
+
+// Truncate months arrays so we never include data after "today" (month-1 cap).
+// Used for FY view (current FY months past today are blank), Quarterly (partial-quarter labels),
+// and Compare views (current FY/CY only counts elapsed months).
+function clampMonthsToToday(months: Array<{ year: number; month: number }>, today: Date): Array<{ year: number; month: number }> {
+  const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+  return months.filter(({ year, month }) => year < cy || (year === cy && month <= cm));
 }
 
 // ─── Shared editable cells ───────────────────────────────────────────────────
@@ -886,6 +964,21 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 // ─── Tab 2: Monthly Actuals (rolling 12-month) ────────────────────────────────
 
 type GroupBy = "xero" | "buildpro";
+type ViewMode = "12months" | "fy" | "quarterly" | "compareFy" | "compareCy";
+
+// One column in the grid (a month, a quarter, a financial/calendar year, or a summary).
+type ColVariant = "data" | "current" | "accent" | "accentPct";
+type ColSpec = {
+  key: string;
+  shortLabel: string;
+  subLabel?: string;
+  miniLabel?: string;
+  width: number;
+  months: Array<{ year: number; month: number }>;
+  variant: ColVariant;
+  showDot?: boolean;
+  divisor?: number; // for "Avg" accent in compare views
+};
 
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
@@ -899,6 +992,20 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   });
   useEffect(() => { localStorage.setItem("bp_overheads_group_by", groupBy); }, [groupBy]);
   const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
+
+  // View mode (12months / FY / Quarterly / Compare FYs / Compare CYs)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "12months";
+    const saved = localStorage.getItem("bp_overheads_view_mode");
+    const valid: ViewMode[] = ["12months", "fy", "quarterly", "compareFy", "compareCy"];
+    return (valid.includes(saved as ViewMode) ? (saved as ViewMode) : "12months");
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_view_mode", viewMode); }, [viewMode]);
+
+  // Period offset for FY / Quarterly views (0 = current FY, -1 = prior FY, etc.)
+  const [fyOffset, setFyOffset] = useState<number>(0);
+  // Number of periods to compare in compareFy / compareCy views (default 5).
+  const [compareCount, setCompareCount] = useState<number>(5);
 
   // Display mode: $k vs $
   const [displayMode, setDisplayMode] = useState<'k' | 'dollars'>(() => {
@@ -949,8 +1056,167 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() + 1 };
   }, []);
-  // Backwards-compat alias used by downstream useMemos in this component
+  // Backwards-compat alias used by Prev 12 Summary view & breakdown-name discovery
   const months = trailingMonths;
+
+  // Build the active grid columns for the current view mode + period offset.
+  // 12months view = 12 month cols + T12 + T12% + Current (existing layout).
+  // fy view       = 12 FY months (Jul→Jun) + FYTD + FYTD%.
+  // quarterly     = 4 quarter cols + FYTD + FYTD%.
+  // compareFy/Cy  = N FY/CY cols + Avg.
+  const dataColumns = useMemo<ColSpec[]>(() => {
+    const today = new Date();
+    const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+    const currentFyStart = getFyStartYearForDate(cy, cm);
+    const targetFyStart = currentFyStart + fyOffset;
+    const targetCy = cy + fyOffset;
+
+    if (viewMode === "12months") {
+      const cols: ColSpec[] = trailingMonths.map(({ year, month }) => ({
+        key: `m-${year}-${month}`,
+        shortLabel: MONTH_NAMES[month - 1],
+        subLabel: `'${String(year).slice(-2)}`,
+        width: 72,
+        months: [{ year, month }],
+        variant: "data",
+        showDot: true,
+      }));
+      cols.push({
+        key: "t12", shortLabel: "T12", subLabel: "Trailing", miniLabel: "12 months",
+        width: 90, months: [...trailingMonths], variant: "accent",
+      });
+      cols.push({
+        key: "t12pct", shortLabel: "T12 %", subLabel: "% of", miniLabel: "income",
+        width: 90, months: [], variant: "accentPct",
+      });
+      cols.push({
+        key: "current", shortLabel: MONTH_NAMES[cm - 1], subLabel: `'${String(cy).slice(-2)}`,
+        miniLabel: "In Progress",
+        width: 90, months: [{ year: cy, month: cm }], variant: "current",
+      });
+      return cols;
+    }
+
+    if (viewMode === "fy") {
+      const fyMonths = buildFyMonths(targetFyStart);
+      // Month is "current" when it matches today's year+month within this FY
+      const cols: ColSpec[] = fyMonths.map(({ year, month }) => {
+        const isCurrent = (year === cy && month === cm);
+        return {
+          key: `fy-${year}-${month}`,
+          shortLabel: MONTH_NAMES[month - 1],
+          subLabel: `'${String(year).slice(-2)}`,
+          width: 72,
+          months: [{ year, month }],
+          variant: isCurrent ? "current" : "data",
+          showDot: !isCurrent,
+        };
+      });
+      // FYTD: only include months up to today (so prior FYs sum the whole FY, current FY sums YTD).
+      const ytdMonths = clampMonthsToToday(fyMonths, today);
+      cols.push({
+        key: "fytd", shortLabel: "FYTD", subLabel: fyLabel(targetFyStart), miniLabel: undefined,
+        width: 90, months: ytdMonths, variant: "accent",
+      });
+      cols.push({
+        key: "fytdpct", shortLabel: "FYTD %", subLabel: "% of", miniLabel: "income",
+        width: 90, months: [], variant: "accentPct",
+      });
+      return cols;
+    }
+
+    if (viewMode === "quarterly") {
+      const quarters = buildQuartersOfFy(targetFyStart);
+      const cols: ColSpec[] = quarters.map(q => ({
+        key: q.key, shortLabel: q.shortLabel, subLabel: q.subLabel,
+        width: 110, months: q.months, variant: "data",
+      }));
+      const ytdMonths = clampMonthsToToday(quarters.flatMap(q => q.months), today);
+      cols.push({
+        key: "fytd", shortLabel: "FYTD", subLabel: fyLabel(targetFyStart),
+        width: 90, months: ytdMonths, variant: "accent",
+      });
+      cols.push({
+        key: "fytdpct", shortLabel: "FYTD %", subLabel: "% of", miniLabel: "income",
+        width: 90, months: [], variant: "accentPct",
+      });
+      return cols;
+    }
+
+    if (viewMode === "compareFy") {
+      const fys = buildLastNFys(compareCount, currentFyStart);
+      const dataCols: ColSpec[] = fys.map(fy => {
+        // Clamp current FY to elapsed months only (so we're comparing apples-to-apples-ish for YTD).
+        const isCurrent = fy.key === `fy-${currentFyStart}`;
+        const months = isCurrent ? clampMonthsToToday(fy.months, today) : fy.months;
+        return {
+          key: fy.key,
+          shortLabel: fy.shortLabel,
+          subLabel: isCurrent ? "FYTD" : undefined,
+          width: 110, months, variant: "data",
+        };
+      });
+      // "Avg" = annualised mean across the N FYs.
+      // Sum every month present in the comparison (current FY clamped to YTD) then
+      // divide by (totalMonths / 12) so a partial current FY contributes only its
+      // fractional weight — otherwise a 4-month YTD would dilute a 5-FY avg by 60%.
+      const allMonths = dataCols.flatMap(c => c.months);
+      dataCols.push({
+        key: "avg", shortLabel: "Avg", subLabel: `${compareCount}-FY`, miniLabel: "annualised",
+        width: 100, months: allMonths, variant: "accent",
+        divisor: allMonths.length / 12,
+      });
+      dataCols.push({
+        key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
+        width: 90, months: [], variant: "accentPct",
+      });
+      return dataCols;
+    }
+
+    // compareCy
+    const cys = buildLastNCys(compareCount, cy);
+    const dataCols: ColSpec[] = cys.map(c => {
+      const isCurrent = c.key === `cy-${cy}`;
+      const months = isCurrent ? clampMonthsToToday(c.months, today) : c.months;
+      return {
+        key: c.key,
+        shortLabel: c.shortLabel,
+        subLabel: isCurrent ? "YTD" : undefined,
+        width: 110, months, variant: "data",
+      };
+    });
+    const allMonthsCy = dataCols.flatMap(c => c.months);
+    dataCols.push({
+      key: "avg", shortLabel: "Avg", subLabel: `${compareCount}-CY`, miniLabel: "annualised",
+      width: 100, months: allMonthsCy, variant: "accent",
+      divisor: allMonthsCy.length / 12,
+    });
+    dataCols.push({
+      key: "avgpct", shortLabel: "Avg %", subLabel: "% of", miniLabel: "income",
+      width: 90, months: [], variant: "accentPct",
+    });
+    return dataCols;
+  }, [viewMode, fyOffset, compareCount, trailingMonths]);
+
+  // Quick lookup: union of every (year, month) appearing in any data column.
+  // Used by hideZeroItems / hideZeroCats predicates so that filtering follows the active view.
+  const monthsInView = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ year: number; month: number }> = [];
+    for (const col of dataColumns) {
+      if (col.variant === "accentPct") continue;
+      for (const ym of col.months) {
+        const k = `${ym.year}__${ym.month}`;
+        if (!seen.has(k)) { seen.add(k); out.push(ym); }
+      }
+    }
+    return out;
+  }, [dataColumns]);
+
+  // Whether period stepper is visible (FY / Quarterly only)
+  const showStepper = viewMode === "fy" || viewMode === "quarterly";
+  // Whether month-level confirmation dots / amber current-month make sense in the header
+  const isMonthLevel = viewMode === "12months" || viewMode === "fy";
   const actualMap = useMemo(() => buildActualMap(data.actuals), [data.actuals]);
   const driftMap = useMemo(() => buildDriftMap(data.actuals), [data.actuals]);
   const statusSet = useMemo(() => buildStatusSet(data.monthStatuses), [data.monthStatuses]);
@@ -1064,33 +1330,28 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   // ─── MonthlyActualsTab hooks (must come BEFORE the prev12 early-return to satisfy Rules of Hooks) ───
   const incomeBreakdownNames = useMemo(() => {
     const names = new Set<string>();
-    for (const { year, month } of months) {
+    for (const { year, month } of monthsInView) {
       const a = data.incomeActuals.find(x => x.year === year && x.month === month);
       if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
     }
-    const cur = data.incomeActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
-    if (cur?.breakdown) for (const k of Object.keys(cur.breakdown)) names.add(k);
     return Array.from(names).sort();
-  }, [months, currentCol, data.incomeActuals]);
+  }, [monthsInView, data.incomeActuals]);
 
   const dcBreakdownNames = useMemo(() => {
     const names = new Set<string>();
-    for (const { year, month } of months) {
+    for (const { year, month } of monthsInView) {
       const a = data.directCostActuals.find(x => x.year === year && x.month === month);
       if (a?.breakdown) for (const k of Object.keys(a.breakdown)) names.add(k);
     }
-    const cur = data.directCostActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
-    if (cur?.breakdown) for (const k of Object.keys(cur.breakdown)) names.add(k);
     return Array.from(names).sort();
-  }, [months, currentCol, data.directCostActuals]);
+  }, [monthsInView, data.directCostActuals]);
 
   const visibleGroups = useMemo(() => {
     if (!hideZeroCats) return groupedData;
     return groupedData.filter(g => g.items.some(item =>
-      months.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)
-      || (actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0) !== 0
+      monthsInView.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)
     ));
-  }, [groupedData, hideZeroCats, months, currentCol, actualMap]);
+  }, [groupedData, hideZeroCats, monthsInView, actualMap]);
 
   if (view === "prev12") {
     const totalIncome12 = rolling12.reduce((s, { year, month }) => s + (incomeMap.get(`${year}__${month}`) || 0), 0);
@@ -1292,21 +1553,23 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   // ─── Monthly Grid View ───────────────────────────────────────────────────────
 
-  // Per-month aggregates for the trailing 12-month window
-  const monthlyIncome = months.map(({ year, month }) => incomeMap.get(`${year}__${month}`) || 0);
-  const monthlyDC = months.map(({ year, month }) => directCostMap.get(`${year}__${month}`) || 0);
-  const monthlyOH = months.map(({ year, month }) => data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
+  // Per-month getters (work for any column type — single month, quarter, FY, CY).
+  const incomeForMonth = (y: number, m: number) => incomeMap.get(`${y}__${m}`) || 0;
+  const dcForMonth = (y: number, m: number) => directCostMap.get(`${y}__${m}`) || 0;
+  const ohForMonth = (y: number, m: number) =>
+    data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, y, m)) || 0), 0);
 
-  // Current-month aggregates (separate column)
-  const curKey = `${currentCol.year}__${currentCol.month}`;
-  const curIncome = incomeMap.get(curKey) || 0;
-  const curDC = directCostMap.get(curKey) || 0;
-  const curOH = data.items.reduce((s, i) => s + (actualMap.get(getKey(i.id, currentCol.year, currentCol.month)) || 0), 0);
-
-  // T12 totals
-  const t12Income = monthlyIncome.reduce((s, v) => s + v, 0);
-  const t12DC = monthlyDC.reduce((s, v) => s + v, 0);
-  const t12OH = monthlyOH.reduce((s, v) => s + v, 0);
+  // Pre-compute the income value for the "accent" column (T12 / FYTD / Avg).
+  // Used as the denominator for the right-hand accentPct column on every row.
+  const accentCol = dataColumns.find(c => c.variant === "accent");
+  const accentIncome = useMemo(() => {
+    if (!accentCol) return 0;
+    let sum = 0;
+    for (const { year, month } of accentCol.months) sum += incomeForMonth(year, month);
+    if (accentCol.divisor) sum /= accentCol.divisor;
+    return sum;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accentCol, incomeMap]);
 
   // (Note: incomeBreakdownNames, dcBreakdownNames, visibleGroups are now declared
   // above the prev12 early-return to satisfy React's Rules of Hooks.)
@@ -1345,22 +1608,36 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return `$${Math.abs(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 
-  // Render the 12 trailing month cells + T12 + T12% + current month for a row.
-  // colorOf can be a fixed string or function-of-value (used for sign-coloured rows like Net Profit).
+  // ─── Column-driven row renderer ──────────────────────────────────────────────
+  // Drives every section/row in the grid off `dataColumns`, so swapping view modes
+  // (12 months / FY / Quarterly / Compare FYs / Compare CYs) needs no per-row code.
   type RowColor = string | ((v: number) => string);
-  const renderCells = (
-    monthVals: number[],
-    t12Val: number,
-    curVal: number,
-    opts: {
-      color?: RowColor;
-      fontWeight?: number;
-      isPct?: boolean;
-      bg?: string; // row background — used for sticky inheritance and current-month column
-      // T12 % of income for this row. null = blank, undefined = auto (t12Val/t12Income).
-      t12Pct?: number | null;
-    } = {}
+  type RenderRowOpts = {
+    color?: RowColor;
+    fontWeight?: number;
+    isPct?: boolean;             // renders all data cells as % values
+    pctOverride?: number | null; // for accentPct column. null = blank, undefined = auto
+    // For per-cell colouring (e.g. drift detection on OH item rows)
+    colorAt?: (year: number, month: number, value: number) => string | undefined;
+  };
+
+  // Renders all cells for one row given a per-month value getter.
+  const renderRow = (
+    getVal: (year: number, month: number) => number,
+    opts: RenderRowOpts = {},
   ) => {
+    // Pre-compute the dollar/% value for every column.
+    const cellVals = dataColumns.map(col => {
+      if (col.variant === "accentPct") return null;
+      let sum = 0;
+      for (const { year, month } of col.months) sum += getVal(year, month);
+      if (col.divisor) sum /= col.divisor;
+      return sum;
+    });
+    // Find which column is the "accent" (for the % cell to reference).
+    const accentIdx = dataColumns.findIndex(c => c.variant === "accent");
+    const accentVal = accentIdx >= 0 ? (cellVals[accentIdx] ?? 0) : 0;
+
     const colorFor = (v: number) => {
       if (v === 0 && !opts.isPct) return C.textLight;
       if (typeof opts.color === 'function') return opts.color(v);
@@ -1371,45 +1648,105 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       return fmtCell(v, displayMode);
     };
     const fw = opts.fontWeight || 400;
-    const computedPct: number | null = opts.t12Pct === null
-      ? null
-      : opts.t12Pct !== undefined
-        ? opts.t12Pct
-        : (t12Income > 0 ? (t12Val / t12Income) * 100 : null);
-    const pctText = computedPct === null
-      ? '—'
-      : computedPct === 0
-        ? '—'
-        : `${computedPct.toFixed(1)}%`;
+
     return (
       <>
-        {monthVals.map((v, i) => (
-          <div key={i} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <span style={{ color: colorFor(v), fontSize: 12, fontWeight: fw, fontVariantNumeric: 'tabular-nums' }}>{fmt(v)}</span>
-          </div>
-        ))}
-        <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <span style={{ color: colorFor(t12Val), fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(t12Val)}</span>
-        </div>
-        <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <span style={{ color: C.textMid, fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{pctText}</span>
-        </div>
-        <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <span style={{ color: colorFor(curVal), fontSize: 12, fontWeight: fw, fontVariantNumeric: 'tabular-nums' }}>{fmt(curVal)}</span>
-        </div>
+        {dataColumns.map((col, i) => {
+          if (col.variant === "accentPct") {
+            let pct: number | null;
+            if (opts.pctOverride === null) pct = null;
+            else if (opts.pctOverride !== undefined) pct = opts.pctOverride;
+            else pct = accentIncome > 0 ? (accentVal / accentIncome) * 100 : null;
+            const pctText = pct === null || pct === 0 ? '—' : `${pct.toFixed(1)}%`;
+            return (
+              <div key={col.key} style={{ width: col.width, minWidth: col.width, paddingRight: 8, backgroundColor: C.purpleLight, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                <span style={{ color: C.textMid, fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{pctText}</span>
+              </div>
+            );
+          }
+          const v = cellVals[i] ?? 0;
+          // Per-cell colour override only applies to single-month columns (drift dot etc.)
+          let cellColor = colorFor(v);
+          if (col.months.length === 1 && opts.colorAt) {
+            const { year, month } = col.months[0];
+            const override = opts.colorAt(year, month, v);
+            if (override) cellColor = override;
+          }
+          // Background & border per variant
+          let bg: string | undefined;
+          let borderLeft: string | undefined;
+          let weight: number = fw;
+          if (col.variant === "accent") {
+            bg = C.purpleLight;
+            borderLeft = `4px solid ${C.purple}`;
+            weight = Math.max(fw, 600);
+          } else if (col.variant === "current") {
+            borderLeft = `1px solid ${C.border}`;
+          }
+          return (
+            <div key={col.key} style={{
+              width: col.width, minWidth: col.width, paddingRight: 8,
+              backgroundColor: bg, borderLeft,
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            }}>
+              <span style={{ color: cellColor, fontSize: 12, fontWeight: weight, fontVariantNumeric: 'tabular-nums' }}>{fmt(v)}</span>
+            </div>
+          );
+        })}
       </>
     );
   };
 
-  // Empty trailing/T12/T12%/current cells with row bg (legacy — unused after OH flattening; kept for safety).
-  const renderEmptyCells = () => (
-    <>
-      {months.map((_, i) => <div key={i} style={{ width: 72, minWidth: 72 }} />)}
-      <div style={{ width: 90, minWidth: 90, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}` }} />
-      <div style={{ width: 90, minWidth: 90, backgroundColor: C.purpleLight }} />
-      <div style={{ width: 90, minWidth: 90, borderLeft: `1px solid ${C.border}` }} />
-    </>
-  );
+  // Variant of renderRow for ratio rows like OH% — value per column is
+  // (sum of numerator over months) / (sum of denominator over months) * 100.
+  const renderRatioRow = (
+    getNum: (year: number, month: number) => number,
+    getDen: (year: number, month: number) => number,
+    opts: { color?: string; fontWeight?: number } = {},
+  ) => {
+    // Ratio rows compute (sumNum / sumDen) per column directly — averaging
+    // monthly ratios would be wrong because column aggregations span 1, 3, or 12 months.
+    const cellVals = dataColumns.map(col => {
+      if (col.variant === "accentPct") return null;
+      let num = 0, den = 0;
+      for (const { year, month } of col.months) { num += getNum(year, month); den += getDen(year, month); }
+      return den > 0 ? (num / den) * 100 : 0;
+    });
+    const accentIdx = dataColumns.findIndex(c => c.variant === "accent");
+    const accentPct = accentIdx >= 0 ? (cellVals[accentIdx] ?? 0) : 0;
+    const fw = opts.fontWeight || 400;
+    return (
+      <>
+        {dataColumns.map((col, i) => {
+          if (col.variant === "accentPct") {
+            // OH%-style rows leave the right-hand pct column blank (parent already shows the %).
+            return (
+              <div key={col.key} style={{ width: col.width, minWidth: col.width, backgroundColor: C.purpleLight }} />
+            );
+          }
+          const v = cellVals[i] ?? 0;
+          const text = v === 0 ? '—' : `${v.toFixed(0)}%`;
+          let bg: string | undefined;
+          let borderLeft: string | undefined;
+          let weight: number = fw;
+          if (col.variant === "accent") {
+            bg = C.purpleLight; borderLeft = `4px solid ${C.purple}`; weight = Math.max(fw, 600);
+          } else if (col.variant === "current") {
+            borderLeft = `1px solid ${C.border}`;
+          }
+          return (
+            <div key={col.key} style={{
+              width: col.width, minWidth: col.width, paddingRight: 8,
+              backgroundColor: bg, borderLeft,
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            }}>
+              <span style={{ color: opts.color || C.textMid, fontSize: 12, fontWeight: weight, fontVariantNumeric: 'tabular-nums' }}>{text}</span>
+            </div>
+          );
+        })}
+      </>
+    );
+  };
 
   // Helper: render the sticky label cell for a row
   const labelCell = (content: React.ReactNode, opts: { bg: string; fontWeight?: number; color?: string; pl?: number } = { bg: C.white }) => (
@@ -1423,9 +1760,23 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     </div>
   );
 
-  const totalCols = 12;
-  const gridMinWidth = 200 + totalCols * 72 + 90 + 90 + 90; // 1334 (label + 12 months + T12 + T12% + current)
+  // Grid width = sticky label (200) + sum of all dataColumns widths.
+  const gridMinWidth = 200 + dataColumns.reduce((s, c) => s + c.width, 0);
   const monthShortYr = (year: number) => `'${String(year).slice(-2)}`;
+
+  // Header sub-label for the sticky "Category" column reflects the active view.
+  const categorySubLabel = useMemo(() => {
+    const today = new Date();
+    const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+    const currentFyStart = getFyStartYearForDate(cy, cm);
+    const targetFyStart = currentFyStart + fyOffset;
+    const targetCy = cy + fyOffset;
+    if (viewMode === "12months") return "Trailing 12 months";
+    if (viewMode === "fy") return `${fyLabel(targetFyStart)} (Jul–Jun)`;
+    if (viewMode === "quarterly") return `${fyLabel(targetFyStart)} quarters`;
+    if (viewMode === "compareFy") return `Last ${compareCount} financial years`;
+    return `Last ${compareCount} calendar years`;
+  }, [viewMode, fyOffset, compareCount]);
 
   // Track row index for zebra striping (excluding section headers)
   let rowIdx = 0;
@@ -1436,72 +1787,159 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     <div className="flex flex-col gap-4">
       {/* ─── Toolbar ───────────────────────────────────────────────────────── */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', flexDirection: 'column', gap: 8,
         padding: '10px 16px', backgroundColor: C.white,
-        borderBottom: `1px solid ${C.border}`, borderRadius: 4, gap: 12, flexWrap: 'wrap',
+        borderBottom: `1px solid ${C.border}`, borderRadius: 4,
       }}>
-        {/* Left: consolidated view pill (Xero | BuildPro) */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {(['xero', 'buildpro'] as const).map(opt => {
-            const labels = { xero: 'Xero', buildpro: 'BuildPro' };
-            const active = groupBy === opt;
-            return (
-              <button
-                key={opt}
-                onClick={() => setGroupBy(opt)}
-                data-testid={`pill-groupby-${opt}`}
-                style={{
-                  padding: '4px 14px', borderRadius: 14, border: 'none', cursor: 'pointer',
-                  fontSize: 12, fontWeight: active ? 600 : 500,
-                  backgroundColor: active ? C.purple : '#F0EEF8',
-                  color: active ? '#FFFFFF' : C.textMid,
-                  transition: 'background-color 120ms ease',
-                }}
-              >
-                {labels[opt]}
-              </button>
-            );
-          })}
+        {/* Row 1: data source pill + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          {/* Left: consolidated view pill (Xero | BuildPro) */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['xero', 'buildpro'] as const).map(opt => {
+              const labels = { xero: 'Xero', buildpro: 'BuildPro' };
+              const active = groupBy === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setGroupBy(opt)}
+                  data-testid={`pill-groupby-${opt}`}
+                  style={{
+                    padding: '4px 14px', borderRadius: 14, border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: active ? 600 : 500,
+                    backgroundColor: active ? C.purple : '#F0EEF8',
+                    color: active ? '#FFFFFF' : C.textMid,
+                    transition: 'background-color 120ms ease',
+                  }}
+                >
+                  {labels[opt]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right: actions + kebab (display mode + visibility toggles) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12">
+              <Activity className="w-3.5 h-3.5 mr-1" />
+              Prev 12 Summary
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero">
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
+              {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" data-testid="button-overheads-menu">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Display amounts as</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={displayMode} onValueChange={v => setDisplayMode(v as 'k' | 'dollars')}>
+                  <DropdownMenuRadioItem value="k" data-testid="display-mode-k">Thousands ($k)</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dollars" data-testid="display-mode-dollars">Full dollars ($)</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                {(viewMode === "compareFy" || viewMode === "compareCy") && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Compare last</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={String(compareCount)} onValueChange={v => setCompareCount(parseInt(v, 10))}>
+                      <DropdownMenuRadioItem value="3" data-testid="compare-count-3">3 years</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="5" data-testid="compare-count-5">5 years</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="7" data-testid="compare-count-7">7 years</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
+                  Hide categories with no entries
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
+                  Hide rows with no entries
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        {/* Right: actions + kebab (display mode + visibility toggles) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12">
-            <Activity className="w-3.5 h-3.5 mr-1" />
-            Prev 12 Summary
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => syncActualsMut.mutate()} disabled={syncActualsMut.isPending} data-testid="button-sync-xero">
-            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncActualsMut.isPending ? "animate-spin" : ""}`} />
-            {syncActualsMut.isPending ? "Syncing…" : "Sync from Xero"}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" data-testid="button-overheads-menu">
-                <MoreVertical className="w-4 h-4" />
+        {/* Row 2: view-mode picker + period stepper */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          {/* View picker pill */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {([
+              { key: "12months", label: "12 Months" },
+              { key: "fy", label: "Financial Year" },
+              { key: "quarterly", label: "Quarterly" },
+              { key: "compareFy", label: "Compare FYs" },
+              { key: "compareCy", label: "Compare CYs" },
+            ] as const).map(opt => {
+              const active = viewMode === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => { setViewMode(opt.key); if (opt.key !== "fy" && opt.key !== "quarterly") setFyOffset(0); }}
+                  data-testid={`pill-viewmode-${opt.key}`}
+                  aria-pressed={active}
+                  aria-label={`View mode: ${opt.label}`}
+                  style={{
+                    padding: '4px 12px', borderRadius: 14, border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: active ? 600 : 500,
+                    backgroundColor: active ? C.purple : '#F0EEF8',
+                    color: active ? '#FFFFFF' : C.textMid,
+                    transition: 'background-color 120ms ease',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Period stepper (FY + Quarterly only) */}
+          {showStepper && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setFyOffset(o => o - 1)}
+                data-testid="button-period-prev"
+                aria-label="Previous period"
+              >
+                <ChevronLeft className="w-4 h-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Display amounts as</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={displayMode} onValueChange={v => setDisplayMode(v as 'k' | 'dollars')}>
-                <DropdownMenuRadioItem value="k" data-testid="display-mode-k">Thousands ($k)</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="dollars" data-testid="display-mode-dollars">Full dollars ($)</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
-                Hide categories with no entries
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
-                Hide rows with no entries
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <span
+                style={{
+                  fontSize: 12, fontWeight: 600, color: C.text,
+                  minWidth: 80, textAlign: 'center', fontVariantNumeric: 'tabular-nums',
+                }}
+                data-testid="text-period-label"
+              >
+                {(() => {
+                  const today = new Date();
+                  const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+                  const currentFyStart = getFyStartYearForDate(cy, cm);
+                  return fyLabel(currentFyStart + fyOffset);
+                })()}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setFyOffset(o => o + 1)}
+                disabled={fyOffset >= 0}
+                data-testid="button-period-next"
+                aria-label="Next period"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* ─── Grid container ────────────────────────────────────────────────── */}
       <div style={{ overflowX: 'auto', backgroundColor: C.white, borderRadius: 4, border: `1px solid ${C.border}` }}>
         <div style={{ minWidth: gridMinWidth }}>
-          {/* Sticky header row */}
+          {/* Sticky header row — driven by dataColumns so it adapts per view */}
           <div style={{
             position: 'sticky', top: 0, zIndex: 10,
             backgroundColor: C.white, borderBottom: `1px solid ${C.border}`,
@@ -1514,80 +1952,76 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
               }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: C.textLight, textTransform: 'uppercase', letterSpacing: 0.4 }}>Category</span>
-                <span style={{ fontSize: 10, color: C.textLight, marginTop: 2 }}>Trailing 12 months</span>
+                <span style={{ fontSize: 10, color: C.textLight, marginTop: 2 }}>{categorySubLabel}</span>
               </div>
 
-              {/* 12 trailing months */}
-              {trailingMonths.map(({ year, month }) => {
-                const k = `${year}__${month}`;
-                const isConfirmed = statusSet.has(k);
-                const hasData = monthsWithActuals.has(k);
-                const hasDrift = monthsWithDrift.has(k);
-                const dotColor = hasDrift ? C.dotCoral : isConfirmed ? C.dotGreen : C.dotGray;
-                const dotTooltip = hasDrift
-                  ? "Xero figures changed since confirmed — re-confirm to accept"
-                  : isConfirmed ? "Confirmed — click to unconfirm"
-                  : hasData ? "Actuals entered but not yet confirmed — click to confirm"
-                  : "No actuals entered — click to confirm";
+              {dataColumns.map(col => {
+                if (col.variant === "data" || col.variant === "current") {
+                  // Single-month columns get a confirmation dot when isMonthLevel.
+                  const isSingleMonth = col.months.length === 1;
+                  const ym = isSingleMonth ? col.months[0] : null;
+                  const k = ym ? `${ym.year}__${ym.month}` : "";
+                  const isConfirmed = ym ? statusSet.has(k) : false;
+                  const hasData = ym ? monthsWithActuals.has(k) : false;
+                  const hasDrift = ym ? monthsWithDrift.has(k) : false;
+                  const showDot = isMonthLevel && isSingleMonth && !!col.showDot;
+                  const dotColor = hasDrift ? C.dotCoral : isConfirmed ? C.dotGreen : C.dotGray;
+                  const dotTooltip = hasDrift
+                    ? "Xero figures changed since confirmed — re-confirm to accept"
+                    : isConfirmed ? "Confirmed — click to unconfirm"
+                    : hasData ? "Actuals entered but not yet confirmed — click to confirm"
+                    : "No actuals entered — click to confirm";
+                  const isCurrent = col.variant === "current";
+                  return (
+                    <div key={col.key} style={{
+                      width: col.width, minWidth: col.width,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8,
+                      borderLeft: isCurrent ? `1px solid ${C.border}` : undefined,
+                      position: isCurrent ? 'relative' : undefined,
+                    }}>
+                      {isCurrent && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />}
+                      <span style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: isCurrent ? 12 : 0 }}>{col.shortLabel}</span>
+                      {col.subLabel && <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{col.subLabel}</span>}
+                      {col.miniLabel && <span style={{ fontSize: 9, fontWeight: 500, color: C.amber, marginTop: 4 }}>{col.miniLabel}</span>}
+                      {showDot && ym && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => toggleMonthMut.mutate({ year: ym.year, month: ym.month, confirmed: !isConfirmed })}
+                                data-testid={`button-confirm-${ym.year}-${ym.month}`}
+                                style={{
+                                  width: 8, height: 8, borderRadius: '50%',
+                                  backgroundColor: dotColor, marginTop: 6, cursor: 'pointer',
+                                  border: 'none', padding: 0,
+                                }}
+                                aria-label={dotTooltip}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-xs">{dotTooltip}</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
+                  );
+                }
+                // Accent + accentPct columns (T12 / FYTD / Avg / pct cells)
+                const isAccent = col.variant === "accent";
+                const isAccentPct = col.variant === "accentPct";
                 return (
-                  <div key={k} style={{ width: 72, minWidth: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{MONTH_NAMES[month - 1]}</span>
-                    <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{monthShortYr(year)}</span>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => toggleMonthMut.mutate({ year, month, confirmed: !isConfirmed })}
-                            data-testid={`button-confirm-${year}-${month}`}
-                            style={{
-                              width: 8, height: 8, borderRadius: '50%',
-                              backgroundColor: dotColor, marginTop: 6, cursor: 'pointer',
-                              border: 'none', padding: 0,
-                            }}
-                            aria-label={dotTooltip}
-                          />
-                        </TooltipTrigger>
-                        <TooltipContent><p className="text-xs">{dotTooltip}</p></TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                  <div key={col.key} style={{
+                    width: col.width, minWidth: col.width,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 8,
+                    backgroundColor: C.purpleLight,
+                    borderLeft: isAccent ? `4px solid ${C.purple}` : undefined,
+                  }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>{col.shortLabel}</span>
+                    {col.subLabel && <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>{col.subLabel}</span>}
+                    {col.miniLabel && <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>{col.miniLabel}</span>}
                   </div>
                 );
               })}
-
-              {/* T12 header */}
-              <div style={{
-                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', paddingBottom: 8,
-                backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>T12</span>
-                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>Trailing</span>
-                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>12 months</span>
-              </div>
-
-              {/* T12 % header */}
-              <div style={{
-                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', paddingBottom: 8,
-                backgroundColor: C.purpleLight,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>T12 %</span>
-                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>% of</span>
-                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>income</span>
-              </div>
-
-              {/* Current month header w/ amber stripe */}
-              <div style={{
-                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', paddingBottom: 8,
-                borderLeft: `1px solid ${C.border}`, position: 'relative',
-              }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: C.amber }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 12 }}>{MONTH_NAMES[currentCol.month - 1]}</span>
-                <span style={{ fontSize: 10, color: C.textLight, marginTop: 1 }}>{monthShortYr(currentCol.year)}</span>
-                <span style={{ fontSize: 9, fontWeight: 500, color: C.amber, marginTop: 4 }}>In Progress</span>
-              </div>
             </div>
           </div>
 
@@ -1609,27 +2043,24 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple }
                 )}
-                {renderCells(monthlyIncome, t12Income, curIncome, { color: C.greenNum, fontWeight: 600, t12Pct: t12Income > 0 ? 100 : null })}
+                {renderRow(incomeForMonth, { color: C.greenNum, fontWeight: 600, pctOverride: accentIncome > 0 ? 100 : null })}
               </div>
             );
           })()}
 
           {openIncome && incomeBreakdownNames.map(name => {
             const bg = nextZebra();
-            const monthVals = months.map(({ year, month }) => {
+            const getVal = (year: number, month: number) => {
               const a = data.incomeActuals.find(x => x.year === year && x.month === month);
               return a?.breakdown?.[name] || 0;
-            });
-            const t12 = monthVals.reduce((s, v) => s + v, 0);
-            const curA = data.incomeActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
-            const cur = curA?.breakdown?.[name] || 0;
+            };
             return (
               <div key={`inc-${name}`} style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
                 {labelCell(
                   <span style={{ paddingLeft: 16, color: C.textMid, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>,
                   { bg, fontWeight: 400 }
                 )}
-                {renderCells(monthVals, t12, cur, { color: C.greenNum })}
+                {renderRow(getVal, { color: C.greenNum })}
               </div>
             );
           })}
@@ -1652,27 +2083,24 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple }
                 )}
-                {renderCells(monthlyDC, t12DC, curDC, { color: C.redNum, fontWeight: 600 })}
+                {renderRow(dcForMonth, { color: C.redNum, fontWeight: 600 })}
               </div>
             );
           })()}
 
           {openDC && dcBreakdownNames.map(name => {
             const bg = nextZebra();
-            const monthVals = months.map(({ year, month }) => {
+            const getVal = (year: number, month: number) => {
               const a = data.directCostActuals.find(x => x.year === year && x.month === month);
               return a?.breakdown?.[name] || 0;
-            });
-            const t12 = monthVals.reduce((s, v) => s + v, 0);
-            const curA = data.directCostActuals.find(x => x.year === currentCol.year && x.month === currentCol.month);
-            const cur = curA?.breakdown?.[name] || 0;
+            };
             return (
               <div key={`dc-${name}`} style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
                 {labelCell(
                   <span style={{ paddingLeft: 16, color: C.textMid, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>,
                   { bg, fontWeight: 400 }
                 )}
-                {renderCells(monthVals, t12, cur, { color: C.redNum })}
+                {renderRow(getVal, { color: C.redNum })}
               </div>
             );
           })}
@@ -1680,13 +2108,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {/* ─── Gross Profit row ─────────────────────────────────────────── */}
           {(() => {
             const bg = C.greenTint;
-            const gpVals = monthlyIncome.map((v, i) => v - monthlyDC[i]);
-            const t12GP = t12Income - t12DC;
-            const curGP = curIncome - curDC;
+            const getGP = (y: number, m: number) => incomeForMonth(y, m) - dcForMonth(y, m);
             return (
               <div style={{ display: 'flex', backgroundColor: bg, minHeight: 32, borderBottom: `1px solid ${C.border}80` }}>
                 {labelCell(<span>Gross Profit</span>, { bg, fontWeight: 600, color: C.text })}
-                {renderCells(gpVals, t12GP, curGP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 600 })}
+                {renderRow(getGP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 600 })}
               </div>
             );
           })()}
@@ -1708,7 +2134,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple }
                 )}
-                {renderCells(monthlyOH, t12OH, curOH, { color: C.redNum, fontWeight: 600 })}
+                {renderRow(ohForMonth, { color: C.redNum, fontWeight: 600 })}
               </div>
             );
           })()}
@@ -1717,68 +2143,36 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {openOH && (() => {
             const allItems = visibleGroups.flatMap(g => g.items);
             const filteredItems = hideZeroItems
-              ? allItems.filter(item => {
-                  const t12V = months.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
-                  const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
-                  return t12V !== 0 || curV !== 0;
-                })
+              ? allItems.filter(item =>
+                  monthsInView.some(({ year, month }) => (actualMap.get(getKey(item.id, year, month)) || 0) !== 0)
+                )
               : allItems;
             return filteredItems.map(item => {
               const bg = nextZebra();
               const itemBudgetMonthly = toMonthlyCents(item);
-              const monthVals = months.map(({ year, month }) => actualMap.get(getKey(item.id, year, month)) || 0);
-              const t12V = monthVals.reduce((s, v) => s + v, 0);
-              const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
-              const t12PctVal = t12Income > 0 ? (t12V / t12Income) * 100 : null;
-              // per-cell color: drift → coral, else default red expense color
-              const colorOf = (v: number, year?: number, month?: number) => {
-                if (v === 0) return C.textLight;
-                if (year !== undefined && month !== undefined && driftMap.has(getKey(item.id, year, month))) return C.coral;
-                if (itemBudgetMonthly > 0 && v > itemBudgetMonthly * 1.1) return C.redNum;
-                return C.redNum;
+              const getVal = (year: number, month: number) => actualMap.get(getKey(item.id, year, month)) || 0;
+              // Per-cell colour override only fires for single-month columns
+              // (drift indicator only applies to monthly granularity).
+              const colorAt = (year: number, month: number, v: number): string | undefined => {
+                if (v === 0) return undefined;
+                if (driftMap.has(getKey(item.id, year, month))) return C.coral;
+                return undefined;
               };
-              const pctText = t12PctVal === null
-                ? '—'
-                : t12PctVal === 0
-                  ? '—'
-                  : `${t12PctVal.toFixed(1)}%`;
               return (
                 <div key={item.id} style={{ display: 'flex', backgroundColor: bg, minHeight: 30, borderBottom: `1px solid ${C.border}80` }}>
                   {labelCell(
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>,
                     { bg, fontWeight: 400, pl: 16 }
                   )}
-                  {months.map(({ year, month }, i) => {
-                    const v = monthVals[i];
-                    return (
-                      <div key={`${year}-${month}`} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        <span style={{ color: colorOf(v, year, month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(v, displayMode)}</span>
-                      </div>
-                    );
-                  })}
-                  {/* T12 */}
-                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                    <span style={{ color: t12V === 0 ? C.textLight : C.redNum, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(t12V, displayMode)}</span>
-                  </div>
-                  {/* T12 % */}
-                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                    <span style={{ color: C.textMid, fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{pctText}</span>
-                  </div>
-                  {/* Current */}
-                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                    <span style={{ color: colorOf(curV, currentCol.year, currentCol.month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(curV, displayMode)}</span>
-                  </div>
+                  {renderRow(getVal, { color: C.redNum, colorAt })}
                 </div>
               );
             });
           })()}
 
-          {/* OH% row */}
+          {/* OH% row — ratios per column */}
           {(() => {
             const bg = C.zebraRow;
-            const pctVals = months.map((_, i) => monthlyIncome[i] > 0 ? (monthlyOH[i] / monthlyIncome[i]) * 100 : 0);
-            const t12Pct = t12Income > 0 ? (t12OH / t12Income) * 100 : 0;
-            const curPct = curIncome > 0 ? (curOH / curIncome) * 100 : 0;
             return (
               <div style={{ display: 'flex', backgroundColor: bg, minHeight: 26, borderBottom: `1px solid ${C.border}80` }}>
                 {labelCell(
@@ -1787,7 +2181,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </span>,
                   { bg, fontWeight: 400, color: C.textMid }
                 )}
-                {renderCells(pctVals, t12Pct, curPct, { color: C.textMid, isPct: true, t12Pct: null })}
+                {renderRatioRow(ohForMonth, incomeForMonth, { color: C.textMid })}
               </div>
             );
           })()}
@@ -1795,9 +2189,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           {/* Net Profit row */}
           {(() => {
             const bg = C.white;
-            const npVals = monthlyIncome.map((v, i) => v - monthlyDC[i] - monthlyOH[i]);
-            const t12NP = t12Income - t12DC - t12OH;
-            const curNP = curIncome - curDC - curOH;
+            const getNP = (y: number, m: number) => incomeForMonth(y, m) - dcForMonth(y, m) - ohForMonth(y, m);
             return (
               <div style={{ display: 'flex', backgroundColor: bg, minHeight: 38, borderTop: `2px solid ${C.border}`, position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: C.purple, zIndex: 3 }} />
@@ -1808,7 +2200,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple, pl: 20 }
                 )}
-                {renderCells(npVals, t12NP, curNP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 700 })}
+                {renderRow(getNP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 700 })}
               </div>
             );
           })()}
