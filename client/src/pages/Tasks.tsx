@@ -1112,16 +1112,6 @@ export default function Tasks() {
             <div className="h-9 flex items-center justify-between px-3 gap-2">
               {/* LEFT */}
               <div className="flex items-center gap-1 min-w-0">
-                {/* Project name prefix when global toolbar is hidden */}
-                {!toolbarVisible && params.projectId && currentProject && (
-                  <span
-                    className="text-xs text-muted-foreground truncate mr-1 hidden sm:inline"
-                    data-testid="text-page-context"
-                  >
-                    {currentProject.name}
-                  </span>
-                )}
-
                 {/* View segmented control - icon only */}
                 <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
                   {(["list", "kanban", "calendar"] as const).map((view) => {
@@ -1569,11 +1559,11 @@ export default function Tasks() {
                   <Popover>
                     <PopoverTrigger asChild>
                       <button
-                        className="h-6 px-2 text-xs flex items-center gap-1 rounded-md border border-border/50 hover-elevate active-elevate-2"
+                        className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                         data-testid="button-display-popover"
+                        aria-label="Display"
                       >
                         <SlidersHorizontal className="h-3 w-3" />
-                        <span>Display</span>
                       </button>
                     </PopoverTrigger>
                     <PopoverContent align="end" className="w-64 p-3 space-y-3">

@@ -484,16 +484,6 @@ export default function RFIs() {
       {/* Toolbar — single h-9 row inside rounded card */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
         <div className="h-9 flex items-center px-3 gap-2">
-          {/* Fallback context prefix — only shown when global app bar is hidden */}
-          {!toolbarVisible && (
-            <span
-              className="text-xs text-muted-foreground font-medium pr-2 mr-1 border-r border-border/50 truncate max-w-[160px] flex-shrink-0"
-              data-testid="text-toolbar-context"
-            >
-              {currentProject ? currentProject.name : "RFIs"}
-            </span>
-          )}
-
           {/* Status tabs — left, scrollable when narrow */}
           <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
             {statusTabs.map((status) => {
@@ -530,42 +520,52 @@ export default function RFIs() {
             })}
           </div>
 
-          {/* Icon-expand search */}
-          <div ref={searchContainerRef} className="flex items-center flex-shrink-0">
-            <Input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setSearchQuery("");
-                  setSearchOpen(false);
-                }
-              }}
-              placeholder="Search RFIs..."
-              aria-hidden={!searchOpen}
-              tabIndex={searchOpen ? 0 : -1}
-              className={cn(
-                "h-6 text-xs transition-all duration-200 ease-in-out",
-                searchOpen
-                  ? "w-48 mr-1 px-2 opacity-100 border"
-                  : "w-0 mr-0 px-0 opacity-0 border-0 pointer-events-none"
-              )}
-              data-testid="input-search-rfis"
-            />
+          {/* Right side: Create RFI, Search, Columns, Options */}
+          <div className="flex items-center gap-1 flex-shrink-0">
             <button
               type="button"
-              onClick={() => setSearchOpen((o) => !o)}
-              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
-              data-testid="button-search-toggle"
-              aria-label="Search RFIs"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setLocation(getNavigationPath("/rfis/new"))}
+              data-testid="button-create-rfi"
             >
-              <Search className="h-3 w-3" />
+              <Plus className="w-3 h-3" />
+              <span>Create RFI</span>
             </button>
-          </div>
 
-          {/* Right side: Columns, Create RFI, Options */}
-          <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Icon-expand search (input expands leftward) */}
+            <div ref={searchContainerRef} className="flex items-center flex-shrink-0">
+              <Input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setSearchQuery("");
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="Search RFIs..."
+                aria-hidden={!searchOpen}
+                tabIndex={searchOpen ? 0 : -1}
+                className={cn(
+                  "h-6 text-xs transition-all duration-200 ease-in-out",
+                  searchOpen
+                    ? "w-48 mr-1 px-2 opacity-100 border"
+                    : "w-0 mr-0 px-0 opacity-0 border-0 pointer-events-none"
+                )}
+                data-testid="input-search-rfis"
+              />
+              <button
+                type="button"
+                onClick={() => setSearchOpen((o) => !o)}
+                className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                data-testid="button-search-toggle"
+                aria-label="Search RFIs"
+              >
+                <Search className="h-3 w-3" />
+              </button>
+            </div>
+
             <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -581,16 +581,6 @@ export default function RFIs() {
                 <DataTableColumnPicker storageKey="rfis" columns={pickerColumns} />
               </PopoverContent>
             </Popover>
-
-            <button
-              type="button"
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => setLocation(getNavigationPath("/rfis/new"))}
-              data-testid="button-create-rfi"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Create RFI</span>
-            </button>
 
             <DropdownMenu open={optionsOpen} onOpenChange={setOptionsOpen}>
               <DropdownMenuTrigger asChild>
