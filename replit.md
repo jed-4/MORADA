@@ -137,6 +137,25 @@ Preferred communication style: Simple, everyday language.
 - **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
 - **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
 
+## Production database
+
+The app uses a single Neon PostgreSQL instance accessed via the `DATABASE_URL` env var. The production deployment **must point at the same Neon database / branch as the dev workspace** — there is no separate "prod DB" by design. If a deployment-scoped secret silently overrides `DATABASE_URL` to a fresh / empty branch, every republish will look like "half the data disappeared" because writes made through the live URL will land in the wrong DB.
+
+**Confirming which DB the app is using.** On startup, `server/db.ts` logs:
+
+```
+[DB] connected — host=<neon-host> db=<db-name> env=<NODE_ENV>
+```
+
+This line appears in both the dev workflow logs and the deployment logs. Compare the two — `host` and `db` must match. If they differ after a publish, the deployment has its own `DATABASE_URL` secret that needs to be removed (so it inherits the workspace one) or repointed at the canonical Neon endpoint.
+
+**What is NOT a cause** (verified during the #225 audit):
+- `dbStorage.initialize()` is fully idempotent — every `ensure*` helper is upsert-by-key and `backfillScheduleIsOnline` only flips already-`online`/`locked` rows. Nothing is dropped or re-seeded on startup.
+- `seedLennyDemo` is gated by an `isDemoSeeded` sentinel project and is only reachable via an explicit POST route — it does not run on boot.
+- The deploy build (`vite build && esbuild …` in `package.json`) does **not** include `drizzle-kit push`, so the production schema is not re-pushed on every release.
+
+**Rule for future agents:** never add a destructive query (`DELETE`, `TRUNCATE`, `DROP`, schema-narrowing column rename) inside any module imported from `server/index.ts`, and never add `db:push` or `drizzle-kit` calls to the deploy build. Use additive migrations only.
+
 ## Shared Pro DataTable
 All list/table pages render through the shared `<DataTable>` (`client/src/components/data-table/DataTable.tsx`), built on TanStack Table + @dnd-kit. Features: column resize, drag-to-reorder, sort, show/hide via `<DataTableColumnPicker>`, sticky first column.
 

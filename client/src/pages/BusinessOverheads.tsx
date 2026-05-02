@@ -35,6 +35,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -346,7 +356,7 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSyn
         <DialogHeader><DialogTitle>{title || "Add Overhead Item"}</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground">Item Name{xeroSynced && <span className="ml-1 text-data text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Label className="text-xs text-muted-foreground">Item Name{xeroSynced && <span className="ml-1 text-data text-[#00B9D7] dark:text-[#5FD9F0]">(managed by Xero)</span>}</Label>
             <Input autoFocus={!xeroSynced} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Office Rent" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div>
@@ -373,7 +383,7 @@ function ItemDialog({ open, onClose, onSave, categories, initial, title, xeroSyn
             <Input type="number" value={form.budgetCents} onChange={e => setForm(f => ({ ...f, budgetCents: e.target.value }))} placeholder="0" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground">Xero Account Code{xeroSynced && <span className="ml-1 text-data text-[#00B9D7]">(managed by Xero)</span>}</Label>
+            <Label className="text-xs text-muted-foreground">Xero Account Code{xeroSynced && <span className="ml-1 text-data text-[#00B9D7] dark:text-[#5FD9F0]">(managed by Xero)</span>}</Label>
             <Input value={form.xeroAccountCode} onChange={e => setForm(f => ({ ...f, xeroAccountCode: e.target.value }))} placeholder="e.g. 420" className="mt-1" readOnly={xeroSynced} disabled={xeroSynced} />
           </div>
           <div className="col-span-2">
@@ -555,7 +565,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
               </button>
             )}
             {item.xeroSynced && (
-              <span className="text-label font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] shrink-0 leading-none">Xero</span>
+              <span className="text-label font-medium px-1 py-0.5 rounded bg-[#00B9D7]/10 text-[#00B9D7] dark:bg-[#5FD9F0]/15 dark:text-[#5FD9F0] shrink-0 leading-none">Xero</span>
             )}
           </div>
         );
@@ -662,7 +672,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
             {item.xeroAccountType ? (
               <Badge className={`text-data no-default-active-elevate ${
                 item.xeroAccountType === "DIRECTCOSTS" ? "bg-status-warning-bg text-status-warning dark:text-orange-400" :
-                item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7]" :
+                item.xeroAccountType === "OVERHEADS" ? "bg-[#00B9D7]/10 text-[#00B9D7] dark:bg-[#5FD9F0]/15 dark:text-[#5FD9F0]" :
                 "bg-muted text-muted-foreground"
               }`}>{XERO_TYPE_LABELS[item.xeroAccountType] ?? item.xeroAccountType}</Badge>
             ) : <span className="text-muted-foreground/30 text-xs">—</span>}
@@ -844,7 +854,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
                             className="h-6 w-6"
                             onClick={() => editingCatName.trim() && updateCatMut.mutate({ id: cat.id, name: editingCatName.trim() })}
                           >
-                            <Check className="w-3 h-3 text-green-500" />
+                            <Check className="w-3 h-3 text-status-success dark:text-green-400" />
                           </Button>
                           <Button
                             size="icon"
@@ -962,7 +972,7 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 // ─── Tab 2: Monthly Actuals (rolling 12-month) ────────────────────────────────
 
 type GroupBy = "xero" | "buildpro";
-type ViewMode = "12months" | "fy" | "quarterly" | "compareFy" | "compareCy";
+type ViewMode = "12months" | "fy" | "quarterly" | "compareFy" | "compareCy" | "rollingT12";
 
 // One column in the grid (a month, a quarter, a financial/calendar year, or a summary).
 type ColVariant = "data" | "current" | "accent" | "accentPct";
@@ -976,7 +986,27 @@ type ColSpec = {
   variant: ColVariant;
   showDot?: boolean;
   divisor?: number; // for "Avg" accent in compare views
+  // When true, accent cells render two stacked numbers ($ on top,
+  // % of trailing income on bottom). Used by the rolling-T12 view
+  // where every column is a 12-month window with its own % anchor.
+  stackedPct?: boolean;
 };
+
+// Subscribe to .dark class on <html> so palettes that need higher
+// alpha in dark mode can re-render when the user toggles theme.
+function useIsDark(): boolean {
+  const [isDark, setIsDark] = useState<boolean>(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return isDark;
+}
 
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
@@ -994,7 +1024,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "12months";
     const saved = localStorage.getItem("bp_overheads_view_mode");
-    const valid: ViewMode[] = ["12months", "fy", "quarterly", "compareFy", "compareCy"];
+    const valid: ViewMode[] = ["12months", "fy", "quarterly", "compareFy", "compareCy", "rollingT12"];
     return (valid.includes(saved as ViewMode) ? (saved as ViewMode) : "12months");
   });
   useEffect(() => { localStorage.setItem("bp_overheads_view_mode", viewMode); }, [viewMode]);
@@ -1123,6 +1153,41 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         key: "fytdpct", shortLabel: "FYTD %", subLabel: "% of", miniLabel: "income",
         width: 90, months: [], variant: "accentPct",
       });
+      return cols;
+    }
+
+    if (viewMode === "rollingT12") {
+      // 12 trailing-12-month windows side by side.
+      // Anchor month slides from (current − 11) at the leftmost column
+      // up to current at the rightmost. Each column's `months[]` is the
+      // 12 calendar months ending at that anchor. WIP/amber treatment
+      // is automatic via colIsWip when the window contains an
+      // unconfirmed month.
+      const cols: ColSpec[] = [];
+      for (let i = 0; i < 12; i++) {
+        // anchor month for this column (sliding from current-11 → current)
+        let am = cm - (11 - i);
+        let ay = cy;
+        while (am <= 0) { am += 12; ay--; }
+        // build the 12-month window ending at (ay, am)
+        const months: { year: number; month: number }[] = [];
+        for (let j = 11; j >= 0; j--) {
+          let m = am - j;
+          let y = ay;
+          while (m <= 0) { m += 12; y--; }
+          months.push({ year: y, month: m });
+        }
+        cols.push({
+          key: `rt12-${ay}-${am}`,
+          shortLabel: "T12",
+          subLabel: `→ ${MONTH_NAMES[am - 1]} '${String(ay).slice(-2)}`,
+          miniLabel: "12 mo rolling",
+          width: 110,
+          months,
+          variant: "accent",
+          stackedPct: true,
+        });
+      }
       return cols;
     }
 
@@ -1277,6 +1342,11 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     onError: () => toast({ title: "Failed to update month status", variant: "destructive" }),
   });
 
+  // Confirmation attestation dialog — opens only when transitioning a month
+  // from unconfirmed → confirmed. Unconfirming an already-confirmed month
+  // fires the mutation immediately (no dialog).
+  const [confirmDialog, setConfirmDialog] = useState<{ year: number; month: number } | null>(null);
+
   const syncActualsMut = useMutation({
     mutationFn: () => apiRequest("/api/xero/sync-overhead-actuals", "POST", {}),
     onSuccess: (res: any) => {
@@ -1399,12 +1469,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   // ─── Design tokens ──────────────────────────────────────────────────────────
   // Every value resolves to a CSS variable so the grid follows the global
   // light/dark theme automatically (matches Project → Scope visual language).
+  // Muted-row tints get higher alpha in dark mode so the grid still reads
+  // as banded against the warm dark card surface.
+  const isDark = useIsDark();
   const C = {
     bg:          'hsl(var(--background))',
     white:       'hsl(var(--card))',
     purple:      'hsl(var(--primary))',
-    purpleLight: 'hsl(var(--primary) / 0.08)',
-    purpleTint:  'hsl(var(--primary) / 0.12)',
+    purpleLight: isDark ? 'hsl(var(--primary) / 0.18)' : 'hsl(var(--primary) / 0.08)',
+    purpleTint:  isDark ? 'hsl(var(--primary) / 0.24)' : 'hsl(var(--primary) / 0.12)',
     coral:       'hsl(var(--destructive))',
     greenTint:   'hsl(var(--status-success-bg))',
     greenNum:    'hsl(var(--status-success-fg))',
@@ -1412,10 +1485,10 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     border:      'hsl(var(--border))',
     text:        'hsl(var(--foreground))',
     textMid:     'hsl(var(--muted-foreground))',
-    textLight:   'hsl(var(--muted-foreground) / 0.65)',
-    zebraRow:    'hsl(var(--muted) / 0.35)',
-    totalRow:    'hsl(var(--muted) / 0.55)',
-    sectionHdr:  'hsl(var(--muted) / 0.5)',
+    textLight:   isDark ? 'hsl(var(--muted-foreground) / 0.55)' : 'hsl(var(--muted-foreground) / 0.65)',
+    zebraRow:    isDark ? 'hsl(var(--muted) / 0.85)' : 'hsl(var(--muted) / 0.35)',
+    totalRow:    isDark ? 'hsl(var(--muted) / 1)'    : 'hsl(var(--muted) / 0.55)',
+    sectionHdr:  isDark ? 'hsl(var(--muted) / 0.95)' : 'hsl(var(--muted) / 0.5)',
     amber:       'hsl(var(--amber))',
     dotGreen:    'hsl(var(--status-success-fg))',
     dotCoral:    'hsl(var(--destructive))',
@@ -1516,8 +1589,14 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             borderLeft = `1px solid ${C.amber}`;
           }
           // Optional per-column "% of income" sub-line.
+          // - User-toggleable on data cells via showColumnPct.
+          // - Always-on for accent cells in views that opt in via
+          //   col.stackedPct (e.g. Rolling T12 — every column is its
+          //   own 12-month window so we always pair $ + window %).
+          const wantStackedPct = !!col.stackedPct && col.variant === "accent";
           const showPctLine =
-            showColumnPct && !opts.skipColPct && !opts.isPct && v !== 0 && (colIncomes[i] ?? 0) > 0;
+            !opts.isPct && v !== 0 && (colIncomes[i] ?? 0) > 0 &&
+            (wantStackedPct || (showColumnPct && !opts.skipColPct));
           const pctLineVal = showPctLine ? (v / colIncomes[i]) * 100 : 0;
           return (
             <div key={col.key} style={{
@@ -1620,6 +1699,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     if (viewMode === "fy") return `${fyLabel(targetFyStart)} (Jul–Jun)`;
     if (viewMode === "quarterly") return `${fyLabel(targetFyStart)} quarters`;
     if (viewMode === "compareFy") return `Last ${compareCount} financial years`;
+    if (viewMode === "rollingT12") return "Rolling T12 — last 12 windows";
     return `Last ${compareCount} calendar years`;
   }, [viewMode, fyOffset, compareCount]);
 
@@ -1630,11 +1710,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   // View-mode picker options (used in toolbar segmented control)
   const viewModeOpts = [
-    { key: "12months", label: "12M",      full: "12 Months" },
-    { key: "fy",        label: "FY",       full: "Financial Year" },
-    { key: "quarterly", label: "Quarterly", full: "Quarterly" },
-    { key: "compareFy", label: "Compare FYs", full: "Compare FYs" },
-    { key: "compareCy", label: "Compare CYs", full: "Compare CYs" },
+    { key: "12months",   label: "12M",          full: "12 Months" },
+    { key: "fy",         label: "FY",           full: "Financial Year" },
+    { key: "quarterly",  label: "Quarterly",    full: "Quarterly" },
+    { key: "rollingT12", label: "Rolling T12",  full: "Rolling T12 trend" },
+    { key: "compareFy",  label: "Compare FYs",  full: "Compare FYs" },
+    { key: "compareCy",  label: "Compare CYs",  full: "Compare CYs" },
   ] as const;
 
   // Empty-state early return — placed AFTER all hooks above to comply with
@@ -1847,7 +1928,15 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                onClick={() => toggleMonthMut.mutate({ year: ym.year, month: ym.month, confirmed: !isConfirmed })}
+                                onClick={() => {
+                                  if (isConfirmed) {
+                                    // Unconfirm immediately — no attestation needed.
+                                    toggleMonthMut.mutate({ year: ym.year, month: ym.month, confirmed: false });
+                                  } else {
+                                    // Open attestation dialog before confirming.
+                                    setConfirmDialog({ year: ym.year, month: ym.month });
+                                  }
+                                }}
                                 data-testid={`button-confirm-${ym.year}-${ym.month}`}
                                 style={{
                                   width: 8, height: 8, borderRadius: '50%',
@@ -2036,19 +2125,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
           {/* Net Profit row */}
           {(() => {
-            const bg = C.white;
+            const bg = C.greenTint;
             const getNP = (y: number, m: number) => incomeForMonth(y, m) - dcForMonth(y, m) - ohForMonth(y, m);
             return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 38, borderTop: `2px solid ${C.border}`, position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: C.purple, zIndex: 3 }} />
-                {labelCell(
-                  <>
-                    <TrendingUp className="w-3.5 h-3.5" style={{ color: C.purple }} />
-                    <span>Net Profit</span>
-                  </>,
-                  { bg, fontWeight: 700, color: C.purple, pl: 20 }
-                )}
-                {renderRow(getNP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 700 })}
+              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 38, borderTop: `2px solid ${C.border}` }}>
+                {labelCell(<span>Net Profit</span>, { bg, fontWeight: 600, color: C.text })}
+                {renderRow(getNP, { color: (v: number) => v < 0 ? C.redNum : C.greenNum, fontWeight: 600 })}
               </div>
             );
           })()}
@@ -2069,6 +2151,39 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           ))}
         </div>
       </div>
+
+      {/* Month-confirmation attestation dialog (#226).
+          Only shown for unconfirmed → confirmed transitions; unconfirming
+          fires the mutation directly without prompting. */}
+      <AlertDialog open={!!confirmDialog} onOpenChange={(o) => { if (!o) setConfirmDialog(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm month?</AlertDialogTitle>
+            <AlertDialogDescription>
+              I have reviewed this month&rsquo;s costings in Xero and can confirm that these costings are correct.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {confirmDialog && (
+            <div className="text-sm font-medium text-foreground" data-testid="text-confirm-dialog-month">
+              {MONTH_NAMES[confirmDialog.month - 1]} {confirmDialog.year}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-confirm-dialog-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-dialog-confirm"
+              onClick={() => {
+                if (confirmDialog) {
+                  toggleMonthMut.mutate({ year: confirmDialog.year, month: confirmDialog.month, confirmed: true });
+                }
+                setConfirmDialog(null);
+              }}
+            >
+              Confirm month
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -2348,7 +2463,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
                 <div className="flex items-center gap-1">
                   <Input autoFocus type="number" value={targetOhPct} onChange={e => setTargetOhPct(e.target.value)} className="h-7 w-20 text-xs text-right" />
                   <span className="text-xs text-muted-foreground">%</span>
-                  <Button size="icon" variant="ghost" onClick={() => updateSettingsMut.mutate(targetOhPct)}><Check className="w-3 h-3 text-green-500" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => updateSettingsMut.mutate(targetOhPct)}><Check className="w-3 h-3 text-status-success dark:text-green-400" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => { setEditingTarget(false); setTargetOhPct(data.settings?.targetOhPercent || "15"); }}><X className="w-3 h-3 text-muted-foreground" /></Button>
                 </div>
               ) : (
@@ -2400,7 +2515,7 @@ function OhRecoveryTab({ data }: { data: OverheadsData }) {
             </div>
             <div>
               <div className="h-3 bg-muted rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${isCovered ? "bg-green-500" : isAmber ? "bg-yellow-500" : "bg-destructive"}`} style={{ width: `${Math.min(coveragePct, 100)}%` }} />
+                <div className={`h-full rounded-full transition-all ${isCovered ? "bg-status-success" : isAmber ? "bg-status-warning" : "bg-destructive"}`} style={{ width: `${Math.min(coveragePct, 100)}%` }} />
               </div>
               <p className="text-data text-muted-foreground mt-1">{coveragePct.toFixed(0)}% of breakeven revenue ({fmtDollars(breakevenCents)})</p>
             </div>
