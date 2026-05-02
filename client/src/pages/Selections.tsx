@@ -6,7 +6,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
-import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { cn } from "@/lib/utils";
 import {
   type Selection,
@@ -523,7 +522,6 @@ export default function Selections() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
-  const { toolbarVisible } = useToolbarVisible();
 
   const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
     const stored = localStorage.getItem("selections-cards-visible");
@@ -828,14 +826,6 @@ export default function Selections() {
 
       {/* Single-row toolbar */}
       <div className="h-9 flex items-center px-2 gap-2 border-b border-border flex-shrink-0">
-          {!toolbarVisible && (
-            <span
-              className="text-xs text-muted-foreground truncate max-w-[180px] flex-shrink-0 pl-1"
-              data-testid="text-toolbar-context-prefix"
-            >
-              {currentProject?.name ?? "Selections"}
-            </span>
-          )}
           {/* Left: status pill tabs (scroll on narrow) */}
           <div className="flex items-center gap-1 overflow-x-auto min-w-0">
             {tabs.map((tab) => {
