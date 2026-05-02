@@ -3613,7 +3613,8 @@ export default function EstimateDetail() {
     item: EstimateItem, 
     groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, 
     gridTemplate?: string,
-    visibleCols?: ColumnConfig[]
+    visibleCols?: ColumnConfig[],
+    rowIndex: number = 0
   ) => {
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
@@ -3628,35 +3629,21 @@ export default function EstimateDetail() {
     const effectiveGridTemplate = gridTemplate || `24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
     
     // Build className for visual containment - 40px row height
-    let itemClassName = "";
+    // Helper: precedence pipeline shared by parent & sub-item rows
+    // editing > selected > status > zebra
+    const buildRowBg = (rowItem: EstimateItem, idx: number): string => {
+      if (editingCell?.itemId === rowItem.id) return "bg-primary/[0.04]";
+      if (selectedItems.has(rowItem.id)) return "bg-[#f6f3ff]";
+      const lc = (rowItem.status || '').toString().toLowerCase();
+      if (lc === 'done' || lc === 'complete') return "bg-green-50/70";
+      if (lc === 'not relevant' || lc === 'not_relevant') return "bg-muted/70";
+      return idx % 2 === 0 ? "bg-card" : "bg-muted/20";
+    };
+
+    let itemClassName = buildRowBg(item, rowIndex);
+    itemClassName += " hover:bg-primary/5 transition-colors";
     if (isInGroup) {
       itemClassName += " item-in-group";
-    }
-    
-    // Add lilac background for selected items
-    const isItemSelected = selectedItems.has(item.id);
-    if (isItemSelected) {
-      itemClassName += " bg-[#f6f3ff]";
-    } else {
-      // Add subtle status-based color coding when not selected
-      // EstimateItem status values: "incomplete", "not relevant", "done"
-      switch (item.status) {
-        case 'done':
-          itemClassName += " bg-green-50/70";
-          break;
-        case 'not relevant':
-          itemClassName += " bg-muted/70";
-          break;
-        case 'incomplete':
-        default:
-          // No special color for incomplete - default state
-          break;
-      }
-    }
-    
-    // Active editing row highlight
-    if (editingCell?.itemId === item.id) {
-      itemClassName += " bg-primary/[0.04]";
     }
 
     // Calculate drop indicator for this item
@@ -3796,10 +3783,10 @@ export default function EstimateDetail() {
     
     // Add sub-items if not collapsed - CSS Grid based
     if (!isCollapsed) {
-      subItems.forEach(subItem => {
+      subItems.forEach((subItem, subIndex) => {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className={editingCell?.itemId === subItem.id ? 'bg-primary/[0.04]' : 'bg-muted/20'} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
+          <SortableRow key={subItem.id} id={subItem.id} className={`${buildRowBg(subItem, subIndex)} hover:bg-primary/5 transition-colors`} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
             <div className="h-9 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
@@ -4063,10 +4050,10 @@ export default function EstimateDetail() {
 
       case 'type': {
         const typeColors: Record<string, string> = {
-          Material: 'bg-blue-100 text-status-info dark:bg-blue-900/40 dark:text-blue-300',
-          Labour: 'bg-green-100 text-status-success dark:bg-green-900/40 dark:text-green-300',
-          Subcontractor: 'bg-orange-100 text-status-warning dark:bg-orange-900/40 dark:text-orange-300',
-          Fee: 'bg-status-info-bg text-status-info dark:bg-purple-900/40 dark:text-purple-300',
+          Material: 'bg-teal/10 text-teal dark:bg-teal/20',
+          Labour: 'bg-status-success-bg text-status-success dark:bg-green-900/30 dark:text-green-400',
+          Subcontractor: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          Fee: 'bg-primary/10 text-primary dark:bg-primary/20',
         };
         const typeColor = typeColors[item.type] || typeColors.Material;
         if (isEditing) {
@@ -4319,9 +4306,11 @@ export default function EstimateDetail() {
             }
           }
           // Fallback to hardcoded colors for legacy statuses
-          if (currentStatus === 'done') return { className: 'bg-green-100 text-status-success border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' };
-          if (currentStatus === 'not relevant') return { className: 'bg-muted text-muted-foreground border-border' };
-          return { className: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' }; // incomplete/default
+          const lc = currentStatus?.toLowerCase?.() ?? '';
+          if (lc === 'done' || lc === 'complete') return { className: 'bg-status-success-bg text-status-success dark:bg-green-900/30 dark:text-green-400' };
+          if (lc === 'not relevant' || lc === 'not_relevant') return { className: 'bg-muted text-muted-foreground dark:bg-muted/50' };
+          if (lc === 'in progress' || lc === 'in_progress') return { className: 'bg-primary/10 text-primary dark:bg-primary/20' };
+          return { className: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' }; // incomplete/todo/pending/default
         };
         
         const statusChipStyle = getStatusChipStyle();
@@ -4864,7 +4853,7 @@ export default function EstimateDetail() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-background">
       {/* Unified header card — breadcrumb row + finance summary */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
@@ -5127,35 +5116,35 @@ export default function EstimateDetail() {
 
       {/* Finance summary — collapsible */}
       {summary && !isSummaryExpanded && (
-        <div className="bg-primary/10 flex items-center justify-between px-5 py-1.5 border-b border-primary/20">
-          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Summary</span>
+        <div className="bg-card border-b border-border flex items-center justify-between px-6 py-2">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Summary</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-bold tabular-nums text-primary">{formatCurrency(summary.total)}</span>
-            <span className="text-table text-muted-foreground">inc. GST</span>
+            <span className="text-base font-semibold tabular-nums text-foreground">{formatCurrency(summary.total)}</span>
+            <span className="text-xs text-muted-foreground">inc. GST</span>
           </div>
         </div>
       )}
       {summary && isSummaryExpanded && (
-        <div className="bg-primary/10 flex items-center px-5 py-3 gap-6 flex-wrap">
+        <div className="bg-card border-b border-border flex items-center px-6 py-4 gap-6 flex-wrap">
 
           {/* Hard left — breakdown: builder cost, line markup, global markup (ledger-aligned) */}
-          <div className="flex flex-col gap-0.5 text-xs min-w-[220px]">
+          <div className="flex flex-col gap-1 min-w-[240px]">
             <div className="flex items-baseline justify-between gap-4">
-              <span className="text-muted-foreground">Builder Cost</span>
-              <span className="tabular-nums font-medium text-right" data-testid="text-builder-cost-subtotal">
+              <span className="text-xs font-medium text-muted-foreground">Builder Cost</span>
+              <span className="text-base font-semibold text-foreground tabular-nums text-right" data-testid="text-builder-cost-subtotal">
                 {formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}
               </span>
             </div>
             {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
               <div className="flex items-baseline justify-between gap-4">
-                <span className="text-muted-foreground">Markup</span>
-                <span className="tabular-nums font-medium text-right" data-testid="text-line-item-markup">
+                <span className="text-xs font-medium text-muted-foreground">Markup</span>
+                <span className="text-base font-semibold text-foreground tabular-nums text-right" data-testid="text-line-item-markup">
                   {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
                 </span>
               </div>
             )}
             <div className="flex items-baseline justify-between gap-4">
-              <span className="text-muted-foreground flex items-baseline gap-1">
+              <span className="text-xs font-medium text-muted-foreground flex items-baseline gap-2">
                 Builder Margin
                 {isEditingMarkup ? (
                   <Input
@@ -5163,7 +5152,7 @@ export default function EstimateDetail() {
                     onChange={(e) => setEditingMarkup(e.target.value)}
                     onKeyDown={handleMarkupKeyDown}
                     onBlur={handleMarkupSave}
-                    className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="inline-block w-14 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
                     data-testid="input-markup-percentage"
                     autoFocus
                     type="number"
@@ -5172,17 +5161,19 @@ export default function EstimateDetail() {
                     step="0.1"
                   />
                 ) : (
-                  <span
-                    className="text-primary underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity font-medium"
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
                     onClick={handleMarkupEdit}
                     title="Click to edit builder margin %"
                     data-testid="text-markup-percentage"
                   >
-                    {estimate?.projectMarkupPercent || 0}%<Pencil className="w-2.5 h-2.5 inline ml-0.5 mb-0.5 opacity-60" />
-                  </span>
+                    {estimate?.projectMarkupPercent || 0}%
+                    <Pencil className="w-2.5 h-2.5 opacity-60" />
+                  </button>
                 )}
               </span>
-              <span className="tabular-nums font-medium text-right" data-testid="text-global-markup">
+              <span className="text-base font-semibold text-primary tabular-nums text-right" data-testid="text-global-markup">
                 {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
               </span>
             </div>
@@ -5192,32 +5183,30 @@ export default function EstimateDetail() {
           <div className="flex-1" />
 
           {/* Pre-totals: ex-tax and inc-tax stacked, to the left of the big total */}
-          <div className="flex flex-col gap-0.5 text-xs items-end">
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-muted-foreground">Ex-tax</span>
-              <span className="text-muted-foreground/40">·</span>
-              <span className="tabular-nums font-medium" data-testid="text-total-ex-tax">
+          <div className="flex flex-col gap-1 items-end">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Ex-tax</span>
+              <span className="text-base font-semibold text-foreground tabular-nums" data-testid="text-total-ex-tax">
                 {formatCurrency((summary as any).totalExTax ?? summary.subtotalWithMarkup)}
               </span>
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
-              <span className="text-muted-foreground/40">·</span>
-              <span className="tabular-nums font-medium" data-testid="text-tax">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
+              <span className="text-base font-semibold text-foreground tabular-nums" data-testid="text-tax">
                 {formatCurrency(summary.taxAmount)}
               </span>
             </div>
           </div>
 
           {/* Divider */}
-          <div className="w-px self-stretch bg-primary/30" />
+          <div className="w-px bg-border mx-6 self-stretch" />
 
           {/* Far right — big total */}
           <div className="flex flex-col items-end">
-            <span className="text-2xl font-bold tabular-nums leading-tight" data-testid="text-total-inc-tax">
+            <span className="text-xl font-bold text-foreground tabular-nums leading-tight" data-testid="text-total-inc-tax">
               {formatCurrency(summary.total)}
             </span>
-            <span className="text-table text-muted-foreground mt-0.5">Total (inc. GST)</span>
+            <span className="text-xs text-muted-foreground mt-0.5">Total (inc. GST)</span>
           </div>
 
         </div>
@@ -5229,20 +5218,28 @@ export default function EstimateDetail() {
       <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
 
         {/* Tab navigation */}
-        <div className="flex items-center border-b border-border/50 bg-background flex-shrink-0 px-3 gap-0">
+        <div className="flex items-center border-b border-border bg-card flex-shrink-0 px-2 gap-0">
           {(['estimate', 'enotes', 'labour'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setEstimateTab(tab)}
-              className={`h-8 px-4 text-xs font-medium border-b-2 transition-colors ${
+              className={
                 estimateTab === tab
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
+                  ? 'px-4 py-3 text-sm font-semibold border-b-2 border-primary text-primary transition-colors'
+                  : 'px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors'
+              }
             >
               {tab === 'estimate' ? 'Estimate' : tab === 'enotes' ? 'E-Notes' : 'Labour'}
             </button>
           ))}
+          <button
+            disabled
+            className="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-muted-foreground/40 cursor-not-allowed"
+            title="Takeoff — coming soon"
+            data-testid="tab-takeoff-disabled"
+          >
+            Takeoff
+          </button>
           {/* Spacer + E-Notes progress bar + Checklist bar */}
           <div className="flex-1" />
           {estimateTab === 'enotes' && enotesStats.length > 0 && (
@@ -5279,7 +5276,7 @@ export default function EstimateDetail() {
         <div className={estimateTab !== 'estimate' ? 'hidden' : 'flex-1 flex flex-col min-h-0'}>
 
         {/* Toolbar row — does NOT scroll horizontally */}
-        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border bg-background flex-shrink-0">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
@@ -5322,12 +5319,12 @@ export default function EstimateDetail() {
 
                 {/* Search Input */}
                 <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Search items..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-6 pl-7 pr-2 text-xs w-40 border-border/30"
+                    className="h-8 w-48 pl-8 pr-3 text-sm bg-card border border-border rounded-md placeholder:text-muted-foreground"
                     data-testid="input-search-items"
                   />
                   {searchQuery && (
@@ -5345,11 +5342,11 @@ export default function EstimateDetail() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button 
-                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                      className={`h-8 px-3 text-sm font-medium rounded-md transition-colors ${
                         filterType !== 'all' 
-                          ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                          : 'hover-elevate'
-                      } active-elevate-2`}
+                          ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                          : 'bg-card border border-border text-foreground hover:bg-muted/50'
+                      }`}
                       data-testid="filter-type"
                     >
                       <span>{filterType === 'all' ? 'All Types' : filterType}</span>
@@ -5367,11 +5364,11 @@ export default function EstimateDetail() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button 
-                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                      className={`h-8 px-3 text-sm font-medium rounded-md transition-colors ${
                         filterStatus !== 'all' 
-                          ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                          : 'hover-elevate'
-                      } active-elevate-2`}
+                          ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                          : 'bg-card border border-border text-foreground hover:bg-muted/50'
+                      }`}
                       data-testid="filter-status"
                     >
                       <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
@@ -5443,22 +5440,22 @@ export default function EstimateDetail() {
                 </DropdownMenu>
 
                 <button 
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  className="h-8 px-3 text-sm font-medium bg-card border border-border rounded-lg text-foreground hover:bg-muted/50 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-add-group" 
                   onClick={handleAddGroup}
                   disabled={estimate?.isLocked}
                 >
-                  <FolderPlus className="w-3 h-3" />
+                  <FolderPlus className="w-3.5 h-3.5" />
                   <span>Group</span>
                 </button>
 
                 <button 
-                  className="h-6 w-auto px-2 text-xs bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
+                  className="h-8 px-4 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-add-item" 
                   onClick={handleAddItem}
                   disabled={estimate?.isLocked}
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5" />
                   <span>New Item</span>
                 </button>
               </div>
@@ -5587,7 +5584,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted border-b border-border sticky top-0 z-[10] pl-px"
+                            className="bg-card border-b border-border sticky top-0 z-[10] pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5640,7 +5637,7 @@ export default function EstimateDetail() {
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
                                 <div role="grid" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
-                                  {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate, visibleCols))}
+                                  {ungroupedItems.map((item, idx) => renderItemWithSubItems(item, undefined, gridTemplate, visibleCols, idx))}
                                 </div>
                               </Card>
                             )}
@@ -5703,28 +5700,7 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Quick Totals Footer - Fixed at bottom outside scroll area */}
-      <div className="h-10 bg-muted/30 border-t border-border flex items-center justify-end px-4 gap-5 text-xs flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Builder Cost</span>
-          <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.builderCostTotal ?? summary?.subtotal ?? 0)}</span>
-        </div>
-        {((summary as any)?.globalMarkupAmount ?? 0) !== 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Builder Margin</span>
-            <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.globalMarkupAmount ?? 0)}</span>
-          </div>
-        )}
-        <div className="flex items-center gap-1.5">
-          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Subtotal</span>
-          <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.totalExTax ?? summary?.subtotalWithMarkup ?? 0)}</span>
-        </div>
-        <div className="w-px self-stretch bg-border/60 my-2" />
-        <div className="flex items-center gap-1.5">
-          <span className="text-table text-muted-foreground uppercase tracking-wide font-medium">Total</span>
-          <span className="tabular-nums font-semibold text-primary">{formatCurrency(summary?.total || 0)}</span>
-        </div>
-      </div>
+      {/* Quick Totals Footer removed — financial summary at the top is the single source of truth. */}
 
       {/* Add Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>

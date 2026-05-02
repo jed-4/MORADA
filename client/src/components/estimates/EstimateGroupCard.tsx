@@ -36,7 +36,7 @@ interface EstimateGroupCardProps {
   gridTemplate?: string;
   visibleCols?: ColumnConfig[];
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
-  renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string, visibleCols?: ColumnConfig[]) => React.ReactNode;
+  renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string, visibleCols?: ColumnConfig[], rowIndex?: number) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
   onEditGroup: (groupId: string) => void;
   onDuplicateGroup: (groupId: string) => void;
@@ -187,7 +187,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         </div>
       )}
     <Card 
-      className={`rounded-md overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
+      className={`rounded-xl border border-border bg-card shadow-sm mb-2 overflow-hidden ${isGroupSelected ? 'ring-2 ring-primary' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -199,9 +199,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="h-9 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
+        className="relative h-9 bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 transition-colors border-b border-border"
         data-testid={`row-group-${group.id}`}
       >
+        {/* Purple left stripe */}
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary z-10 pointer-events-none" />
         {/* Checkbox */}
         <div className="h-9 px-2 flex items-center" role="gridcell">
           <Checkbox
@@ -252,7 +254,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                     ) : null;
                   })()}
                   {groupTotals && groupTotals.builderCostExTax > 0 && (
-                    <span className="text-xs font-semibold text-[#7c5bb0] ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
+                    <span className="text-xs font-semibold text-primary ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
                       {formatCurrency(groupTotals.builderCostExTax)}
                     </span>
                   )}
@@ -393,7 +395,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             >
               {groupItems.map((item, index, array) => {
                 const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-                return renderItemRow(item, { isInGroup: true, isLastInGroup }, gridTemplate, visibleCols);
+                return renderItemRow(item, { isInGroup: true, isLastInGroup }, gridTemplate, visibleCols, index);
               })}
             </div>
           )}
@@ -408,7 +410,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 width: `${tableWidth}px`,
                 minWidth: `${tableWidth}px`
               }}
-              className="h-10 transition-colors border-b border-border/50 last:border-b-0 hover-elevate group/addline"
+              className="h-10 transition-colors border-t border-border hover:bg-primary/5 group/addline cursor-pointer"
             >
               {/* Empty checkbox cell */}
               <div className="h-10 px-2 flex items-center" role="gridcell" />
@@ -417,7 +419,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2 text-sm text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
+                  className="h-8 px-2 text-xs font-medium text-primary/70 hover:text-primary transition-colors"
                   onClick={onInlineAddItem ? handleAddLine : () => onAddItemToGroup(group.id)}
                   disabled={isAdding}
                   data-testid={`button-add-line-${group.id}`}
