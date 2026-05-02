@@ -54,6 +54,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Building2,
+  Briefcase,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +62,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ProjectIcon } from "./ProjectIcon";
-type SectionId = "user" | "project" | "management" | "finance" | "allitems" | "system" | "projects";
+import { BUSINESS_TABS } from "@/pages/Business";
+type SectionId = "user" | "project" | "management" | "finance" | "allitems" | "system" | "projects" | "business";
 
 interface NavItem {
   title: string;
@@ -83,7 +85,7 @@ const getUserWorkspaceItems = (userId: string): NavItem[] => [
   { title: "My Memos", url: `/users/${userId}/notes`, icon: FileText },
 ];
 
-const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ className?: string }>; items: NavItem[] }> = {
+const sections: Record<Exclude<SectionId, "projects" | "business">, { label: string; icon: React.ComponentType<{ className?: string }>; items: NavItem[] }> = {
   user: {
     label: "User",
     icon: LayoutDashboard,
@@ -213,7 +215,7 @@ function useFavorites() {
     }
   });
   
-  const [expandedGroups, setExpandedGroups] = useState<Record<SectionId, boolean>>({
+  const [expandedGroups, setExpandedGroups] = useState<Record<Exclude<SectionId, "projects" | "business">, boolean>>({
     user: true,
     project: true,
     management: true,
@@ -316,7 +318,7 @@ function useFavorites() {
     return favoriteProjects.some(p => p.id === projectId);
   }, [favoriteProjects]);
   
-  const toggleGroup = useCallback((section: SectionId) => {
+  const toggleGroup = useCallback((section: Exclude<SectionId, "projects" | "business">) => {
     setExpandedGroups(prev => ({ ...prev, [section]: !prev[section] }));
   }, []);
   
@@ -399,6 +401,10 @@ export function SidebarNav() {
   const [location, navigate] = useLocation();
   const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState<SectionId | null>(() => {
+    // If loading on a business route, default to business mode regardless of pinned state.
+    if (typeof window !== "undefined" && window.location.pathname.startsWith('/business')) {
+      return "business";
+    }
     const pinned = (() => { try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; } })();
     if (pinned) return "projects";
     const saved = sessionStorage.getItem(LAST_SECTION_KEY);
@@ -408,6 +414,12 @@ export function SidebarNav() {
     try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; }
   });
   const [isDrawerOpen, setIsDrawerOpen] = useState(() => {
+    // Auto-open the drawer on first load when landing on a /business/* URL
+    // so the business section list is immediately visible without requiring
+    // the user to click the rail Briefcase icon.
+    if (typeof window !== "undefined" && window.location.pathname.startsWith('/business')) {
+      return true;
+    }
     try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; }
   });
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
@@ -492,6 +504,24 @@ export function SidebarNav() {
     }
   }, [activeSection]);
 
+  // URL → activeSection sync for business mode. Whenever the route enters
+  // /business/*, the sidebar drawer should switch to the flat business
+  // section list and become visible. Leaving /business returns to the
+  // previous default and closes the drawer if it isn't pinned (so we
+  // don't leave an empty panel hanging around).
+  useEffect(() => {
+    const onBusiness = location.startsWith('/business');
+    if (onBusiness && activeSection !== "business") {
+      setActiveSection("business");
+      setIsDrawerOpen(true);
+      setIsFavoritesOpen(false);
+    } else if (!onBusiness && activeSection === "business") {
+      setActiveSection(isPinned ? "projects" : null);
+      if (!isPinned) setIsDrawerOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
   useEffect(() => {
     localStorage.setItem("sidebar_pinned", JSON.stringify(isPinned));
     if (isPinned) {
@@ -505,8 +535,8 @@ export function SidebarNav() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isDrawerOpen || !activeSection) return;
       
-      if (activeSection === "projects") return;
-      const items = dynamicSections[activeSection as Exclude<SectionId, "projects">].items;
+      if (activeSection === "projects" || activeSection === "business") return;
+      const items = dynamicSections[activeSection as Exclude<SectionId, "projects" | "business">].items;
       
       switch (e.key) {
         case "Escape":
@@ -740,13 +770,49 @@ export function SidebarNav() {
             </TooltipContent>
           </Tooltip>
         </div>
-        
+
+        {/* Business Mode — sits between User Sidebar and the Project section
+            icons, with dividers above (from the user-block's border-b) and
+            below (this block's own border-b). */}
+        <div className="flex flex-col items-center py-2 gap-0.5 border-b border-border/50 mx-1">
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  setActiveSection("business");
+                  setIsDrawerOpen(true);
+                  setIsFavoritesOpen(false);
+                  if (!location.startsWith('/business')) {
+                    navigate('/business');
+                  }
+                }}
+                className={cn(
+                  "flex items-center justify-center h-7 w-7 rounded-md transition-colors",
+                  "hover-elevate active-elevate-2",
+                  // Active styling is URL-driven so the icon stays highlighted
+                  // even if the user temporarily opens another rail drawer
+                  // (e.g. User Sidebar) while still on a /business/* route.
+                  location.startsWith('/business')
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                data-testid="rail-business"
+              >
+                <Briefcase className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Business
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">
           {sectionOrder.map((sectionId) => {
             const isActive = activeSection === sectionId;
             const isProjects = sectionId === "projects";
-            const section = isProjects ? null : dynamicSections[sectionId as Exclude<SectionId, "projects">];
+            const section = isProjects ? null : dynamicSections[sectionId as Exclude<SectionId, "projects" | "business">];
             const Icon = isProjects ? Building2 : section!.icon;
             const label = isProjects ? "Projects" : section!.label;
             
@@ -863,7 +929,75 @@ export function SidebarNav() {
           onMouseLeave={isMobile ? undefined : handleMouseLeaveDrawer}
           onMouseEnter={isMobile ? undefined : handleMouseEnterDrawer}
         >
-        {activeSection && (
+        {activeSection === "business" && (() => {
+          // Resolve which business tab is active by URL (longest path wins).
+          const sorted = [...BUSINESS_TABS].sort((a, b) => b.path.length - a.path.length);
+          const matched = sorted.find(t => location === t.path || location.startsWith(t.path + '/'));
+          const activeBizId = matched?.id ?? 'overview';
+          const businessLabel = (currentUser as any)?.companyNickname || "Business";
+          return (
+            <div className="flex flex-col h-full">
+              <div className={cn(
+                "flex items-center justify-between px-3 border-b border-border",
+                isMobile ? "h-12" : "h-10"
+              )}>
+                {isMobile && (
+                  <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
+                )}
+                <span className={cn("font-semibold flex items-center gap-1.5", isMobile ? "text-sm" : "text-xs")}>
+                  <Briefcase className="h-3.5 w-3.5 text-primary" />
+                  {businessLabel}
+                </span>
+                {!isMobile && (
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={togglePin}
+                        data-testid="button-pin-sidebar-business"
+                      >
+                        {isPinned ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      {isPinned ? "Unpin sidebar" : "Pin sidebar"}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+              <ScrollArea className="flex-1">
+                <div className={isMobile ? "p-2" : "p-1.5"}>
+                  {BUSINESS_TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeBizId === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleNavClick(tab.path)}
+                        className={cn(
+                          "flex items-center w-full rounded-md transition-colors",
+                          "hover-elevate active-elevate-2",
+                          isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        data-testid={`nav-business-${tab.id}`}
+                      >
+                        <Icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
+                        <span className="flex-1 text-left">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+          );
+        })()}
+
+        {activeSection && activeSection !== "business" && (
           <div className="flex flex-col h-full">
             {/* Drawer Header */}
             <div className={cn(
@@ -874,7 +1008,7 @@ export function SidebarNav() {
                 <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
               )}
               <span className={cn("font-semibold", isMobile ? "text-sm" : "text-xs")}>
-                {activeSection === "projects" ? "Projects" : dynamicSections[activeSection as Exclude<SectionId, "projects">]?.label ?? activeSection}
+                {activeSection === "projects" ? "Projects" : dynamicSections[activeSection as Exclude<SectionId, "projects" | "business">]?.label ?? activeSection}
               </span>
               <div className="flex items-center gap-1">
                 {!isMobile && (
@@ -991,7 +1125,7 @@ export function SidebarNav() {
             {activeSection !== "projects" && (
               <ScrollArea className="flex-1">
                 <div className={isMobile ? "p-2" : "p-1.5"}>
-                  {dynamicSections[activeSection as Exclude<SectionId, "projects">].items.map((item, index) => {
+                  {dynamicSections[activeSection as Exclude<SectionId, "projects" | "business">].items.map((item, index) => {
                     const url = getItemUrl(activeSection, item);
                     const isActive = location === url || 
                       (url !== "/" && location.startsWith(url));

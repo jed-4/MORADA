@@ -18,7 +18,7 @@ import BusinessMetrics from "./BusinessMetrics";
 import { useAuth } from "@/hooks/use-auth";
 import BusinessOverheads from "./BusinessOverheads";
 
-const BUSINESS_TABS = [
+export const BUSINESS_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "/business" },
   { id: "projects", label: "Projects", icon: FolderOpen, path: "/business/projects" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/business/tasks" },
