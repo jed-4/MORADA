@@ -21,6 +21,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -881,12 +885,19 @@ function RegisterTab({ data, xeroConnected }: { data: OverheadsData; xeroConnect
 
 // ─── Tab 2: Monthly Actuals (rolling 12-month) ────────────────────────────────
 
-type GroupBy = "category" | "xero" | "buildpro";
+type GroupBy = "xero" | "buildpro";
 
 function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   const { toast } = useToast();
   const [view, setView] = useState<"monthly" | "prev12">("monthly");
-  const [groupBy, setGroupBy] = useState<GroupBy>("category");
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => {
+    if (typeof window === "undefined") return "xero";
+    const saved = localStorage.getItem("bp_overheads_group_by");
+    if (saved === "buildpro") return "buildpro";
+    // Migrate legacy "category" → "xero" silently
+    return "xero";
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_group_by", groupBy); }, [groupBy]);
   const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
 
   // Display mode: $k vs $
@@ -901,6 +912,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return localStorage.getItem("bp_overheads_hide_zero") === "1";
   });
   useEffect(() => { localStorage.setItem("bp_overheads_hide_zero", hideZeroCats ? "1" : "0"); }, [hideZeroCats]);
+
+  const [hideZeroItems, setHideZeroItems] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bp_overheads_hide_zero_items") === "1";
+  });
+  useEffect(() => { localStorage.setItem("bp_overheads_hide_zero_items", hideZeroItems ? "1" : "0"); }, [hideZeroItems]);
 
   // Per-section open state. Defaults: Income+DC collapsed, Overheads expanded.
   const [openIncome, setOpenIncome] = useState<boolean>(() =>
@@ -998,9 +1015,6 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
 
   // Grouped rows for both views
   const groupedData = useMemo((): { label: string; items: OverheadItem[] }[] => {
-    if (groupBy === "category") {
-      return data.categories.map(cat => ({ label: cat.name, items: data.items.filter(i => i.categoryId === cat.id) })).filter(g => g.items.length > 0);
-    }
     if (groupBy === "xero") {
       const ORDER = ["OVERHEADS", "DIRECTCOSTS", "EXPENSE", "CURRLIAB"];
       const map = new Map<string, OverheadItem[]>();
@@ -1029,7 +1043,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       return a[0].localeCompare(b[0]);
     });
     return sorted.map(([label, items]) => ({ label, items }));
-  }, [groupBy, data.categories, data.items]);
+  }, [groupBy, data.items]);
 
   if (!data.categories.length) return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Add categories and items in the Register tab first.</CardContent></Card>;
 
@@ -1125,10 +1139,10 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
-              {(["category", "xero", "buildpro"] as GroupBy[]).map((g, i) => (
+              {(["xero", "buildpro"] as GroupBy[]).map((g, i) => (
                 <button key={g} onClick={() => setGroupBy(g)}
                   className={`px-2.5 py-1 transition-colors ${groupBy === g ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground hover-elevate"} ${i > 0 ? "border-l border-border" : ""}`}>
-                  {g === "category" ? "By Category" : g === "xero" ? "Xero Group" : "BuildPro Group"}
+                  {g === "xero" ? "Xero" : "BuildPro"}
                 </button>
               ))}
             </div>
@@ -1331,7 +1345,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     return `$${Math.abs(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 
-  // Render the 12 trailing month cells + T12 + current month for a row.
+  // Render the 12 trailing month cells + T12 + T12% + current month for a row.
   // colorOf can be a fixed string or function-of-value (used for sign-coloured rows like Net Profit).
   type RowColor = string | ((v: number) => string);
   const renderCells = (
@@ -1343,6 +1357,8 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       fontWeight?: number;
       isPct?: boolean;
       bg?: string; // row background — used for sticky inheritance and current-month column
+      // T12 % of income for this row. null = blank, undefined = auto (t12Val/t12Income).
+      t12Pct?: number | null;
     } = {}
   ) => {
     const colorFor = (v: number) => {
@@ -1355,6 +1371,16 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
       return fmtCell(v, displayMode);
     };
     const fw = opts.fontWeight || 400;
+    const computedPct: number | null = opts.t12Pct === null
+      ? null
+      : opts.t12Pct !== undefined
+        ? opts.t12Pct
+        : (t12Income > 0 ? (t12Val / t12Income) * 100 : null);
+    const pctText = computedPct === null
+      ? '—'
+      : computedPct === 0
+        ? '—'
+        : `${computedPct.toFixed(1)}%`;
     return (
       <>
         {monthVals.map((v, i) => (
@@ -1365,6 +1391,9 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
           <span style={{ color: colorFor(t12Val), fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(t12Val)}</span>
         </div>
+        <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <span style={{ color: C.textMid, fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{pctText}</span>
+        </div>
         <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
           <span style={{ color: colorFor(curVal), fontSize: 12, fontWeight: fw, fontVariantNumeric: 'tabular-nums' }}>{fmt(curVal)}</span>
         </div>
@@ -1372,11 +1401,12 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
     );
   };
 
-  // Empty trailing/T12/current cells with row bg (used for OH group label row)
+  // Empty trailing/T12/T12%/current cells with row bg (legacy — unused after OH flattening; kept for safety).
   const renderEmptyCells = () => (
     <>
       {months.map((_, i) => <div key={i} style={{ width: 72, minWidth: 72 }} />)}
       <div style={{ width: 90, minWidth: 90, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}` }} />
+      <div style={{ width: 90, minWidth: 90, backgroundColor: C.purpleLight }} />
       <div style={{ width: 90, minWidth: 90, borderLeft: `1px solid ${C.border}` }} />
     </>
   );
@@ -1394,7 +1424,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
   );
 
   const totalCols = 12;
-  const gridMinWidth = 200 + totalCols * 72 + 90 + 90; // 1244
+  const gridMinWidth = 200 + totalCols * 72 + 90 + 90 + 90; // 1334 (label + 12 months + T12 + T12% + current)
   const monthShortYr = (year: number) => `'${String(year).slice(-2)}`;
 
   // Track row index for zebra striping (excluding section headers)
@@ -1410,10 +1440,10 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
         padding: '10px 16px', backgroundColor: C.white,
         borderBottom: `1px solid ${C.border}`, borderRadius: 4, gap: 12, flexWrap: 'wrap',
       }}>
-        {/* Left: consolidated view pill */}
+        {/* Left: consolidated view pill (Xero | BuildPro) */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['category', 'xero', 'buildpro'] as const).map(opt => {
-            const labels = { category: 'By Category', xero: 'Xero Group', buildpro: 'BuildPro Group' };
+          {(['xero', 'buildpro'] as const).map(opt => {
+            const labels = { xero: 'Xero', buildpro: 'BuildPro' };
             const active = groupBy === opt;
             return (
               <button
@@ -1434,7 +1464,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
           })}
         </div>
 
-        {/* Right: actions + display mode */}
+        {/* Right: actions + kebab (display mode + visibility toggles) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Button size="sm" variant="ghost" onClick={() => setView("prev12")} data-testid="button-prev12">
             <Activity className="w-3.5 h-3.5 mr-1" />
@@ -1450,32 +1480,21 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 <MoreVertical className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Display amounts as</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={displayMode} onValueChange={v => setDisplayMode(v as 'k' | 'dollars')}>
+                <DropdownMenuRadioItem value="k" data-testid="display-mode-k">Thousands ($k)</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dollars" data-testid="display-mode-dollars">Full dollars ($)</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem checked={hideZeroCats} onCheckedChange={v => setHideZeroCats(!!v)} data-testid="toggle-hide-zero-categories">
                 Hide categories with no entries
               </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={hideZeroItems} onCheckedChange={v => setHideZeroItems(!!v)} data-testid="toggle-hide-zero-items">
+                Hide rows with no entries
+              </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: C.textMid }}>Display:</span>
-            <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden' }}>
-              {(['k', 'dollars'] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setDisplayMode(mode)}
-                  data-testid={`button-display-${mode}`}
-                  style={{
-                    padding: '4px 14px', border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: displayMode === mode ? 600 : 500,
-                    backgroundColor: displayMode === mode ? C.purpleLight : C.white,
-                    color: displayMode === mode ? C.purple : C.textMid,
-                  }}
-                >
-                  {mode === 'k' ? '$k' : '$'}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1547,6 +1566,17 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                 <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>12 months</span>
               </div>
 
+              {/* T12 % header */}
+              <div style={{
+                width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', paddingBottom: 8,
+                backgroundColor: C.purpleLight,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.purple, marginTop: 8 }}>T12 %</span>
+                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7, marginTop: 1 }}>% of</span>
+                <span style={{ fontSize: 10, color: C.purple, opacity: 0.7 }}>income</span>
+              </div>
+
               {/* Current month header w/ amber stripe */}
               <div style={{
                 width: 90, minWidth: 90, display: 'flex', flexDirection: 'column',
@@ -1579,7 +1609,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </>,
                   { bg, fontWeight: 700, color: C.purple }
                 )}
-                {renderCells(monthlyIncome, t12Income, curIncome, { color: C.greenNum, fontWeight: 600 })}
+                {renderCells(monthlyIncome, t12Income, curIncome, { color: C.greenNum, fontWeight: 600, t12Pct: t12Income > 0 ? 100 : null })}
               </div>
             );
           })()}
@@ -1683,105 +1713,64 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
             );
           })()}
 
-          {openOH && visibleGroups.map(group => {
-            const catItems = group.items;
-            if (!catItems.length) return null;
-            const groupBg = C.purpleTint;
-            return (
-              <div key={group.label}>
-                {/* Group label row */}
-                <div style={{ display: 'flex', backgroundColor: groupBg, minHeight: 26, borderBottom: `1px solid ${C.border}80` }}>
-                  {labelCell(
-                    <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 10, color: C.purple }}>{group.label}</span>,
-                    { bg: groupBg, fontWeight: 700 }
-                  )}
-                  {renderEmptyCells()}
-                </div>
-
-                {/* Item rows */}
-                {catItems.map(item => {
-                  const bg = nextZebra();
-                  const itemBudgetMonthly = toMonthlyCents(item);
-                  const monthVals = months.map(({ year, month }) => actualMap.get(getKey(item.id, year, month)) || 0);
-                  const t12V = monthVals.reduce((s, v) => s + v, 0);
-                  const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
-                  // per-cell color: drift → coral, over budget → red, else default red expense color
-                  const colorOf = (v: number, year?: number, month?: number) => {
-                    if (v === 0) return C.textLight;
-                    if (year !== undefined && month !== undefined && driftMap.has(getKey(item.id, year, month))) return C.coral;
-                    if (itemBudgetMonthly > 0 && v > itemBudgetMonthly * 1.1) return C.redNum;
-                    return C.redNum;
-                  };
-                  return (
-                    <div key={item.id} style={{ display: 'flex', backgroundColor: bg, minHeight: 30, borderBottom: `1px solid ${C.border}80` }}>
-                      {labelCell(
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>,
-                        { bg, fontWeight: 400, pl: 24 }
-                      )}
-                      {months.map(({ year, month }, i) => {
-                        const v = monthVals[i];
-                        return (
-                          <div key={`${year}-${month}`} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                            <span style={{ color: colorOf(v, year, month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(v, displayMode)}</span>
-                          </div>
-                        );
-                      })}
-                      {/* T12 */}
-                      <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        <span style={{ color: t12V === 0 ? C.textLight : C.redNum, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(t12V, displayMode)}</span>
-                      </div>
-                      {/* Current */}
-                      <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        <span style={{ color: colorOf(curV, currentCol.year, currentCol.month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(curV, displayMode)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Subtotal row */}
-                {(() => {
-                  const bg = C.totalRow;
-                  const subVals = months.map(({ year, month }) => catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, year, month)) || 0), 0));
-                  const t12Sub = subVals.reduce((s, v) => s + v, 0);
-                  const curSub = catItems.reduce((s, i) => s + (actualMap.get(getKey(i.id, currentCol.year, currentCol.month)) || 0), 0);
-                  return (
-                    <div style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}` }}>
-                      {labelCell(
-                        <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 10, color: C.textMid }}>Subtotal</span>,
-                        { bg, fontWeight: 600 }
-                      )}
-                      {renderCells(subVals, t12Sub, curSub, { color: C.redNum, fontWeight: 600 })}
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })}
-
-          {/* Total Overheads row */}
+          {/* Flat overhead item rows (no group label rows, no per-group subtotals) */}
           {openOH && (() => {
-            const bg = C.totalRow;
-            return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 32, borderBottom: `1px solid ${C.border}` }}>
-                {labelCell(
-                  <span style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 11 }}>Total Overheads</span>,
-                  { bg, fontWeight: 700 }
-                )}
-                {renderCells(monthlyOH, t12OH, curOH, { color: C.redNum, fontWeight: 700 })}
-              </div>
-            );
-          })()}
-
-          {/* OH Budget row */}
-          {(() => {
-            const bg = C.totalRow;
-            const budgetVals = months.map(() => monthBudget);
-            return (
-              <div style={{ display: 'flex', backgroundColor: bg, minHeight: 28, borderBottom: `1px solid ${C.border}80` }}>
-                {labelCell(<span>OH Budget</span>, { bg, fontWeight: 600, color: C.text })}
-                {renderCells(budgetVals, monthBudget * 12, monthBudget, { color: C.textMid, fontWeight: 500 })}
-              </div>
-            );
+            const allItems = visibleGroups.flatMap(g => g.items);
+            const filteredItems = hideZeroItems
+              ? allItems.filter(item => {
+                  const t12V = months.reduce((s, { year, month }) => s + (actualMap.get(getKey(item.id, year, month)) || 0), 0);
+                  const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
+                  return t12V !== 0 || curV !== 0;
+                })
+              : allItems;
+            return filteredItems.map(item => {
+              const bg = nextZebra();
+              const itemBudgetMonthly = toMonthlyCents(item);
+              const monthVals = months.map(({ year, month }) => actualMap.get(getKey(item.id, year, month)) || 0);
+              const t12V = monthVals.reduce((s, v) => s + v, 0);
+              const curV = actualMap.get(getKey(item.id, currentCol.year, currentCol.month)) || 0;
+              const t12PctVal = t12Income > 0 ? (t12V / t12Income) * 100 : null;
+              // per-cell color: drift → coral, else default red expense color
+              const colorOf = (v: number, year?: number, month?: number) => {
+                if (v === 0) return C.textLight;
+                if (year !== undefined && month !== undefined && driftMap.has(getKey(item.id, year, month))) return C.coral;
+                if (itemBudgetMonthly > 0 && v > itemBudgetMonthly * 1.1) return C.redNum;
+                return C.redNum;
+              };
+              const pctText = t12PctVal === null
+                ? '—'
+                : t12PctVal === 0
+                  ? '—'
+                  : `${t12PctVal.toFixed(1)}%`;
+              return (
+                <div key={item.id} style={{ display: 'flex', backgroundColor: bg, minHeight: 30, borderBottom: `1px solid ${C.border}80` }}>
+                  {labelCell(
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>,
+                    { bg, fontWeight: 400, pl: 16 }
+                  )}
+                  {months.map(({ year, month }, i) => {
+                    const v = monthVals[i];
+                    return (
+                      <div key={`${year}-${month}`} style={{ width: 72, minWidth: 72, paddingRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <span style={{ color: colorOf(v, year, month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(v, displayMode)}</span>
+                      </div>
+                    );
+                  })}
+                  {/* T12 */}
+                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, borderLeft: `4px solid ${C.purple}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <span style={{ color: t12V === 0 ? C.textLight : C.redNum, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(t12V, displayMode)}</span>
+                  </div>
+                  {/* T12 % */}
+                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, backgroundColor: C.purpleLight, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <span style={{ color: C.textMid, fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{pctText}</span>
+                  </div>
+                  {/* Current */}
+                  <div style={{ width: 90, minWidth: 90, paddingRight: 8, borderLeft: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <span style={{ color: colorOf(curV, currentCol.year, currentCol.month), fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtCell(curV, displayMode)}</span>
+                  </div>
+                </div>
+              );
+            });
           })()}
 
           {/* OH% row */}
@@ -1798,7 +1787,7 @@ function MonthlyActualsTab({ data }: { data: OverheadsData }) {
                   </span>,
                   { bg, fontWeight: 400, color: C.textMid }
                 )}
-                {renderCells(pctVals, t12Pct, curPct, { color: C.textMid, isPct: true })}
+                {renderCells(pctVals, t12Pct, curPct, { color: C.textMid, isPct: true, t12Pct: null })}
               </div>
             );
           })()}
