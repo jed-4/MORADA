@@ -373,7 +373,10 @@ const colors = {
                   style={[
                     styles.pillLabel,
                     {
-                      color: isActive ? '#FFFFFF' : colors.muted,
+                      // Active label uses the white card surface token from
+                      // the light theme (a constant white in both modes);
+                      // inactive uses the muted text token of the active theme.
+                      color: isActive ? lightTheme.card : colors.muted,
                       fontWeight: isActive ? '600' : '500',
                     },
                   ]}
@@ -528,8 +531,9 @@ const styles = StyleSheet.create({
     // Slightly tighter than the ~6px target so all five labels fit on a
     // ~390pt phone width without horizontal scroll or ellipsis.
     gap: 4,
-    // Shadow — colour is constant; opacity/radius vary by mode (set inline).
-    shadowColor: '#000',
+    // Shadow uses the theme's primary text colour (near-black in light theme)
+    // as a token-derived shadow source; opacity/radius vary by mode (set inline).
+    shadowColor: lightTheme.textPrimary,
     shadowOffset: { width: 0, height: 4 },
   },
   pillBtn: {
