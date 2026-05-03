@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useUpload } from "@/hooks/use-upload";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,8 +22,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, MoreVertical, Plus, Upload, FileText, Trash2 } from "lucide-react";
-import type { TakeoffPlan } from "@shared/schema";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2, MoreVertical, Plus, Upload, FileText, Trash2, Pencil } from "lucide-react";
+import type {
+  TakeoffPlan,
+  TakeoffPlanPage,
+  TakeoffMeasurement,
+  TakeoffMarkup,
+} from "@shared/schema";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -45,12 +58,20 @@ async function getPdfPageCount(file: File): Promise<number> {
 export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollEndRef = useRef<HTMLDivElement>(null);
   const [pendingDelete, setPendingDelete] = useState<TakeoffPlan | null>(null);
+  const [renaming, setRenaming] = useState<TakeoffPlan | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
   const plansKey = ["/api/projects", projectId, "takeoff/plans"];
   const { data: plans = [], isLoading } = useQuery<TakeoffPlan[]>({
     queryKey: plansKey,
+  });
+
+  const measurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
+  const { data: allMeasurements = [] } = useQuery<TakeoffMeasurement[]>({
+    queryKey: measurementsKey,
   });
 
   const { uploadFile, isUploading } = useUpload();
@@ -62,6 +83,10 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: plansKey });
       toast({ title: "Plan uploaded" });
+      // Scroll to bottom after the new plan renders.
+      setTimeout(() => {
+        scrollEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 250);
     },
     onError: (err: any) => {
       toast({ title: "Failed to save plan", description: err?.message, variant: "destructive" });
@@ -79,6 +104,20 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
     },
     onError: (err: any) => {
       toast({ title: "Failed to delete plan", description: err?.message, variant: "destructive" });
+    },
+  });
+
+  const renamePlan = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      return await apiRequest(`/api/projects/${projectId}/takeoff/plans/${id}`, "PATCH", { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: plansKey });
+      toast({ title: "Plan renamed" });
+      setRenaming(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to rename plan", description: err?.message, variant: "destructive" });
     },
   });
 
@@ -131,7 +170,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
         <div>
           <h2 className="text-xl font-semibold">Plans</h2>
           <p className="text-sm text-muted-foreground">
-            Upload PDF plans to take measurements from
+            All uploaded PDF plans appear here in one continuous view
           </p>
         </div>
         <Button onClick={triggerUpload} disabled={busy} data-testid="button-upload-plan">
@@ -164,15 +203,22 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
           <div className="text-sm text-muted-foreground">PDF, up to 50 MB</div>
         </button>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="space-y-10 max-w-5xl mx-auto">
           {plans.map((plan) => (
-            <PlanCard
+            <PlanSection
               key={plan.id}
               plan={plan}
-              onOpen={() => onOpenPlan(plan, 1)}
+              projectId={projectId}
+              measurements={allMeasurements.filter((m) => m.planId === plan.id)}
+              onOpenPage={(page) => onOpenPlan(plan, page)}
               onDelete={() => setPendingDelete(plan)}
+              onRename={() => {
+                setRenaming(plan);
+                setRenameValue(plan.name);
+              }}
             />
           ))}
+          <div ref={scrollEndRef} />
         </div>
       )}
 
@@ -195,71 +241,110 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename plan</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Plan name"
+            data-testid="input-rename-plan"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renaming && renameValue.trim()) {
+                renamePlan.mutate({ id: renaming.id, name: renameValue.trim() });
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenaming(null)}>Cancel</Button>
+            <Button
+              onClick={() =>
+                renaming && renameValue.trim() &&
+                renamePlan.mutate({ id: renaming.id, name: renameValue.trim() })
+              }
+              disabled={!renameValue.trim() || renamePlan.isPending}
+              data-testid="button-confirm-rename-plan"
+            >
+              {renamePlan.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function PlanCard({
-  plan,
-  onOpen,
-  onDelete,
-}: {
+interface PlanSectionProps {
   plan: TakeoffPlan;
-  onOpen: () => void;
+  projectId: string;
+  measurements: TakeoffMeasurement[];
+  onOpenPage: (pageNumber: number) => void;
   onDelete: () => void;
-}) {
-  const [thumbError, setThumbError] = useState(false);
+  onRename: () => void;
+}
+
+function PlanSection({
+  plan,
+  projectId,
+  measurements,
+  onOpenPage,
+  onDelete,
+  onRename,
+}: PlanSectionProps) {
+  const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
+  const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
+
+  const markupsKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "markups", "all"];
+  const { data: markups = [] } = useQuery<TakeoffMarkup[]>({
+    queryKey: markupsKey,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/takeoff/plans/${plan.id}/markups?page=all`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed to load markups");
+      return res.json();
+    },
+  });
+
+  const [pdfPageCount, setPdfPageCount] = useState<number>(plan.pageCount || 1);
+
+  const pageNumbers = useMemo(
+    () => Array.from({ length: pdfPageCount }, (_, i) => i + 1),
+    [pdfPageCount],
+  );
 
   return (
-    <div
-      className="group rounded-md border border-border bg-card overflow-hidden hover-elevate"
-      data-testid={`card-plan-${plan.id}`}
+    <section
+      className="space-y-3"
+      data-testid={`section-plan-${plan.id}`}
     >
-      <button
-        onClick={onOpen}
-        className="block w-full bg-muted/30 aspect-[3/4] flex items-center justify-center overflow-hidden"
-      >
-        {thumbError ? (
-          <FileText className="h-12 w-12 text-muted-foreground" />
-        ) : (
-          <Document
-            file={{ url: plan.objectPath, withCredentials: true }}
-            onLoadError={() => setThumbError(true)}
-            loading={<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
-            error={<FileText className="h-12 w-12 text-muted-foreground" />}
-          >
-            <Page
-              pageNumber={1}
-              width={220}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-            />
-          </Document>
-        )}
-      </button>
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border">
-        <button
-          onClick={onOpen}
-          className="text-left flex-1 min-w-0"
-          data-testid={`button-open-plan-${plan.id}`}
-        >
-          <div className="text-sm font-medium truncate">{plan.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {plan.pageCount} page{plan.pageCount === 1 ? "" : "s"}
+      <div className="flex items-center justify-between gap-2 sticky top-0 z-[2] bg-background/95 backdrop-blur py-2 border-b border-border">
+        <div className="min-w-0">
+          <div className="text-base font-semibold truncate" data-testid={`text-plan-name-${plan.id}`}>
+            {plan.name}
           </div>
-        </button>
+          <div className="text-xs text-muted-foreground">
+            {pdfPageCount} page{pdfPageCount === 1 ? "" : "s"}
+          </div>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               size="icon"
               variant="ghost"
               data-testid={`button-plan-menu-${plan.id}`}
-              onClick={(e) => e.stopPropagation()}
             >
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onRename} data-testid={`menu-rename-plan-${plan.id}`}>
+              <Pencil className="h-4 w-4 mr-2" /> Rename
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={onDelete}
               className="text-destructive"
@@ -270,6 +355,254 @@ function PlanCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <Document
+        file={{ url: plan.objectPath, withCredentials: true } as any}
+        onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
+        loading={
+          <div className="p-8 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
+          </div>
+        }
+        error={<div className="p-8 text-sm text-destructive">Failed to load PDF</div>}
+      >
+        <div className="space-y-4">
+          {pageNumbers.map((pageNumber) => {
+            const pageRow = pages.find((p) => p.pageNumber === pageNumber) ?? null;
+            const pageMeasurements = pageRow
+              ? measurements.filter((m) => m.pageId === pageRow.id)
+              : [];
+            const pageMarkups = markups.filter((m) => m.pageNumber === pageNumber);
+            return (
+              <LazyPlanPage
+                key={pageNumber}
+                planId={plan.id}
+                pageNumber={pageNumber}
+                totalPages={pdfPageCount}
+                measurements={pageMeasurements}
+                markups={pageMarkups}
+                onOpen={() => onOpenPage(pageNumber)}
+              />
+            );
+          })}
+        </div>
+      </Document>
+    </section>
+  );
+}
+
+interface LazyPlanPageProps {
+  planId: string;
+  pageNumber: number;
+  totalPages: number;
+  measurements: TakeoffMeasurement[];
+  markups: TakeoffMarkup[];
+  onOpen: () => void;
+}
+
+function LazyPlanPage({
+  planId,
+  pageNumber,
+  totalPages,
+  measurements,
+  markups,
+  onOpen,
+}: LazyPlanPageProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  const [renderWidth, setRenderWidth] = useState(900);
+
+  useEffect(() => {
+    if (!wrapRef.current || visible) return;
+    const el = wrapRef.current;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setVisible(true);
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "400px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    const update = () => {
+      if (!wrapRef.current) return;
+      const cw = wrapRef.current.clientWidth;
+      setRenderWidth(Math.max(400, cw));
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const aspectFallback = "aspect-[3/4]";
+  const heightStyle = dims ? { height: (dims.height / dims.width) * renderWidth } : undefined;
+
+  return (
+    <div
+      ref={wrapRef}
+      data-testid={`page-${planId}-${pageNumber}`}
+      className="relative bg-white border border-border rounded-md overflow-hidden cursor-pointer hover-elevate"
+      style={heightStyle}
+      onClick={onOpen}
+    >
+      <div className="absolute top-2 left-2 z-[1] text-[11px] px-2 py-0.5 rounded-sm bg-background/80 text-muted-foreground border border-border">
+        Page {pageNumber} of {totalPages}
+      </div>
+      {visible ? (
+        <div className="relative" style={{ width: renderWidth }}>
+          <Page
+            pageNumber={pageNumber}
+            width={renderWidth}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
+            onRenderSuccess={(page: any) => setDims({ width: page.width, height: page.height })}
+            loading={
+              <div className={`w-full ${aspectFallback} flex items-center justify-center text-muted-foreground`}>
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            }
+          />
+          {dims && (
+            <ReadOnlyOverlay
+              width={renderWidth}
+              height={(dims.height / dims.width) * renderWidth}
+              measurements={measurements}
+              markups={markups}
+            />
+          )}
+        </div>
+      ) : (
+        <div className={`w-full ${aspectFallback} flex items-center justify-center text-muted-foreground`}>
+          <FileText className="h-8 w-8 opacity-40" />
+        </div>
+      )}
     </div>
+  );
+}
+
+function ReadOnlyOverlay({
+  width,
+  height,
+  measurements,
+  markups,
+}: {
+  width: number;
+  height: number;
+  measurements: TakeoffMeasurement[];
+  markups: TakeoffMarkup[];
+}) {
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
+      {measurements.map((m) => {
+        if (!m.isVisible) return null;
+        const geo = (m.geometry as Array<{ x: number; y: number }> | null) ?? [];
+        if (!Array.isArray(geo) || geo.length === 0) return null;
+        const pts = geo.map((p) => ({ x: p.x * width, y: p.y * height }));
+        const color = m.color || "#A890D4";
+        if (m.measurementType === "area" && pts.length >= 3) {
+          return (
+            <polygon
+              key={m.id}
+              points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill={color + "33"}
+              stroke={color}
+              strokeWidth={1.5}
+            />
+          );
+        }
+        if (m.measurementType === "linear" && pts.length >= 2) {
+          return (
+            <polyline
+              key={m.id}
+              points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke={color}
+              strokeWidth={2}
+            />
+          );
+        }
+        if (m.measurementType === "count") {
+          return (
+            <g key={m.id}>
+              {pts.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={6} fill={color} fillOpacity={0.6} stroke={color} strokeWidth={1.5} />
+              ))}
+            </g>
+          );
+        }
+        return null;
+      })}
+
+      {markups.map((m) => {
+        const geo = (m.geometry as Array<{ x: number; y: number }> | null) ?? [];
+        if (!Array.isArray(geo) || geo.length === 0) return null;
+        const pts = geo.map((p) => ({ x: p.x * width, y: p.y * height }));
+        const color = m.color || "#A890D4";
+        const sw = m.strokeWidth ?? 2;
+
+        if (m.markupType === "dimension" && pts.length >= 2) {
+          const a = pts[0]; const b = pts[1];
+          return (
+            <line key={m.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={sw} />
+          );
+        }
+        if (m.markupType === "cloud" && pts.length >= 3) {
+          return (
+            <polygon
+              key={m.id}
+              points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill={color + "1A"}
+              stroke={color}
+              strokeWidth={sw}
+            />
+          );
+        }
+        if (m.markupType === "text" && pts.length >= 1) {
+          const p = pts[0];
+          return (
+            <text
+              key={m.id}
+              x={p.x}
+              y={p.y}
+              fontSize={m.fontSize ?? 14}
+              fill={color}
+              style={{ paintOrder: "stroke" }}
+              stroke="white"
+              strokeWidth={3}
+            >
+              {m.label || "Text"}
+            </text>
+          );
+        }
+        if (m.markupType === "brush" && pts.length >= 2) {
+          return (
+            <polyline
+              key={m.id}
+              points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke={color}
+              strokeWidth={sw}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        }
+        return null;
+      })}
+    </svg>
   );
 }

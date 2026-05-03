@@ -1281,7 +1281,7 @@ export interface IStorage {
   updateTakeoffMeasurement(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffMeasurement>): Promise<import("@shared/schema").TakeoffMeasurement | undefined>;
   deleteTakeoffMeasurement(id: string, companyId: string): Promise<void>;
 
-  getTakeoffMarkups(planId: string, pageNumber: number, companyId: string): Promise<import("@shared/schema").TakeoffMarkup[]>;
+  getTakeoffMarkups(planId: string, pageNumber: number | null, companyId: string): Promise<import("@shared/schema").TakeoffMarkup[]>;
   getTakeoffMarkup(id: string, companyId: string): Promise<import("@shared/schema").TakeoffMarkup | undefined>;
   createTakeoffMarkup(data: import("@shared/schema").InsertTakeoffMarkup): Promise<import("@shared/schema").TakeoffMarkup>;
   updateTakeoffMarkup(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffMarkup>): Promise<import("@shared/schema").TakeoffMarkup | undefined>;
@@ -22085,13 +22085,16 @@ export class DbStorage implements IStorage {
       .where(and(eq(schema.takeoffMeasurements.id, id), eq(schema.takeoffMeasurements.companyId, companyId)));
   }
 
-  async getTakeoffMarkups(planId: string, pageNumber: number, companyId: string): Promise<schema.TakeoffMarkup[]> {
+  async getTakeoffMarkups(planId: string, pageNumber: number | null, companyId: string): Promise<schema.TakeoffMarkup[]> {
+    const conds = [
+      eq(schema.takeoffMarkups.planId, planId),
+      eq(schema.takeoffMarkups.companyId, companyId),
+    ];
+    if (pageNumber !== null) {
+      conds.push(eq(schema.takeoffMarkups.pageNumber, pageNumber));
+    }
     return await db.select().from(schema.takeoffMarkups)
-      .where(and(
-        eq(schema.takeoffMarkups.planId, planId),
-        eq(schema.takeoffMarkups.pageNumber, pageNumber),
-        eq(schema.takeoffMarkups.companyId, companyId),
-      ))
+      .where(and(...conds))
       .orderBy(asc(schema.takeoffMarkups.createdAt));
   }
 

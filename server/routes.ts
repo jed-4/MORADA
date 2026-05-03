@@ -7580,7 +7580,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const plan = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
         if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Plan not found" });
-        const pageNumber = parseInt(String(req.query.page ?? "1"), 10) || 1;
+        const pageParam = req.query.page;
+        const pageNumber = (pageParam === undefined || pageParam === "all")
+          ? null
+          : (parseInt(String(pageParam), 10) || 1);
         const rows = await storage.getTakeoffMarkups(req.params.planId, pageNumber, req.user.companyId);
         res.json(rows);
       } catch (e) { console.error("[takeoff] getMarkups:", e); res.status(500).json({ error: "Failed to load markups" }); }
