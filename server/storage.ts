@@ -1267,6 +1267,12 @@ export interface IStorage {
   createTakeoffMeasurement(data: import("@shared/schema").InsertTakeoffMeasurement): Promise<import("@shared/schema").TakeoffMeasurement>;
   updateTakeoffMeasurement(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffMeasurement>): Promise<import("@shared/schema").TakeoffMeasurement | undefined>;
   deleteTakeoffMeasurement(id: string, companyId: string): Promise<void>;
+
+  getTakeoffMarkups(planId: string, pageNumber: number, companyId: string): Promise<import("@shared/schema").TakeoffMarkup[]>;
+  getTakeoffMarkup(id: string, companyId: string): Promise<import("@shared/schema").TakeoffMarkup | undefined>;
+  createTakeoffMarkup(data: import("@shared/schema").InsertTakeoffMarkup): Promise<import("@shared/schema").TakeoffMarkup>;
+  updateTakeoffMarkup(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffMarkup>): Promise<import("@shared/schema").TakeoffMarkup | undefined>;
+  deleteTakeoffMarkup(id: string, companyId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -4807,7 +4813,7 @@ export class MemStorage implements IStorage {
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
     if (!this.companySettings) {
       // Create new company settings if none exist
-      this.companySettings = {
+      this.companySettings = ({
         id: randomUUID(),
         companyName: null,
         email: null,
@@ -4826,14 +4832,14 @@ export class MemStorage implements IStorage {
         createdAt: new Date(),
         updatedAt: new Date(),
         ...settings,
-      };
+      } as unknown) as CompanySettings;
     } else {
       // Update existing settings
-      this.companySettings = {
+      this.companySettings = ({
         ...this.companySettings,
         ...settings,
         updatedAt: new Date(),
-      };
+      } as unknown) as CompanySettings;
     }
     return this.companySettings;
   }
@@ -12092,14 +12098,14 @@ export class DbStorage implements IStorage {
     if (existing) {
       // Update existing record
       const [updated] = await db.update(schema.companySettings)
-        .set({ ...settings, updatedAt: new Date() })
+        .set({ ...settings, updatedAt: new Date() } as any)
         .where(eq(schema.companySettings.id, existing.id))
         .returning();
       return updated;
     } else {
       // Create new record
       const [created] = await db.insert(schema.companySettings)
-        .values(settings as InsertCompanySettings)
+        .values(settings as any)
         .returning();
       return created;
     }
@@ -21914,6 +21920,40 @@ export class DbStorage implements IStorage {
   async deleteTakeoffMeasurement(id: string, companyId: string): Promise<void> {
     await db.delete(schema.takeoffMeasurements)
       .where(and(eq(schema.takeoffMeasurements.id, id), eq(schema.takeoffMeasurements.companyId, companyId)));
+  }
+
+  async getTakeoffMarkups(planId: string, pageNumber: number, companyId: string): Promise<schema.TakeoffMarkup[]> {
+    return await db.select().from(schema.takeoffMarkups)
+      .where(and(
+        eq(schema.takeoffMarkups.planId, planId),
+        eq(schema.takeoffMarkups.pageNumber, pageNumber),
+        eq(schema.takeoffMarkups.companyId, companyId),
+      ))
+      .orderBy(asc(schema.takeoffMarkups.createdAt));
+  }
+
+  async getTakeoffMarkup(id: string, companyId: string): Promise<schema.TakeoffMarkup | undefined> {
+    const [row] = await db.select().from(schema.takeoffMarkups)
+      .where(and(eq(schema.takeoffMarkups.id, id), eq(schema.takeoffMarkups.companyId, companyId)));
+    return row;
+  }
+
+  async createTakeoffMarkup(data: schema.InsertTakeoffMarkup): Promise<schema.TakeoffMarkup> {
+    const [row] = await db.insert(schema.takeoffMarkups).values(data).returning();
+    return row;
+  }
+
+  async updateTakeoffMarkup(id: string, companyId: string, data: Partial<schema.InsertTakeoffMarkup>): Promise<schema.TakeoffMarkup | undefined> {
+    const [row] = await db.update(schema.takeoffMarkups)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.takeoffMarkups.id, id), eq(schema.takeoffMarkups.companyId, companyId)))
+      .returning();
+    return row;
+  }
+
+  async deleteTakeoffMarkup(id: string, companyId: string): Promise<void> {
+    await db.delete(schema.takeoffMarkups)
+      .where(and(eq(schema.takeoffMarkups.id, id), eq(schema.takeoffMarkups.companyId, companyId)));
   }
 }
 

@@ -1082,6 +1082,8 @@ export const companySettings = pgTable("company_settings", {
   // systemConfiguration (which is global / non-tenant-scoped).
   billDefaultXeroAccount: text("bill_default_xero_account"),
 
+  takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -6253,3 +6255,22 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
 export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+export const takeoffMarkups = pgTable("takeoff_markups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull().default(1),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  markupType: text("markup_type").notNull(),
+  color: text("color").notNull().default("#E85D04"),
+  geometry: json("geometry").notNull().default([]),
+  label: text("label"),
+  fontSize: integer("font_size").notNull().default(14),
+  strokeWidth: integer("stroke_width").notNull().default(2),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffMarkupSchema = createInsertSchema(takeoffMarkups).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMarkup = z.infer<typeof insertTakeoffMarkupSchema>;
+export type TakeoffMarkup = typeof takeoffMarkups.$inferSelect;

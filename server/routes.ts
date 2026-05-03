@@ -7402,7 +7402,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       insertTakeoffPlanPageSchema,
       insertTakeoffCategorySchema,
       insertTakeoffMeasurementSchema,
+      insertTakeoffMarkupSchema,
     } = await import("@shared/schema");
+
+    // Markup mutable fields — explicit allowlist to prevent tenant/linkage tampering.
+    const updateTakeoffMarkupSchema = insertTakeoffMarkupSchema
+      .pick({ color: true, geometry: true, label: true, fontSize: true, strokeWidth: true })
+      .partial();
+    // Create payload — body fields only; planId/projectId/companyId/pageNumber are server-derived.
+    const createTakeoffMarkupBodySchema = insertTakeoffMarkupSchema
+      .pick({ markupType: true, color: true, geometry: true, label: true, fontSize: true, strokeWidth: true, pageNumber: true })
+      .partial({ color: true, label: true, fontSize: true, strokeWidth: true, pageNumber: true });
 
     // Plans
     app.get("/api/projects/:projectId/takeoff/plans", requireAuth, requireTeamMember, async (req: any, res) => {
@@ -7563,6 +7573,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.deleteTakeoffMeasurement(req.params.id, req.user.companyId);
         res.status(204).send();
       } catch (e) { console.error("[takeoff] deleteMeasurement:", e); res.status(500).json({ error: "Failed to delete measurement" }); }
+    });
+
+    app.get("/api/projects/:projectId/takeoff/plans/:planId/markups", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const plan = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Plan not found" });
+        const pageNumber = parseInt(String(req.query.page ?? "1"), 10) || 1;
+        const rows = await storage.getTakeoffMarkups(req.params.planId, pageNumber, req.user.companyId);
+        res.json(rows);
+      } catch (e) { console.error("[takeoff] getMarkups:", e); res.status(500).json({ error: "Failed to load markups" }); }
+    });
+
+    app.post("/api/projects/:projectId/takeoff/plans/:planId/markups", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const plan = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Plan not found" });
+        const parsed = createTakeoffMarkupBodySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+        }
+        const created = await storage.createTakeoffMarkup({
+          ...parsed.data,
+          planId: req.params.planId,
+          projectId: req.params.projectId,
+          companyId: req.user.companyId,
+        } as any);
+        res.status(201).json(created);
+      } catch (e) { console.error("[takeoff] createMarkup:", e); res.status(500).json({ error: "Failed to create markup" }); }
+    });
+
+    app.patch("/api/projects/:projectId/takeoff/markups/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffMarkup(req.params.id, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) return res.status(404).json({ error: "Markup not found" });
+        const parsed = updateTakeoffMarkupSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+        }
+        const updated = await storage.updateTakeoffMarkup(req.params.id, req.user.companyId, parsed.data);
+        res.json(updated);
+      } catch (e) { console.error("[takeoff] updateMarkup:", e); res.status(500).json({ error: "Failed to update markup" }); }
+    });
+
+    app.delete("/api/projects/:projectId/takeoff/markups/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffMarkup(req.params.id, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) return res.status(404).json({ error: "Markup not found" });
+        await storage.deleteTakeoffMarkup(req.params.id, req.user.companyId);
+        res.status(204).send();
+      } catch (e) { console.error("[takeoff] deleteMarkup:", e); res.status(500).json({ error: "Failed to delete markup" }); }
     });
   }
 

@@ -6,40 +6,26 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  ArrowLeft,
-  Hand,
-  MousePointer2,
-  Square,
-  Minus,
-  Hash,
-  Pencil,
-  Ruler,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  RotateCw,
-  Loader2,
+  ArrowLeft, Hand, MousePointer2, Square, Minus, Hash, Pencil, Ruler,
+  ZoomIn, ZoomOut, Maximize2, RotateCw, Loader2,
+  Type, Cloud, Brush, Trash2, X,
 } from "lucide-react";
 import type {
-  TakeoffPlan,
-  TakeoffPlanPage,
-  TakeoffMeasurement,
-  TakeoffCategory,
+  TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement, TakeoffCategory, TakeoffMarkup,
 } from "@shared/schema";
-import TakeoffDrawingCanvas, {
-  type DrawMode,
-} from "./TakeoffDrawingCanvas";
+import TakeoffDrawingCanvas, { type DrawMode } from "./TakeoffDrawingCanvas";
 import TakeoffScaleModal from "./TakeoffScaleModal";
 import TakeoffCreateMeasurementModal, {
-  type PendingMeasurement,
-  type MeasurementType,
+  type PendingMeasurement, type MeasurementType,
 } from "./TakeoffCreateMeasurementModal";
 import TakeoffMeasurementPanel from "./TakeoffMeasurementPanel";
+import TakeoffMarkupCanvas, { type MarkupMode } from "./TakeoffMarkupCanvas";
+import TakeoffColorPicker, { MARKUP_COLORS } from "./TakeoffColorPicker";
 import {
-  computeQuantity,
-  defaultUnitForType,
-  pixelsToFractions,
+  computeQuantity, defaultUnitForType, pixelsToFractions,
+  pointInPolygon, distanceToPolyline,
   type Point,
 } from "./useTakeoffGeometry";
 
@@ -57,20 +43,18 @@ interface Props {
 
 const STANDARD_SCALES = [50, 75, 100, 200, 500, 1000];
 
-export default function TakeoffPlanViewer({
-  plan,
-  initialPage,
-  projectId,
-  onClose,
-}: Props) {
+export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClose }: Props) {
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfPageCount, setPdfPageCount] = useState(plan.pageCount || 1);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
+  const [pageWidthMm, setPageWidthMm] = useState<number>(420);
   const [zoom, setZoom] = useState(1);
   const [renderWidth, setRenderWidth] = useState(900);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [markupMode, setMarkupMode] = useState<MarkupMode>(null);
+  const [markupColor, setMarkupColor] = useState<string>(MARKUP_COLORS[0]);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [pending, setPending] = useState<PendingMeasurement | null>(null);
@@ -78,6 +62,7 @@ export default function TakeoffPlanViewer({
   const [calibrationPxLength, setCalibrationPxLength] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
   const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
@@ -95,40 +80,78 @@ export default function TakeoffPlanViewer({
     enabled: !!currentPageData,
   });
 
-  const upsertPage = useMutation({
-    mutationFn: async (data: Partial<TakeoffPlanPage> & { pageNumber: number }) => {
-      return await apiRequest(
-        `/api/projects/${projectId}/takeoff/plans/${plan.id}/pages`,
-        "POST",
-        data,
+  const markupsKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "markups", currentPage];
+  const { data: markups = [] } = useQuery<TakeoffMarkup[]>({
+    queryKey: markupsKey,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/takeoff/plans/${plan.id}/markups?page=${currentPage}`,
+        { credentials: "include" },
       );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pagesKey });
-    },
-    onError: (err: any) => {
-      toast({ title: "Failed to save scale", description: err?.message, variant: "destructive" });
+      if (!res.ok) throw new Error("Failed to load markups");
+      return res.json();
     },
   });
 
+  const upsertPage = useMutation({
+    mutationFn: async (data: Partial<TakeoffPlanPage> & { pageNumber: number }) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/plans/${plan.id}/pages`, "POST", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: pagesKey }),
+    onError: (err: any) =>
+      toast({ title: "Failed to save scale", description: err?.message, variant: "destructive" }),
+  });
+
   const createMeasurement = useMutation({
-    mutationFn: async (data: Partial<TakeoffMeasurement>) => {
-      return await apiRequest(
-        `/api/projects/${projectId}/takeoff/measurements`,
-        "POST",
-        data,
-      );
-    },
+    mutationFn: async (data: Partial<TakeoffMeasurement>) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/measurements`, "POST", data),
     onSuccess: () => {
       if (pageMeasurementsKey) queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/projects", projectId, "takeoff/measurements"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
       toast({ title: "Measurement saved" });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to save measurement", description: err?.message, variant: "destructive" });
+    onError: (err: any) =>
+      toast({ title: "Failed to save measurement", description: err?.message, variant: "destructive" }),
+  });
+
+  const updateMeasurement = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TakeoffMeasurement> }) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/measurements/${id}`, "PATCH", data),
+    onSuccess: () => {
+      if (pageMeasurementsKey) queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
     },
+  });
+
+  const deleteMeasurement = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/measurements/${id}`, "DELETE"),
+    onSuccess: () => {
+      if (pageMeasurementsKey) queryClient.invalidateQueries({ queryKey: pageMeasurementsKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff/measurements"] });
+      setSelection(null);
+      toast({ title: "Deleted" });
+    },
+  });
+
+  const createMarkup = useMutation({
+    mutationFn: async (data: Partial<TakeoffMarkup>) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/plans/${plan.id}/markups`, "POST", {
+        ...data,
+        pageNumber: currentPage,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: markupsKey }),
+  });
+
+  const updateMarkup = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TakeoffMarkup> }) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/markups/${id}`, "PATCH", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: markupsKey }),
+  });
+
+  const deleteMarkup = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest(`/api/projects/${projectId}/takeoff/markups/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: markupsKey }),
   });
 
   // Fit-to-container width for the rendered PDF page.
@@ -144,59 +167,44 @@ export default function TakeoffPlanViewer({
   }, []);
 
   const isScaled = currentPageData?.isScaled === true;
-
   const finalRenderWidth = renderWidth * zoom;
-  const finalRenderHeight = pageDims
-    ? (pageDims.height / pageDims.width) * finalRenderWidth
-    : 0;
+  const finalRenderHeight = pageDims ? (pageDims.height / pageDims.width) * finalRenderWidth : 0;
 
   const ensurePageRow = async (): Promise<TakeoffPlanPage> => {
     if (currentPageData) return currentPageData;
-    return await upsertPage.mutateAsync({
-      pageNumber: currentPage,
-      isScaled: false,
-    });
+    return await upsertPage.mutateAsync({ pageNumber: currentPage, isScaled: false });
   };
 
   const handleStandardScale = async (ratio: number) => {
     await upsertPage.mutateAsync({
-      pageNumber: currentPage,
-      isScaled: true,
-      scaleRatio: ratio,
-      calibrationPixelLength: null as any,
-      calibrationRealDistance: null as any,
+      pageNumber: currentPage, isScaled: true, scaleRatio: ratio,
+      calibrationPixelLength: null as any, calibrationRealDistance: null as any,
     });
     toast({ title: `Scale set to 1:${ratio}` });
   };
 
   const handleStartCalibration = async () => {
     await ensurePageRow();
+    setMarkupMode(null);
     setDrawMode("calibrate");
     setStatusMessage("Click two points along a known dimension, then double-click to finish");
   };
 
   const handleCalibrateComplete = (a: Point, b: Point) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const px = Math.sqrt(dx * dx + dy * dy);
-    setCalibrationPxLength(px);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    setCalibrationPxLength(Math.sqrt(dx * dx + dy * dy));
     setScaleModalOpen(true);
     setDrawMode("select");
   };
 
   const handleSaveCalibration = async (data: {
-    calibrationPixelLength: number;
-    calibrationRealDistance: number;
+    calibrationPixelLength: number; calibrationRealDistance: number;
     calibrationUnit: "mm" | "cm" | "m";
   }) => {
-    // Store calibration as a fraction of current rendered width so it stays valid
-    // regardless of zoom level when measurements are later drawn.
     const fractionOfWidth =
       finalRenderWidth > 0 ? data.calibrationPixelLength / finalRenderWidth : 0;
     await upsertPage.mutateAsync({
-      pageNumber: currentPage,
-      isScaled: true,
-      scaleRatio: null as any,
+      pageNumber: currentPage, isScaled: true, scaleRatio: null as any,
       calibrationPixelLength: fractionOfWidth,
       calibrationRealDistance: data.calibrationRealDistance,
       calibrationUnit: data.calibrationUnit,
@@ -214,6 +222,7 @@ export default function TakeoffPlanViewer({
       });
       return;
     }
+    setMarkupMode(null);
     setCreateOpen(true);
   };
 
@@ -221,20 +230,12 @@ export default function TakeoffPlanViewer({
     setPending(data);
     setCreateOpen(false);
     if (data.measurementType === "manual") {
-      // Save immediately as a manual measurement with no geometry.
       const page = await ensurePageRow();
       await createMeasurement.mutateAsync({
-        planId: plan.id,
-        pageId: page.id,
-        categoryId: data.categoryId,
-        name: data.name,
-        measurementType: data.measurementType,
-        color: data.color,
-        geometry: [] as any,
-        quantity: 0,
-        unit: "",
-        multiplier: data.multiplier,
-        wastePercent: data.wastePercent,
+        planId: plan.id, pageId: page.id, categoryId: data.categoryId,
+        name: data.name, measurementType: data.measurementType, color: data.color,
+        geometry: [] as any, quantity: 0, unit: "",
+        multiplier: data.multiplier, wastePercent: data.wastePercent,
       });
       setPending(null);
       return;
@@ -250,35 +251,68 @@ export default function TakeoffPlanViewer({
   const finishGeometry = async (geometryPx: Point[], type: MeasurementType) => {
     if (!pending) return;
     const page = await ensurePageRow();
-    const geometryFractions = pixelsToFractions(
-      geometryPx,
-      finalRenderWidth,
-      finalRenderHeight,
-    );
+    const geometryFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
     const { quantity, unit } = computeQuantity(
-      geometryFractions,
-      type,
-      page,
-      finalRenderWidth,
-      finalRenderHeight,
+      geometryFractions, type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
     );
     await createMeasurement.mutateAsync({
-      planId: plan.id,
-      pageId: page.id,
-      categoryId: pending.categoryId,
-      name: pending.name,
-      measurementType: type,
-      color: pending.color,
-      geometry: geometryFractions as any,
-      quantity,
-      unit: unit || defaultUnitForType(type),
-      multiplier: pending.multiplier,
-      wastePercent: pending.wastePercent,
+      planId: plan.id, pageId: page.id, categoryId: pending.categoryId,
+      name: pending.name, measurementType: type, color: pending.color,
+      geometry: geometryFractions as any, quantity, unit: unit || defaultUnitForType(type),
+      multiplier: pending.multiplier, wastePercent: pending.wastePercent,
     });
     if (type !== "count") {
       setPending(null);
       setDrawMode("select");
       setStatusMessage("Ready");
+    }
+  };
+
+  const formatDimensionLabel = (a: Point, b: Point): string => {
+    const page = currentPageData;
+    if (!page || !page.isScaled) {
+      const px = Math.hypot(b.x - a.x, b.y - a.y);
+      return `${Math.round(px)}px`;
+    }
+    const { quantity, unit } = computeQuantity(
+      pixelsToFractions([a, b], finalRenderWidth, finalRenderHeight),
+      "dimension", page, finalRenderWidth, finalRenderHeight, pageWidthMm,
+    );
+    if (!unit) return "—";
+    if (unit === "lm") return `${quantity.toFixed(2)} m`;
+    return `${quantity} ${unit}`;
+  };
+
+  // Hit-testing for the Select tool. Returns the topmost measurement under p (px).
+  const hitTest = (p: Point): TakeoffMeasurement | null => {
+    const tolerance = 8;
+    for (let i = pageMeasurements.length - 1; i >= 0; i--) {
+      const m = pageMeasurements[i];
+      if (!m.isVisible) continue;
+      const geo = (m.geometry as Point[] | null) ?? [];
+      if (!Array.isArray(geo) || geo.length === 0) continue;
+      const pts = geo.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
+      if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return m;
+      if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return m;
+      if (m.measurementType === "count") {
+        for (const pt of pts) {
+          if (Math.hypot(pt.x - p.x, pt.y - p.y) <= 8) return m;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleSelectClick = (e: React.MouseEvent) => {
+    if (drawMode !== "select" || markupMode) return;
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const hit = hitTest(p);
+    if (hit) {
+      setSelection({ id: hit.id, x: e.clientX, y: e.clientY });
+      setHighlightedId(hit.id);
+    } else {
+      setSelection(null);
     }
   };
 
@@ -291,9 +325,26 @@ export default function TakeoffPlanViewer({
     return "Scaled";
   }, [isScaled, currentPageData]);
 
+  const selectedMeasurement = selection ? pageMeasurements.find((m) => m.id === selection.id) ?? null : null;
+
+  const setMeasureMode = (mode: DrawMode) => {
+    setMarkupMode(null);
+    setDrawMode(mode);
+  };
+  const setMarkup = (mode: MarkupMode) => {
+    setDrawMode("select");
+    setMarkupMode(mode);
+    setStatusMessage(
+      mode === "text" ? "Click on the plan to drop a text label" :
+      mode === "brush" ? "Click and drag to freehand draw" :
+      mode === "cloud" ? "Click to add cloud points — double-click to close" :
+      mode === "dimension" ? "Click two points for a dimension line — double-click to finish" :
+      "Ready",
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* Top nav */}
       <div className="h-12 flex items-center justify-between px-3 border-b border-border bg-background gap-3">
         <Button variant="ghost" size="sm" onClick={onClose} data-testid="button-close-viewer">
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -304,7 +355,6 @@ export default function TakeoffPlanViewer({
         </Badge>
       </div>
 
-      {/* Page strip */}
       {pdfPageCount > 1 && (
         <div className="h-9 flex items-center gap-1 px-3 border-b border-border overflow-x-auto bg-background">
           {Array.from({ length: pdfPageCount }, (_, i) => i + 1).map((p) => (
@@ -312,9 +362,7 @@ export default function TakeoffPlanViewer({
               key={p}
               onClick={() => setCurrentPage(p)}
               className={`text-xs px-3 h-7 rounded-md ${
-                currentPage === p
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover-elevate"
+                currentPage === p ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"
               }`}
               data-testid={`button-page-${p}`}
             >
@@ -324,45 +372,43 @@ export default function TakeoffPlanViewer({
         </div>
       )}
 
-      {/* Toolbar */}
       <div className="h-11 flex items-center gap-1 px-3 border-b border-border bg-background">
-        <ToolBtn active={drawMode === "select"} onClick={() => setDrawMode("select")} label="Select" testId="tool-select">
+        <ToolBtn active={drawMode === "select" && !markupMode} onClick={() => setMeasureMode("select")} label="Select" testId="tool-select">
           <MousePointer2 className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn active={drawMode === "pan"} onClick={() => setDrawMode("pan")} label="Pan" testId="tool-pan">
+        <ToolBtn active={drawMode === "pan"} onClick={() => setMeasureMode("pan")} label="Pan" testId="tool-pan">
           <Hand className="h-4 w-4" />
         </ToolBtn>
         <Divider />
-        <ToolBtn
-          active={drawMode === "area"}
-          onClick={() => beginCreate()}
-          disabled={!isScaled}
-          label="Area"
-          testId="tool-area"
-        >
+        <ToolBtn active={drawMode === "area"} onClick={beginCreate} disabled={!isScaled} label="Area" testId="tool-area">
           <Square className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn
-          active={drawMode === "linear"}
-          onClick={() => beginCreate()}
-          disabled={!isScaled}
-          label="Linear"
-          testId="tool-linear"
-        >
+        <ToolBtn active={drawMode === "linear"} onClick={beginCreate} disabled={!isScaled} label="Linear" testId="tool-linear">
           <Minus className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn
-          active={drawMode === "count"}
-          onClick={() => beginCreate()}
-          disabled={!isScaled}
-          label="Count"
-          testId="tool-count"
-        >
+        <ToolBtn active={drawMode === "count"} onClick={beginCreate} disabled={!isScaled} label="Count" testId="tool-count">
           <Hash className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn onClick={() => beginCreate()} disabled={!isScaled} label="Manual" testId="tool-manual">
+        <ToolBtn onClick={beginCreate} disabled={!isScaled} label="Manual" testId="tool-manual">
           <Pencil className="h-4 w-4" />
         </ToolBtn>
+        <Divider />
+        <ToolBtn active={markupMode === "dimension"} onClick={() => setMarkup("dimension")} label="Dimension" testId="tool-dim">
+          <Ruler className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn active={markupMode === "cloud"} onClick={() => setMarkup("cloud")} label="Cloud" testId="tool-cloud">
+          <Cloud className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn active={markupMode === "text"} onClick={() => setMarkup("text")} label="Text" testId="tool-text">
+          <Type className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn active={markupMode === "brush"} onClick={() => setMarkup("brush")} label="Brush" testId="tool-brush">
+          <Brush className="h-4 w-4" />
+        </ToolBtn>
+        <TakeoffColorPicker
+          color={markupColor} onChange={setMarkupColor}
+          palette={MARKUP_COLORS} testId="markup-color"
+        />
         <Divider />
         <Button variant="ghost" size="sm" onClick={handleStartCalibration} data-testid="tool-calibrate">
           <Ruler className="h-4 w-4 mr-1" /> Calibrate
@@ -379,17 +425,14 @@ export default function TakeoffPlanViewer({
           <Maximize2 className="h-4 w-4" />
         </Button>
         <Button
-          size="icon"
-          variant="ghost"
+          size="icon" variant="ghost"
           onClick={() => setRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270)}
-          title={`Rotate (currently ${rotation}°)`}
-          data-testid="button-rotate"
+          title={`Rotate (currently ${rotation}°)`} data-testid="button-rotate"
         >
           <RotateCw className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Main area */}
       <div className="flex-1 flex overflow-hidden">
         <div
           ref={containerRef}
@@ -399,10 +442,8 @@ export default function TakeoffPlanViewer({
             if (drawMode !== "pan" || !containerRef.current) return;
             e.preventDefault();
             panState.current = {
-              x: e.clientX,
-              y: e.clientY,
-              left: containerRef.current.scrollLeft,
-              top: containerRef.current.scrollTop,
+              x: e.clientX, y: e.clientY,
+              left: containerRef.current.scrollLeft, top: containerRef.current.scrollTop,
             };
           }}
           onMouseMove={(e) => {
@@ -421,49 +462,70 @@ export default function TakeoffPlanViewer({
               transform: `rotate(${rotation}deg)`,
               transformOrigin: "center center",
             }}
+            onClick={handleSelectClick}
           >
             <Document
-              file={{ url: plan.objectPath, withCredentials: true }}
+              file={{ url: plan.objectPath, withCredentials: true } as any}
               onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
               loading={
                 <div className="p-8 text-sm text-muted-foreground flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
                 </div>
               }
-              error={
-                <div className="p-8 text-sm text-destructive">Failed to load PDF</div>
-              }
+              error={<div className="p-8 text-sm text-destructive">Failed to load PDF</div>}
             >
               <Page
                 pageNumber={currentPage}
                 width={finalRenderWidth}
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
+                onLoadSuccess={(page: any) => {
+                  // page.view = [x0, y0, x1, y1] in PDF points (1pt = 25.4/72 mm).
+                  if (Array.isArray(page.view) && page.view.length === 4) {
+                    const widthPt = page.view[2] - page.view[0];
+                    setPageWidthMm(widthPt * (25.4 / 72));
+                  } else if (typeof page.originalWidth === "number") {
+                    setPageWidthMm(page.originalWidth * (25.4 / 72));
+                  }
+                }}
                 onRenderSuccess={(page: any) =>
                   setPageDims({ width: page.width, height: page.height })
                 }
               />
             </Document>
             {pageDims && (
-              <TakeoffDrawingCanvas
-                width={finalRenderWidth}
-                height={finalRenderHeight}
-                drawMode={drawMode}
-                selectedColor={pending?.color ?? "#A890D4"}
-                measurements={pageMeasurements}
-                highlightedId={highlightedId}
-                onAreaComplete={(pts) => finishGeometry(pts, "area")}
-                onLinearComplete={(pts) => finishGeometry(pts, "linear")}
-                onCountClick={async (p) => {
-                  if (!pending) return;
-                  await finishGeometry([p], "count");
-                }}
-                onCalibrateComplete={handleCalibrateComplete}
-              />
+              <>
+                <TakeoffDrawingCanvas
+                  width={finalRenderWidth}
+                  height={finalRenderHeight}
+                  drawMode={markupMode ? "select" : drawMode}
+                  selectedColor={pending?.color ?? "#A890D4"}
+                  measurements={pageMeasurements}
+                  highlightedId={highlightedId}
+                  onAreaComplete={(pts) => finishGeometry(pts, "area")}
+                  onLinearComplete={(pts) => finishGeometry(pts, "linear")}
+                  onCountClick={async (p) => {
+                    if (!pending) return;
+                    await finishGeometry([p], "count");
+                  }}
+                  onCalibrateComplete={handleCalibrateComplete}
+                />
+                <TakeoffMarkupCanvas
+                  width={finalRenderWidth}
+                  height={finalRenderHeight}
+                  markupMode={markupMode}
+                  selectedColor={markupColor}
+                  markups={markups}
+                  visible={true}
+                  formatDimensionLabel={formatDimensionLabel}
+                  onCreate={(d) => createMarkup.mutate(d as any)}
+                  onUpdate={(id, data) => updateMarkup.mutate({ id, data })}
+                  onDelete={(id) => deleteMarkup.mutate(id)}
+                />
+              </>
             )}
           </div>
 
-          {/* Unscaled overlay */}
           {!isScaled && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="bg-card border border-border rounded-md shadow-lg p-5 max-w-sm w-full pointer-events-auto">
@@ -473,28 +535,28 @@ export default function TakeoffPlanViewer({
                 </div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {STANDARD_SCALES.map((r) => (
-                    <Button
-                      key={r}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleStandardScale(r)}
-                      data-testid={`button-scale-${r}`}
-                    >
+                    <Button key={r} variant="outline" size="sm" onClick={() => handleStandardScale(r)} data-testid={`button-scale-${r}`}>
                       1:{r}
                     </Button>
                   ))}
                 </div>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                  onClick={handleStartCalibration}
-                  data-testid="button-calibrate-from-plan"
-                >
+                <Button variant="default" size="sm" className="w-full" onClick={handleStartCalibration} data-testid="button-calibrate-from-plan">
                   <Ruler className="h-4 w-4 mr-1" /> Calibrate from a plan dimension
                 </Button>
               </div>
             </div>
+          )}
+
+          {selectedMeasurement && selection && (
+            <SelectionToolbar
+              key={selectedMeasurement.id}
+              x={selection.x}
+              y={selection.y}
+              measurement={selectedMeasurement}
+              onClose={() => setSelection(null)}
+              onChange={(data) => updateMeasurement.mutate({ id: selectedMeasurement.id, data })}
+              onDelete={() => deleteMeasurement.mutate(selectedMeasurement.id)}
+            />
           )}
         </div>
 
@@ -511,12 +573,16 @@ export default function TakeoffPlanViewer({
         </div>
       </div>
 
-      {/* Status bar */}
       <div className="h-8 flex items-center px-3 text-xs bg-[#3d3d3d] text-[#cccccc]">
         <span data-testid="status-message">{statusMessage}</span>
         {pending && (
           <span className="ml-3 opacity-80">
             Drawing: <span className="font-medium">{pending.name}</span> ({pending.measurementType})
+          </span>
+        )}
+        {markupMode && (
+          <span className="ml-3 opacity-80">
+            Markup: <span className="font-medium">{markupMode}</span>
           </span>
         )}
       </div>
@@ -539,13 +605,48 @@ export default function TakeoffPlanViewer({
   );
 }
 
+function SelectionToolbar({
+  x, y, measurement, onClose, onChange, onDelete,
+}: {
+  x: number; y: number;
+  measurement: TakeoffMeasurement;
+  onClose: () => void;
+  onChange: (data: Partial<TakeoffMeasurement>) => void;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(measurement.name);
+  return (
+    <div
+      className="fixed z-50 bg-card border border-border rounded-md shadow-lg p-2 flex items-center gap-2"
+      style={{ left: x + 10, top: y + 10 }}
+      data-testid="selection-toolbar"
+    >
+      <TakeoffColorPicker
+        color={measurement.color}
+        onChange={(c) => onChange({ color: c } as any)}
+        testId={`sel-color-${measurement.id}`}
+      />
+      <Input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => name !== measurement.name && onChange({ name } as any)}
+        className="h-7 w-40 text-xs"
+      />
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {Math.round((measurement.quantity ?? 0) * 100) / 100} {measurement.unit}
+      </span>
+      <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Delete">
+        <Trash2 className="h-4 w-4 text-destructive" />
+      </Button>
+      <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
 function ToolBtn({
-  children,
-  active,
-  onClick,
-  disabled,
-  label,
-  testId,
+  children, active, onClick, disabled, label, testId,
 }: {
   children: React.ReactNode;
   active?: boolean;
