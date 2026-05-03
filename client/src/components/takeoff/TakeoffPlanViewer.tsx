@@ -77,6 +77,8 @@ export default function TakeoffPlanViewer({
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [calibrationPxLength, setCalibrationPxLength] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Ready");
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
   const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
@@ -376,17 +378,49 @@ export default function TakeoffPlanViewer({
         <Button size="icon" variant="ghost" onClick={() => setZoom(1)} data-testid="button-fit">
           <Maximize2 className="h-4 w-4" />
         </Button>
-        <Button size="icon" variant="ghost" disabled title="Rotate (Phase 2)">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270)}
+          title={`Rotate (currently ${rotation}°)`}
+          data-testid="button-rotate"
+        >
           <RotateCw className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Main area */}
       <div className="flex-1 flex overflow-hidden">
-        <div ref={containerRef} className="flex-1 overflow-auto bg-muted/30 relative p-3">
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-auto bg-muted/30 relative p-3"
+          style={{ cursor: drawMode === "pan" ? (panState.current ? "grabbing" : "grab") : undefined }}
+          onMouseDown={(e) => {
+            if (drawMode !== "pan" || !containerRef.current) return;
+            e.preventDefault();
+            panState.current = {
+              x: e.clientX,
+              y: e.clientY,
+              left: containerRef.current.scrollLeft,
+              top: containerRef.current.scrollTop,
+            };
+          }}
+          onMouseMove={(e) => {
+            if (drawMode !== "pan" || !panState.current || !containerRef.current) return;
+            const s = panState.current;
+            containerRef.current.scrollLeft = s.left - (e.clientX - s.x);
+            containerRef.current.scrollTop = s.top - (e.clientY - s.y);
+          }}
+          onMouseUp={() => { panState.current = null; }}
+          onMouseLeave={() => { panState.current = null; }}
+        >
           <div
             className="mx-auto bg-white shadow-sm relative"
-            style={{ width: finalRenderWidth }}
+            style={{
+              width: finalRenderWidth,
+              transform: `rotate(${rotation}deg)`,
+              transformOrigin: "center center",
+            }}
           >
             <Document
               file={{ url: plan.objectPath, withCredentials: true }}
