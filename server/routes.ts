@@ -7394,6 +7394,179 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // ===== TAKEOFF ROUTES =====
+  // ============================================================
+  {
+    const {
+      insertTakeoffPlanSchema,
+      insertTakeoffPlanPageSchema,
+      insertTakeoffCategorySchema,
+      insertTakeoffMeasurementSchema,
+    } = await import("@shared/schema");
+
+    // Plans
+    app.get("/api/projects/:projectId/takeoff/plans", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const plans = await storage.getTakeoffPlans(req.params.projectId, req.user.companyId);
+        res.json(plans);
+      } catch (e) { console.error("[takeoff] getPlans:", e); res.status(500).json({ error: "Failed to load plans" }); }
+    });
+
+    app.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const parsed = insertTakeoffPlanSchema.safeParse({
+          ...req.body,
+          projectId: req.params.projectId,
+          companyId: req.user.companyId,
+        });
+        if (!parsed.success) return res.status(400).json({ error: "Invalid plan data", details: parsed.error.flatten() });
+        const plan = await storage.createTakeoffPlan(parsed.data);
+        res.status(201).json(plan);
+      } catch (e) { console.error("[takeoff] createPlan:", e); res.status(500).json({ error: "Failed to create plan" }); }
+    });
+
+    app.patch("/api/projects/:projectId/takeoff/plans/:planId", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) {
+          return res.status(404).json({ error: "Plan not found" });
+        }
+        const updated = await storage.updateTakeoffPlan(req.params.planId, req.user.companyId, req.body);
+        if (!updated) return res.status(404).json({ error: "Plan not found" });
+        res.json(updated);
+      } catch (e) { console.error("[takeoff] updatePlan:", e); res.status(500).json({ error: "Failed to update plan" }); }
+    });
+
+    app.delete("/api/projects/:projectId/takeoff/plans/:planId", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) {
+          return res.status(404).json({ error: "Plan not found" });
+        }
+        await storage.deleteTakeoffPlan(req.params.planId, req.user.companyId);
+        res.status(204).send();
+      } catch (e) { console.error("[takeoff] deletePlan:", e); res.status(500).json({ error: "Failed to delete plan" }); }
+    });
+
+    // Plan pages (scale data)
+    app.get("/api/projects/:projectId/takeoff/plans/:planId/pages", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const plan = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Plan not found" });
+        const pages = await storage.getTakeoffPlanPages(req.params.planId);
+        res.json(pages);
+      } catch (e) { console.error("[takeoff] getPages:", e); res.status(500).json({ error: "Failed to load pages" }); }
+    });
+
+    app.post("/api/projects/:projectId/takeoff/plans/:planId/pages", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const plan = await storage.getTakeoffPlan(req.params.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Plan not found" });
+        const parsed = insertTakeoffPlanPageSchema.safeParse({
+          ...req.body,
+          planId: req.params.planId,
+          companyId: req.user.companyId,
+        });
+        if (!parsed.success) return res.status(400).json({ error: "Invalid page data", details: parsed.error.flatten() });
+        const page = await storage.upsertTakeoffPlanPage(parsed.data);
+        res.json(page);
+      } catch (e) { console.error("[takeoff] upsertPage:", e); res.status(500).json({ error: "Failed to save page" }); }
+    });
+
+    // Categories
+    app.get("/api/projects/:projectId/takeoff/categories", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const cats = await storage.getTakeoffCategories(req.params.projectId, req.user.companyId);
+        res.json(cats);
+      } catch (e) { console.error("[takeoff] getCategories:", e); res.status(500).json({ error: "Failed to load categories" }); }
+    });
+
+    app.post("/api/projects/:projectId/takeoff/categories", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const parsed = insertTakeoffCategorySchema.safeParse({
+          ...req.body,
+          projectId: req.params.projectId,
+          companyId: req.user.companyId,
+        });
+        if (!parsed.success) return res.status(400).json({ error: "Invalid category data", details: parsed.error.flatten() });
+        const cat = await storage.createTakeoffCategory(parsed.data);
+        res.status(201).json(cat);
+      } catch (e) { console.error("[takeoff] createCategory:", e); res.status(500).json({ error: "Failed to create category" }); }
+    });
+
+    app.delete("/api/projects/:projectId/takeoff/categories/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const cat = await storage.getTakeoffCategory(req.params.id, req.user.companyId);
+        if (!cat || cat.projectId !== req.params.projectId) return res.status(404).json({ error: "Category not found" });
+        await storage.deleteTakeoffCategory(req.params.id, req.user.companyId);
+        res.status(204).send();
+      } catch (e) { console.error("[takeoff] deleteCategory:", e); res.status(500).json({ error: "Failed to delete category" }); }
+    });
+
+    // Measurements
+    app.get("/api/projects/:projectId/takeoff/measurements", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const ms = await storage.getTakeoffMeasurements(req.params.projectId, req.user.companyId);
+        res.json(ms);
+      } catch (e) { console.error("[takeoff] getMeasurements:", e); res.status(500).json({ error: "Failed to load measurements" }); }
+    });
+
+    app.get("/api/projects/:projectId/takeoff/pages/:pageId/measurements", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const page = await storage.getTakeoffPlanPageById(req.params.pageId);
+        if (!page) return res.status(404).json({ error: "Page not found" });
+        const plan = await storage.getTakeoffPlan(page.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(404).json({ error: "Page not found" });
+        const ms = await storage.getTakeoffMeasurementsByPage(req.params.pageId);
+        res.json(ms.filter(m => m.companyId === req.user.companyId));
+      } catch (e) { console.error("[takeoff] getPageMeasurements:", e); res.status(500).json({ error: "Failed to load measurements" }); }
+    });
+
+    app.post("/api/projects/:projectId/takeoff/measurements", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const parsed = insertTakeoffMeasurementSchema.safeParse({
+          ...req.body,
+          projectId: req.params.projectId,
+          companyId: req.user.companyId,
+        });
+        if (!parsed.success) return res.status(400).json({ error: "Invalid measurement data", details: parsed.error.flatten() });
+        // Verify plan belongs to this project + company.
+        const plan = await storage.getTakeoffPlan(parsed.data.planId, req.user.companyId);
+        if (!plan || plan.projectId !== req.params.projectId) return res.status(403).json({ error: "Plan does not belong to this project" });
+        // Verify page belongs to that same plan.
+        const page = await storage.getTakeoffPlanPageById(parsed.data.pageId);
+        if (!page || page.planId !== parsed.data.planId) return res.status(403).json({ error: "Page does not belong to this plan" });
+        // Verify category, if provided, belongs to this project.
+        if (parsed.data.categoryId) {
+          const cat = await storage.getTakeoffCategory(parsed.data.categoryId, req.user.companyId);
+          if (!cat || cat.projectId !== req.params.projectId) return res.status(403).json({ error: "Invalid category" });
+        }
+        const m = await storage.createTakeoffMeasurement(parsed.data);
+        res.status(201).json(m);
+      } catch (e) { console.error("[takeoff] createMeasurement:", e); res.status(500).json({ error: "Failed to create measurement" }); }
+    });
+
+    app.patch("/api/projects/:projectId/takeoff/measurements/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffMeasurement(req.params.id, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) return res.status(404).json({ error: "Measurement not found" });
+        const updated = await storage.updateTakeoffMeasurement(req.params.id, req.user.companyId, req.body);
+        if (!updated) return res.status(404).json({ error: "Measurement not found" });
+        res.json(updated);
+      } catch (e) { console.error("[takeoff] updateMeasurement:", e); res.status(500).json({ error: "Failed to update measurement" }); }
+    });
+
+    app.delete("/api/projects/:projectId/takeoff/measurements/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const existing = await storage.getTakeoffMeasurement(req.params.id, req.user.companyId);
+        if (!existing || existing.projectId !== req.params.projectId) return res.status(404).json({ error: "Measurement not found" });
+        await storage.deleteTakeoffMeasurement(req.params.id, req.user.companyId);
+        res.status(204).send();
+      } catch (e) { console.error("[takeoff] deleteMeasurement:", e); res.status(500).json({ error: "Failed to delete measurement" }); }
+    });
+  }
+
+  // ============================================================
   // DRIVE FILE ACTIVITY LOGS ROUTES
   // ============================================================
 

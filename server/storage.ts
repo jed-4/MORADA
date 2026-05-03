@@ -1243,6 +1243,30 @@ export interface IStorage {
   createTeam(data: import("@shared/schema").InsertTeam): Promise<import("@shared/schema").Team>;
   updateTeam(id: string, data: Partial<import("@shared/schema").InsertTeam>): Promise<import("@shared/schema").Team | undefined>;
   deleteTeam(id: string): Promise<boolean>;
+
+  // Takeoff
+  getTakeoffPlans(projectId: string, companyId: string): Promise<import("@shared/schema").TakeoffPlan[]>;
+  getTakeoffPlan(id: string, companyId: string): Promise<import("@shared/schema").TakeoffPlan | undefined>;
+  createTakeoffPlan(data: import("@shared/schema").InsertTakeoffPlan): Promise<import("@shared/schema").TakeoffPlan>;
+  updateTakeoffPlan(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffPlan>): Promise<import("@shared/schema").TakeoffPlan | undefined>;
+  deleteTakeoffPlan(id: string, companyId: string): Promise<void>;
+
+  getTakeoffPlanPages(planId: string): Promise<import("@shared/schema").TakeoffPlanPage[]>;
+  getTakeoffPlanPageById(id: string): Promise<import("@shared/schema").TakeoffPlanPage | undefined>;
+  getTakeoffMeasurement(id: string, companyId: string): Promise<import("@shared/schema").TakeoffMeasurement | undefined>;
+  getTakeoffCategory(id: string, companyId: string): Promise<import("@shared/schema").TakeoffCategory | undefined>;
+  getTakeoffPlanPage(planId: string, pageNumber: number): Promise<import("@shared/schema").TakeoffPlanPage | undefined>;
+  upsertTakeoffPlanPage(data: import("@shared/schema").InsertTakeoffPlanPage): Promise<import("@shared/schema").TakeoffPlanPage>;
+
+  getTakeoffCategories(projectId: string, companyId: string): Promise<import("@shared/schema").TakeoffCategory[]>;
+  createTakeoffCategory(data: import("@shared/schema").InsertTakeoffCategory): Promise<import("@shared/schema").TakeoffCategory>;
+  deleteTakeoffCategory(id: string, companyId: string): Promise<void>;
+
+  getTakeoffMeasurements(projectId: string, companyId: string): Promise<import("@shared/schema").TakeoffMeasurement[]>;
+  getTakeoffMeasurementsByPage(pageId: string): Promise<import("@shared/schema").TakeoffMeasurement[]>;
+  createTakeoffMeasurement(data: import("@shared/schema").InsertTakeoffMeasurement): Promise<import("@shared/schema").TakeoffMeasurement>;
+  updateTakeoffMeasurement(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffMeasurement>): Promise<import("@shared/schema").TakeoffMeasurement | undefined>;
+  deleteTakeoffMeasurement(id: string, companyId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -21765,6 +21789,131 @@ export class DbStorage implements IStorage {
       console.error("Database error in deleteDocFolder:", error);
       throw error;
     }
+  }
+
+  // ===== TAKEOFF =====
+
+  async getTakeoffPlans(projectId: string, companyId: string): Promise<schema.TakeoffPlan[]> {
+    return await db.select().from(schema.takeoffPlans)
+      .where(and(eq(schema.takeoffPlans.projectId, projectId), eq(schema.takeoffPlans.companyId, companyId)))
+      .orderBy(asc(schema.takeoffPlans.order), asc(schema.takeoffPlans.createdAt));
+  }
+
+  async getTakeoffPlan(id: string, companyId: string): Promise<schema.TakeoffPlan | undefined> {
+    const [row] = await db.select().from(schema.takeoffPlans)
+      .where(and(eq(schema.takeoffPlans.id, id), eq(schema.takeoffPlans.companyId, companyId)))
+      .limit(1);
+    return row;
+  }
+
+  async createTakeoffPlan(data: schema.InsertTakeoffPlan): Promise<schema.TakeoffPlan> {
+    const [row] = await db.insert(schema.takeoffPlans).values(data).returning();
+    return row;
+  }
+
+  async updateTakeoffPlan(id: string, companyId: string, data: Partial<schema.InsertTakeoffPlan>): Promise<schema.TakeoffPlan | undefined> {
+    const [row] = await db.update(schema.takeoffPlans)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.takeoffPlans.id, id), eq(schema.takeoffPlans.companyId, companyId)))
+      .returning();
+    return row;
+  }
+
+  async deleteTakeoffPlan(id: string, companyId: string): Promise<void> {
+    await db.delete(schema.takeoffPlans)
+      .where(and(eq(schema.takeoffPlans.id, id), eq(schema.takeoffPlans.companyId, companyId)));
+  }
+
+  async getTakeoffPlanPages(planId: string): Promise<schema.TakeoffPlanPage[]> {
+    return await db.select().from(schema.takeoffPlanPages)
+      .where(eq(schema.takeoffPlanPages.planId, planId))
+      .orderBy(asc(schema.takeoffPlanPages.pageNumber));
+  }
+
+  async getTakeoffPlanPage(planId: string, pageNumber: number): Promise<schema.TakeoffPlanPage | undefined> {
+    const [row] = await db.select().from(schema.takeoffPlanPages)
+      .where(and(eq(schema.takeoffPlanPages.planId, planId), eq(schema.takeoffPlanPages.pageNumber, pageNumber)))
+      .limit(1);
+    return row;
+  }
+
+  async upsertTakeoffPlanPage(data: schema.InsertTakeoffPlanPage): Promise<schema.TakeoffPlanPage> {
+    const { planId, companyId, pageNumber, ...rest } = data as any;
+    const [row] = await db.insert(schema.takeoffPlanPages)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [schema.takeoffPlanPages.planId, schema.takeoffPlanPages.pageNumber],
+        set: { ...rest, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
+  }
+
+  async getTakeoffPlanPageById(id: string): Promise<schema.TakeoffPlanPage | undefined> {
+    const [row] = await db.select().from(schema.takeoffPlanPages)
+      .where(eq(schema.takeoffPlanPages.id, id))
+      .limit(1);
+    return row;
+  }
+
+  async getTakeoffMeasurement(id: string, companyId: string): Promise<schema.TakeoffMeasurement | undefined> {
+    const [row] = await db.select().from(schema.takeoffMeasurements)
+      .where(and(eq(schema.takeoffMeasurements.id, id), eq(schema.takeoffMeasurements.companyId, companyId)))
+      .limit(1);
+    return row;
+  }
+
+  async getTakeoffCategory(id: string, companyId: string): Promise<schema.TakeoffCategory | undefined> {
+    const [row] = await db.select().from(schema.takeoffCategories)
+      .where(and(eq(schema.takeoffCategories.id, id), eq(schema.takeoffCategories.companyId, companyId)))
+      .limit(1);
+    return row;
+  }
+
+  async getTakeoffCategories(projectId: string, companyId: string): Promise<schema.TakeoffCategory[]> {
+    return await db.select().from(schema.takeoffCategories)
+      .where(and(eq(schema.takeoffCategories.projectId, projectId), eq(schema.takeoffCategories.companyId, companyId)))
+      .orderBy(asc(schema.takeoffCategories.order), asc(schema.takeoffCategories.createdAt));
+  }
+
+  async createTakeoffCategory(data: schema.InsertTakeoffCategory): Promise<schema.TakeoffCategory> {
+    const [row] = await db.insert(schema.takeoffCategories).values(data).returning();
+    return row;
+  }
+
+  async deleteTakeoffCategory(id: string, companyId: string): Promise<void> {
+    await db.delete(schema.takeoffCategories)
+      .where(and(eq(schema.takeoffCategories.id, id), eq(schema.takeoffCategories.companyId, companyId)));
+  }
+
+  async getTakeoffMeasurements(projectId: string, companyId: string): Promise<schema.TakeoffMeasurement[]> {
+    return await db.select().from(schema.takeoffMeasurements)
+      .where(and(eq(schema.takeoffMeasurements.projectId, projectId), eq(schema.takeoffMeasurements.companyId, companyId)))
+      .orderBy(asc(schema.takeoffMeasurements.order), asc(schema.takeoffMeasurements.createdAt));
+  }
+
+  async getTakeoffMeasurementsByPage(pageId: string): Promise<schema.TakeoffMeasurement[]> {
+    return await db.select().from(schema.takeoffMeasurements)
+      .where(eq(schema.takeoffMeasurements.pageId, pageId))
+      .orderBy(asc(schema.takeoffMeasurements.order), asc(schema.takeoffMeasurements.createdAt));
+  }
+
+  async createTakeoffMeasurement(data: schema.InsertTakeoffMeasurement): Promise<schema.TakeoffMeasurement> {
+    const [row] = await db.insert(schema.takeoffMeasurements).values(data).returning();
+    return row;
+  }
+
+  async updateTakeoffMeasurement(id: string, companyId: string, data: Partial<schema.InsertTakeoffMeasurement>): Promise<schema.TakeoffMeasurement | undefined> {
+    const [row] = await db.update(schema.takeoffMeasurements)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.takeoffMeasurements.id, id), eq(schema.takeoffMeasurements.companyId, companyId)))
+      .returning();
+    return row;
+  }
+
+  async deleteTakeoffMeasurement(id: string, companyId: string): Promise<void> {
+    await db.delete(schema.takeoffMeasurements)
+      .where(and(eq(schema.takeoffMeasurements.id, id), eq(schema.takeoffMeasurements.companyId, companyId)));
   }
 }
 

@@ -6179,3 +6179,77 @@ export const insertFocusBlockSchema = createInsertSchema(focusBlocks).omit({
 export type FocusBlock = typeof focusBlocks.$inferSelect;
 export type InsertFocusBlock = z.infer<typeof insertFocusBlockSchema>;
 export type InsertFocusBlockWithOwner = InsertFocusBlock & { userId: string; companyId: string };
+
+// ─── TAKEOFF ────────────────────────────────────────────────────────────────
+
+export const takeoffPlans = pgTable("takeoff_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  objectPath: text("object_path").notNull(),
+  pageCount: integer("page_count").notNull().default(1),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffPlanSchema = createInsertSchema(takeoffPlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffPlan = z.infer<typeof insertTakeoffPlanSchema>;
+export type TakeoffPlan = typeof takeoffPlans.$inferSelect;
+
+export const takeoffPlanPages = pgTable("takeoff_plan_pages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  pageNumber: integer("page_number").notNull().default(1),
+  isScaled: boolean("is_scaled").notNull().default(false),
+  scaleRatio: doublePrecision("scale_ratio"),
+  calibrationPixelLength: doublePrecision("calibration_pixel_length"),
+  calibrationRealDistance: doublePrecision("calibration_real_distance"),
+  calibrationUnit: text("calibration_unit").default("mm"),
+  rotation: integer("rotation").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  planPageUnique: uniqueIndex("takeoff_plan_pages_plan_page_uq").on(table.planId, table.pageNumber),
+}));
+export const insertTakeoffPlanPageSchema = createInsertSchema(takeoffPlanPages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffPlanPage = z.infer<typeof insertTakeoffPlanPageSchema>;
+export type TakeoffPlanPage = typeof takeoffPlanPages.$inferSelect;
+
+export const takeoffCategories = pgTable("takeoff_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffCategorySchema = createInsertSchema(takeoffCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffCategory = z.infer<typeof insertTakeoffCategorySchema>;
+export type TakeoffCategory = typeof takeoffCategories.$inferSelect;
+
+export const takeoffMeasurements = pgTable("takeoff_measurements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
+  pageId: varchar("page_id").notNull().references(() => takeoffPlanPages.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  categoryId: varchar("category_id").references(() => takeoffCategories.id),
+  name: text("name").notNull(),
+  measurementType: text("measurement_type").notNull(),
+  color: text("color").notNull().default("#A890D4"),
+  geometry: json("geometry").notNull().default([]),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  unit: text("unit").notNull().default("m²"),
+  multiplier: doublePrecision("multiplier").notNull().default(1),
+  wastePercent: doublePrecision("waste_percent").notNull().default(0),
+  isVisible: boolean("is_visible").notNull().default(true),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
+export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
