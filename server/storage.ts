@@ -79,6 +79,7 @@ import {
   type ProposalSection, type InsertProposalSection,
   type ProposalItem, type InsertProposalItem,
   type ProposalAcceptance, type InsertProposalAcceptance,
+  type ProposalPaymentMilestone, type InsertProposalPaymentMilestone,
   type Minute, type InsertMinute,
   type SystemFolder, type InsertSystemFolder,
   type SystemDocument, type InsertSystemDocument,
@@ -809,6 +810,18 @@ export interface IStorage {
   getProposalAcceptances(proposalId: string): Promise<ProposalAcceptance[]>;
   createProposalAcceptance(acceptance: InsertProposalAcceptance): Promise<ProposalAcceptance>;
   getLatestProposalAcceptance(proposalId: string): Promise<ProposalAcceptance | undefined>;
+
+  // Proposal Payment Milestones CRUD
+  getProposalPaymentMilestones(proposalId: string): Promise<ProposalPaymentMilestone[]>;
+  createProposalPaymentMilestone(m: InsertProposalPaymentMilestone): Promise<ProposalPaymentMilestone>;
+  updateProposalPaymentMilestone(id: string, m: Partial<InsertProposalPaymentMilestone>): Promise<ProposalPaymentMilestone | undefined>;
+  deleteProposalPaymentMilestone(id: string): Promise<boolean>;
+  replaceProposalPaymentMilestones(proposalId: string, items: InsertProposalPaymentMilestone[]): Promise<ProposalPaymentMilestone[]>;
+
+  // Proposal revisions / numbering / snapshots
+  getNextProposalNumber(): Promise<string>;
+  createProposalRevision(parentId: string, overrides?: Partial<InsertProposal>): Promise<Proposal>;
+  recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined>;
 
   // Activity Feed CRUD
   getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]>;
@@ -14976,6 +14989,156 @@ export class DbStorage implements IStorage {
       console.error("Database error in getLatestProposalAcceptance:", error);
       throw error;
     }
+  }
+
+  // Proposal Payment Milestones
+  async getProposalPaymentMilestones(proposalId: string): Promise<ProposalPaymentMilestone[]> {
+    return await db.select()
+      .from(schema.proposalPaymentMilestones)
+      .where(eq(schema.proposalPaymentMilestones.proposalId, proposalId))
+      .orderBy(schema.proposalPaymentMilestones.order);
+  }
+
+  async createProposalPaymentMilestone(m: InsertProposalPaymentMilestone): Promise<ProposalPaymentMilestone> {
+    const result = await db.insert(schema.proposalPaymentMilestones).values(m).returning();
+    return result[0];
+  }
+
+  async updateProposalPaymentMilestone(id: string, m: Partial<InsertProposalPaymentMilestone>): Promise<ProposalPaymentMilestone | undefined> {
+    const result = await db.update(schema.proposalPaymentMilestones)
+      .set({ ...m, updatedAt: new Date() })
+      .where(eq(schema.proposalPaymentMilestones.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProposalPaymentMilestone(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.proposalPaymentMilestones)
+        .where(eq(schema.proposalPaymentMilestones.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async replaceProposalPaymentMilestones(proposalId: string, items: InsertProposalPaymentMilestone[]): Promise<ProposalPaymentMilestone[]> {
+    return await db.transaction(async (tx) => {
+      await tx.delete(schema.proposalPaymentMilestones)
+        .where(eq(schema.proposalPaymentMilestones.proposalId, proposalId));
+      if (items.length === 0) return [];
+      const toInsert = items.map((it, idx) => ({ ...it, proposalId, order: it.order ?? idx }));
+      return await tx.insert(schema.proposalPaymentMilestones).values(toInsert).returning();
+    });
+  }
+
+  // PROP-YYYY-NNNN numbering — best-effort sequential; callers should be prepared
+  // to retry on unique-constraint conflict (numbering is not yet sequence-backed).
+  async getNextProposalNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `PROP-${year}-`;
+    const rows = await db.select({ proposalNumber: schema.proposals.proposalNumber })
+      .from(schema.proposals)
+      .where(sql`${schema.proposals.proposalNumber} LIKE ${prefix + '%'}`);
+    let max = 0;
+    for (const r of rows) {
+      const n = parseInt(String(r.proposalNumber || '').replace(prefix, ''), 10);
+      if (!isNaN(n) && n > max) max = n;
+    }
+    return `${prefix}${String(max + 1).padStart(4, '0')}`;
+  }
+
+  async createProposalRevision(parentId: string, overrides?: Partial<InsertProposal>): Promise<Proposal> {
+    const parent = await this.getProposal(parentId);
+    if (!parent) throw new Error('Parent proposal not found');
+
+    return await db.transaction(async (tx) => {
+      // Mark parent as superseded inside the transaction so failure rolls back.
+      await tx.update(schema.proposals)
+        .set({ status: 'superseded', updatedAt: new Date() })
+        .where(eq(schema.proposals.id, parentId));
+
+      const nextVersion = (parent.version ?? 1) + 1;
+      const newNumber = await this.getNextProposalNumber();
+
+      // Build clone explicitly using only fields that exist on the proposals schema
+      // to avoid stray timestamps (sentAt/acceptedAt/rejectedAt) that don't exist.
+      const cloneValues: any = {
+        proposalNumber: newNumber,
+        name: parent.name,
+        projectId: parent.projectId,
+        companyId: parent.companyId,
+        clientName: (parent as any).clientName ?? null,
+        clientEmail: (parent as any).clientEmail ?? null,
+        clientPhone: (parent as any).clientPhone ?? null,
+        clientAddress: (parent as any).clientAddress ?? null,
+        subtotal: parent.subtotal,
+        gstAmount: parent.gstAmount,
+        totalAmount: parent.totalAmount,
+        status: 'draft',
+        expiryDate: parent.expiryDate,
+        sentDate: null,
+        viewedDate: null,
+        acceptedDate: null,
+        acceptedBy: null,
+        acceptedByName: null,
+        acceptedByEmail: null,
+        signature: null,
+        rejectedDate: null,
+        rejectionReason: null,
+        convertedToInvoiceId: null,
+        convertedDate: null,
+        showPricing: parent.showPricing,
+        allowClientOptions: (parent as any).allowClientOptions ?? false,
+        createdBy: parent.createdBy,
+        createdByName: parent.createdByName,
+        notes: parent.notes,
+        isArchived: false,
+        version: nextVersion,
+        parentProposalId: parentId,
+        contentSnapshot: null,
+        viewCount: 0,
+        lastViewedAt: null,
+        viewerDevice: null,
+        layoutSettings: parent.layoutSettings ?? {},
+        ...(overrides || {}),
+      };
+      const created = (await tx.insert(schema.proposals).values(cloneValues).returning())[0];
+
+      // Clone sections + items + milestones inside the transaction
+      const sections = await this.getProposalSections(parentId);
+      for (const s of sections) {
+        const sCopy: any = { ...s, proposalId: created.id };
+        delete sCopy.id; delete sCopy.createdAt; delete sCopy.updatedAt;
+        await tx.insert(schema.proposalSections).values(sCopy);
+      }
+      const items = await this.getProposalItems(parentId);
+      for (const it of items) {
+        const iCopy: any = { ...it, proposalId: created.id };
+        delete iCopy.id; delete iCopy.createdAt; delete iCopy.updatedAt;
+        await tx.insert(schema.proposalItems).values(iCopy);
+      }
+      const ms = await this.getProposalPaymentMilestones(parentId);
+      for (const m of ms) {
+        const mCopy: any = { ...m, proposalId: created.id };
+        delete mCopy.id; delete mCopy.createdAt; delete mCopy.updatedAt;
+        await tx.insert(schema.proposalPaymentMilestones).values(mCopy);
+      }
+      return created;
+    });
+  }
+
+  async recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined> {
+    const result = await db.update(schema.proposals)
+      .set({
+        viewCount: sql`${schema.proposals.viewCount} + 1` as any,
+        lastViewedAt: new Date(),
+        viewerDevice: device ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.proposals.id, id))
+      .returning();
+    return result[0];
   }
 
   // Activity Feed CRUD

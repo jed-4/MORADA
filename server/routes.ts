@@ -60,6 +60,7 @@ import {
   insertProposalSectionSchema,
   insertProposalItemSchema,
   insertProposalAcceptanceSchema,
+  insertProposalPaymentMilestoneSchema,
   insertInvoiceVariationSchema,
   insertInvoiceAllowanceSchema,
   insertInvoiceBillSchema,
@@ -13697,9 +13698,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const proposal = await storage.createProposal(validationResult.data);
+      // Always assign server-authoritative sequential proposal number.
+      // Retry once on collision (concurrent insert race).
+      const data: any = { ...validationResult.data };
+      data.proposalNumber = await storage.getNextProposalNumber();
+      let proposal;
+      try {
+        proposal = await storage.createProposal(data);
+      } catch (e: any) {
+        if (String(e?.message || '').toLowerCase().includes('duplicate') ||
+            String(e?.code || '') === '23505') {
+          data.proposalNumber = await storage.getNextProposalNumber();
+          proposal = await storage.createProposal(data);
+        } else {
+          throw e;
+        }
+      }
       res.status(201).json(proposal);
     } catch (error) {
+      console.error("Error creating proposal:", error);
       res.status(500).json({ error: "Failed to create proposal" });
     }
   });
@@ -13906,15 +13923,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only draft proposals can be sent" });
       }
 
-      const { sentTo, sentBy, sentAt } = req.body;
+      const { sentAt } = req.body;
+
+      // Capture content snapshot at the moment of sending
+      const [sections, items, milestones] = await Promise.all([
+        storage.getProposalSections(req.params.id),
+        storage.getProposalItems(req.params.id),
+        storage.getProposalPaymentMilestones(req.params.id),
+      ]);
+      const snapshot = {
+        capturedAt: new Date().toISOString(),
+        proposal: existing,
+        sections,
+        items,
+        milestones,
+      };
+
       const proposal = await storage.updateProposal(req.params.id, {
         status: "sent",
-        sentAt: sentAt || new Date(),
-        sentBy: sentBy || null,
-        sentTo: sentTo || null
-      });
+        sentDate: sentAt || (new Date() as any),
+        contentSnapshot: snapshot,
+      } as any);
       res.json(proposal);
     } catch (error) {
+      console.error("Error sending proposal:", error);
       res.status(500).json({ error: "Failed to send proposal" });
     }
   });
@@ -14029,6 +14061,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error converting proposal to invoice:", error);
       res.status(500).json({ error: "Failed to convert proposal to invoice" });
+    }
+  });
+
+  // Next sequential proposal number (PROP-YYYY-NNNN)
+  app.get("/api/proposal-numbers/next", async (_req, res) => {
+    try {
+      const next = await storage.getNextProposalNumber();
+      res.json({ proposalNumber: next });
+    } catch (error) {
+      console.error("Error generating next proposal number:", error);
+      res.status(500).json({ error: "Failed to generate proposal number" });
+    }
+  });
+
+  // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded)
+  app.post("/api/proposals/:id/revision", async (req, res) => {
+    try {
+      const created = await storage.createProposalRevision(req.params.id, req.body || {});
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating proposal revision:", error);
+      res.status(500).json({ error: error?.message || "Failed to create revision" });
+    }
+  });
+
+  // Capture/refresh content snapshot for a proposal (called on send & on demand)
+  app.post("/api/proposals/:id/snapshot", async (req, res) => {
+    try {
+      const proposal = await storage.getProposal(req.params.id);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      const [sections, items, milestones, acceptances] = await Promise.all([
+        storage.getProposalSections(req.params.id),
+        storage.getProposalItems(req.params.id),
+        storage.getProposalPaymentMilestones(req.params.id),
+        storage.getProposalAcceptances(req.params.id),
+      ]);
+      const snapshot = {
+        capturedAt: new Date().toISOString(),
+        proposal,
+        sections,
+        items,
+        milestones,
+        acceptances,
+      };
+      const updated = await storage.updateProposal(req.params.id, { contentSnapshot: snapshot } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error capturing proposal snapshot:", error);
+      res.status(500).json({ error: "Failed to capture snapshot" });
+    }
+  });
+
+  // Public client-view endpoint — increments view counter, returns snapshot if available
+  app.post("/api/proposals/:id/view", async (req, res) => {
+    try {
+      const device = (req.body?.device || req.headers['user-agent'] || null) as string | null;
+      const proposal = await storage.recordProposalView(req.params.id, device);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      // Auto-transition sent -> viewed (one-shot)
+      if (proposal.status === 'sent') {
+        await storage.updateProposal(req.params.id, { status: 'viewed' as any });
+      }
+      res.json({ proposal, snapshot: proposal.contentSnapshot ?? null });
+    } catch (error) {
+      console.error("Error recording proposal view:", error);
+      res.status(500).json({ error: "Failed to record view" });
+    }
+  });
+
+  // Proposal Payment Milestones
+  app.get("/api/proposals/:id/milestones", async (req, res) => {
+    try {
+      const items = await storage.getProposalPaymentMilestones(req.params.id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch milestones" });
+    }
+  });
+
+  app.post("/api/proposals/:id/milestones", async (req, res) => {
+    try {
+      const validated = insertProposalPaymentMilestoneSchema.safeParse({
+        ...req.body,
+        proposalId: req.params.id,
+      });
+      if (!validated.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(validated.error).toString() });
+      }
+      const created = await storage.createProposalPaymentMilestone(validated.data);
+      res.status(201).json(created);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create milestone" });
+    }
+  });
+
+  // Bulk replace milestones (used by the schedule editor)
+  app.put("/api/proposals/:id/milestones", async (req, res) => {
+    try {
+      const list = z.array(insertProposalPaymentMilestoneSchema.omit({ proposalId: true })).parse(req.body?.milestones ?? []);
+      const withProp = list.map(m => ({ ...m, proposalId: req.params.id }));
+      const created = await storage.replaceProposalPaymentMilestones(req.params.id, withProp as any);
+      res.json(created);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Failed to replace milestones" });
+    }
+  });
+
+  app.patch("/api/proposal-milestones/:id", async (req, res) => {
+    try {
+      const validated = insertProposalPaymentMilestoneSchema.partial().safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(validated.error).toString() });
+      }
+      const updated = await storage.updateProposalPaymentMilestone(req.params.id, validated.data);
+      if (!updated) return res.status(404).json({ error: "Milestone not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update milestone" });
+    }
+  });
+
+  app.delete("/api/proposal-milestones/:id", async (req, res) => {
+    try {
+      const ok = await storage.deleteProposalPaymentMilestone(req.params.id);
+      if (!ok) return res.status(404).json({ error: "Milestone not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete milestone" });
     }
   });
 

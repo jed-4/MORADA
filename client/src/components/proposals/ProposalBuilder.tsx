@@ -11,11 +11,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
-import type { Proposal, ProposalSection, Project } from '@shared/schema';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { GripVertical, Plus, Download, Eye, Loader2, Trash2 } from 'lucide-react';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
+import { RichTextEditor } from '@/components/RichTextEditor';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
@@ -26,6 +30,7 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   closing_letter: "Closing Letter",
   attachments: "Attachments",
   terms_conditions: "Terms & Conditions",
+  payment_schedule: "Payment Schedule",
   signature: "Signature",
   custom: "Custom Section",
 };
@@ -130,75 +135,69 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
             {/* Section-specific content editors */}
             {section.sectionType === "cover_letter" && (
               <div className="space-y-2">
-                <Label htmlFor={`letter-content-${section.id}`}>Letter Content</Label>
-                <Textarea
-                  id={`letter-content-${section.id}`}
-                  value={localContent.letterText || ""}
-                  onChange={(e) => setLocalContent({ ...localContent, letterText: e.target.value })}
+                <Label>Letter Content</Label>
+                <RichTextEditor
+                  content={localContent.letterText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, letterText: html })}
                   placeholder="Enter your cover letter text..."
-                  rows={8}
                 />
               </div>
             )}
 
             {section.sectionType === "closing_letter" && (
               <div className="space-y-2">
-                <Label htmlFor={`closing-content-${section.id}`}>Closing Letter Content</Label>
-                <Textarea
-                  id={`closing-content-${section.id}`}
-                  value={localContent.closingText || ""}
-                  onChange={(e) => setLocalContent({ ...localContent, closingText: e.target.value })}
+                <Label>Closing Letter Content</Label>
+                <RichTextEditor
+                  content={localContent.closingText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, closingText: html })}
                   placeholder="Enter your closing letter text..."
-                  rows={8}
                 />
               </div>
             )}
 
             {section.sectionType === "summary" && (
               <div className="space-y-2">
-                <Label htmlFor={`summary-content-${section.id}`}>Summary Content</Label>
-                <Textarea
-                  id={`summary-content-${section.id}`}
-                  value={localContent.summaryText || ""}
-                  onChange={(e) => setLocalContent({ ...localContent, summaryText: e.target.value })}
+                <Label>Summary Content</Label>
+                <RichTextEditor
+                  content={localContent.summaryText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, summaryText: html })}
                   placeholder="Enter project summary..."
-                  rows={8}
                 />
               </div>
             )}
 
             {section.sectionType === "terms_conditions" && (
               <div className="space-y-2">
-                <Label htmlFor={`terms-content-${section.id}`}>Terms & Conditions</Label>
-                <Textarea
-                  id={`terms-content-${section.id}`}
-                  value={localContent.termsText || ""}
-                  onChange={(e) => setLocalContent({ ...localContent, termsText: e.target.value })}
+                <Label>Terms &amp; Conditions</Label>
+                <RichTextEditor
+                  content={localContent.termsText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, termsText: html })}
                   placeholder="Enter terms and conditions..."
-                  rows={10}
                 />
               </div>
             )}
 
             {section.sectionType === "custom" && (
               <div className="space-y-2">
-                <Label htmlFor={`custom-content-${section.id}`}>Content</Label>
-                <Textarea
-                  id={`custom-content-${section.id}`}
-                  value={localContent.customText || ""}
-                  onChange={(e) => setLocalContent({ ...localContent, customText: e.target.value })}
+                <Label>Content</Label>
+                <RichTextEditor
+                  content={localContent.customText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, customText: html })}
                   placeholder="Enter section content..."
-                  rows={8}
                 />
               </div>
             )}
 
             {section.sectionType === "estimate" && (
-              <EstimateEditor 
-                content={localContent} 
+              <EstimateEditor
+                content={localContent}
                 setContent={setLocalContent}
                 projectId={projectId}
               />
+            )}
+
+            {section.sectionType === "payment_schedule" && (
+              <PaymentScheduleEditor proposalId={section.proposalId} />
             )}
 
             {section.sectionType === "cover_page" && (
@@ -274,6 +273,12 @@ export function ProposalBuilder({
   const [isGenerating, setIsGenerating] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
+  // Fetch payment milestones for PDF rendering
+  const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
+    queryKey: ['/api/proposals', proposal.id, 'milestones'],
+    enabled: !!proposal.id,
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -327,6 +332,7 @@ export function ProposalBuilder({
             companyName={companyName}
             primaryColor={primaryColor}
             estimatesData={estimatesDataMap}
+            milestones={milestones}
           />
         ).toBlob();
         
@@ -363,7 +369,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview]);
+  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview, milestones]);
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
@@ -404,6 +410,7 @@ export function ProposalBuilder({
                   companyLogo={companyLogo}
                   companyName={companyName}
                   primaryColor={primaryColor}
+                  milestones={milestones}
                 />
               }
               fileName={`${proposal.proposalNumber}.pdf`}
@@ -448,52 +455,226 @@ export function ProposalBuilder({
         )}
       </div>
 
-      {/* Section Sidebar - 40% */}
+      {/* Sidebar - Sections / Layout - 40% */}
       <div className="w-96 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Sections</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onAddSection}
-            data-testid="button-add-section"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Section
-          </Button>
-        </div>
+        <Tabs defaultValue="sections" className="flex-1 flex flex-col">
+          <TabsList className="w-full">
+            <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
+            <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
+          </TabsList>
+          <TabsContent value="sections" className="flex-1 flex flex-col mt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Sections</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onAddSection}
+                data-testid="button-add-section"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Section
+              </Button>
+            </div>
 
-        <div className="flex-1 overflow-auto">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={sections.map((s) => s.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <Accordion type="single" collapsible className="w-full">
-                {sections.map((section) => (
-                  <SortableSectionItem
-                    key={section.id}
-                    section={section}
-                    onSectionUpdate={onSectionUpdate}
-                    value={section.id}
-                    projectId={proposal.projectId}
-                  />
-                ))}
-              </Accordion>
-            </SortableContext>
-          </DndContext>
+            <div className="flex-1 overflow-auto">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={sections.map((s) => s.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <Accordion type="single" collapsible className="w-full">
+                    {sections.map((section) => (
+                      <SortableSectionItem
+                        key={section.id}
+                        section={section}
+                        onSectionUpdate={onSectionUpdate}
+                        value={section.id}
+                        projectId={proposal.projectId}
+                      />
+                    ))}
+                  </Accordion>
+                </SortableContext>
+              </DndContext>
 
-          {sections.length === 0 && (
-            <Card className="p-8 text-center text-muted-foreground">
-              <p className="mb-2">No sections yet</p>
-              <p className="text-sm">Click "Add Section" to get started</p>
-            </Card>
-          )}
-        </div>
+              {sections.length === 0 && (
+                <Card className="p-8 text-center text-muted-foreground">
+                  <p className="mb-2">No sections yet</p>
+                  <p className="text-sm">Click "Add Section" to get started</p>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="layout" className="flex-1 mt-4">
+            <LayoutPanel proposal={proposal} />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
+// --- Layout Panel ---
+interface LayoutPanelProps {
+  proposal: Proposal;
+}
+
+function LayoutPanel({ proposal }: LayoutPanelProps) {
+  const settings = (proposal.layoutSettings as any) || {};
+  const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || '#3B82F6');
+  const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
+  const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
+  const [pageSize, setPageSize] = useState<string>(settings.pageSize || 'A4');
+
+  const saveLayoutMutation = useMutation({
+    mutationFn: async (layoutSettings: Record<string, any>) => {
+      return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', { layoutSettings });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+    },
+  });
+
+  const handleSave = () => {
+    saveLayoutMutation.mutate({ primaryColor, showPageNumbers, showFooter, pageSize });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="layout-primary-color">Primary Color</Label>
+        <Input
+          id="layout-primary-color"
+          type="color"
+          value={primaryColor}
+          onChange={(e) => setPrimaryColor(e.target.value)}
+          data-testid="input-layout-primary-color"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="layout-page-size">Page Size</Label>
+        <select
+          id="layout-page-size"
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          value={pageSize}
+          onChange={(e) => setPageSize(e.target.value)}
+          data-testid="select-layout-page-size"
+        >
+          <option value="A4">A4</option>
+          <option value="LETTER">US Letter</option>
+        </select>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="layout-page-numbers">Show page numbers</Label>
+        <Switch
+          id="layout-page-numbers"
+          checked={showPageNumbers}
+          onCheckedChange={setShowPageNumbers}
+          data-testid="switch-layout-page-numbers"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="layout-footer">Show footer</Label>
+        <Switch
+          id="layout-footer"
+          checked={showFooter}
+          onCheckedChange={setShowFooter}
+          data-testid="switch-layout-footer"
+        />
+      </div>
+      <Button onClick={handleSave} disabled={saveLayoutMutation.isPending} className="w-full" data-testid="button-save-layout">
+        {saveLayoutMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        Save Layout
+      </Button>
+    </div>
+  );
+}
+
+// --- Payment Schedule Editor ---
+interface PaymentScheduleEditorProps {
+  proposalId: string;
+}
+
+function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
+  const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
+    queryKey: ['/api/proposals', proposalId, 'milestones'],
+  });
+  const [draft, setDraft] = useState<Array<Partial<ProposalPaymentMilestone>>>([]);
+
+  useEffect(() => {
+    setDraft(milestones.length > 0 ? milestones : []);
+  }, [milestones]);
+
+  const replaceMutation = useMutation({
+    mutationFn: async (items: Array<Partial<ProposalPaymentMilestone>>) => {
+      return await apiRequest(`/api/proposals/${proposalId}/milestones`, 'PUT', {
+        milestones: items.map((m, i) => ({
+          name: m.name || `Milestone ${i + 1}`,
+          percentage: m.percentage ?? null,
+          amountCents: m.amountCents ?? null,
+          description: m.description || null,
+          order: i,
+        })),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId, 'milestones'] });
+    },
+  });
+
+  const addRow = () => setDraft([...draft, { name: '', percentage: 0 }]);
+  const removeRow = (idx: number) => setDraft(draft.filter((_, i) => i !== idx));
+  const updateRow = (idx: number, patch: Partial<ProposalPaymentMilestone>) =>
+    setDraft(draft.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  const totalPct = draft.reduce((s, m) => s + (Number(m.percentage) || 0), 0);
+
+  return (
+    <div className="space-y-3" data-testid="payment-schedule-editor">
+      <div className="flex items-center justify-between">
+        <Label>Payment Schedule</Label>
+        <Button size="sm" variant="outline" onClick={addRow} data-testid="button-add-milestone">
+          <Plus className="w-4 h-4 mr-1" /> Add
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {draft.map((m, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <Input
+              placeholder="Name"
+              value={m.name || ''}
+              onChange={(e) => updateRow(idx, { name: e.target.value })}
+              className="flex-1"
+              data-testid={`input-milestone-name-${idx}`}
+            />
+            <Input
+              placeholder="%"
+              type="number"
+              value={m.percentage ?? ''}
+              onChange={(e) => updateRow(idx, { percentage: e.target.value === '' ? null : Number(e.target.value) })}
+              className="w-20"
+              data-testid={`input-milestone-pct-${idx}`}
+            />
+            <Button size="icon" variant="ghost" onClick={() => removeRow(idx)} data-testid={`button-remove-milestone-${idx}`}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        ))}
+        {draft.length === 0 && (
+          <p className="text-xs text-muted-foreground">No milestones — click Add to begin.</p>
+        )}
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Total: {totalPct.toFixed(2)}%</span>
+        <Button size="sm" onClick={() => replaceMutation.mutate(draft)} disabled={replaceMutation.isPending} data-testid="button-save-milestones">
+          {replaceMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+          Save Schedule
+        </Button>
       </div>
     </div>
   );

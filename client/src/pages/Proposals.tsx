@@ -229,6 +229,18 @@ export default function Proposals() {
   const proposalColumns = useMemo<ColumnDef<Proposal, unknown>[]>(() => {
     const cols: ColumnDef<Proposal, unknown>[] = [
       {
+        id: "proposalNumber",
+        header: "Proposal #",
+        accessorFn: (p) => p.proposalNumber || "",
+        cell: ({ row }) => (
+          <span className="text-xs font-mono text-muted-foreground" data-testid={`text-proposal-number-${row.original.id}`}>
+            {row.original.proposalNumber || "—"}
+          </span>
+        ),
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Proposal #" } satisfies DataTableColumnMeta,
+      },
+      {
         id: "name",
         header: "Name",
         accessorFn: (p) => p.name || "",
@@ -400,6 +412,39 @@ export default function Proposals() {
         },
         size: 160,
         meta: { defaultWidth: 160, headerLabel: "Status" } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "version",
+        header: "Version",
+        accessorFn: (p) => (p as any).version || 1,
+        cell: ({ row }) => {
+          const v = (row.original as any).version || 1;
+          return (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-version-${row.original.id}`}>
+              v{v}
+            </Badge>
+          );
+        },
+        size: 80,
+        meta: { defaultWidth: 80, headerLabel: "Version", defaultHidden: true } satisfies DataTableColumnMeta,
+      },
+      {
+        id: "viewCount",
+        header: "Seen",
+        accessorFn: (p) => (p as any).viewCount || 0,
+        cell: ({ row }) => {
+          const count = (row.original as any).viewCount || 0;
+          const lastViewed = (row.original as any).lastViewedAt;
+          return (
+            <span className="text-xs text-muted-foreground" data-testid={`text-view-count-${row.original.id}`}>
+              {count > 0
+                ? `${count}× ${lastViewed ? format(new Date(lastViewed), 'MMM d') : ''}`
+                : '—'}
+            </span>
+          );
+        },
+        size: 100,
+        meta: { defaultWidth: 100, headerLabel: "Seen" } satisfies DataTableColumnMeta,
       },
       {
         id: "totalAmount",

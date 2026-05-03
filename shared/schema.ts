@@ -1084,6 +1084,19 @@ export const companySettings = pgTable("company_settings", {
 
   takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
 
+  // Proposals: payment-schedule templates and full proposal templates
+  paymentScheduleTemplates: jsonb("payment_schedule_templates").$type<Array<{
+    id: string;
+    name: string;
+    milestones: Array<{ name: string; percentage?: number; amountCents?: number; description?: string }>;
+  }>>().default([]),
+  proposalTemplates: jsonb("proposal_templates").$type<Array<{
+    id: string;
+    name: string;
+    sections: Array<{ sectionType: string; name: string; order: number; content?: any }>;
+    layoutSettings?: Record<string, any>;
+  }>>().default([]),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2390,7 +2403,22 @@ export const proposals = pgTable("proposals", {
   createdByName: text("created_by_name"),
   notes: text("notes"), // Internal notes, not visible to client
   isArchived: boolean("is_archived").notNull().default(false),
-  
+
+  // Revisions
+  version: integer("version").notNull().default(1),
+  parentProposalId: varchar("parent_proposal_id"),
+
+  // Snapshot of full proposal frozen at send-time (sections + items + milestones + totals + T&Cs)
+  contentSnapshot: jsonb("content_snapshot"),
+
+  // View tracking (client-view endpoint)
+  viewCount: integer("view_count").notNull().default(0),
+  lastViewedAt: timestamp("last_viewed_at"),
+  viewerDevice: text("viewer_device"),
+
+  // Layout settings (Layout panel from task b)
+  layoutSettings: jsonb("layout_settings").$type<Record<string, any>>().default({}),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2400,7 +2428,7 @@ export const insertProposalSchema = createInsertSchema(proposals).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired"]).default("draft"),
+  status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired", "superseded"]).default("draft"),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),
@@ -2545,6 +2573,33 @@ export const insertProposalAcceptanceSchema = createInsertSchema(proposalAccepta
 
 export type InsertProposalAcceptance = z.infer<typeof insertProposalAcceptanceSchema>;
 export type ProposalAcceptance = typeof proposalAcceptances.$inferSelect;
+
+// Proposal Payment Milestones (e.g. Deposit / Slab / Frame / Lock-up / Fit-off / PC)
+export const proposalPaymentMilestones = pgTable("proposal_payment_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  percentage: doublePrecision("percentage"), // null when amount-based
+  amountCents: integer("amount_cents"),       // null when percentage-based
+  description: text("description"),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalPaymentMilestoneSchema = createInsertSchema(proposalPaymentMilestones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  percentage: z.number().nullable().optional(),
+  amountCents: z.number().nullable().optional(),
+  order: z.number().default(0),
+});
+
+export type InsertProposalPaymentMilestone = z.infer<typeof insertProposalPaymentMilestoneSchema>;
+export type ProposalPaymentMilestone = typeof proposalPaymentMilestones.$inferSelect;
 
 // Activity feed table
 export const activities = pgTable("activities", {

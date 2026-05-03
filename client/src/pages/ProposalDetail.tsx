@@ -55,6 +55,7 @@ const SECTION_TYPES = [
   { value: 'closing_letter', label: 'Closing Letter' },
   { value: 'attachments', label: 'Attachments' },
   { value: 'terms_conditions', label: 'Terms & Conditions' },
+  { value: 'payment_schedule', label: 'Payment Schedule' },
   { value: 'signature', label: 'Signature' },
   { value: 'custom', label: 'Custom Section' },
 ];
@@ -99,17 +100,30 @@ export default function ProposalDetail() {
   // Determine if we're in project context
   const isProjectContext = !!params.projectId;
 
+  // Fetch next sequential proposal number for new proposals
+  const { data: nextProposalNumber } = useQuery<{ proposalNumber: string }>({
+    queryKey: ["/api/proposal-numbers/next"],
+    enabled: isNewProposal,
+  });
+
+  // Fetch company terms templates for T&Cs auto-fill
+  const { data: termsTemplates = [] } = useQuery<Array<{ id: string; name: string; content: string; isDefault?: boolean }>>({
+    queryKey: ["/api/terms-templates"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    retry: false,
+  });
+
   // Stable default values for new proposals
   const newProposalDefaults = useMemo(() => ({
     name: "",
-    proposalNumber: `PROP-${Date.now()}`,
+    proposalNumber: nextProposalNumber?.proposalNumber || `PROP-${new Date().getFullYear()}-0001`,
     projectId: params.projectId || "",
     status: "draft" as const,
     subtotal: 0,
     gstAmount: 0,
     totalAmount: 0,
     showPricing: true,
-  }), [params.projectId]);
+  }), [params.projectId, nextProposalNumber?.proposalNumber]);
 
   // Form for proposal details
   const form = useForm<InsertProposal>({
@@ -132,18 +146,23 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Create all default sections after creating the proposal
         if (result.id) {
-          const defaultSections = [
+          // Auto-fill T&Cs with default terms template (if available)
+          const defaultTermsTpl = termsTemplates.find(t => t.isDefault) || termsTemplates[0];
+          const defaultTermsContent = defaultTermsTpl?.content || '';
+
+          const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: any }> = [
             { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
             { sectionType: 'cover_letter', name: 'Cover Letter', order: 1 },
             { sectionType: 'estimate', name: 'Estimate', order: 2 },
             { sectionType: 'summary', name: 'Summary', order: 3 },
             { sectionType: 'allowances', name: 'Allowances', order: 4 },
-            { sectionType: 'closing_letter', name: 'Closing Letter', order: 5 },
-            { sectionType: 'attachments', name: 'Attachments', order: 6 },
-            { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 7 },
-            { sectionType: 'signature', name: 'Signature', order: 8 },
+            { sectionType: 'payment_schedule', name: 'Payment Schedule', order: 5 },
+            { sectionType: 'closing_letter', name: 'Closing Letter', order: 6 },
+            { sectionType: 'attachments', name: 'Attachments', order: 7 },
+            { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 8, content: { termsText: defaultTermsContent } },
+            { sectionType: 'signature', name: 'Signature', order: 9 },
           ];
-          
+
           await Promise.all(
             defaultSections.map(section =>
               apiRequest(`/api/proposals/${result.id}/sections`, "POST", {
@@ -331,9 +350,26 @@ export default function ProposalDetail() {
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold">
-                {isNewProposal ? 'New Proposal' : proposal?.name}
-              </h1>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-bold">
+                  {isNewProposal ? 'New Proposal' : proposal?.name}
+                </h1>
+                {proposal && (proposal as any).version > 1 && (
+                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border bg-muted" data-testid="chip-proposal-version">
+                    v{(proposal as any).version}
+                  </span>
+                )}
+                {proposal?.status && (
+                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border capitalize bg-muted" data-testid="chip-proposal-status">
+                    {proposal.status.replace('_', ' ')}
+                  </span>
+                )}
+                {proposal && ((proposal as any).viewCount || 0) > 0 && (
+                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border bg-muted" data-testid="chip-proposal-views">
+                    Seen {(proposal as any).viewCount}×
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">
                 {isNewProposal ? 'Create a new proposal' : `#${proposal?.proposalNumber}`}
               </p>
