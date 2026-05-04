@@ -55,7 +55,9 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   // adopt it as the active tab and ensure it's in the open list.
   useEffect(() => {
     setCurrentPage(initialPage);
-    setOpenPages((prev) => (prev.includes(initialPage) ? prev : [...prev, initialPage]));
+    setOpenPages((prev) =>
+      prev.includes(initialPage) ? prev : [...prev, initialPage].sort((a, b) => a - b),
+    );
   }, [initialPage]);
 
   // Switching pages should exit any in-progress drawing.
@@ -65,7 +67,9 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   }, [currentPage]);
 
   const openPage = (p: number) => {
-    setOpenPages((prev) => (prev.includes(p) ? prev : [...prev, p]));
+    setOpenPages((prev) =>
+      prev.includes(p) ? prev : [...prev, p].sort((a, b) => a - b),
+    );
     setCurrentPage(p);
   };
 
@@ -105,6 +109,46 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
   const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
   const currentPageData = pages.find((p) => p.pageNumber === currentPage);
+
+  // All measurements across this plan — used to figure out which pages are
+  // "active" (have a scale set or any measurement on them) so we can show
+  // them as tabs automatically.
+  const allMeasurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
+  const { data: allMeasurements = [] } = useQuery<TakeoffMeasurement[]>({ queryKey: allMeasurementsKey });
+  const planMeasurements = useMemo(
+    () => allMeasurements.filter((m) => m.planId === plan.id),
+    [allMeasurements, plan.id],
+  );
+  const activePageNumbers = useMemo(() => {
+    const set = new Set<number>();
+    const pageById = new Map(pages.map((p) => [p.id, p] as const));
+    for (const p of pages) if (p.isScaled) set.add(p.pageNumber);
+    for (const m of planMeasurements) {
+      const row = pageById.get(m.pageId);
+      if (row) set.add(row.pageNumber);
+    }
+    return set;
+  }, [pages, planMeasurements]);
+  const seenActivePagesRef = useRef<Set<number>>(new Set());
+  // Reset the auto-tab dedup set when switching to a different plan so the new
+  // plan's active pages get added as tabs.
+  useEffect(() => {
+    seenActivePagesRef.current = new Set();
+  }, [plan.id]);
+  useEffect(() => {
+    const fresh: number[] = [];
+    activePageNumbers.forEach((n) => {
+      if (!seenActivePagesRef.current.has(n)) {
+        seenActivePagesRef.current.add(n);
+        fresh.push(n);
+      }
+    });
+    if (fresh.length === 0) return;
+    setOpenPages((prev) => {
+      const merged = new Set([...prev, ...fresh]);
+      return Array.from(merged).sort((a, b) => a - b);
+    });
+  }, [activePageNumbers]);
 
   const categoriesKey = ["/api/projects", projectId, "takeoff/categories"];
   const { data: categories = [] } = useQuery<TakeoffCategory[]>({ queryKey: categoriesKey });

@@ -3,9 +3,24 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Eye, EyeOff, Plus, Trash2, GripVertical, Pencil } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  Pencil,
+  ChevronDown,
+  ChevronRight,
+  MoreVertical,
+} from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -52,9 +67,11 @@ export default function TakeoffMeasurementPanel({
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const measurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
   const pageMeasurementsKeyPrefix = ["/api/projects", projectId, "takeoff/pages"];
 
+  // distance:5 lets a plain click through; only a real drag activates sortable.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const updateMeasurement = useMutation({
@@ -103,15 +120,6 @@ export default function TakeoffMeasurementPanel({
       ? "Uncategorised"
       : categories.find((c) => c.id === id)?.name ?? "Category";
 
-  const groupTotals = (rows: TakeoffMeasurement[]) => {
-    const byUnit = new Map<string, number>();
-    for (const r of rows) {
-      const u = r.unit || "";
-      byUnit.set(u, (byUnit.get(u) ?? 0) + (r.quantity ?? 0));
-    }
-    return Array.from(byUnit.entries()).filter(([, v]) => v > 0);
-  };
-
   const handleDragEnd = (catId: string, rows: TakeoffMeasurement[]) => async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -119,7 +127,6 @@ export default function TakeoffMeasurementPanel({
     const newIndex = rows.findIndex((r) => r.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
     const reordered = arrayMove(rows, oldIndex, newIndex);
-    // Optimistic ordering — push order updates to server.
     await Promise.all(
       reordered.map((r, idx) =>
         r.order === idx
@@ -128,6 +135,9 @@ export default function TakeoffMeasurementPanel({
       ),
     );
   };
+
+  const toggleGroup = (catId: string) =>
+    setCollapsed((prev) => ({ ...prev, [catId]: !prev[catId] }));
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -149,53 +159,59 @@ export default function TakeoffMeasurementPanel({
           </div>
         ) : (
           Array.from(grouped.entries()).map(([catId, rows]) => {
-            const totals = groupTotals(rows);
+            const isCollapsed = !!collapsed[catId];
             return (
               <div key={catId}>
-                <div className="px-3 py-1.5 bg-primary/5 flex items-center justify-between gap-2 sticky top-0 z-10">
-                  <span className="text-xs font-medium">{categoryName(catId)}</span>
-                  <div className="flex gap-1 flex-wrap">
-                    {totals.map(([unit, total]) => (
-                      <Badge key={unit} variant="secondary" className="text-[10px]">
-                        {Math.round(total * 100) / 100} {unit}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={(e) => { void handleDragEnd(catId, rows)(e); }}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(catId)}
+                  className="w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10 hover-elevate text-left"
+                  data-testid={`button-toggle-group-${catId}`}
+                  aria-expanded={!isCollapsed}
                 >
-                  <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-                    {rows.map((m) => (
-                      <SortableRow
-                        key={m.id}
-                        m={m}
-                        editing={editingId === m.id}
-                        editName={editName}
-                        setEditName={setEditName}
-                        onStartEdit={() => { setEditingId(m.id); setEditName(m.name); }}
-                        onCommitName={() => {
-                          if (editName.trim() && editName !== m.name) {
-                            updateMeasurement.mutate({ id: m.id, data: { name: editName.trim() } as any });
+                  {isCollapsed ? (
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  )}
+                  <span className="text-xs font-medium truncate">{categoryName(catId)}</span>
+                </button>
+                {!isCollapsed && (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(e) => { void handleDragEnd(catId, rows)(e); }}
+                  >
+                    <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                      {rows.map((m) => (
+                        <SortableRow
+                          key={m.id}
+                          m={m}
+                          editing={editingId === m.id}
+                          editName={editName}
+                          setEditName={setEditName}
+                          onStartEdit={() => { setEditingId(m.id); setEditName(m.name); }}
+                          onCommitName={() => {
+                            if (editName.trim() && editName !== m.name) {
+                              updateMeasurement.mutate({ id: m.id, data: { name: editName.trim() } as any });
+                            }
+                            setEditingId(null);
+                          }}
+                          highlighted={m.id === highlightedId}
+                          onHighlight={onHighlight}
+                          onColor={(color) => updateMeasurement.mutate({ id: m.id, data: { color } as any })}
+                          onToggleVisible={() =>
+                            updateMeasurement.mutate({ id: m.id, data: { isVisible: !m.isVisible } as any })
                           }
-                          setEditingId(null);
-                        }}
-                        highlighted={m.id === highlightedId}
-                        onHighlight={onHighlight}
-                        onColor={(color) => updateMeasurement.mutate({ id: m.id, data: { color } as any })}
-                        onToggleVisible={() =>
-                          updateMeasurement.mutate({ id: m.id, data: { isVisible: !m.isVisible } as any })
-                        }
-                        onDelete={() => deleteMeasurement.mutate(m.id)}
-                        onEdit={onEditClick ? () => onEditClick(m) : undefined}
-                        active={m.id === activeDrawingId}
-                        onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
+                          onDelete={() => deleteMeasurement.mutate(m.id)}
+                          onEdit={onEditClick ? () => onEditClick(m) : undefined}
+                          active={m.id === activeDrawingId}
+                          onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                )}
               </div>
             );
           })
@@ -241,7 +257,9 @@ function SortableRow({
   const handleRowClick = (e: React.MouseEvent) => {
     if (!onActivate) return;
     const target = e.target as HTMLElement;
-    if (target.closest("button, input, [role='button']")) return;
+    // Ignore clicks on inner controls (buttons, inputs, dropdown items, the
+    // color swatch popover trigger, etc.) — those have their own handlers.
+    if (target.closest("button, input, [role='button'], [role='menuitem']")) return;
     onActivate();
   };
   const canDraw = m.measurementType !== "manual";
@@ -249,31 +267,22 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       onMouseEnter={() => onHighlight(m.id)}
       onMouseLeave={() => onHighlight(null)}
       onClick={handleRowClick}
-      className={`flex items-center gap-1 px-2 py-2 border-b border-border ${
+      className={`flex items-center gap-1 px-2 py-2 border-b border-border touch-none ${
         active
           ? "bg-primary/15 ring-1 ring-inset ring-primary"
           : highlighted
             ? "bg-primary/5"
             : ""
-      } ${canDraw && onActivate ? "cursor-pointer hover-elevate" : ""}`}
+      } ${isDragging ? "cursor-grabbing" : "cursor-grab"} ${canDraw && onActivate ? "hover-elevate" : ""}`}
       data-testid={`panel-row-${m.id}`}
       data-active={active ? "true" : "false"}
-      title={canDraw && onActivate ? (active ? "Click to stop drawing" : "Click to draw on plan") : undefined}
+      title={canDraw && onActivate ? (active ? "Click to stop drawing — drag to reorder" : "Click to draw on plan — drag to reorder") : "Drag to reorder"}
     >
-      <button
-        {...attributes}
-        {...listeners}
-        className="text-muted-foreground hover:text-foreground cursor-grab"
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <Button size="icon" variant="ghost" onClick={onToggleVisible} data-testid={`button-toggle-visible-${m.id}`}>
-        {m.isVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
-      </Button>
       <TakeoffColorPicker color={m.color} onChange={onColor} testId={`color-${m.id}`} />
       <div className="flex-1 min-w-0">
         {editing ? (
@@ -282,6 +291,11 @@ function SortableRow({
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={onCommitName}
+            onClick={(e) => e.stopPropagation()}
+            // Stop pointer events from reaching the dnd-kit listeners on the
+            // row, otherwise selecting text in the input would start a drag.
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === "Enter") onCommitName();
               if (e.key === "Escape") onCommitName();
@@ -289,7 +303,11 @@ function SortableRow({
             className="h-7 text-sm"
           />
         ) : (
-          <div className="text-sm truncate cursor-text flex items-center gap-1.5" title="Double-click to rename" onDoubleClick={onStartEdit}>
+          <div
+            className="text-sm truncate cursor-text flex items-center gap-1.5"
+            title="Double-click to rename"
+            onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(); }}
+          >
             {active && <Pencil className="h-3 w-3 text-primary flex-shrink-0" />}
             <span className="truncate">{m.name}</span>
           </div>
@@ -302,20 +320,46 @@ function SortableRow({
         {Math.round((m.quantity ?? 0) * 100) / 100}
         <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
       </div>
-      {onEdit && (
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          data-testid={`button-edit-${m.id}`}
-          title="Edit details"
-        >
-          <Pencil className="h-4 w-4 text-muted-foreground" />
-        </Button>
-      )}
-      <Button size="icon" variant="ghost" onClick={onDelete} data-testid={`button-delete-${m.id}`}>
-        <Trash2 className="h-4 w-4 text-muted-foreground" />
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={(e) => { e.stopPropagation(); onToggleVisible(); }}
+        data-testid={`button-toggle-visible-${m.id}`}
+        title={m.isVisible ? "Hide on plan" : "Show on plan"}
+      >
+        {m.isVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
       </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Measurement options"
+            data-testid={`button-row-menu-${m.id}`}
+          >
+            <MoreVertical className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+          {onEdit && (
+            <DropdownMenuItem
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              data-testid={`menu-edit-${m.id}`}
+            >
+              <Pencil className="h-4 w-4 mr-2" /> Edit details
+            </DropdownMenuItem>
+          )}
+          {onEdit && <DropdownMenuSeparator />}
+          <DropdownMenuItem
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-destructive"
+            data-testid={`menu-delete-${m.id}`}
+          >
+            <Trash2 className="h-4 w-4 mr-2" /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
