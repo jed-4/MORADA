@@ -291,7 +291,7 @@ function SortableRow({
           </div>
         )}
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {active ? "Drawing… click to stop" : m.measurementType}
+          {m.measurementType}
         </div>
       </div>
       <div className="text-sm tabular-nums w-20 text-right">

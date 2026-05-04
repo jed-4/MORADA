@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TakeoffMeasurement } from "@shared/schema";
-import type { Point } from "./useTakeoffGeometry";
+import { normalizeShapes, type Point } from "./useTakeoffGeometry";
 
 export type DrawMode = "select" | "pan" | "area" | "linear" | "count" | "calibrate";
 
@@ -110,35 +110,13 @@ export default function TakeoffDrawingCanvas({
       {measurements
         .filter((m) => m.isVisible)
         .map((m) => {
-          const geo = (m.geometry as Point[] | null) ?? [];
-          if (!Array.isArray(geo) || geo.length === 0) return null;
-          const pts = geo.map((p) => ({ x: p.x * width, y: p.y * height }));
           const isHighlighted = m.id === highlightedId;
           const strokeWidth = isHighlighted ? 3 : 1.5;
 
-          if (m.measurementType === "area") {
-            return (
-              <polygon
-                key={m.id}
-                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
-                fill={m.color + "33"}
-                stroke={m.color}
-                strokeWidth={strokeWidth}
-              />
-            );
-          }
-          if (m.measurementType === "linear") {
-            return (
-              <polyline
-                key={m.id}
-                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
-                fill="none"
-                stroke={m.color}
-                strokeWidth={isHighlighted ? 3 : 2}
-              />
-            );
-          }
           if (m.measurementType === "count") {
+            const geo = (m.geometry as Point[] | null) ?? [];
+            if (!Array.isArray(geo) || geo.length === 0) return null;
+            const pts = geo.map((p) => ({ x: p.x * width, y: p.y * height }));
             return (
               <g key={m.id}>
                 {pts.map((p, i) => (
@@ -155,18 +133,68 @@ export default function TakeoffDrawingCanvas({
               </g>
             );
           }
+
+          const shapes = normalizeShapes(m.geometry);
+          if (shapes.length === 0) return null;
+
+          if (m.measurementType === "area") {
+            return (
+              <g key={m.id}>
+                {shapes.map((shape, idx) => {
+                  const pts = shape.map((p) => ({ x: p.x * width, y: p.y * height }));
+                  if (pts.length < 2) return null;
+                  return (
+                    <polygon
+                      key={idx}
+                      points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill={m.color + "33"}
+                      stroke={m.color}
+                      strokeWidth={strokeWidth}
+                    />
+                  );
+                })}
+              </g>
+            );
+          }
+          if (m.measurementType === "linear") {
+            return (
+              <g key={m.id}>
+                {shapes.map((shape, idx) => {
+                  const pts = shape.map((p) => ({ x: p.x * width, y: p.y * height }));
+                  if (pts.length < 2) return null;
+                  return (
+                    <polyline
+                      key={idx}
+                      points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="none"
+                      stroke={m.color}
+                      strokeWidth={isHighlighted ? 3 : 2}
+                    />
+                  );
+                })}
+              </g>
+            );
+          }
           return null;
         })}
 
       {inProgressPoints.length > 0 && (
         <g>
-          <polyline
-            points={inProgressPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-            fill="none"
-            stroke={selectedColor}
-            strokeWidth={1.5}
-            strokeDasharray="6 3"
-          />
+          {drawMode === "area" && inProgressPoints.length >= 3 ? (
+            <polygon
+              points={inProgressPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill={selectedColor + "33"}
+              stroke={selectedColor}
+              strokeWidth={1.5}
+            />
+          ) : (
+            <polyline
+              points={inProgressPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke={selectedColor}
+              strokeWidth={drawMode === "linear" ? 2 : 1.5}
+            />
+          )}
           {inProgressPoints.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={4} fill={selectedColor} />
           ))}

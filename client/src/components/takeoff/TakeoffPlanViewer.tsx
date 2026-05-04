@@ -26,7 +26,7 @@ import TakeoffMarkupCanvas, { type MarkupMode } from "./TakeoffMarkupCanvas";
 import TakeoffColorPicker, { MARKUP_COLORS } from "./TakeoffColorPicker";
 import {
   computeQuantity, defaultUnitForType, pixelsToFractions,
-  pointInPolygon, distanceToPolyline,
+  pointInPolygon, distanceToPolyline, normalizeShapes,
   type Point,
 } from "./useTakeoffGeometry";
 
@@ -319,29 +319,41 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     const target = activeMeasurement;
     if (!target) return;
     const page = await ensurePageRow();
-    let geometryFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+    const newShapeFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+
+    let nextGeometry: any;
     if (type === "count") {
+      // Count stays as a flat Point[] — append.
       const existing = (target.geometry as Point[] | null) ?? [];
-      if (Array.isArray(existing) && existing.length > 0) {
-        geometryFractions = [...existing, ...geometryFractions];
-      }
+      const flat = Array.isArray(existing) && existing.length > 0 ? existing : [];
+      nextGeometry = [...flat, ...newShapeFractions];
+    } else if (type === "area" || type === "linear") {
+      // Area/linear use Point[][] so multiple sub-shapes can be added to one measurement.
+      const existingShapes = normalizeShapes(target.geometry);
+      nextGeometry = [...existingShapes, newShapeFractions];
+    } else {
+      nextGeometry = newShapeFractions;
     }
+
     const { quantity, unit } = computeQuantity(
-      geometryFractions, type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
+      nextGeometry, type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
     );
     await updateMeasurement.mutateAsync({
       id: target.id,
       data: {
-        geometry: geometryFractions as any,
+        geometry: nextGeometry,
         quantity,
         unit: unit || defaultUnitForType(type),
       } as any,
     });
-    if (type !== "count") {
-      setActiveMeasurementId(null);
-      setDrawMode("select");
-      setStatusMessage("Saved");
+    if (type === "count") {
+      // Stay in count mode for more clicks.
+      return;
     }
+    // For area/linear: keep the row active so the user can immediately add another sub-shape.
+    setStatusMessage(
+      `Added shape to ${target.name} — keep drawing or click another row / tool to finish`,
+    );
   };
 
   const formatDimensionLabel = (a: Point, b: Point): string => {
@@ -365,15 +377,20 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     for (let i = pageMeasurements.length - 1; i >= 0; i--) {
       const m = pageMeasurements[i];
       if (!m.isVisible) continue;
-      const geo = (m.geometry as Point[] | null) ?? [];
-      if (!Array.isArray(geo) || geo.length === 0) continue;
-      const pts = geo.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
-      if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return m;
-      if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return m;
       if (m.measurementType === "count") {
-        for (const pt of pts) {
-          if (Math.hypot(pt.x - p.x, pt.y - p.y) <= 8) return m;
+        const geo = (m.geometry as Point[] | null) ?? [];
+        if (!Array.isArray(geo) || geo.length === 0) continue;
+        for (const pp of geo) {
+          const px = { x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight };
+          if (Math.hypot(px.x - p.x, px.y - p.y) <= 8) return m;
         }
+        continue;
+      }
+      const shapes = normalizeShapes(m.geometry);
+      for (const shape of shapes) {
+        const pts = shape.map((pp) => ({ x: pp.x * finalRenderWidth, y: pp.y * finalRenderHeight }));
+        if (m.measurementType === "area" && pts.length >= 3 && pointInPolygon(p, pts)) return m;
+        if (m.measurementType === "linear" && pts.length >= 2 && distanceToPolyline(p, pts) <= tolerance) return m;
       }
     }
     return null;

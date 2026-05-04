@@ -11,6 +11,21 @@ export function fractionsToPixels(pts: Point[], w: number, h: number): Point[] {
   return pts.map((p) => ({ x: p.x * w, y: p.y * h }));
 }
 
+/**
+ * Normalize a measurement's geometry to an array of shapes (Point[][]).
+ * Supports legacy single-shape geometry (Point[]) and multi-shape (Point[][]).
+ * Used by area/linear measurements which can have multiple sub-shapes.
+ */
+export function normalizeShapes(geometry: unknown): Point[][] {
+  if (!Array.isArray(geometry) || geometry.length === 0) return [];
+  // Multi-shape: first item is itself an array of points.
+  if (Array.isArray((geometry as any[])[0])) {
+    return (geometry as Point[][]).filter((s) => Array.isArray(s) && s.length > 0);
+  }
+  // Legacy single-shape: wrap.
+  return [geometry as Point[]];
+}
+
 function shoelaceArea(pts: Point[]): number {
   if (pts.length < 3) return 0;
   let area = 0;
@@ -55,35 +70,50 @@ function getPixelsPerMm(
 }
 
 export function computeQuantity(
-  geometry: Point[],
+  geometry: Point[] | Point[][],
   type: string,
   page: TakeoffPlanPage | undefined,
   renderedWidth: number,
   renderedHeight: number,
   pageWidthMm: number = 420,
 ): { quantity: number; unit: string } {
-  if (type === "count") return { quantity: geometry.length, unit: "each" };
+  // For count + manual + dimension, geometry is always a flat Point[].
+  if (type === "count") {
+    const flat = Array.isArray(geometry) && Array.isArray((geometry as any[])[0])
+      ? (geometry as Point[][]).flat()
+      : (geometry as Point[]);
+    return { quantity: flat.length, unit: "each" };
+  }
   if (type === "manual") return { quantity: 0, unit: "" };
 
   const pixelsPerMm = getPixelsPerMm(page, renderedWidth, pageWidthMm);
   if (pixelsPerMm === null || pixelsPerMm <= 0) return { quantity: 0, unit: "" };
 
-  const pxPts = geometry.map((p) => ({
-    x: p.x * renderedWidth,
-    y: p.y * renderedHeight,
-  }));
   const mmPerPx = 1 / pixelsPerMm;
+  const shapes: Point[][] =
+    type === "dimension"
+      ? [geometry as Point[]]
+      : (Array.isArray(geometry) && Array.isArray((geometry as any[])[0])
+          ? (geometry as Point[][])
+          : [geometry as Point[]]);
+
+  const toPx = (pts: Point[]) =>
+    pts.map((p) => ({ x: p.x * renderedWidth, y: p.y * renderedHeight }));
 
   if (type === "area") {
-    const areaPx2 = shoelaceArea(pxPts);
-    const areaMm2 = areaPx2 * mmPerPx * mmPerPx;
-    const areaM2 = areaMm2 / 1_000_000;
-    return { quantity: Math.round(areaM2 * 100) / 100, unit: "m²" };
+    let totalM2 = 0;
+    for (const s of shapes) {
+      const areaPx2 = shoelaceArea(toPx(s));
+      totalM2 += (areaPx2 * mmPerPx * mmPerPx) / 1_000_000;
+    }
+    return { quantity: Math.round(totalM2 * 100) / 100, unit: "m²" };
   }
   if (type === "linear" || type === "dimension") {
-    const lengthPx = polylineLength(pxPts);
-    const lengthM = (lengthPx * mmPerPx) / 1000;
-    return { quantity: Math.round(lengthM * 100) / 100, unit: "lm" };
+    let totalM = 0;
+    for (const s of shapes) {
+      totalM += (polylineLength(toPx(s)) * mmPerPx) / 1000;
+    }
+    return { quantity: Math.round(totalM * 100) / 100, unit: "lm" };
   }
   return { quantity: 0, unit: "" };
 }
