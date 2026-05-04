@@ -14037,20 +14037,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only sent proposals can be accepted" });
       }
 
-      const { acceptedBy, signatureData, notes } = req.body;
-      
-      // Create acceptance record
+      const { signedByName, signedByEmail, signature, signatureMethod, comments } = req.body;
+      if (!signedByName || !signedByEmail) {
+        return res.status(400).json({ error: "signedByName and signedByEmail are required" });
+      }
+
       const acceptance = await storage.createProposalAcceptance({
         proposalId: req.params.id,
-        acceptedBy: acceptedBy || null,
-        signatureData: signatureData || null,
-        notes: notes || null
+        signedByName,
+        signedByEmail,
+        status: "accepted",
+        signature: signature || null,
+        signatureMethod: signatureMethod || undefined,
+        comments: comments || null,
       });
 
-      // Update proposal status atomically
       const proposal = await storage.updateProposal(req.params.id, {
         status: "accepted",
-        acceptedAt: acceptance.acceptedAt
+        acceptedDate: acceptance.signedAt ?? new Date(),
+        acceptedByName: signedByName,
+        acceptedByEmail: signedByEmail,
+        signature: signature || null,
       });
 
       res.json({ proposal, acceptance });
@@ -14081,12 +14088,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only sent proposals can be rejected" });
       }
 
-      const { rejectedBy, notes } = req.body;
+      const { rejectionReason } = req.body;
       const proposal = await storage.updateProposal(req.params.id, {
         status: "rejected",
-        rejectedAt: new Date(),
-        rejectedBy: rejectedBy || null,
-        rejectionNotes: notes || null
+        rejectedDate: new Date(),
+        rejectionReason: rejectionReason || null,
       });
       res.json(proposal);
     } catch (error) {

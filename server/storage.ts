@@ -15132,7 +15132,7 @@ export class DbStorage implements IStorage {
         layoutSettings: parent.layoutSettings ?? {},
       };
 
-      const allowedOverrides: Pick<InsertProposal, 'name' | 'notes' | 'expiryDate'> = {};
+      const allowedOverrides: Partial<Pick<InsertProposal, 'name' | 'notes' | 'expiryDate'>> = {};
       if (overrides?.name !== undefined) allowedOverrides.name = overrides.name;
       if (overrides?.notes !== undefined) allowedOverrides.notes = overrides.notes;
       if (overrides?.expiryDate !== undefined) allowedOverrides.expiryDate = overrides.expiryDate;
@@ -15144,7 +15144,10 @@ export class DbStorage implements IStorage {
 
       const created = (await tx.insert(schema.proposals).values(cloneValues).returning())[0];
 
-      const sections = await this.getProposalSections(parentId);
+      const sections = await tx
+        .select()
+        .from(schema.proposalSections)
+        .where(eq(schema.proposalSections.proposalId, parentId));
       const sectionIdMap = new Map<string, string>();
       for (const s of sections) {
         const { id: oldId, createdAt: _c, updatedAt: _u, ...rest } = s;
@@ -15154,7 +15157,10 @@ export class DbStorage implements IStorage {
           .returning({ id: schema.proposalSections.id });
         if (inserted[0]) sectionIdMap.set(oldId, inserted[0].id);
       }
-      const items = await this.getProposalItems(parentId);
+      const items = await tx
+        .select()
+        .from(schema.proposalItems)
+        .where(eq(schema.proposalItems.proposalId, parentId));
       for (const it of items) {
         const { id: _id, createdAt: _c, updatedAt: _u, sectionId: oldSectionId, ...rest } = it;
         const newSectionId = oldSectionId ? sectionIdMap.get(oldSectionId) ?? null : null;
@@ -15164,7 +15170,10 @@ export class DbStorage implements IStorage {
           sectionId: newSectionId,
         });
       }
-      const ms = await this.getProposalPaymentMilestones(parentId);
+      const ms = await tx
+        .select()
+        .from(schema.proposalPaymentMilestones)
+        .where(eq(schema.proposalPaymentMilestones.proposalId, parentId));
       for (const m of ms) {
         const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = m;
         await tx.insert(schema.proposalPaymentMilestones).values({ ...rest, proposalId: created.id });
@@ -15180,7 +15189,7 @@ export class DbStorage implements IStorage {
     const now = new Date();
     type ProposalUpdate = Partial<typeof schema.proposals.$inferInsert>;
     const patch: ProposalUpdate = {
-      viewCount: sql<number>`${schema.proposals.viewCount} + 1`,
+      viewCount: sql<number>`${schema.proposals.viewCount} + 1` as unknown as number,
       lastViewedAt: now,
       updatedAt: now,
     };
