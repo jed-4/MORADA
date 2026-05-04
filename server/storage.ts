@@ -15115,7 +15115,10 @@ export class DbStorage implements IStorage {
         notes: parent.notes,
         isArchived: false,
         version: nextVersion,
-        parentProposalId: parentId,
+        // Lineage rooting: every revision in a chain points to the ORIGINAL
+        // proposal, not its immediate predecessor. So v3.parentProposalId === v1.id,
+        // not v2.id. This keeps canonical revision grouping intact for the UI.
+        parentProposalId: parent.parentProposalId ?? parent.id,
         contentSnapshot: null,
         viewCount: 0,
         lastViewedAt: null,
