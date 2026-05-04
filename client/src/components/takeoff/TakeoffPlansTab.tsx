@@ -1,5 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -60,6 +60,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   const [renameValue, setRenameValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [activeOpen, setActiveOpen] = useState(true);
 
   const plansKey = ["/api/projects", projectId, "takeoff/plans"];
   const { data: plans = [], isLoading } = useQuery<TakeoffPlan[]>({
@@ -68,6 +69,38 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   const { data: measurements = [] } = useQuery<TakeoffMeasurement[]>({
     queryKey: ["/api/projects", projectId, "takeoff/measurements"],
   });
+
+  // Pull every plan's pages so we can derive a global "Active" list
+  // (any page that has a scale set or any measurement on it).
+  const planPagesQueries = useQueries({
+    queries: plans.map((p) => ({
+      queryKey: ["/api/projects", projectId, "takeoff/plans", p.id, "pages"],
+      enabled: !!p.id,
+    })),
+  });
+  const pagesByPlanId = useMemo(() => {
+    const map = new Map<string, TakeoffPlanPage[]>();
+    plans.forEach((p, i) => {
+      const data = (planPagesQueries[i]?.data as TakeoffPlanPage[] | undefined) ?? [];
+      map.set(p.id, data);
+    });
+    return map;
+  }, [plans, planPagesQueries]);
+
+  const activeGroups = useMemo(() => {
+    const measByPage = new Map<string, number>();
+    for (const m of measurements) measByPage.set(m.pageId, (measByPage.get(m.pageId) ?? 0) + 1);
+    const groups: { plan: TakeoffPlan; pages: { pageRow: TakeoffPlanPage; count: number }[] }[] = [];
+    for (const plan of plans) {
+      const rows = (pagesByPlanId.get(plan.id) ?? [])
+        .filter((pr) => pr.isScaled || (measByPage.get(pr.id) ?? 0) > 0)
+        .sort((a, b) => a.pageNumber - b.pageNumber)
+        .map((pr) => ({ pageRow: pr, count: measByPage.get(pr.id) ?? 0 }));
+      if (rows.length) groups.push({ plan, pages: rows });
+    }
+    return groups;
+  }, [plans, pagesByPlanId, measurements]);
+  const activeTotal = activeGroups.reduce((acc, g) => acc + g.pages.length, 0);
 
   const { uploadFile, isUploading } = useUpload();
 
@@ -195,6 +228,48 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
         </button>
       ) : (
         <div className="space-y-6 divide-y divide-border">
+          {activeTotal > 0 && (
+            <section className="pb-2" data-testid="section-active-pages">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setActiveOpen((v) => !v)}
+                  aria-label={activeOpen ? "Collapse active" : "Expand active"}
+                  data-testid="button-toggle-active"
+                >
+                  {activeOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+                <button
+                  onClick={() => setActiveOpen((v) => !v)}
+                  className="flex-1 min-w-0 text-left"
+                  data-testid="button-active-header"
+                >
+                  <div className="text-base font-semibold">Active</div>
+                  <div className="text-xs text-muted-foreground">
+                    {activeTotal} page{activeTotal === 1 ? "" : "s"} with measurements or a scale
+                  </div>
+                </button>
+              </div>
+
+              {activeOpen && (
+                <div className="pl-10 pt-4 space-y-5">
+                  {activeGroups.map(({ plan, pages: activePages }) => (
+                    <ActivePlanGroup
+                      key={plan.id}
+                      plan={plan}
+                      pages={activePages}
+                      onOpenPage={(pn) => onOpenPlan(plan, pn)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
           {plans.map((plan) => (
             <div key={plan.id} className="pt-6 first:pt-0">
               <PlanGroup
@@ -440,6 +515,46 @@ function PlanGroup({
         </div>
       )}
     </section>
+  );
+}
+
+function ActivePlanGroup({
+  plan,
+  pages,
+  onOpenPage,
+}: {
+  plan: TakeoffPlan;
+  pages: { pageRow: TakeoffPlanPage; count: number }[];
+  onOpenPage: (pageNumber: number) => void;
+}) {
+  const documentFile = useMemo(
+    () => ({ url: plan.objectPath, withCredentials: true } as any),
+    [plan.objectPath],
+  );
+  return (
+    <div data-testid={`active-plan-${plan.id}`}>
+      <div className="text-xs font-medium text-muted-foreground mb-2 truncate" title={plan.name}>
+        {plan.name}
+      </div>
+      <Document file={documentFile} loading={null} error={null}>
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB_WIDTH}px, 1fr))` }}
+        >
+          {pages.map(({ pageRow, count }) => (
+            <PageThumb
+              key={pageRow.id}
+              planId={plan.id}
+              pageNumber={pageRow.pageNumber}
+              pageRow={pageRow}
+              measurementCount={count}
+              onOpen={() => onOpenPage(pageRow.pageNumber)}
+              onRename={() => { /* renaming handled in main plan list */ }}
+            />
+          ))}
+        </div>
+      </Document>
+    </div>
   );
 }
 

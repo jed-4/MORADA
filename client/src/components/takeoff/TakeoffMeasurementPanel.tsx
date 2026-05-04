@@ -338,7 +338,7 @@ function SortableGroup({
 
   return (
     <div ref={sortable.setNodeRef} style={style} data-testid={`group-${group.id}`}>
-      <div className="w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10">
+      <div className="group/cat w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10">
         <button
           type="button"
           onClick={onToggle}
@@ -358,7 +358,7 @@ function SortableGroup({
             type="button"
             {...sortable.attributes}
             {...sortable.listeners}
-            className={`p-1 rounded-sm text-muted-foreground touch-none ${sortable.isDragging ? "cursor-grabbing" : "cursor-grab"} hover-elevate`}
+            className={`p-1 rounded-sm text-muted-foreground touch-none opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 transition-opacity ${sortable.isDragging ? "opacity-100 cursor-grabbing" : "cursor-grab"} hover-elevate`}
             aria-label={`Drag ${group.name}`}
             data-testid={`button-drag-group-${group.id}`}
             onClick={(e) => e.stopPropagation()}
