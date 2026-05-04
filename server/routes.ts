@@ -61,6 +61,7 @@ import {
   insertProposalItemSchema,
   insertProposalAcceptanceSchema,
   insertProposalPaymentMilestoneSchema,
+  type InsertProposalPaymentMilestone,
   insertInvoiceVariationSchema,
   insertInvoiceAllowanceSchema,
   insertInvoiceBillSchema,
@@ -13982,9 +13983,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const proposal = await storage.updateProposal(req.params.id, {
         status: "sent",
-        sentDate: sentAt || (new Date() as any),
+        sentDate: sentAt ? new Date(sentAt) : new Date(),
         contentSnapshot: snapshot,
-      } as any);
+      });
       res.json(proposal);
     } catch (error) {
       console.error("Error sending proposal:", error);
@@ -14270,11 +14271,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/proposals/:id/milestones", async (req, res) => {
     try {
       const list = z.array(insertProposalPaymentMilestoneSchema.omit({ proposalId: true })).parse(req.body?.milestones ?? []);
-      const withProp = list.map(m => ({ ...m, proposalId: req.params.id }));
-      const created = await storage.replaceProposalPaymentMilestones(req.params.id, withProp as any);
+      const withProp: InsertProposalPaymentMilestone[] = list.map((m) => ({ ...m, proposalId: req.params.id }));
+      const created = await storage.replaceProposalPaymentMilestones(req.params.id, withProp);
       res.json(created);
-    } catch (error: any) {
-      res.status(400).json({ error: error?.message || "Failed to replace milestones" });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to replace milestones";
+      res.status(400).json({ error: msg });
     }
   });
 
