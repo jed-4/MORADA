@@ -840,6 +840,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
+    // Public proposal client portal endpoints (token-gated inside the route handlers)
+    if (/^\/proposals\/[^/]+\/(client-view|view|acceptances)$/.test(path)) {
+      return next();
+    }
+
     // Xero webhook — must be publicly accessible so Xero can POST without a session
     if (path === '/xero/webhook') {
       return next();
