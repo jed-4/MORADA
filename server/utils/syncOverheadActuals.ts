@@ -15,14 +15,16 @@ const XERO_MAX_PERIODS_PER_CALL = 12;
 
 export type RollingMonth = { year: number; month: number };
 
+// Build a rolling N-month window ending at the CURRENT (in-progress) month.
+// Including the current month means the BusinessOverheads "current month"
+// column gets refreshed on every sync and any stale current-month rows from
+// previous buggy syncs are cleaned up by the unconfirmed-month deletion pass
+// in syncOverheadActualsForCompany. With monthCount=18 and today=May 2026,
+// this yields Dec 2024 → May 2026 (17 complete + 1 in-progress).
 export function buildRollingWindow(monthCount: number): RollingMonth[] {
   const today = new Date();
   let y = today.getFullYear();
-  let m = today.getMonth();
-  if (m === 0) {
-    m = 12;
-    y -= 1;
-  }
+  let m = today.getMonth() + 1; // 1-indexed: 1=Jan … 12=Dec
   const months: RollingMonth[] = [];
   for (let i = 0; i < monthCount; i++) {
     months.unshift({ year: y, month: m });
@@ -104,8 +106,9 @@ export interface SyncResult {
  * Sync overhead actuals, income totals and direct cost totals from Xero P&L.
  *
  * Behaviour:
- * - Pulls the trailing 18 complete months from Xero (chunked across multiple
- *   API calls because Xero caps a single P&L request at ~12 columns).
+ * - Pulls 18 trailing months from Xero — the in-progress current month plus
+ *   the previous 17 complete months — chunked across multiple API calls
+ *   (Xero caps a single P&L request at 12 columns).
  * - Before writing, deletes every actuals row in the window for months that
  *   are NOT confirmed (preserves confirmation status in `overheadMonthStatus`
  *   and lets stale rows from old buggy syncs disappear cleanly).

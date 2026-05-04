@@ -916,19 +916,33 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    // We need single-month columns. Sending fromDate+toDate together with
-    // periods+timeframe makes Xero treat the date range as the period length
-    // and return periods+1 sliding-window columns of that length (e.g. a
-    // 10-month range with periods=10 → 11 columns each summing 10 months).
-    // Instead, send a single `date` (anchored to the last day of toDate's
-    // month for clean MONTH bucketing) plus `periods` (number of months − 1,
-    // since Xero returns periods+1 columns) capped at 11 (Xero's max).
+    // We need single-month columns. Two important Xero quirks to work around:
+    //
+    // 1. Sending fromDate+toDate together with periods+timeframe makes Xero
+    //    treat the fromDate→toDate range as the period length and return
+    //    periods+1 sliding-window columns of that length (e.g. a 10-month
+    //    range with periods=10 → 11 columns each summing 10 months).
+    //
+    // 2. Xero's ProfitAndLoss endpoint does NOT support the `date` parameter
+    //    (that one is for Balance Sheet, which is an "as at" report). When
+    //    `date` is sent to P&L it is silently ignored and Xero falls back to
+    //    "today" as the report end-date — so every chunked call returns the
+    //    same most-recent N+1 months and older windows are never fetched.
+    //
+    // Correct approach: set fromDate+toDate to a SINGLE-MONTH range (the last
+    // month of the requested window). Then `periods+timeframe=MONTH` adds N
+    // additional comparison columns of the same length (1 month each) going
+    // back from toDate, for a total of N+1 monthly columns ending at toDate.
+    // Cap periods at 11 (Xero's documented max).
     const from = new Date(fromDate);
     const to = new Date(toDate);
     const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
     const periods = String(Math.min(11, Math.max(0, monthsDiff - 1)));
-    const endOfMonth = new Date(to.getFullYear(), to.getMonth() + 1, 0);
-    const reportDate = `${endOfMonth.getFullYear()}-${String(endOfMonth.getMonth() + 1).padStart(2, "0")}-${String(endOfMonth.getDate()).padStart(2, "0")}`;
+    const lastMonthYear = to.getFullYear();
+    const lastMonthIdx = to.getMonth(); // 0-11
+    const reportFromDate = `${lastMonthYear}-${String(lastMonthIdx + 1).padStart(2, "0")}-01`;
+    const lastDayOfReportMonth = new Date(lastMonthYear, lastMonthIdx + 1, 0).getDate();
+    const reportToDate = `${lastMonthYear}-${String(lastMonthIdx + 1).padStart(2, "0")}-${String(lastDayOfReportMonth).padStart(2, "0")}`;
 
     const headers = {
       Authorization: `Bearer ${accessToken}`,
@@ -939,7 +953,8 @@ export class XeroService {
     // Fetch P&L report and full accounts list in parallel
     // Accounts list is needed to resolve Xero AccountIDs (UUIDs) → account code numbers
     const params = new URLSearchParams({
-      date: reportDate,
+      fromDate: reportFromDate,
+      toDate: reportToDate,
       periods,
       timeframe: "MONTH",
       standardLayout: "true",
@@ -1011,9 +1026,10 @@ export class XeroService {
         return `${yyyy}-${mm}`;
       });
       console.log("[Xero P&L diagnostic]", {
-        fromDate,
-        toDate,
-        reportDate,
+        windowFromDate: fromDate,
+        windowToDate: toDate,
+        reportFromDate,
+        reportToDate,
         periods,
         monthsDiff,
         columnsCount: columns.length,
