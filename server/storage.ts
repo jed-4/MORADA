@@ -1286,6 +1286,7 @@ export interface IStorage {
 
   getTakeoffCategories(projectId: string, companyId: string): Promise<import("@shared/schema").TakeoffCategory[]>;
   createTakeoffCategory(data: import("@shared/schema").InsertTakeoffCategory): Promise<import("@shared/schema").TakeoffCategory>;
+  updateTakeoffCategory(id: string, companyId: string, data: Partial<import("@shared/schema").InsertTakeoffCategory>): Promise<import("@shared/schema").TakeoffCategory | undefined>;
   deleteTakeoffCategory(id: string, companyId: string): Promise<void>;
 
   getTakeoffMeasurements(projectId: string, companyId: string): Promise<import("@shared/schema").TakeoffMeasurement[]>;
@@ -22179,6 +22180,14 @@ export class DbStorage implements IStorage {
 
   async createTakeoffCategory(data: schema.InsertTakeoffCategory): Promise<schema.TakeoffCategory> {
     const [row] = await db.insert(schema.takeoffCategories).values(data).returning();
+    return row;
+  }
+
+  async updateTakeoffCategory(id: string, companyId: string, data: Partial<schema.InsertTakeoffCategory>): Promise<schema.TakeoffCategory | undefined> {
+    const [row] = await db.update(schema.takeoffCategories)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.takeoffCategories.id, id), eq(schema.takeoffCategories.companyId, companyId)))
+      .returning();
     return row;
   }
 

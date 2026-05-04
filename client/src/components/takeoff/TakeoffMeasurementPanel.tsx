@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreVertical,
+  GripVertical,
 } from "lucide-react";
 import {
   DndContext,
@@ -52,6 +53,8 @@ interface Props {
   onActivateDrawing?: (m: TakeoffMeasurement) => void;
 }
 
+const UNCAT = "__uncat__";
+
 export default function TakeoffMeasurementPanel({
   projectId,
   plan,
@@ -68,8 +71,10 @@ export default function TakeoffMeasurementPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
   const measurementsKey = ["/api/projects", projectId, "takeoff/measurements"];
   const pageMeasurementsKeyPrefix = ["/api/projects", projectId, "takeoff/pages"];
+  const categoriesKey = ["/api/projects", projectId, "takeoff/categories"];
 
   // distance:5 lets a plain click through; only a real drag activates sortable.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -87,6 +92,24 @@ export default function TakeoffMeasurementPanel({
       queryClient.invalidateQueries({ queryKey: pageMeasurementsKeyPrefix });
     },
     onError: (err: any) => {
+      // Roll back any optimistic state by refetching truth.
+      queryClient.invalidateQueries({ queryKey: measurementsKey });
+      queryClient.invalidateQueries({ queryKey: pageMeasurementsKeyPrefix });
+      toast({ title: "Update failed", description: err?.message, variant: "destructive" });
+    },
+  });
+
+  const updateCategory = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TakeoffCategory> }) => {
+      return await apiRequest(
+        `/api/projects/${projectId}/takeoff/categories/${id}`,
+        "PATCH",
+        data,
+      );
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: categoriesKey }),
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: categoriesKey });
       toast({ title: "Update failed", description: err?.message, variant: "destructive" });
     },
   });
@@ -105,33 +128,98 @@ export default function TakeoffMeasurementPanel({
     },
   });
 
-  const grouped = useMemo(() => {
-    const m = new Map<string, TakeoffMeasurement[]>();
-    for (const meas of measurements) {
-      const k = meas.categoryId ?? "__uncat__";
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(meas);
+  // Build the ordered list of (categoryId, rows). Categories use their
+  // server `order` field then createdAt; uncategorised pinned to the end.
+  const ordered = useMemo(() => {
+    const byCat = new Map<string, TakeoffMeasurement[]>();
+    for (const m of measurements) {
+      const k = m.categoryId ?? UNCAT;
+      if (!byCat.has(k)) byCat.set(k, []);
+      byCat.get(k)!.push(m);
     }
-    return m;
-  }, [measurements]);
+    // Sort rows within each group by their `order` field (stable for equal orders).
+    byCat.forEach((rows) => rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
 
-  const categoryName = (id: string) =>
-    id === "__uncat__"
-      ? "Uncategorised"
-      : categories.find((c) => c.id === id)?.name ?? "Category";
+    const sortedCats = [...categories].sort(
+      (a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
+    const result: { id: string; name: string; rows: TakeoffMeasurement[] }[] = [];
+    for (const c of sortedCats) {
+      const rows = byCat.get(c.id);
+      if (rows && rows.length) result.push({ id: c.id, name: c.name, rows });
+    }
+    const uncat = byCat.get(UNCAT);
+    if (uncat && uncat.length) {
+      result.push({ id: UNCAT, name: "Uncategorised", rows: uncat });
+    }
+    return result;
+  }, [measurements, categories]);
 
-  const handleDragEnd = (catId: string, rows: TakeoffMeasurement[]) => async (e: DragEndEvent) => {
+  // Optimistic helper — patch measurements caches in place so reorder is instant.
+  const patchMeasurementsCache = (mutator: (rows: TakeoffMeasurement[]) => TakeoffMeasurement[]) => {
+    queryClient.setQueriesData<TakeoffMeasurement[]>({ queryKey: measurementsKey }, (old) =>
+      old ? mutator(old) : old,
+    );
+    queryClient.setQueriesData<TakeoffMeasurement[]>({ queryKey: pageMeasurementsKeyPrefix }, (old) =>
+      old ? mutator(old) : old,
+    );
+  };
+
+  const handleRowDragEnd = (catId: string) => async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    const oldIndex = rows.findIndex((r) => r.id === active.id);
-    const newIndex = rows.findIndex((r) => r.id === over.id);
+    const group = ordered.find((g) => g.id === catId);
+    if (!group) return;
+    const oldIndex = group.rows.findIndex((r) => r.id === active.id);
+    const newIndex = group.rows.findIndex((r) => r.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    const reordered = arrayMove(rows, oldIndex, newIndex);
-    await Promise.all(
-      reordered.map((r, idx) =>
-        r.order === idx
-          ? Promise.resolve()
-          : updateMeasurement.mutateAsync({ id: r.id, data: { order: idx } as any }),
+    const reordered = arrayMove(group.rows, oldIndex, newIndex);
+    const updates = reordered
+      .map((r, idx) => ({ id: r.id, newOrder: idx, prevOrder: r.order ?? 0 }))
+      .filter((u) => u.newOrder !== u.prevOrder);
+
+    // Optimistically update cache so the UI moves instantly and groups stay put.
+    patchMeasurementsCache((rows) =>
+      rows.map((r) => {
+        const u = updates.find((x) => x.id === r.id);
+        return u ? ({ ...r, order: u.newOrder } as TakeoffMeasurement) : r;
+      }),
+    );
+    // Fire mutations in parallel; cache already reflects the desired state.
+    void Promise.all(
+      updates.map((u) =>
+        updateMeasurement.mutateAsync({ id: u.id, data: { order: u.newOrder } as any }),
+      ),
+    );
+  };
+
+  const handleCategoryDragEnd = async (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    // Only real categories are sortable; skip uncategorised.
+    const ids = ordered.map((g) => g.id).filter((id) => id !== UNCAT);
+    const oldIndex = ids.indexOf(active.id as string);
+    const newIndex = ids.indexOf(over.id as string);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(ids, oldIndex, newIndex);
+    const idToCat = new Map(categories.map((c) => [c.id, c] as const));
+    const updates = reordered
+      .map((id, idx) => ({ id, newOrder: idx, prevOrder: idToCat.get(id)?.order ?? 0 }))
+      .filter((u) => u.newOrder !== u.prevOrder);
+
+    queryClient.setQueriesData<TakeoffCategory[]>({ queryKey: categoriesKey }, (old) =>
+      old
+        ? old.map((c) => {
+            const u = updates.find((x) => x.id === c.id);
+            return u ? { ...c, order: u.newOrder } : c;
+          })
+        : old,
+    );
+    void Promise.all(
+      updates.map((u) =>
+        updateCategory.mutateAsync({ id: u.id, data: { order: u.newOrder } as any }),
       ),
     );
   };
@@ -153,68 +241,45 @@ export default function TakeoffMeasurementPanel({
       </div>
 
       <div className="flex-1 overflow-auto">
-        {grouped.size === 0 ? (
+        {ordered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground text-center">
             No measurements on this plan yet.
           </div>
         ) : (
-          Array.from(grouped.entries()).map(([catId, rows]) => {
-            const isCollapsed = !!collapsed[catId];
-            return (
-              <div key={catId}>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(catId)}
-                  className="w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10 hover-elevate text-left"
-                  data-testid={`button-toggle-group-${catId}`}
-                  aria-expanded={!isCollapsed}
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                  )}
-                  <span className="text-xs font-medium truncate">{categoryName(catId)}</span>
-                </button>
-                {!isCollapsed && (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={(e) => { void handleDragEnd(catId, rows)(e); }}
-                  >
-                    <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-                      {rows.map((m) => (
-                        <SortableRow
-                          key={m.id}
-                          m={m}
-                          editing={editingId === m.id}
-                          editName={editName}
-                          setEditName={setEditName}
-                          onStartEdit={() => { setEditingId(m.id); setEditName(m.name); }}
-                          onCommitName={() => {
-                            if (editName.trim() && editName !== m.name) {
-                              updateMeasurement.mutate({ id: m.id, data: { name: editName.trim() } as any });
-                            }
-                            setEditingId(null);
-                          }}
-                          highlighted={m.id === highlightedId}
-                          onHighlight={onHighlight}
-                          onColor={(color) => updateMeasurement.mutate({ id: m.id, data: { color } as any })}
-                          onToggleVisible={() =>
-                            updateMeasurement.mutate({ id: m.id, data: { isVisible: !m.isVisible } as any })
-                          }
-                          onDelete={() => deleteMeasurement.mutate(m.id)}
-                          onEdit={onEditClick ? () => onEditClick(m) : undefined}
-                          active={m.id === activeDrawingId}
-                          onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
-                        />
-                      ))}
-                    </SortableContext>
-                  </DndContext>
-                )}
-              </div>
-            );
-          })
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={(e) => { void handleCategoryDragEnd(e); }}
+          >
+            <SortableContext
+              items={ordered.filter((g) => g.id !== UNCAT).map((g) => g.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {ordered.map((group) => (
+                <SortableGroup
+                  key={group.id}
+                  group={group}
+                  isCollapsed={!!collapsed[group.id]}
+                  onToggle={() => toggleGroup(group.id)}
+                  rowSensors={sensors}
+                  onRowDragEnd={handleRowDragEnd(group.id)}
+                  draggable={group.id !== UNCAT}
+                  // row props
+                  editingId={editingId}
+                  editName={editName}
+                  setEditName={setEditName}
+                  setEditingId={setEditingId}
+                  highlightedId={highlightedId}
+                  onHighlight={onHighlight}
+                  activeDrawingId={activeDrawingId}
+                  onActivateDrawing={onActivateDrawing}
+                  onEditClick={onEditClick}
+                  onUpdateMeasurement={(id, data) => updateMeasurement.mutate({ id, data })}
+                  onDeleteMeasurement={(id) => deleteMeasurement.mutate(id)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
@@ -223,6 +288,119 @@ export default function TakeoffMeasurementPanel({
           <Plus className="h-4 w-4 mr-2" /> Add measurement
         </Button>
       </div>
+    </div>
+  );
+}
+
+function SortableGroup({
+  group,
+  isCollapsed,
+  onToggle,
+  rowSensors,
+  onRowDragEnd,
+  draggable,
+  editingId,
+  editName,
+  setEditName,
+  setEditingId,
+  highlightedId,
+  onHighlight,
+  activeDrawingId,
+  onActivateDrawing,
+  onEditClick,
+  onUpdateMeasurement,
+  onDeleteMeasurement,
+}: {
+  group: { id: string; name: string; rows: TakeoffMeasurement[] };
+  isCollapsed: boolean;
+  onToggle: () => void;
+  rowSensors: ReturnType<typeof useSensors>;
+  onRowDragEnd: (e: DragEndEvent) => void;
+  draggable: boolean;
+  editingId: string | null;
+  editName: string;
+  setEditName: (s: string) => void;
+  setEditingId: (s: string | null) => void;
+  highlightedId: string | null;
+  onHighlight: (id: string | null) => void;
+  activeDrawingId: string | null;
+  onActivateDrawing?: (m: TakeoffMeasurement) => void;
+  onEditClick?: (m: TakeoffMeasurement) => void;
+  onUpdateMeasurement: (id: string, data: Partial<TakeoffMeasurement>) => void;
+  onDeleteMeasurement: (id: string) => void;
+}) {
+  const sortable = useSortable({ id: group.id, disabled: !draggable });
+  const style = {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition,
+    opacity: sortable.isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div ref={sortable.setNodeRef} style={style} data-testid={`group-${group.id}`}>
+      <div className="w-full px-3 py-1.5 bg-primary/5 flex items-center gap-2 sticky top-0 z-10">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2 hover-elevate text-left -mx-1 px-1 py-0.5 rounded-sm"
+          data-testid={`button-toggle-group-${group.id}`}
+          aria-expanded={!isCollapsed}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          )}
+          <span className="text-xs font-medium truncate">{group.name}</span>
+        </button>
+        {draggable && (
+          <button
+            type="button"
+            {...sortable.attributes}
+            {...sortable.listeners}
+            className={`p-1 rounded-sm text-muted-foreground touch-none ${sortable.isDragging ? "cursor-grabbing" : "cursor-grab"} hover-elevate`}
+            aria-label={`Drag ${group.name}`}
+            data-testid={`button-drag-group-${group.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {!isCollapsed && (
+        <DndContext
+          sensors={rowSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onRowDragEnd}
+        >
+          <SortableContext items={group.rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+            {group.rows.map((m) => (
+              <SortableRow
+                key={m.id}
+                m={m}
+                editing={editingId === m.id}
+                editName={editName}
+                setEditName={setEditName}
+                onStartEdit={() => { setEditingId(m.id); setEditName(m.name); }}
+                onCommitName={() => {
+                  if (editName.trim() && editName !== m.name) {
+                    onUpdateMeasurement(m.id, { name: editName.trim() } as any);
+                  }
+                  setEditingId(null);
+                }}
+                highlighted={m.id === highlightedId}
+                onHighlight={onHighlight}
+                onColor={(color) => onUpdateMeasurement(m.id, { color } as any)}
+                onToggleVisible={() => onUpdateMeasurement(m.id, { isVisible: !m.isVisible } as any)}
+                onDelete={() => onDeleteMeasurement(m.id)}
+                onEdit={onEditClick ? () => onEditClick(m) : undefined}
+                active={m.id === activeDrawingId}
+                onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   );
 }
@@ -257,8 +435,6 @@ function SortableRow({
   const handleRowClick = (e: React.MouseEvent) => {
     if (!onActivate) return;
     const target = e.target as HTMLElement;
-    // Ignore clicks on inner controls (buttons, inputs, dropdown items, the
-    // color swatch popover trigger, etc.) — those have their own handlers.
     if (target.closest("button, input, [role='button'], [role='menuitem']")) return;
     onActivate();
   };
@@ -292,8 +468,6 @@ function SortableRow({
             onChange={(e) => setEditName(e.target.value)}
             onBlur={onCommitName}
             onClick={(e) => e.stopPropagation()}
-            // Stop pointer events from reaching the dnd-kit listeners on the
-            // row, otherwise selecting text in the input would start a drag.
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => {

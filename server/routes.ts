@@ -7527,6 +7527,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (e) { console.error("[takeoff] createCategory:", e); res.status(500).json({ error: "Failed to create category" }); }
     });
 
+    app.patch("/api/projects/:projectId/takeoff/categories/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+      try {
+        const cat = await storage.getTakeoffCategory(req.params.id, req.user.companyId);
+        if (!cat || cat.projectId !== req.params.projectId) return res.status(404).json({ error: "Category not found" });
+        const updateSchema = insertTakeoffCategorySchema.pick({ name: true, order: true }).partial();
+        const parsed = updateSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid category data", details: parsed.error.flatten() });
+        const updated = await storage.updateTakeoffCategory(req.params.id, req.user.companyId, parsed.data);
+        if (!updated) return res.status(404).json({ error: "Category not found" });
+        res.json(updated);
+      } catch (e) { console.error("[takeoff] updateCategory:", e); res.status(500).json({ error: "Failed to update category" }); }
+    });
+
     app.delete("/api/projects/:projectId/takeoff/categories/:id", requireAuth, requireTeamMember, async (req: any, res) => {
       try {
         const cat = await storage.getTakeoffCategory(req.params.id, req.user.companyId);
