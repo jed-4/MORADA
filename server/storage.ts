@@ -822,6 +822,7 @@ export interface IStorage {
   getNextProposalNumber(): Promise<string>;
   createProposalRevision(parentId: string, overrides?: Partial<InsertProposal>): Promise<Proposal>;
   recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined>;
+  reorderProposalPaymentMilestones(proposalId: string, orderedIds: string[]): Promise<ProposalPaymentMilestone[]>;
 
   // Activity Feed CRUD
   getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]>;
@@ -15129,16 +15130,44 @@ export class DbStorage implements IStorage {
   }
 
   async recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined> {
+    // First view captures viewedDate + viewerDevice and bumps status sent -> viewed.
+    // Subsequent views only bump viewCount and lastViewedAt.
+    const existing = await this.getProposal(id);
+    if (!existing) return undefined;
+    const isFirst = (existing.viewCount ?? 0) === 0;
+    const now = new Date();
+    const patch: any = {
+      viewCount: sql`${schema.proposals.viewCount} + 1` as any,
+      lastViewedAt: now,
+      updatedAt: now,
+    };
+    if (isFirst) {
+      patch.viewedDate = now;
+      patch.viewerDevice = device ?? null;
+      if (existing.status === 'sent') patch.status = 'viewed';
+    }
     const result = await db.update(schema.proposals)
-      .set({
-        viewCount: sql`${schema.proposals.viewCount} + 1` as any,
-        lastViewedAt: new Date(),
-        viewerDevice: device ?? null,
-        updatedAt: new Date(),
-      })
+      .set(patch)
       .where(eq(schema.proposals.id, id))
       .returning();
     return result[0];
+  }
+
+  async reorderProposalPaymentMilestones(proposalId: string, orderedIds: string[]): Promise<ProposalPaymentMilestone[]> {
+    return await db.transaction(async (tx) => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await tx.update(schema.proposalPaymentMilestones)
+          .set({ order: i, updatedAt: new Date() })
+          .where(and(
+            eq(schema.proposalPaymentMilestones.id, orderedIds[i]),
+            eq(schema.proposalPaymentMilestones.proposalId, proposalId),
+          ));
+      }
+      return await tx.select()
+        .from(schema.proposalPaymentMilestones)
+        .where(eq(schema.proposalPaymentMilestones.proposalId, proposalId))
+        .orderBy(schema.proposalPaymentMilestones.order);
+    });
   }
 
   // Activity Feed CRUD

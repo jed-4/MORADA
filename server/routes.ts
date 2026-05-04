@@ -14078,10 +14078,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded)
+  // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded).
+  // Retries once on a unique-constraint collision against proposalNumber, mirroring POST /api/proposals.
   app.post("/api/proposals/:id/revision", async (req, res) => {
     try {
-      const created = await storage.createProposalRevision(req.params.id, req.body || {});
+      let created;
+      try {
+        created = await storage.createProposalRevision(req.params.id, req.body || {});
+      } catch (e: any) {
+        if (String(e?.message || '').toLowerCase().includes('duplicate') ||
+            String(e?.code || '') === '23505') {
+          created = await storage.createProposalRevision(req.params.id, req.body || {});
+        } else {
+          throw e;
+        }
+      }
       res.status(201).json(created);
     } catch (error: any) {
       console.error("Error creating proposal revision:", error);
@@ -14116,20 +14127,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public client-view endpoint — increments view counter, returns snapshot if available
+  // Public client-view endpoint — increments view counter, returns snapshot if available.
+  // Status sent->viewed is bumped inside storage.recordProposalView (first-view only).
   app.post("/api/proposals/:id/view", async (req, res) => {
     try {
       const device = (req.body?.device || req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
-      // Auto-transition sent -> viewed (one-shot)
-      if (proposal.status === 'sent') {
-        await storage.updateProposal(req.params.id, { status: 'viewed' as any });
-      }
       res.json({ proposal, snapshot: proposal.contentSnapshot ?? null });
     } catch (error) {
       console.error("Error recording proposal view:", error);
       res.status(500).json({ error: "Failed to record view" });
+    }
+  });
+
+  // GET variant for the client portal — returns the proposal as the client should see it
+  // (preferring contentSnapshot when present) and records the view.
+  app.get("/api/proposals/:id/client-view", async (req, res) => {
+    try {
+      const device = (req.headers['user-agent'] || null) as string | null;
+      const proposal = await storage.recordProposalView(req.params.id, device);
+      if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      const snapshot = (proposal as any).contentSnapshot ?? null;
+      if (snapshot && typeof snapshot === 'object') {
+        return res.json({ proposal, snapshot, source: 'snapshot' });
+      }
+      // Fall back to live data if no snapshot was captured yet
+      const [sections, items, milestones, acceptances] = await Promise.all([
+        storage.getProposalSections(req.params.id),
+        storage.getProposalItems(req.params.id),
+        storage.getProposalPaymentMilestones(req.params.id),
+        storage.getProposalAcceptances(req.params.id),
+      ]);
+      res.json({
+        proposal,
+        snapshot: { proposal, sections, items, milestones, acceptances },
+        source: 'live',
+      });
+    } catch (error) {
+      console.error("Error in client-view:", error);
+      res.status(500).json({ error: "Failed to load proposal for client view" });
     }
   });
 
@@ -14192,6 +14229,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete milestone" });
+    }
+  });
+
+  // Reorder payment milestones for a proposal
+  app.post("/api/proposals/:id/milestones/reorder", async (req, res) => {
+    try {
+      const parsed = z.object({ orderedIds: z.array(z.string()).min(0) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+      const updated = await storage.reorderProposalPaymentMilestones(req.params.id, parsed.data.orderedIds);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error reordering proposal milestones:", error);
+      res.status(500).json({ error: error?.message || "Failed to reorder milestones" });
     }
   });
 
