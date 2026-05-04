@@ -14336,9 +14336,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updated = await storage.reorderProposalPaymentMilestones(req.params.id, orderedIds);
       res.json(updated);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error reordering proposal milestones:", error);
-      res.status(500).json({ error: error?.message || "Failed to reorder milestones" });
+      const msg = error instanceof Error ? error.message : "Failed to reorder milestones";
+      res.status(500).json({ error: msg });
     }
   });
 
