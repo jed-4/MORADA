@@ -13946,11 +13946,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { sentAt } = req.body;
 
-      // Capture content snapshot at the moment of sending
-      const [sections, items, milestones] = await Promise.all([
+      // Capture full content snapshot at the moment of sending — proposal data
+      // plus resolved company branding/T&Cs so client-rendered output stays
+      // identical even if companySettings are later edited.
+      const [sections, items, milestones, companySettings] = await Promise.all([
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
         storage.getProposalPaymentMilestones(req.params.id),
+        storage.getCompanySettings(),
       ]);
       const snapshot = {
         capturedAt: new Date().toISOString(),
@@ -13958,6 +13961,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sections,
         items,
         milestones,
+        company: companySettings
+          ? {
+              companyName: companySettings.companyName,
+              tradingName: companySettings.tradingName,
+              abn: companySettings.abn,
+              address: companySettings.address,
+              phone: companySettings.phone,
+              email: companySettings.email,
+              website: companySettings.website,
+              logo: companySettings.logo,
+              primaryColor: companySettings.primaryColor,
+              gstRegistered: companySettings.gstRegistered,
+              gstRate: companySettings.gstRate,
+              termsTemplates: companySettings.termsTemplates,
+              paymentScheduleTemplates: companySettings.paymentScheduleTemplates,
+            }
+          : null,
       };
 
       const proposal = await storage.updateProposal(req.params.id, {

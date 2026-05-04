@@ -416,9 +416,9 @@ export default function Proposals() {
       {
         id: "version",
         header: "Version",
-        accessorFn: (p) => (p as any).version || 1,
+        accessorFn: (p) => p.version ?? 1,
         cell: ({ row }) => {
-          const v = (row.original as any).version || 1;
+          const v = row.original.version ?? 1;
           return (
             <Badge variant="outline" className="text-xs" data-testid={`badge-version-${row.original.id}`}>
               v{v}
@@ -429,16 +429,16 @@ export default function Proposals() {
         meta: {
           defaultWidth: 80,
           headerLabel: "Version",
-          defaultHidden: !proposals.some((p) => ((p as any).version || 1) > 1),
+          defaultHidden: !proposals.some((p) => (p.version ?? 1) > 1),
         } satisfies DataTableColumnMeta,
       },
       {
         id: "viewCount",
         header: "Seen",
-        accessorFn: (p) => (p as any).viewCount || 0,
+        accessorFn: (p) => p.viewCount ?? 0,
         cell: ({ row }) => {
-          const count = (row.original as any).viewCount || 0;
-          const lastViewed = (row.original as any).lastViewedAt;
+          const count = row.original.viewCount ?? 0;
+          const lastViewed = row.original.lastViewedAt;
           return (
             <span className="text-xs text-muted-foreground" data-testid={`text-view-count-${row.original.id}`}>
               {count > 0
