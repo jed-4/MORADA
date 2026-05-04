@@ -128,6 +128,7 @@ import {
   insertTemplateCategorySchema,
   insertDashboardViewSchema,
   insertPaymentTermsOptionSchema,
+  type InsertProposal,
   insertPinnedItemSchema,
   pinnedItems,
   businessScheduleProjects,
@@ -14099,15 +14100,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(parsedOverrides.error).toString(),
         });
       }
-      const overrides = parsedOverrides.data;
+      // Typed Partial<InsertProposal> — no casts. Schema fields (name, notes,
+      // expiryDate) are all valid keys of InsertProposal with compatible types.
+      const overrides: Partial<InsertProposal> = parsedOverrides.data;
 
       let created;
       try {
-        created = await storage.createProposalRevision(req.params.id, overrides as any);
+        created = await storage.createProposalRevision(req.params.id, overrides);
       } catch (e: any) {
         if (String(e?.message || '').toLowerCase().includes('duplicate') ||
             String(e?.code || '') === '23505') {
-          created = await storage.createProposalRevision(req.params.id, overrides as any);
+          created = await storage.createProposalRevision(req.params.id, overrides);
         } else {
           throw e;
         }

@@ -15074,17 +15074,15 @@ export class DbStorage implements IStorage {
       const nextVersion = (parent.version ?? 1) + 1;
       const newNumber = await this.getNextProposalNumber();
 
-      // Build clone explicitly using only fields that exist on the proposals schema
-      // to avoid stray timestamps (sentAt/acceptedAt/rejectedAt) that don't exist.
-      const cloneValues: any = {
+      // Server-controlled invariants for the new revision. These are NEVER
+      // overridable from request body (see allowlist below).
+      const baseValues: typeof schema.proposals.$inferInsert = {
         proposalNumber: newNumber,
         name: parent.name,
         projectId: parent.projectId,
-        companyId: parent.companyId,
-        clientName: (parent as any).clientName ?? null,
-        clientEmail: (parent as any).clientEmail ?? null,
-        clientPhone: (parent as any).clientPhone ?? null,
-        clientAddress: (parent as any).clientAddress ?? null,
+        introductionText: parent.introductionText,
+        closingText: parent.closingText,
+        termsAndConditions: parent.termsAndConditions,
         subtotal: parent.subtotal,
         gstAmount: parent.gstAmount,
         totalAmount: parent.totalAmount,
@@ -15102,7 +15100,7 @@ export class DbStorage implements IStorage {
         convertedToInvoiceId: null,
         convertedDate: null,
         showPricing: parent.showPricing,
-        allowClientOptions: (parent as any).allowClientOptions ?? false,
+        allowClientOptions: parent.allowClientOptions,
         createdBy: parent.createdBy,
         createdByName: parent.createdByName,
         notes: parent.notes,
@@ -15116,37 +15114,39 @@ export class DbStorage implements IStorage {
         layoutSettings: parent.layoutSettings ?? {},
       };
 
-      // Apply ONLY allowlisted override keys. Server-controlled invariants
-      // (proposalNumber, status, version, parentProposalId, view/snapshot
-      // fields, audit columns) are never overridable from request body.
-      const REVISION_OVERRIDE_ALLOWLIST = ['name', 'notes', 'expiryDate'] as const;
-      if (overrides) {
-        for (const key of REVISION_OVERRIDE_ALLOWLIST) {
-          if ((overrides as any)[key] !== undefined) {
-            cloneValues[key] = (overrides as any)[key];
-          }
-        }
-      }
+      // Apply ONLY allowlisted override keys. Each is read through a typed
+      // Pick to keep TS in the loop — no casts to `any`. Server-controlled
+      // invariants (proposalNumber, status, version, parentProposalId,
+      // view/snapshot fields, audit columns) remain untouched.
+      const allowedOverrides: Pick<InsertProposal, 'name' | 'notes' | 'expiryDate'> = {};
+      if (overrides?.name !== undefined) allowedOverrides.name = overrides.name;
+      if (overrides?.notes !== undefined) allowedOverrides.notes = overrides.notes;
+      if (overrides?.expiryDate !== undefined) allowedOverrides.expiryDate = overrides.expiryDate;
+
+      const cloneValues: typeof schema.proposals.$inferInsert = {
+        ...baseValues,
+        ...allowedOverrides,
+      };
+
       const created = (await tx.insert(schema.proposals).values(cloneValues).returning())[0];
 
-      // Clone sections + items + milestones inside the transaction
+      // Clone sections + items + milestones inside the transaction.
+      // Strip auto-generated columns via typed destructuring (no `as any`),
+      // then re-point proposalId at the new revision.
       const sections = await this.getProposalSections(parentId);
       for (const s of sections) {
-        const sCopy: any = { ...s, proposalId: created.id };
-        delete sCopy.id; delete sCopy.createdAt; delete sCopy.updatedAt;
-        await tx.insert(schema.proposalSections).values(sCopy);
+        const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = s;
+        await tx.insert(schema.proposalSections).values({ ...rest, proposalId: created.id });
       }
       const items = await this.getProposalItems(parentId);
       for (const it of items) {
-        const iCopy: any = { ...it, proposalId: created.id };
-        delete iCopy.id; delete iCopy.createdAt; delete iCopy.updatedAt;
-        await tx.insert(schema.proposalItems).values(iCopy);
+        const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = it;
+        await tx.insert(schema.proposalItems).values({ ...rest, proposalId: created.id });
       }
       const ms = await this.getProposalPaymentMilestones(parentId);
       for (const m of ms) {
-        const mCopy: any = { ...m, proposalId: created.id };
-        delete mCopy.id; delete mCopy.createdAt; delete mCopy.updatedAt;
-        await tx.insert(schema.proposalPaymentMilestones).values(mCopy);
+        const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = m;
+        await tx.insert(schema.proposalPaymentMilestones).values({ ...rest, proposalId: created.id });
       }
       return created;
     });
