@@ -356,6 +356,173 @@ interface ProposalBuilderProps {
   primaryColor?: string;
 }
 
+// --- Proposal Template (full proposal) ---
+type ProposalTemplate = {
+  id: string;
+  name: string;
+  sections: Array<{ sectionType: string; name: string; order: number; content?: any }>;
+  layoutSettings?: Record<string, any>;
+};
+
+interface ProposalTemplateBarProps {
+  proposal: Proposal;
+  sections: ProposalSection[];
+}
+
+function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
+  const { toast } = useToast();
+  const [templateName, setTemplateName] = useState('');
+  const [showSave, setShowSave] = useState(false);
+
+  const { data: companySettings } = useQuery<{
+    proposalTemplates?: ProposalTemplate[];
+  } | null>({
+    queryKey: ['/api/company-settings'],
+  });
+
+  const templates = companySettings?.proposalTemplates ?? [];
+
+  const applyMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      const tpl = templates.find((t) => t.id === templateId);
+      if (!tpl) throw new Error('Template not found');
+
+      // Remove existing sections
+      await Promise.all(
+        sections.map((s) =>
+          apiRequest(`/api/proposal-sections/${s.id}`, 'DELETE'),
+        ),
+      );
+
+      // Insert template sections
+      for (const ts of tpl.sections) {
+        await apiRequest(`/api/proposals/${proposal.id}/sections`, 'POST', {
+          sectionType: ts.sectionType,
+          name: ts.name,
+          order: ts.order,
+          content: ts.content ?? {},
+          isEnabled: true,
+        });
+      }
+
+      // Apply layout settings
+      if (tpl.layoutSettings) {
+        await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', {
+          layoutSettings: tpl.layoutSettings,
+        });
+      }
+      return tpl;
+    },
+    onSuccess: (tpl) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id, 'sections'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Template applied', description: `Loaded "${tpl.name}".` });
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Could not apply template';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const newTpl: ProposalTemplate = {
+        id: `ptpl-${Date.now()}`,
+        name,
+        sections: sections
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((s, i) => ({
+            sectionType: s.sectionType,
+            name: s.name,
+            order: i,
+            content: s.content ?? {},
+          })),
+        layoutSettings: (proposal.layoutSettings as Record<string, any>) || undefined,
+      };
+      const next = [...templates, newTpl];
+      return await apiRequest('/api/company-settings', 'PATCH', { proposalTemplates: next });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
+      toast({ title: 'Template saved' });
+      setTemplateName('');
+      setShowSave(false);
+    },
+    onError: () => {
+      toast({ title: 'Could not save template', variant: 'destructive' });
+    },
+  });
+
+  return (
+    <div className="space-y-2 mb-3" data-testid="proposal-template-bar">
+      <div className="flex items-center gap-2 flex-wrap">
+        {templates.length > 0 && (
+          <Select
+            onValueChange={(id) => {
+              if (!id) return;
+              const tpl = templates.find((t) => t.id === id);
+              if (!tpl) return;
+              const ok =
+                sections.length === 0 ||
+                window.confirm(
+                  `Apply template "${tpl.name}"? This will replace all ${sections.length} current section(s).`,
+                );
+              if (ok) applyMutation.mutate(id);
+            }}
+            disabled={applyMutation.isPending}
+          >
+            <SelectTrigger className="h-8 flex-1 text-xs" data-testid="select-apply-proposal-template">
+              <SelectValue
+                placeholder={
+                  applyMutation.isPending ? 'Applying…' : 'Apply template'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id} className="text-xs">
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowSave((v) => !v)}
+          disabled={sections.length === 0}
+          data-testid="button-toggle-save-proposal-template"
+        >
+          Save as template
+        </Button>
+      </div>
+      {showSave && (
+        <div className="flex gap-2">
+          <Input
+            placeholder="Template name"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            className="h-8 text-xs"
+            data-testid="input-proposal-template-name"
+          />
+          <Button
+            size="sm"
+            disabled={!templateName.trim() || saveMutation.isPending}
+            onClick={() => saveMutation.mutate(templateName.trim())}
+            data-testid="button-save-proposal-template"
+          >
+            {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProposalBuilder({
   proposal,
   sections,
@@ -587,6 +754,8 @@ export function ProposalBuilder({
                 Add Section
               </Button>
             </div>
+
+            <ProposalTemplateBar proposal={proposal} sections={sections} />
 
             <div className="flex-1 overflow-auto">
               <DndContext

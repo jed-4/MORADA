@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -311,6 +311,11 @@ function PlanGroup({
     (_, i) => i + 1,
   );
 
+  const documentFile = useMemo(
+    () => ({ url: plan.objectPath, withCredentials: true } as any),
+    [plan.objectPath],
+  );
+
   return (
     <section data-testid={`section-plan-${plan.id}`} className="space-y-4">
       <div className="flex items-center gap-2">
@@ -381,7 +386,7 @@ function PlanGroup({
       {!collapsed && (
         <div className="pl-10">
           <Document
-            file={{ url: plan.objectPath, withCredentials: true } as any}
+            file={documentFile}
             onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
             loading={
               <div className="p-8 text-sm text-muted-foreground flex items-center gap-2">
@@ -425,6 +430,28 @@ interface PageThumbProps {
   pageRow?: TakeoffPlanPage;
   onOpen: () => void;
   onRename: (name: string) => void;
+}
+
+class PageRenderBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch() {
+    // react-pdf throws on cancelled renders / worker hiccups — these are benign
+    // and recover on the next interaction. Swallow silently.
+  }
+  componentDidUpdate(prev: { children: ReactNode }) {
+    if (prev.children !== this.props.children && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
 }
 
 function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbProps) {
@@ -485,22 +512,30 @@ function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbP
         style={{ width: "100%", aspectRatio: "3 / 4" }}
       >
         {visible ? (
-          <Page
-            pageNumber={pageNumber}
-            width={THUMB_WIDTH}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            loading={
-              <div className="flex items-center justify-center text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            }
-            error={
+          <PageRenderBoundary
+            fallback={
               <div className="text-xs text-muted-foreground p-2 text-center">
                 Preview unavailable
               </div>
             }
-          />
+          >
+            <Page
+              pageNumber={pageNumber}
+              width={THUMB_WIDTH}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+              loading={
+                <div className="flex items-center justify-center text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              }
+              error={
+                <div className="text-xs text-muted-foreground p-2 text-center">
+                  Preview unavailable
+                </div>
+              }
+            />
+          </PageRenderBoundary>
         ) : (
           <FileText className="h-6 w-6 text-muted-foreground opacity-40" />
         )}
