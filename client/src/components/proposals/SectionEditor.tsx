@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { RichTextEditor } from "@/components/RichTextEditor";
-import type { ProposalSection, Estimate } from "@shared/schema";
+import type { ProposalSection, Estimate, Project, Contact } from "@shared/schema";
 
 interface SectionEditorProps {
   section: ProposalSection | null;
@@ -18,6 +18,8 @@ interface SectionEditorProps {
   onSave: (sectionId: string, updates: Partial<ProposalSection>) => void;
   isSaving?: boolean;
   projectId?: string;
+  project?: Project;
+  client?: Contact;
 }
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
@@ -37,7 +39,7 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   custom: "Custom Section",
 };
 
-export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, projectId }: SectionEditorProps) {
+export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, projectId, project, client }: SectionEditorProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState<Record<string, any>>({});
@@ -203,7 +205,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                   id="project-title"
                   value={content.projectTitle || ""}
                   onChange={(e) => setContent({ ...content, projectTitle: e.target.value })}
-                  placeholder="Enter project title"
+                  placeholder={project?.name || "Enter project title"}
                   data-testid="input-project-title"
                 />
               </div>
@@ -213,7 +215,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                   id="client-name"
                   value={content.clientName || ""}
                   onChange={(e) => setContent({ ...content, clientName: e.target.value })}
-                  placeholder="Enter client name"
+                  placeholder={client?.name || "Enter client name"}
                   data-testid="input-client-name"
                 />
               </div>

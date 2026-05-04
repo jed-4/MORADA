@@ -18,7 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight } from 'lucide-react';
 import { useLocation } from 'wouter';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
@@ -89,9 +89,11 @@ interface SortableSectionItemProps {
   onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
   value: string;
   projectId: string;
+  project?: Project;
+  client?: Contact;
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value, projectId }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId, project, client }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -308,7 +310,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
                     id={`project-title-${section.id}`}
                     value={localContent.projectTitle || ""}
                     onChange={(e) => setLocalContent({ ...localContent, projectTitle: e.target.value })}
-                    placeholder="Enter project title"
+                    placeholder={project?.name || "Enter project title"}
                   />
                 </div>
                 <div className="space-y-2">
@@ -317,7 +319,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
                     id={`client-name-${section.id}`}
                     value={localContent.clientName || ""}
                     onChange={(e) => setLocalContent({ ...localContent, clientName: e.target.value })}
-                    placeholder="Enter client name"
+                    placeholder={client?.name || "Enter client name"}
                   />
                 </div>
                 <div className="space-y-2">
@@ -546,6 +548,13 @@ export function ProposalBuilder({
     enabled: !!proposal.id,
   });
 
+  // Fetch the project's client contact so cover-page placeholders + PDF can
+  // auto-fill the client name when the user leaves it blank.
+  const { data: client } = useQuery<Contact>({
+    queryKey: ['/api/contacts', project?.clientId],
+    enabled: !!project?.clientId,
+  });
+
   // Fetch latest accepted/rejected acceptance for embedding signature into PDF
   const { data: latestAcceptance = null } = useQuery<ProposalAcceptance | null>({
     queryKey: ['/api/proposals', proposal.id, 'latest-acceptance'],
@@ -604,6 +613,7 @@ export function ProposalBuilder({
             proposal={proposal}
             sections={sections}
             project={project}
+            client={client}
             companyLogo={companyLogo}
             companyName={companyName}
             primaryColor={primaryColor}
@@ -646,7 +656,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview, milestones, latestAcceptance]);
+  }, [proposal, sections, project, client, companyLogo, companyName, primaryColor, showPreview, milestones, latestAcceptance]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -775,6 +785,8 @@ export function ProposalBuilder({
                         onSectionUpdate={onSectionUpdate}
                         value={section.id}
                         projectId={proposal.projectId}
+                        project={project}
+                        client={client}
                       />
                     ))}
                   </Accordion>

@@ -3,6 +3,7 @@ import type {
   Proposal,
   ProposalSection,
   Project,
+  Contact,
   Estimate,
   EstimateGroup,
   EstimateItem,
@@ -24,6 +25,7 @@ interface ProposalDocumentProps {
   proposal: Proposal;
   sections: ProposalSection[];
   project?: Project;
+  client?: Contact;
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
@@ -40,6 +42,7 @@ export function ProposalDocument({
   proposal,
   sections,
   project,
+  client,
   companyLogo,
   companyName,
   primaryColor = '#3B82F6',
@@ -61,6 +64,7 @@ export function ProposalDocument({
                 proposal={proposal}
                 section={section}
                 project={project}
+                client={client}
                 companyLogo={companyLogo}
                 companyName={companyName}
                 primaryColor={primaryColor}

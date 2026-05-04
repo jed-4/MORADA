@@ -1,5 +1,5 @@
 import { Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
-import type { Proposal, ProposalSection, Project } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, Contact } from '@shared/schema';
 
 const styles = StyleSheet.create({
   page: {
@@ -95,6 +95,7 @@ interface CoverPageSectionProps {
   proposal: Proposal;
   section: ProposalSection;
   project?: Project;
+  client?: Contact;
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
@@ -104,10 +105,19 @@ export function CoverPageSection({
   proposal,
   section,
   project,
+  client,
   companyLogo,
   companyName = 'Your Company',
   primaryColor = '#3B82F6',
 }: CoverPageSectionProps) {
+  const content = (section.content ?? {}) as Record<string, any>;
+  const projectTitle = (content.projectTitle && String(content.projectTitle).trim())
+    || project?.name
+    || proposal.name;
+  const clientName = (content.clientName && String(content.clientName).trim())
+    || client?.name
+    || '';
+  const subtitle = (content.subtitle && String(content.subtitle).trim()) || '';
   const formatDate = (date: Date | string | null | undefined) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-AU', {
@@ -128,13 +138,13 @@ export function CoverPageSection({
         )}
         
         <Text style={styles.proposalTitle}>
-          {section.name || 'Project Proposal'}
+          {projectTitle || section.name || 'Project Proposal'}
         </Text>
-        
-        <Text style={styles.proposalSubtitle}>
-          {project?.name || proposal.name}
-        </Text>
-        
+
+        {subtitle ? (
+          <Text style={styles.proposalSubtitle}>{subtitle}</Text>
+        ) : null}
+
         {project?.jobNumber && (
           <Text style={styles.proposalSubtitle}>
             Job #{project.jobNumber}
@@ -146,6 +156,13 @@ export function CoverPageSection({
       <View style={styles.details}>
         <Text style={styles.detailsTitle}>Proposal Details</Text>
         
+        {clientName ? (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Prepared For</Text>
+            <Text style={styles.detailValue}>{clientName}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Proposal Number</Text>
           <Text style={styles.detailValue}>{proposal.proposalNumber || 'N/A'}</Text>
