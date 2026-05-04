@@ -799,7 +799,7 @@ export interface IStorage {
   deleteInvoiceSelection(id: string): Promise<boolean>;
 
   // Proposals CRUD
-  getProposals(projectId?: string, status?: string): Promise<Proposal[]>;
+  getProposals(projectId?: string, status?: string, parentProposalId?: string): Promise<Proposal[]>;
   getProposal(id: string): Promise<Proposal | undefined>;
   createProposal(proposal: InsertProposal): Promise<Proposal>;
   createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
@@ -15117,7 +15117,18 @@ export class DbStorage implements IStorage {
 
       const maxVersion = familyRows.reduce((m, r) => Math.max(m, r.version ?? 1), parent.version ?? 1);
       const nextVersion = maxVersion + 1;
-      const newNumber = await this.getNextProposalNumber();
+
+      const year = new Date().getFullYear();
+      const numPrefix = `PROP-${year}-`;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      const numResult = await tx.execute(sql`
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${numPrefix.length + 1}) AS INTEGER)), 0) AS max_num
+        FROM proposals
+        WHERE proposal_number LIKE ${numPrefix + '%'}
+      `);
+      const numRow = (numResult as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
+      const numMax = numRow ? Number(numRow.max_num) || 0 : 0;
+      const newNumber = `${numPrefix}${String(numMax + 1).padStart(4, '0')}`;
 
       const baseValues: typeof schema.proposals.$inferInsert = {
         proposalNumber: newNumber,
