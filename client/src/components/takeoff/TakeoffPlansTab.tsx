@@ -509,7 +509,7 @@ function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbP
     >
       <div
         className="relative bg-muted flex items-center justify-center overflow-hidden rounded-t-md"
-        style={{ width: "100%", aspectRatio: "3 / 4" }}
+        style={{ width: "100%", aspectRatio: "4 / 3" }}
       >
         {visible ? (
           <PageRenderBoundary
