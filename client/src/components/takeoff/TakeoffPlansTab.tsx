@@ -35,7 +35,7 @@ import {
   Loader2, MoreVertical, Plus, Upload, FileText, Trash2, Pencil,
   ChevronRight, ChevronDown,
 } from "lucide-react";
-import type { TakeoffPlan, TakeoffPlanPage } from "@shared/schema";
+import type { TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement } from "@shared/schema";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -64,6 +64,9 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   const plansKey = ["/api/projects", projectId, "takeoff/plans"];
   const { data: plans = [], isLoading } = useQuery<TakeoffPlan[]>({
     queryKey: plansKey,
+  });
+  const { data: measurements = [] } = useQuery<TakeoffMeasurement[]>({
+    queryKey: ["/api/projects", projectId, "takeoff/measurements"],
   });
 
   const { uploadFile, isUploading } = useUpload();
@@ -197,6 +200,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
               <PlanGroup
                 plan={plan}
                 projectId={projectId}
+                measurements={measurements}
                 collapsed={!!collapsed[plan.id]}
                 onToggleCollapsed={() =>
                   setCollapsed((prev) => ({ ...prev, [plan.id]: !prev[plan.id] }))
@@ -271,6 +275,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
 interface PlanGroupProps {
   plan: TakeoffPlan;
   projectId: string;
+  measurements: TakeoffMeasurement[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onOpenPage: (pageNumber: number) => void;
@@ -283,6 +288,7 @@ const THUMB_WIDTH = 160;
 function PlanGroup({
   plan,
   projectId,
+  measurements,
   collapsed,
   onToggleCollapsed,
   onOpenPage,
@@ -292,6 +298,15 @@ function PlanGroup({
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
   const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
   const [pdfPageCount, setPdfPageCount] = useState<number>(plan.pageCount || 1);
+
+  const measurementsByPageId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of measurements) {
+      if (m.planId !== plan.id) continue;
+      map.set(m.pageId, (map.get(m.pageId) ?? 0) + 1);
+    }
+    return map;
+  }, [measurements, plan.id]);
 
   const renamePage = useMutation({
     mutationFn: async ({ pageNumber, name }: { pageNumber: number; name: string }) => {
@@ -405,12 +420,16 @@ function PlanGroup({
             >
               {pageNumbers.map((pageNumber) => {
                 const pageRow = pages.find((p) => p.pageNumber === pageNumber);
+                const measurementCount = pageRow
+                  ? measurementsByPageId.get(pageRow.id) ?? 0
+                  : 0;
                 return (
                   <PageThumb
                     key={pageNumber}
                     planId={plan.id}
                     pageNumber={pageNumber}
                     pageRow={pageRow}
+                    measurementCount={measurementCount}
                     onOpen={() => onOpenPage(pageNumber)}
                     onRename={(name) => renamePage.mutate({ pageNumber, name })}
                   />
@@ -428,6 +447,7 @@ interface PageThumbProps {
   planId: string;
   pageNumber: number;
   pageRow?: TakeoffPlanPage;
+  measurementCount: number;
   onOpen: () => void;
   onRename: (name: string) => void;
 }
@@ -454,7 +474,7 @@ class PageRenderBoundary extends Component<
   }
 }
 
-function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbProps) {
+function PageThumb({ planId, pageNumber, pageRow, measurementCount, onOpen, onRename }: PageThumbProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -480,8 +500,11 @@ function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbP
   }, [visible]);
 
   const displayName = pageRow?.name?.trim() || `Page ${pageNumber}`;
-  const scaleLabel = pageRow?.isScaled
-    ? pageRow.scaleRatio
+  const isScaled = !!pageRow?.isScaled;
+  const hasMeasurements = measurementCount > 0;
+  const isActive = isScaled || hasMeasurements;
+  const scaleLabel = isScaled
+    ? pageRow?.scaleRatio
       ? `1:${pageRow.scaleRatio}`
       : "Calibrated"
     : "Not scaled";
@@ -502,7 +525,12 @@ function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbP
     <div
       ref={wrapRef}
       data-testid={`card-page-${planId}-${pageNumber}`}
-      className="group relative rounded-md border border-border bg-card hover-elevate cursor-pointer flex flex-col"
+      data-active={isActive ? "true" : "false"}
+      className={`group relative rounded-md border bg-card hover-elevate cursor-pointer flex flex-col ${
+        isActive
+          ? "border-primary/50 ring-1 ring-primary/20"
+          : "border-border"
+      }`}
       onClick={() => {
         if (!editing) onOpen();
       }}
@@ -577,13 +605,24 @@ function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbP
             {displayName}
           </div>
         )}
-        <Badge
-          variant={pageRow?.isScaled ? "secondary" : "outline"}
-          className="self-start text-[10px] px-1.5 py-0"
-          data-testid={`badge-page-scale-${planId}-${pageNumber}`}
-        >
-          {scaleLabel}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge
+            variant={isScaled ? "secondary" : "outline"}
+            className="text-[10px] px-1.5 py-0"
+            data-testid={`badge-page-scale-${planId}-${pageNumber}`}
+          >
+            {scaleLabel}
+          </Badge>
+          {hasMeasurements && (
+            <Badge
+              variant="secondary"
+              className="text-[10px] px-1.5 py-0"
+              data-testid={`badge-page-measurements-${planId}-${pageNumber}`}
+            >
+              {measurementCount} measurement{measurementCount === 1 ? "" : "s"}
+            </Badge>
+          )}
+        </div>
       </div>
     </div>
   );
