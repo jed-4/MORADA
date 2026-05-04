@@ -840,8 +840,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
-    // Public proposal client portal endpoints (token-gated inside the route handlers)
-    if (/^\/proposals\/[^/]+\/(client-view|view|acceptances)$/.test(path)) {
+    // Public proposal client portal endpoints (token-gated inside the route handlers).
+    // Method-scoped: only the specific methods that perform their own shareToken
+    // validation are bypassed. GET /acceptances is NOT public — it returns acceptance
+    // history and stays behind auth.
+    if (req.method === "GET" && /^\/proposals\/[^/]+\/client-view$/.test(path)) {
+      return next();
+    }
+    if (req.method === "POST" && /^\/proposals\/[^/]+\/(view|acceptances)$/.test(path)) {
       return next();
     }
 
