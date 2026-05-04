@@ -14081,7 +14081,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded).
   // State-gated in storage: only sent/viewed/rejected/accepted proposals can be revised.
   // Retries once on a unique-constraint collision against proposalNumber, mirroring POST /api/proposals.
-  app.post("/api/proposals/:id/revision", async (req, res) => {
+  // Exposed under both /new-revision (spec'd path) and /revision (kept as alias).
+  const handleCreateProposalRevision = async (req: any, res: any) => {
     try {
       let created;
       try {
@@ -14106,7 +14107,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error creating proposal revision:", error);
       res.status(500).json({ error: error?.message || "Failed to create revision" });
     }
-  });
+  };
+  app.post("/api/proposals/:id/new-revision", handleCreateProposalRevision);
+  app.post("/api/proposals/:id/revision", handleCreateProposalRevision);
 
   // Capture/refresh content snapshot for a proposal (called on send & on demand)
   app.post("/api/proposals/:id/snapshot", async (req, res) => {
