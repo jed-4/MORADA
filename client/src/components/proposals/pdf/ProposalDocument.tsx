@@ -166,7 +166,7 @@ export function ProposalDocument({
                 primaryColor={primaryColor}
                 proposalName={proposal.name}
                 proposalNumber={proposal.proposalNumber}
-                expiryDate={proposal.expiryDate as any}
+                expiryDate={proposal.expiryDate ? new Date(proposal.expiryDate).toISOString() : undefined}
               />
             );
           }

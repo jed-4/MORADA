@@ -2406,7 +2406,7 @@ export const proposals = pgTable("proposals", {
 
   // Revisions
   version: integer("version").notNull().default(1),
-  parentProposalId: varchar("parent_proposal_id"),
+  parentProposalId: varchar("parent_proposal_id").references((): AnyPgColumn => proposals.id), // Links all revisions back to the original (Rev A) proposal — mirrors parentEstimateId pattern
 
   // Snapshot of full proposal frozen at send-time (sections + items + milestones + totals + T&Cs)
   contentSnapshot: jsonb("content_snapshot"),

@@ -94,7 +94,7 @@ export function PageHeader({ proposalName, proposalNumber, expiryDate, primaryCo
       {proposalNumber && <Text style={styles.subtitle}>Proposal #{proposalNumber}</Text>}
       {expiryDate && (
         <Text style={styles.subtitle}>
-          Valid until: {new Date(expiryDate as any).toLocaleDateString()}
+          Valid until: {new Date(expiryDate).toLocaleDateString()}
         </Text>
       )}
     </View>

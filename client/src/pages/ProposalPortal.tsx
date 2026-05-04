@@ -292,15 +292,15 @@ export default function ProposalPortal() {
                 </CardTitle>
                 <CardDescription className="mt-1 flex items-center gap-3 flex-wrap">
                   <span>#{proposal.proposalNumber}</span>
-                  {(proposal as any).version > 1 && (
+                  {(proposal.version ?? 1) > 1 && (
                     <Badge variant="outline" className="text-xs">
-                      v{(proposal as any).version}
+                      v{proposal.version}
                     </Badge>
                   )}
                   {proposal.expiryDate && (
                     <span className="inline-flex items-center gap-1 text-xs">
                       <Clock className="w-3 h-3" />
-                      Valid until {format(new Date(proposal.expiryDate as any), "MMM d, yyyy")}
+                      Valid until {format(new Date(proposal.expiryDate), "MMM d, yyyy")}
                     </span>
                   )}
                 </CardDescription>
@@ -313,7 +313,7 @@ export default function ProposalPortal() {
           <CardContent className="text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Building className="w-4 h-4" />
-              <span>Total: ${(Number((proposal as any).totalAmount || 0) / 100).toFixed(2)}</span>
+              <span>Total: ${(Number(proposal.totalAmount || 0) / 100).toFixed(2)}</span>
             </div>
           </CardContent>
         </Card>

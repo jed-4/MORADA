@@ -411,8 +411,11 @@ export function ProposalBuilder({
       try {
         // Collect all estimate IDs from sections
         const estimateIds = sections
-          .filter(s => s.sectionType === 'estimate' && (s.content as any)?.estimateId)
-          .map(s => (s.content as any).estimateId);
+          .filter((s) => {
+            const c = (s.content as Record<string, unknown> | null) ?? {};
+            return s.sectionType === 'estimate' && typeof c.estimateId === 'string';
+          })
+          .map((s) => ((s.content as Record<string, unknown>).estimateId as string));
 
         // Fetch all estimate data in parallel
         const estimatesDataMap: Record<string, any> = {};
@@ -1122,8 +1125,8 @@ interface RevisionHistoryPanelProps {
 function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const parentId = (proposal as any).parentProposalId || proposal.id;
-  const isSuperseded = !!(proposal as any).supersededByProposalId;
+  const parentId = proposal.parentProposalId || proposal.id;
+  const isSuperseded = proposal.status === 'superseded';
 
   const { data: siblings = [] } = useQuery<Proposal[]>({
     queryKey: ['/api/proposals', 'revisions', parentId],
@@ -1131,17 +1134,16 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
       const res = await fetch(`/api/proposals?parentId=${encodeURIComponent(parentId)}`);
       if (!res.ok) return [];
       const all = (await res.json()) as Proposal[];
-      return all.filter(
-        (p) => p.id === parentId || (p as any).parentProposalId === parentId,
-      );
+      return all.filter((p) => p.id === parentId || p.parentProposalId === parentId);
     },
   });
 
   const newRevisionMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
+    mutationFn: async (): Promise<Proposal> => {
+      const res = await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
+      return (await res.json()) as Proposal;
     },
-    onSuccess: (newProposal: any) => {
+    onSuccess: (newProposal) => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
       toast({ title: 'Revision created', description: `v${newProposal.version} is ready to edit.` });
       if (newProposal?.id) {
@@ -1157,9 +1159,7 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
     },
   });
 
-  const ordered = [...siblings].sort(
-    (a, b) => ((a as any).version || 1) - ((b as any).version || 1),
-  );
+  const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
 
   return (
     <div className="space-y-3" data-testid="revision-history-panel">
@@ -1209,7 +1209,7 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
                   <p className="text-xs text-muted-foreground truncate">#{p.proposalNumber}</p>
                 </div>
                 <Badge variant="outline" className="text-xs">
-                  v{(p as any).version || 1}
+                  v{p.version || 1}
                 </Badge>
                 {!isCurrent && (
                   <Button

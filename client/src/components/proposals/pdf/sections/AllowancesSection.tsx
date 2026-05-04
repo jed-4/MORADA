@@ -34,7 +34,7 @@ export function AllowancesSection({ proposal, section, companyName, primaryColor
       <PageHeader
         proposalName={proposal.name}
         proposalNumber={proposal.proposalNumber}
-        expiryDate={proposal.expiryDate as any}
+        expiryDate={proposal.expiryDate}
         primaryColor={primaryColor}
       />
       <View style={sharedSectionStyle.section}>

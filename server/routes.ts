@@ -13888,6 +13888,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/proposals/:id/acceptances", async (req, res) => {
     try {
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+      // Reject acceptances on superseded/expired/archived/already-finalised proposals.
+      if (existing.status === "superseded") {
+        return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be accepted." });
+      }
+      if (existing.status === "expired") {
+        return res.status(400).json({ error: "This proposal has expired and can no longer be accepted." });
+      }
+      if (existing.status === "accepted" || existing.status === "rejected") {
+        return res.status(400).json({ error: `This proposal has already been ${existing.status}.` });
+      }
+      if (existing.isArchived) {
+        return res.status(400).json({ error: "This proposal is archived and cannot be accepted." });
+      }
       const validationResult = insertProposalAcceptanceSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
