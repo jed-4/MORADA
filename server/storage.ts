@@ -15089,6 +15089,10 @@ export class DbStorage implements IStorage {
         proposalNumber: newNumber,
         name: parent.name,
         projectId: parent.projectId,
+        // Preserve relational lineage so revised drafts still show the source
+        // estimate and the same client as the original proposal.
+        estimateId: parent.estimateId,
+        clientId: parent.clientId,
         introductionText: parent.introductionText,
         closingText: parent.closingText,
         termsAndConditions: parent.termsAndConditions,
