@@ -694,6 +694,7 @@ export function ProposalBuilder({
                   proposal={proposal}
                   sections={sections}
                   project={project}
+                  client={client}
                   companyLogo={companyLogo}
                   companyName={companyName}
                   primaryColor={primaryColor}

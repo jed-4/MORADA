@@ -10,6 +10,7 @@ import type {
   ProposalPaymentMilestone,
   ProposalAcceptance,
 } from '@shared/schema';
+import { substituteSectionContent, type PlaceholderContext } from './placeholders';
 import { CoverPageSection } from './sections/CoverPageSection';
 import { EstimateSection } from './sections/EstimateSection';
 import { SummarySection } from './sections/SummarySection';
@@ -50,8 +51,11 @@ export function ProposalDocument({
   milestones = [],
   acceptance = null,
 }: ProposalDocumentProps) {
+  const placeholderCtx: PlaceholderContext = { proposal, project, client, companyName };
   const enabledSections = sections.filter((s) => s.isEnabled !== false);
-  const sortedSections = [...enabledSections].sort((a, b) => a.order - b.order);
+  const sortedSections = [...enabledSections]
+    .sort((a, b) => a.order - b.order)
+    .map((s) => substituteSectionContent(s, placeholderCtx));
 
   return (
     <Document>
