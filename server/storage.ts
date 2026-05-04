@@ -4746,19 +4746,29 @@ export class MemStorage implements IStorage {
     const projectMarkupPercent = estimate?.projectMarkupPercent ?? 0;
 
     let builderCostTotal = 0;
+    let lineItemMarkupTotal = 0;
     let clientTaxOnItems = 0;
     let clientAmountIncTaxTotal = 0;
 
     items.forEach(item => {
-      const builderCost = item.unitCostExTax * item.quantity;
-      builderCostTotal += builderCost;
+      const qty = item.quantity ?? 0;
+      const unitCost = item.unitCostExTax ?? 0;
+      const markupPct = item.markupPercent ?? 0;
+      const lineExTax = (item.priceIncTax ?? 0) - (item.taxAmount ?? 0);
+      const computedCost = unitCost * qty;
+      // Per-line markup applies only when qty * unit cost > 0; fixed-price (qty=0) lines
+      // count entirely as builder cost and contribute no line-item markup.
+      const lineCost = computedCost > 0 ? computedCost : lineExTax;
+      const lineMarkup = computedCost > 0 ? computedCost * (markupPct / 100) : 0;
+      builderCostTotal += lineCost;
+      lineItemMarkupTotal += lineMarkup;
       clientTaxOnItems += item.taxAmount ?? 0;
       clientAmountIncTaxTotal += item.priceIncTax ?? 0;
     });
 
     // Subtotal ex-tax = sum of all item amounts ex-tax (builder cost + per-item markups)
     const subtotalExTax = Math.round((clientAmountIncTaxTotal - clientTaxOnItems) * 100) / 100;
-    const lineItemMarkupAmount = Math.round((subtotalExTax - builderCostTotal) * 100) / 100;
+    const lineItemMarkupAmount = Math.round(lineItemMarkupTotal * 100) / 100;
 
     // Global markup applied to the subtotal (second layer on top of item markups)
     const globalMarkupAmount = Math.round(subtotalExTax * (projectMarkupPercent / 100) * 100) / 100;
@@ -11050,19 +11060,29 @@ export class DbStorage implements IStorage {
       const projectMarkupPercent = estimate?.projectMarkupPercent ?? 0;
 
       let builderCostTotal = 0;
+      let lineItemMarkupTotal = 0;
       let clientTaxOnItems = 0;
       let clientAmountIncTaxTotal = 0;
 
       items.forEach(item => {
-        const builderCost = item.unitCostExTax * item.quantity;
-        builderCostTotal += builderCost;
+        const qty = item.quantity ?? 0;
+        const unitCost = item.unitCostExTax ?? 0;
+        const markupPct = item.markupPercent ?? 0;
+        const lineExTax = (item.priceIncTax ?? 0) - (item.taxAmount ?? 0);
+        const computedCost = unitCost * qty;
+        // Per-line markup applies only when qty * unit cost > 0; fixed-price (qty=0)
+        // lines count entirely as builder cost and contribute no line-item markup.
+        const lineCost = computedCost > 0 ? computedCost : lineExTax;
+        const lineMarkup = computedCost > 0 ? computedCost * (markupPct / 100) : 0;
+        builderCostTotal += lineCost;
+        lineItemMarkupTotal += lineMarkup;
         clientTaxOnItems += item.taxAmount ?? 0;
         clientAmountIncTaxTotal += item.priceIncTax ?? 0;
       });
 
       // Subtotal ex-tax = sum of all item amounts ex-tax (builder cost + per-item markups)
       const subtotalExTax = Math.round((clientAmountIncTaxTotal - clientTaxOnItems) * 100) / 100;
-      const lineItemMarkupAmount = Math.round((subtotalExTax - builderCostTotal) * 100) / 100;
+      const lineItemMarkupAmount = Math.round(lineItemMarkupTotal * 100) / 100;
 
       // Global markup applied to the subtotal (second layer on top of item markups)
       const globalMarkupAmount = Math.round(subtotalExTax * (projectMarkupPercent / 100) * 100) / 100;
