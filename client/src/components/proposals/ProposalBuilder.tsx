@@ -734,14 +734,14 @@ export function ProposalBuilder({
       </div>
 
       {/* Sidebar - Sections / Layout - 40% */}
-      <div className="w-96 flex flex-col">
-        <Tabs defaultValue="sections" className="flex-1 flex flex-col">
+      <div className="w-96 flex flex-col min-h-0">
+        <Tabs defaultValue="sections" className="flex-1 flex flex-col min-h-0">
           <TabsList className="w-full">
             <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
             <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
             <TabsTrigger value="revisions" className="flex-1" data-testid="tab-revisions">Revisions</TabsTrigger>
           </TabsList>
-          <TabsContent value="sections" className="flex-1 flex flex-col mt-4">
+          <TabsContent value="sections" className="flex-1 flex flex-col min-h-0 mt-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Sections</h2>
               <Button
@@ -790,11 +790,11 @@ export function ProposalBuilder({
             </div>
           </TabsContent>
 
-          <TabsContent value="layout" className="flex-1 mt-4 overflow-auto">
+          <TabsContent value="layout" className="flex-1 min-h-0 mt-4 overflow-auto">
             <LayoutPanel proposal={proposal} />
           </TabsContent>
 
-          <TabsContent value="revisions" className="flex-1 mt-4 overflow-auto">
+          <TabsContent value="revisions" className="flex-1 min-h-0 mt-4 overflow-auto">
             <RevisionHistoryPanel proposal={proposal} />
           </TabsContent>
         </Tabs>
