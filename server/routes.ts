@@ -13682,10 +13682,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposals API Routes
   app.get("/api/proposals", async (req, res) => {
     try {
-      const { projectId, status } = req.query;
+      const { projectId, status, parentProposalId } = req.query;
       const proposals = await storage.getProposals(
         projectId as string | undefined,
-        status as string | undefined
+        status as string | undefined,
+        parentProposalId as string | undefined,
       );
       res.json(proposals);
     } catch (error) {

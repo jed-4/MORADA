@@ -14795,7 +14795,7 @@ export class DbStorage implements IStorage {
   }
 
   // Proposals CRUD operations
-  async getProposals(projectId?: string, status?: string): Promise<Proposal[]> {
+  async getProposals(projectId?: string, status?: string, parentProposalId?: string): Promise<Proposal[]> {
     try {
       let query = db.select().from(schema.proposals);
 
@@ -14805,6 +14805,12 @@ export class DbStorage implements IStorage {
       }
       if (status) {
         conditions.push(eq(schema.proposals.status, status));
+      }
+      if (parentProposalId) {
+        conditions.push(or(
+          eq(schema.proposals.id, parentProposalId),
+          eq(schema.proposals.parentProposalId, parentProposalId),
+        )!);
       }
 
       if (conditions.length > 0) {
@@ -15044,20 +15050,20 @@ export class DbStorage implements IStorage {
     });
   }
 
-  // PROP-YYYY-NNNN numbering — best-effort sequential; callers should be prepared
-  // to retry on unique-constraint conflict (numbering is not yet sequence-backed).
   async getNextProposalNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `PROP-${year}-`;
-    const rows = await db.select({ proposalNumber: schema.proposals.proposalNumber })
-      .from(schema.proposals)
-      .where(sql`${schema.proposals.proposalNumber} LIKE ${prefix + '%'}`);
-    let max = 0;
-    for (const r of rows) {
-      const n = parseInt(String(r.proposalNumber || '').replace(prefix, ''), 10);
-      if (!isNaN(n) && n > max) max = n;
-    }
-    return `${prefix}${String(max + 1).padStart(4, '0')}`;
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${'proposal_number_'.length}, ${year})`);
+      const result = await tx.execute(sql`
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}) AS INTEGER)), 0) AS max_num
+        FROM proposals
+        WHERE proposal_number LIKE ${prefix + '%'}
+      `);
+      const row = (result as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
+      const max = row ? Number(row.max_num) || 0 : 0;
+      return `${prefix}${String(max + 1).padStart(4, '0')}`;
+    });
   }
 
   async createProposalRevision(parentId: string, overrides?: Partial<InsertProposal>): Promise<Proposal> {
