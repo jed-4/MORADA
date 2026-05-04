@@ -15064,8 +15064,6 @@ export class DbStorage implements IStorage {
     const parent = await this.getProposal(parentId);
     if (!parent) throw new Error('Parent proposal not found');
 
-    // State gate: only proposals that have actually been "issued" can be revised.
-    // draft -> just edit it; superseded -> already revised once, can't fork again.
     const REVISABLE = new Set(['sent', 'viewed', 'rejected', 'accepted']);
     if (!REVISABLE.has(String(parent.status))) {
       throw new InvalidProposalStateError(
@@ -15075,7 +15073,6 @@ export class DbStorage implements IStorage {
     }
 
     return await db.transaction(async (tx) => {
-      // Mark parent as superseded inside the transaction so failure rolls back.
       await tx.update(schema.proposals)
         .set({ status: 'superseded', updatedAt: new Date() })
         .where(eq(schema.proposals.id, parentId));
@@ -15083,14 +15080,10 @@ export class DbStorage implements IStorage {
       const nextVersion = (parent.version ?? 1) + 1;
       const newNumber = await this.getNextProposalNumber();
 
-      // Server-controlled invariants for the new revision. These are NEVER
-      // overridable from request body (see allowlist below).
       const baseValues: typeof schema.proposals.$inferInsert = {
         proposalNumber: newNumber,
         name: parent.name,
         projectId: parent.projectId,
-        // Preserve relational lineage so revised drafts still show the source
-        // estimate and the same client as the original proposal.
         estimateId: parent.estimateId,
         clientId: parent.clientId,
         introductionText: parent.introductionText,
@@ -15119,9 +15112,6 @@ export class DbStorage implements IStorage {
         notes: parent.notes,
         isArchived: false,
         version: nextVersion,
-        // Lineage rooting: every revision in a chain points to the ORIGINAL
-        // proposal, not its immediate predecessor. So v3.parentProposalId === v1.id,
-        // not v2.id. This keeps canonical revision grouping intact for the UI.
         parentProposalId: parent.parentProposalId ?? parent.id,
         contentSnapshot: null,
         viewCount: 0,
@@ -15130,10 +15120,6 @@ export class DbStorage implements IStorage {
         layoutSettings: parent.layoutSettings ?? {},
       };
 
-      // Apply ONLY allowlisted override keys. Each is read through a typed
-      // Pick to keep TS in the loop — no casts to `any`. Server-controlled
-      // invariants (proposalNumber, status, version, parentProposalId,
-      // view/snapshot fields, audit columns) remain untouched.
       const allowedOverrides: Pick<InsertProposal, 'name' | 'notes' | 'expiryDate'> = {};
       if (overrides?.name !== undefined) allowedOverrides.name = overrides.name;
       if (overrides?.notes !== undefined) allowedOverrides.notes = overrides.notes;
@@ -15176,15 +15162,10 @@ export class DbStorage implements IStorage {
   }
 
   async recordProposalView(id: string, device?: string | null): Promise<Proposal | undefined> {
-    // First view captures viewedDate + viewerDevice and bumps status sent -> viewed.
-    // Subsequent views only bump viewCount and lastViewedAt.
     const existing = await this.getProposal(id);
     if (!existing) return undefined;
     const isFirst = (existing.viewCount ?? 0) === 0;
     const now = new Date();
-    // drizzle's .set() accepts SQL expressions for any column on this table —
-    // type the patch as the table's $inferInsert keys so we get TS coverage
-    // on every property assignment without an `any` escape.
     type ProposalUpdate = Partial<typeof schema.proposals.$inferInsert>;
     const patch: ProposalUpdate = {
       viewCount: sql<number>`${schema.proposals.viewCount} + 1`,

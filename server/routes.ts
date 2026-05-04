@@ -13959,9 +13959,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getProposalPaymentMilestones(req.params.id),
         storage.getCompanySettings(),
       ]);
+
+      const sentProposalRow = await storage.updateProposal(req.params.id, {
+        status: "sent",
+        sentDate: sentAt ? new Date(sentAt) : new Date(),
+      });
+      if (!sentProposalRow) {
+        return res.status(500).json({ error: "Failed to update proposal status" });
+      }
+
       const snapshot = {
         capturedAt: new Date().toISOString(),
-        proposal: existing,
+        proposal: sentProposalRow,
         sections,
         items,
         milestones,
@@ -13985,8 +13994,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const proposal = await storage.updateProposal(req.params.id, {
-        status: "sent",
-        sentDate: sentAt ? new Date(sentAt) : new Date(),
         contentSnapshot: snapshot,
       });
       res.json(proposal);
