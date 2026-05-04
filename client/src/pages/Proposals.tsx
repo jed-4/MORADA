@@ -426,7 +426,11 @@ export default function Proposals() {
           );
         },
         size: 80,
-        meta: { defaultWidth: 80, headerLabel: "Version", defaultHidden: true } satisfies DataTableColumnMeta,
+        meta: {
+          defaultWidth: 80,
+          headerLabel: "Version",
+          defaultHidden: !proposals.some((p) => ((p as any).version || 1) > 1),
+        } satisfies DataTableColumnMeta,
       },
       {
         id: "viewCount",
@@ -461,7 +465,7 @@ export default function Proposals() {
     );
 
     return cols;
-  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation]);
+  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, proposals]);
 
   const pickerColumns = useMemo(() => {
     return proposalColumns.map((c) => {

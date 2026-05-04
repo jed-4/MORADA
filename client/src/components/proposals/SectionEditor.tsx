@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import type { ProposalSection, Estimate } from "@shared/schema";
 
 interface SectionEditorProps {
@@ -22,9 +23,13 @@ interface SectionEditorProps {
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
   cover_letter: "Cover Letter",
+  scope: "Scope of Work",
   estimate: "Estimate",
   summary: "Summary",
   allowances: "Allowances",
+  inclusions_exclusions: "Inclusions & Exclusions",
+  payment_schedule: "Payment Schedule",
+  closing: "Closing",
   closing_letter: "Closing Letter",
   attachments: "Attachments",
   terms_conditions: "Terms & Conditions",
@@ -103,70 +108,87 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
           {/* Section-specific content editors */}
           {section.sectionType === "cover_letter" && (
             <div className="space-y-2">
-              <Label htmlFor="letter-content">Letter Content</Label>
-              <Textarea
-                id="letter-content"
-                value={content.letterText || ""}
-                onChange={(e) => setContent({ ...content, letterText: e.target.value })}
+              <Label>Letter Content</Label>
+              <RichTextEditor
+                content={content.letterText || ""}
+                onChange={(html) => setContent({ ...content, letterText: html })}
                 placeholder="Enter your cover letter text..."
-                rows={8}
-                data-testid="textarea-letter-content"
               />
             </div>
           )}
 
-          {section.sectionType === "closing_letter" && (
+          {section.sectionType === "scope" && (
             <div className="space-y-2">
-              <Label htmlFor="closing-content">Closing Letter Content</Label>
-              <Textarea
-                id="closing-content"
-                value={content.closingText || ""}
-                onChange={(e) => setContent({ ...content, closingText: e.target.value })}
-                placeholder="Enter your closing letter text..."
-                rows={8}
-                data-testid="textarea-closing-content"
+              <Label>Scope of Work</Label>
+              <RichTextEditor
+                content={content.scopeText || ""}
+                onChange={(html) => setContent({ ...content, scopeText: html })}
+                placeholder="Describe the scope of work..."
+              />
+            </div>
+          )}
+
+          {(section.sectionType === "closing_letter" || section.sectionType === "closing") && (
+            <div className="space-y-2">
+              <Label>Closing Content</Label>
+              <RichTextEditor
+                content={content.closingText || ""}
+                onChange={(html) => setContent({ ...content, closingText: html })}
+                placeholder="Enter your closing text..."
               />
             </div>
           )}
 
           {section.sectionType === "summary" && (
             <div className="space-y-2">
-              <Label htmlFor="summary-content">Summary Content</Label>
-              <Textarea
-                id="summary-content"
-                value={content.summaryText || ""}
-                onChange={(e) => setContent({ ...content, summaryText: e.target.value })}
+              <Label>Summary Content</Label>
+              <RichTextEditor
+                content={content.summaryText || ""}
+                onChange={(html) => setContent({ ...content, summaryText: html })}
                 placeholder="Enter project summary..."
-                rows={8}
-                data-testid="textarea-summary-content"
               />
+            </div>
+          )}
+
+          {section.sectionType === "inclusions_exclusions" && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Inclusions</Label>
+                <RichTextEditor
+                  content={content.inclusionsText || ""}
+                  onChange={(html) => setContent({ ...content, inclusionsText: html })}
+                  placeholder="What is included..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Exclusions</Label>
+                <RichTextEditor
+                  content={content.exclusionsText || ""}
+                  onChange={(html) => setContent({ ...content, exclusionsText: html })}
+                  placeholder="What is excluded..."
+                />
+              </div>
             </div>
           )}
 
           {section.sectionType === "terms_conditions" && (
             <div className="space-y-2">
-              <Label htmlFor="terms-content">Terms & Conditions</Label>
-              <Textarea
-                id="terms-content"
-                value={content.termsText || ""}
-                onChange={(e) => setContent({ ...content, termsText: e.target.value })}
+              <Label>Terms &amp; Conditions</Label>
+              <RichTextEditor
+                content={content.termsText || ""}
+                onChange={(html) => setContent({ ...content, termsText: html })}
                 placeholder="Enter terms and conditions..."
-                rows={10}
-                data-testid="textarea-terms-content"
               />
             </div>
           )}
 
           {section.sectionType === "custom" && (
             <div className="space-y-2">
-              <Label htmlFor="custom-content">Content</Label>
-              <Textarea
-                id="custom-content"
-                value={content.customText || ""}
-                onChange={(e) => setContent({ ...content, customText: e.target.value })}
+              <Label>Content</Label>
+              <RichTextEditor
+                content={content.customText || ""}
+                onChange={(html) => setContent({ ...content, customText: html })}
                 placeholder="Enter section content..."
-                rows={8}
-                data-testid="textarea-custom-content"
               />
             </div>
           )}

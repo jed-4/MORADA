@@ -49,13 +49,16 @@ interface ProposalDetailParams {
 const SECTION_TYPES = [
   { value: 'cover_page', label: 'Cover Page' },
   { value: 'cover_letter', label: 'Cover Letter' },
+  { value: 'scope', label: 'Scope of Work' },
   { value: 'estimate', label: 'Estimate' },
   { value: 'summary', label: 'Summary' },
   { value: 'allowances', label: 'Allowances' },
+  { value: 'inclusions_exclusions', label: 'Inclusions & Exclusions' },
+  { value: 'payment_schedule', label: 'Payment Schedule' },
+  { value: 'closing', label: 'Closing' },
   { value: 'closing_letter', label: 'Closing Letter' },
   { value: 'attachments', label: 'Attachments' },
   { value: 'terms_conditions', label: 'Terms & Conditions' },
-  { value: 'payment_schedule', label: 'Payment Schedule' },
   { value: 'signature', label: 'Signature' },
   { value: 'custom', label: 'Custom Section' },
 ];

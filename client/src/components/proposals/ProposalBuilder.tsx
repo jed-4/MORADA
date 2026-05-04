@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -12,8 +12,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { GripVertical, Plus, Download, Eye, Loader2, Trash2 } from 'lucide-react';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone } from '@shared/schema';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { useToast } from '@/hooks/use-toast';
+import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight } from 'lucide-react';
+import { useLocation } from 'wouter';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
@@ -21,12 +26,56 @@ import { RichTextEditor } from '@/components/RichTextEditor';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 
+// --- Placeholder dropdown ---
+const PROPOSAL_PLACEHOLDERS = [
+  { token: '{{client.name}}', label: 'Client Name' },
+  { token: '{{client.email}}', label: 'Client Email' },
+  { token: '{{project.name}}', label: 'Project Name' },
+  { token: '{{project.address}}', label: 'Project Address' },
+  { token: '{{proposal.number}}', label: 'Proposal Number' },
+  { token: '{{proposal.total}}', label: 'Proposal Total' },
+  { token: '{{company.name}}', label: 'Company Name' },
+  { token: '{{date.today}}', label: 'Today\'s Date' },
+];
+
+function PlaceholderHint() {
+  const { toast } = useToast();
+  return (
+    <div className="flex items-center gap-2 mb-1">
+      <Select
+        onValueChange={(v) => {
+          if (!v) return;
+          navigator.clipboard.writeText(v).then(
+            () => toast({ title: 'Copied', description: `${v} copied to clipboard` }),
+            () => toast({ title: 'Copy failed', variant: 'destructive' as const }),
+          );
+        }}
+      >
+        <SelectTrigger className="h-7 w-44 text-xs" data-testid="select-placeholder">
+          <SelectValue placeholder="Insert placeholder" />
+        </SelectTrigger>
+        <SelectContent>
+          {PROPOSAL_PLACEHOLDERS.map((p) => (
+            <SelectItem key={p.token} value={p.token} className="text-xs">
+              {p.label} — <span className="font-mono ml-1">{p.token}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-[10px] text-muted-foreground">Click to copy &amp; paste into editor</span>
+    </div>
+  );
+}
+
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
   cover_letter: "Cover Letter",
+  scope: "Scope of Work",
   estimate: "Estimate",
   summary: "Summary",
   allowances: "Allowances",
+  inclusions_exclusions: "Inclusions & Exclusions",
+  closing: "Closing",
   closing_letter: "Closing Letter",
   attachments: "Attachments",
   terms_conditions: "Terms & Conditions",
@@ -136,6 +185,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
             {section.sectionType === "cover_letter" && (
               <div className="space-y-2">
                 <Label>Letter Content</Label>
+                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.letterText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, letterText: html })}
@@ -144,13 +194,26 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
               </div>
             )}
 
-            {section.sectionType === "closing_letter" && (
+            {section.sectionType === "scope" && (
               <div className="space-y-2">
-                <Label>Closing Letter Content</Label>
+                <Label>Scope of Work</Label>
+                <PlaceholderHint />
+                <RichTextEditor
+                  content={localContent.scopeText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, scopeText: html })}
+                  placeholder="Describe the scope of work..."
+                />
+              </div>
+            )}
+
+            {(section.sectionType === "closing_letter" || section.sectionType === "closing") && (
+              <div className="space-y-2">
+                <Label>Closing Content</Label>
+                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.closingText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, closingText: html })}
-                  placeholder="Enter your closing letter text..."
+                  placeholder="Enter your closing text..."
                 />
               </div>
             )}
@@ -158,6 +221,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
             {section.sectionType === "summary" && (
               <div className="space-y-2">
                 <Label>Summary Content</Label>
+                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.summaryText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, summaryText: html })}
@@ -166,9 +230,44 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
               </div>
             )}
 
+            {section.sectionType === "allowances" && (
+              <div className="space-y-2">
+                <Label>Allowances Notes</Label>
+                <PlaceholderHint />
+                <RichTextEditor
+                  content={localContent.allowancesText || ""}
+                  onChange={(html) => setLocalContent({ ...localContent, allowancesText: html })}
+                  placeholder="Optional notes on allowances..."
+                />
+              </div>
+            )}
+
+            {section.sectionType === "inclusions_exclusions" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Inclusions</Label>
+                  <PlaceholderHint />
+                  <RichTextEditor
+                    content={localContent.inclusionsText || ""}
+                    onChange={(html) => setLocalContent({ ...localContent, inclusionsText: html })}
+                    placeholder="What is included..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Exclusions</Label>
+                  <RichTextEditor
+                    content={localContent.exclusionsText || ""}
+                    onChange={(html) => setLocalContent({ ...localContent, exclusionsText: html })}
+                    placeholder="What is excluded..."
+                  />
+                </div>
+              </div>
+            )}
+
             {section.sectionType === "terms_conditions" && (
               <div className="space-y-2">
                 <Label>Terms &amp; Conditions</Label>
+                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.termsText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, termsText: html })}
@@ -180,6 +279,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId }: Sor
             {section.sectionType === "custom" && (
               <div className="space-y-2">
                 <Label>Content</Label>
+                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.customText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, customText: html })}
@@ -279,6 +379,12 @@ export function ProposalBuilder({
     enabled: !!proposal.id,
   });
 
+  // Fetch latest accepted/rejected acceptance for embedding signature into PDF
+  const { data: latestAcceptance = null } = useQuery<ProposalAcceptance | null>({
+    queryKey: ['/api/proposals', proposal.id, 'latest-acceptance'],
+    enabled: !!proposal.id,
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -333,6 +439,7 @@ export function ProposalBuilder({
             primaryColor={primaryColor}
             estimatesData={estimatesDataMap}
             milestones={milestones}
+            acceptance={latestAcceptance}
           />
         ).toBlob();
         
@@ -369,20 +476,20 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview, milestones]);
+  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview, milestones, latestAcceptance]);
 
-  function handleDragEnd(event: any) {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    if (active.id !== over.id) {
-      const oldIndex = sections.findIndex((s) => s.id === active.id);
-      const newIndex = sections.findIndex((s) => s.id === over.id);
-      const reorderedSections = arrayMove(sections, oldIndex, newIndex).map((s, idx) => ({
-        ...s,
-        order: idx,
-      }));
-      onSectionsReorder(reorderedSections);
-    }
+    const oldIndex = sections.findIndex((s) => s.id === active.id);
+    const newIndex = sections.findIndex((s) => s.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reorderedSections = arrayMove(sections, oldIndex, newIndex).map((s, idx) => ({
+      ...s,
+      order: idx,
+    }));
+    onSectionsReorder(reorderedSections);
   }
 
   return (
@@ -411,6 +518,7 @@ export function ProposalBuilder({
                   companyName={companyName}
                   primaryColor={primaryColor}
                   milestones={milestones}
+                  acceptance={latestAcceptance}
                 />
               }
               fileName={`${proposal.proposalNumber}.pdf`}
@@ -461,6 +569,7 @@ export function ProposalBuilder({
           <TabsList className="w-full">
             <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
             <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
+            <TabsTrigger value="revisions" className="flex-1" data-testid="tab-revisions">Revisions</TabsTrigger>
           </TabsList>
           <TabsContent value="sections" className="flex-1 flex flex-col mt-4">
             <div className="flex items-center justify-between mb-4">
@@ -509,8 +618,12 @@ export function ProposalBuilder({
             </div>
           </TabsContent>
 
-          <TabsContent value="layout" className="flex-1 mt-4">
+          <TabsContent value="layout" className="flex-1 mt-4 overflow-auto">
             <LayoutPanel proposal={proposal} />
+          </TabsContent>
+
+          <TabsContent value="revisions" className="flex-1 mt-4 overflow-auto">
+            <RevisionHistoryPanel proposal={proposal} />
           </TabsContent>
         </Tabs>
       </div>
@@ -523,15 +636,36 @@ interface LayoutPanelProps {
   proposal: Proposal;
 }
 
+type LayoutSettings = {
+  primaryColor?: string;
+  showPageNumbers?: boolean;
+  showFooter?: boolean;
+  pageSize?: string;
+  pricingDisplay?: 'show' | 'hide' | 'summary';
+  showGst?: boolean;
+  showLogo?: boolean;
+  preset?: 'classic' | 'modern' | 'minimal';
+};
+
+const LAYOUT_PRESETS: Record<string, Partial<LayoutSettings>> = {
+  classic: { primaryColor: '#1F2937', pageSize: 'A4', showFooter: true, showPageNumbers: true, showLogo: true, pricingDisplay: 'show' },
+  modern: { primaryColor: '#3B82F6', pageSize: 'A4', showFooter: true, showPageNumbers: false, showLogo: true, pricingDisplay: 'show' },
+  minimal: { primaryColor: '#6B7280', pageSize: 'A4', showFooter: false, showPageNumbers: false, showLogo: false, pricingDisplay: 'summary' },
+};
+
 function LayoutPanel({ proposal }: LayoutPanelProps) {
-  const settings = (proposal.layoutSettings as any) || {};
+  const settings = (proposal.layoutSettings as LayoutSettings) || {};
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || '#3B82F6');
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
   const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
   const [pageSize, setPageSize] = useState<string>(settings.pageSize || 'A4');
+  const [pricingDisplay, setPricingDisplay] = useState<'show' | 'hide' | 'summary'>(settings.pricingDisplay || 'show');
+  const [showGst, setShowGst] = useState<boolean>(settings.showGst ?? true);
+  const [showLogo, setShowLogo] = useState<boolean>(settings.showLogo ?? true);
+  const [preset, setPreset] = useState<string>(settings.preset || '');
 
   const saveLayoutMutation = useMutation({
-    mutationFn: async (layoutSettings: Record<string, any>) => {
+    mutationFn: async (layoutSettings: LayoutSettings) => {
       return await apiRequest(`/api/proposals/${proposal.id}`, 'PATCH', { layoutSettings });
     },
     onSuccess: () => {
@@ -541,11 +675,48 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
   });
 
   const handleSave = () => {
-    saveLayoutMutation.mutate({ primaryColor, showPageNumbers, showFooter, pageSize });
+    saveLayoutMutation.mutate({
+      primaryColor,
+      showPageNumbers,
+      showFooter,
+      pageSize,
+      pricingDisplay,
+      showGst,
+      showLogo,
+      preset: (preset || undefined) as LayoutSettings['preset'],
+    });
+  };
+
+  const applyPreset = (name: string) => {
+    setPreset(name);
+    const p = LAYOUT_PRESETS[name];
+    if (!p) return;
+    if (p.primaryColor) setPrimaryColor(p.primaryColor);
+    if (p.pageSize) setPageSize(p.pageSize);
+    if (p.showFooter !== undefined) setShowFooter(!!p.showFooter);
+    if (p.showPageNumbers !== undefined) setShowPageNumbers(!!p.showPageNumbers);
+    if (p.showLogo !== undefined) setShowLogo(!!p.showLogo);
+    if (p.pricingDisplay) setPricingDisplay(p.pricingDisplay);
   };
 
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Preset</Label>
+        <Select value={preset} onValueChange={applyPreset}>
+          <SelectTrigger data-testid="select-layout-preset">
+            <SelectValue placeholder="Choose a preset" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="classic">Classic</SelectItem>
+            <SelectItem value="modern">Modern</SelectItem>
+            <SelectItem value="minimal">Minimal</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Separator />
+
       <div className="space-y-2">
         <Label htmlFor="layout-primary-color">Primary Color</Label>
         <Input
@@ -556,19 +727,42 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
           data-testid="input-layout-primary-color"
         />
       </div>
+
       <div className="space-y-2">
         <Label htmlFor="layout-page-size">Page Size</Label>
-        <select
-          id="layout-page-size"
-          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-          value={pageSize}
-          onChange={(e) => setPageSize(e.target.value)}
-          data-testid="select-layout-page-size"
-        >
-          <option value="A4">A4</option>
-          <option value="LETTER">US Letter</option>
-        </select>
+        <Select value={pageSize} onValueChange={setPageSize}>
+          <SelectTrigger id="layout-page-size" data-testid="select-layout-page-size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="A4">A4</SelectItem>
+            <SelectItem value="LETTER">US Letter</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <div className="space-y-2">
+        <Label>Pricing display</Label>
+        <div
+          className="grid grid-cols-3 gap-1 p-1 bg-muted rounded-md"
+          role="radiogroup"
+          data-testid="segmented-pricing-display"
+        >
+          {(['show', 'summary', 'hide'] as const).map((opt) => (
+            <Button
+              key={opt}
+              size="sm"
+              variant={pricingDisplay === opt ? 'default' : 'ghost'}
+              onClick={() => setPricingDisplay(opt)}
+              className="capitalize"
+              data-testid={`button-pricing-${opt}`}
+            >
+              {opt}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="layout-page-numbers">Show page numbers</Label>
         <Switch
@@ -587,6 +781,25 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
           data-testid="switch-layout-footer"
         />
       </div>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="layout-logo">Show logo</Label>
+        <Switch
+          id="layout-logo"
+          checked={showLogo}
+          onCheckedChange={setShowLogo}
+          data-testid="switch-layout-logo"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="layout-gst">Show GST</Label>
+        <Switch
+          id="layout-gst"
+          checked={showGst}
+          onCheckedChange={setShowGst}
+          data-testid="switch-layout-gst"
+        />
+      </div>
+
       <Button onClick={handleSave} disabled={saveLayoutMutation.isPending} className="w-full" data-testid="button-save-layout">
         {saveLayoutMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         Save Layout
@@ -600,23 +813,156 @@ interface PaymentScheduleEditorProps {
   proposalId: string;
 }
 
+interface DraftMilestone {
+  name: string;
+  percentage: number | null;
+  amountCents: number | null;
+  description: string | null;
+  order: number;
+  mode: '%' | '$';
+}
+
+const DEFAULT_MILESTONE_SEED: DraftMilestone[] = [
+  { name: 'Deposit', percentage: 10, amountCents: null, description: 'Initial deposit on signing', order: 0, mode: '%' },
+  { name: 'Mobilisation', percentage: 20, amountCents: null, description: 'On site mobilisation', order: 1, mode: '%' },
+  { name: 'Frame Stage', percentage: 25, amountCents: null, description: 'Completion of structural frame', order: 2, mode: '%' },
+  { name: 'Lockup Stage', percentage: 25, amountCents: null, description: 'Building lockup', order: 3, mode: '%' },
+  { name: 'Practical Completion', percentage: 20, amountCents: null, description: 'On handover', order: 4, mode: '%' },
+];
+
+interface SortableMilestoneProps {
+  id: string;
+  milestone: DraftMilestone;
+  index: number;
+  onUpdate: (idx: number, patch: Partial<DraftMilestone>) => void;
+  onRemove: (idx: number) => void;
+}
+
+function SortableMilestone({ id, milestone, index, onUpdate, onRemove }: SortableMilestoneProps) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div ref={setNodeRef} style={style} className="border rounded-md p-2 space-y-2 bg-background">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+          data-testid={`drag-milestone-${index}`}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4 text-muted-foreground" />
+        </button>
+        <Input
+          placeholder="Milestone name"
+          value={milestone.name}
+          onChange={(e) => onUpdate(index, { name: e.target.value })}
+          className="flex-1"
+          data-testid={`input-milestone-name-${index}`}
+        />
+        <div className="flex items-center rounded-md border p-0.5" role="radiogroup" data-testid={`mode-toggle-${index}`}>
+          <Button
+            size="sm"
+            variant={milestone.mode === '%' ? 'default' : 'ghost'}
+            onClick={() => onUpdate(index, { mode: '%' })}
+            className="h-7 px-2 text-xs"
+            data-testid={`button-mode-pct-${index}`}
+          >
+            %
+          </Button>
+          <Button
+            size="sm"
+            variant={milestone.mode === '$' ? 'default' : 'ghost'}
+            onClick={() => onUpdate(index, { mode: '$' })}
+            className="h-7 px-2 text-xs"
+            data-testid={`button-mode-amt-${index}`}
+          >
+            $
+          </Button>
+        </div>
+        {milestone.mode === '%' ? (
+          <Input
+            placeholder="%"
+            type="number"
+            value={milestone.percentage ?? ''}
+            onChange={(e) =>
+              onUpdate(index, {
+                percentage: e.target.value === '' ? null : Number(e.target.value),
+                amountCents: null,
+              })
+            }
+            className="w-20"
+            data-testid={`input-milestone-pct-${index}`}
+          />
+        ) : (
+          <Input
+            placeholder="$"
+            type="number"
+            value={milestone.amountCents != null ? milestone.amountCents / 100 : ''}
+            onChange={(e) =>
+              onUpdate(index, {
+                amountCents: e.target.value === '' ? null : Math.round(Number(e.target.value) * 100),
+                percentage: null,
+              })
+            }
+            className="w-24"
+            data-testid={`input-milestone-amt-${index}`}
+          />
+        )}
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => onRemove(index)}
+          data-testid={`button-remove-milestone-${index}`}
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+      <Input
+        placeholder="Description (optional)"
+        value={milestone.description ?? ''}
+        onChange={(e) => onUpdate(index, { description: e.target.value })}
+        className="text-xs"
+        data-testid={`input-milestone-desc-${index}`}
+      />
+    </div>
+  );
+}
+
 function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
+  const { toast } = useToast();
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
     queryKey: ['/api/proposals', proposalId, 'milestones'],
   });
-  const [draft, setDraft] = useState<Array<Partial<ProposalPaymentMilestone>>>([]);
+  const { data: companySettings } = useQuery<{ paymentScheduleTemplates?: Array<{ id: string; name: string; milestones: DraftMilestone[] }> } | null>({
+    queryKey: ['/api/company-settings'],
+  });
+
+  const [draft, setDraft] = useState<DraftMilestone[]>([]);
+  const [templateName, setTemplateName] = useState('');
 
   useEffect(() => {
-    setDraft(milestones.length > 0 ? milestones : []);
+    setDraft(
+      milestones.map((m, i) => ({
+        name: m.name,
+        percentage: m.percentage != null ? Number(m.percentage) : null,
+        amountCents: m.amountCents != null ? Number(m.amountCents) : null,
+        description: m.description ?? null,
+        order: i,
+        mode: m.amountCents != null && m.percentage == null ? '$' : '%',
+      })),
+    );
   }, [milestones]);
 
   const replaceMutation = useMutation({
-    mutationFn: async (items: Array<Partial<ProposalPaymentMilestone>>) => {
+    mutationFn: async (items: DraftMilestone[]) => {
       return await apiRequest(`/api/proposals/${proposalId}/milestones`, 'PUT', {
         milestones: items.map((m, i) => ({
           name: m.name || `Milestone ${i + 1}`,
-          percentage: m.percentage ?? null,
-          amountCents: m.amountCents ?? null,
+          percentage: m.mode === '%' ? m.percentage : null,
+          amountCents: m.mode === '$' ? m.amountCents : null,
           description: m.description || null,
           order: i,
         })),
@@ -624,57 +970,267 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId, 'milestones'] });
+      toast({ title: 'Schedule saved', description: 'Payment schedule updated.' });
     },
   });
 
-  const addRow = () => setDraft([...draft, { name: '', percentage: 0 }]);
-  const removeRow = (idx: number) => setDraft(draft.filter((_, i) => i !== idx));
-  const updateRow = (idx: number, patch: Partial<ProposalPaymentMilestone>) =>
-    setDraft(draft.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (template: { name: string; milestones: DraftMilestone[] }) => {
+      const next = [...(companySettings?.paymentScheduleTemplates || []), {
+        id: `tpl-${Date.now()}`,
+        name: template.name,
+        milestones: template.milestones,
+      }];
+      return await apiRequest('/api/company-settings', 'PATCH', { paymentScheduleTemplates: next });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
+      toast({ title: 'Template saved' });
+      setTemplateName('');
+    },
+    onError: () => {
+      toast({ title: 'Could not save template', variant: 'destructive' });
+    },
+  });
 
-  const totalPct = draft.reduce((s, m) => s + (Number(m.percentage) || 0), 0);
+  const addRow = () =>
+    setDraft([...draft, { name: '', percentage: null, amountCents: null, description: null, order: draft.length, mode: '%' }]);
+  const removeRow = (idx: number) => setDraft(draft.filter((_, i) => i !== idx).map((r, i) => ({ ...r, order: i })));
+  const updateRow = (idx: number, patch: Partial<DraftMilestone>) =>
+    setDraft(draft.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const seedDefault = () => setDraft(DEFAULT_MILESTONE_SEED);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = draft.findIndex((_, i) => `m-${i}` === active.id);
+    const newIndex = draft.findIndex((_, i) => `m-${i}` === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    setDraft(arrayMove(draft, oldIndex, newIndex).map((r, i) => ({ ...r, order: i })));
+  };
+
+  const totalPct = draft.filter((m) => m.mode === '%').reduce((s, m) => s + (Number(m.percentage) || 0), 0);
+  const totalAmt = draft.filter((m) => m.mode === '$').reduce((s, m) => s + (Number(m.amountCents) || 0), 0);
 
   return (
     <div className="space-y-3" data-testid="payment-schedule-editor">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <Label>Payment Schedule</Label>
-        <Button size="sm" variant="outline" onClick={addRow} data-testid="button-add-milestone">
-          <Plus className="w-4 h-4 mr-1" /> Add
-        </Button>
-      </div>
-      <div className="space-y-2">
-        {draft.map((m, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <Input
-              placeholder="Name"
-              value={m.name || ''}
-              onChange={(e) => updateRow(idx, { name: e.target.value })}
-              className="flex-1"
-              data-testid={`input-milestone-name-${idx}`}
-            />
-            <Input
-              placeholder="%"
-              type="number"
-              value={m.percentage ?? ''}
-              onChange={(e) => updateRow(idx, { percentage: e.target.value === '' ? null : Number(e.target.value) })}
-              className="w-20"
-              data-testid={`input-milestone-pct-${idx}`}
-            />
-            <Button size="icon" variant="ghost" onClick={() => removeRow(idx)} data-testid={`button-remove-milestone-${idx}`}>
-              <Trash2 className="w-4 h-4" />
+        <div className="flex gap-2">
+          {draft.length === 0 && (
+            <Button size="sm" variant="outline" onClick={seedDefault} data-testid="button-seed-milestones">
+              Use default
             </Button>
-          </div>
-        ))}
-        {draft.length === 0 && (
-          <p className="text-xs text-muted-foreground">No milestones — click Add to begin.</p>
-        )}
+          )}
+          <Button size="sm" variant="outline" onClick={addRow} data-testid="button-add-milestone">
+            <Plus className="w-4 h-4 mr-1" /> Add
+          </Button>
+        </div>
       </div>
+
+      {(companySettings?.paymentScheduleTemplates?.length ?? 0) > 0 && (
+        <div className="space-y-2">
+          <Label className="text-xs">Load template</Label>
+          <Select
+            onValueChange={(id) => {
+              const tpl = companySettings?.paymentScheduleTemplates?.find((t) => t.id === id);
+              if (tpl) setDraft(tpl.milestones.map((m, i) => ({ ...m, order: i })));
+            }}
+          >
+            <SelectTrigger data-testid="select-load-payment-template">
+              <SelectValue placeholder="Choose a saved template..." />
+            </SelectTrigger>
+            <SelectContent>
+              {companySettings!.paymentScheduleTemplates!.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={draft.map((_, i) => `m-${i}`)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {draft.map((m, idx) => (
+              <SortableMilestone
+                key={`m-${idx}`}
+                id={`m-${idx}`}
+                milestone={m}
+                index={idx}
+                onUpdate={updateRow}
+                onRemove={removeRow}
+              />
+            ))}
+            {draft.length === 0 && (
+              <p className="text-xs text-muted-foreground">No milestones — click Add or Use default.</p>
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
+
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Total: {totalPct.toFixed(2)}%</span>
-        <Button size="sm" onClick={() => replaceMutation.mutate(draft)} disabled={replaceMutation.isPending} data-testid="button-save-milestones">
+        <span className="text-muted-foreground">
+          Total: {totalPct.toFixed(2)}% {totalAmt > 0 && `+ $${(totalAmt / 100).toFixed(2)}`}
+        </span>
+        <Button
+          size="sm"
+          onClick={() => replaceMutation.mutate(draft)}
+          disabled={replaceMutation.isPending}
+          data-testid="button-save-milestones"
+        >
           {replaceMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
           Save Schedule
         </Button>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-2">
+        <Label className="text-xs">Save current as template</Label>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Template name"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            className="flex-1"
+            data-testid="input-template-name"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!templateName.trim() || draft.length === 0 || saveTemplateMutation.isPending}
+            onClick={() => saveTemplateMutation.mutate({ name: templateName.trim(), milestones: draft })}
+            data-testid="button-save-template"
+          >
+            {saveTemplateMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+            Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Revision History Panel ---
+interface RevisionHistoryPanelProps {
+  proposal: Proposal;
+}
+
+function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const parentId = (proposal as any).parentProposalId || proposal.id;
+  const isSuperseded = !!(proposal as any).supersededByProposalId;
+
+  const { data: siblings = [] } = useQuery<Proposal[]>({
+    queryKey: ['/api/proposals', 'revisions', parentId],
+    queryFn: async () => {
+      const res = await fetch(`/api/proposals?parentId=${encodeURIComponent(parentId)}`);
+      if (!res.ok) return [];
+      const all = (await res.json()) as Proposal[];
+      return all.filter(
+        (p) => p.id === parentId || (p as any).parentProposalId === parentId,
+      );
+    },
+  });
+
+  const newRevisionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
+    },
+    onSuccess: (newProposal: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Revision created', description: `v${newProposal.version} is ready to edit.` });
+      if (newProposal?.id) {
+        const path = newProposal.projectId
+          ? `/projects/${newProposal.projectId}/proposals/${newProposal.id}`
+          : `/proposals/${newProposal.id}`;
+        setLocation(path);
+      }
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Could not create revision';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    },
+  });
+
+  const ordered = [...siblings].sort(
+    (a, b) => ((a as any).version || 1) - ((b as any).version || 1),
+  );
+
+  return (
+    <div className="space-y-3" data-testid="revision-history-panel">
+      {isSuperseded && (
+        <div
+          className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs space-y-1"
+          data-testid="banner-superseded"
+        >
+          <p className="font-medium">This revision has been superseded.</p>
+          <p className="text-muted-foreground">A newer version exists. Edits should be made to the latest revision.</p>
+        </div>
+      )}
+
+      <Button
+        size="sm"
+        className="w-full"
+        onClick={() => newRevisionMutation.mutate()}
+        disabled={newRevisionMutation.isPending}
+        data-testid="button-create-revision"
+      >
+        {newRevisionMutation.isPending ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : (
+          <Copy className="w-4 h-4 mr-2" />
+        )}
+        Create new revision
+      </Button>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <History className="w-3 h-3" /> Revision history
+        </div>
+        {ordered.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No revisions yet.</p>
+        ) : (
+          ordered.map((p) => {
+            const isCurrent = p.id === proposal.id;
+            return (
+              <div
+                key={p.id}
+                className={`flex items-center gap-2 border rounded-md px-2 py-2 text-sm ${isCurrent ? 'bg-muted' : ''}`}
+                data-testid={`revision-item-${p.id}`}
+              >
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-medium">{p.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">#{p.proposalNumber}</p>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  v{(p as any).version || 1}
+                </Badge>
+                {!isCurrent && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      const path = p.projectId
+                        ? `/projects/${p.projectId}/proposals/${p.id}`
+                        : `/proposals/${p.id}`;
+                      setLocation(path);
+                    }}
+                    data-testid={`button-open-revision-${p.id}`}
+                    aria-label="Open revision"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

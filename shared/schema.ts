@@ -2455,7 +2455,7 @@ export const proposalSections = pgTable("proposal_sections", {
   isEnabled: boolean("is_enabled").notNull().default(true),
   
   // PDF Builder fields
-  sectionType: text("section_type").notNull().default('custom'), // 'cover_page', 'cover_letter', 'estimate', 'summary', 'allowances', 'closing_letter', 'attachments', 'terms_conditions', 'signature', 'custom'
+  sectionType: text("section_type").notNull().default('custom'), // 'cover_page' | 'cover_letter' | 'scope' | 'estimate' | 'summary' | 'allowances' | 'inclusions_exclusions' | 'payment_schedule' | 'closing' | 'closing_letter' | 'attachments' | 'terms_conditions' | 'signature' | 'custom'
   templateId: varchar("template_id"), // Reference to section template
   content: jsonb("content"), // Flexible JSON content for section data
   
