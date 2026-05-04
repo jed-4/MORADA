@@ -13682,11 +13682,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Proposals API Routes
   app.get("/api/proposals", async (req, res) => {
     try {
-      const { projectId, status, parentProposalId } = req.query;
+      const { projectId, status, parentProposalId, parentId } = req.query;
       const proposals = await storage.getProposals(
         projectId as string | undefined,
         status as string | undefined,
-        parentProposalId as string | undefined,
+        (parentProposalId as string | undefined) ?? (parentId as string | undefined),
       );
       res.json(proposals);
     } catch (error) {
@@ -13715,19 +13715,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      let data: InsertProposal = {
-        ...validationResult.data,
-        proposalNumber: await storage.getNextProposalNumber(),
-      };
+      const { proposalNumber: _ignored, ...rest } = validationResult.data;
       let proposal;
       try {
-        proposal = await storage.createProposal(data);
+        proposal = await storage.createProposalAtomic(rest);
       } catch (e) {
         const msg = e instanceof Error ? e.message.toLowerCase() : '';
         const code = (e as { code?: string } | null)?.code ?? '';
         if (msg.includes('duplicate') || code === '23505') {
-          data = { ...data, proposalNumber: await storage.getNextProposalNumber() };
-          proposal = await storage.createProposal(data);
+          proposal = await storage.createProposalAtomic(rest);
         } else {
           throw e;
         }

@@ -802,6 +802,7 @@ export interface IStorage {
   getProposals(projectId?: string, status?: string): Promise<Proposal[]>;
   getProposal(id: string): Promise<Proposal | undefined>;
   createProposal(proposal: InsertProposal): Promise<Proposal>;
+  createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal>;
   updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined>;
   deleteProposal(id: string): Promise<boolean>;
 
@@ -15054,7 +15055,7 @@ export class DbStorage implements IStorage {
     const year = new Date().getFullYear();
     const prefix = `PROP-${year}-`;
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${'proposal_number_'.length}, ${year})`);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
       const result = await tx.execute(sql`
         SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}) AS INTEGER)), 0) AS max_num
         FROM proposals
@@ -15063,6 +15064,26 @@ export class DbStorage implements IStorage {
       const row = (result as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
       const max = row ? Number(row.max_num) || 0 : 0;
       return `${prefix}${String(max + 1).padStart(4, '0')}`;
+    });
+  }
+
+  async createProposalAtomic(proposal: Omit<InsertProposal, 'proposalNumber'>): Promise<Proposal> {
+    const year = new Date().getFullYear();
+    const prefix = `PROP-${year}-`;
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      const result = await tx.execute(sql`
+        SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${prefix.length + 1}) AS INTEGER)), 0) AS max_num
+        FROM proposals
+        WHERE proposal_number LIKE ${prefix + '%'}
+      `);
+      const row = (result as unknown as { rows: Array<{ max_num: number | string }> }).rows?.[0];
+      const max = row ? Number(row.max_num) || 0 : 0;
+      const proposalNumber = `${prefix}${String(max + 1).padStart(4, '0')}`;
+      const inserted = await tx.insert(schema.proposals)
+        .values({ ...proposal, proposalNumber })
+        .returning();
+      return inserted[0];
     });
   }
 
