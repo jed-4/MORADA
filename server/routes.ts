@@ -13963,33 +13963,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getCompanySettings(),
       ]);
 
-      const sentProposalRow = await storage.updateProposal(req.params.id, {
-        status: "sent",
-        sentDate: sentAt ? new Date(sentAt) : new Date(),
-      });
-      if (!sentProposalRow) {
-        return res.status(500).json({ error: "Failed to update proposal status" });
-      }
+      const sentDate = sentAt ? new Date(sentAt) : new Date();
+      const sentProposalPreview = { ...existing, status: "sent" as const, sentDate };
 
       const snapshot = {
         capturedAt: new Date().toISOString(),
-        proposal: sentProposalRow,
+        proposal: sentProposalPreview,
         sections,
         items,
         milestones,
         company: companySettings
           ? {
               companyName: companySettings.companyName,
-              tradingName: companySettings.tradingName,
-              abn: companySettings.abn,
               address: companySettings.address,
               phone: companySettings.phone,
               email: companySettings.email,
               website: companySettings.website,
-              logo: companySettings.logo,
-              primaryColor: companySettings.primaryColor,
-              gstRegistered: companySettings.gstRegistered,
-              gstRate: companySettings.gstRate,
+              logoUrl: companySettings.logoUrl,
+              proposalPrimaryColor: companySettings.proposalPrimaryColor,
+              proposalSecondaryColor: companySettings.proposalSecondaryColor,
+              proposalFontFamily: companySettings.proposalFontFamily,
+              proposalHeaderText: companySettings.proposalHeaderText,
+              proposalFooterText: companySettings.proposalFooterText,
+              taxRate: companySettings.taxRate,
               termsTemplates: companySettings.termsTemplates,
               paymentScheduleTemplates: companySettings.paymentScheduleTemplates,
             }
@@ -13997,6 +13993,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const proposal = await storage.updateProposal(req.params.id, {
+        status: "sent",
+        sentDate,
         contentSnapshot: snapshot,
       });
       res.json(proposal);

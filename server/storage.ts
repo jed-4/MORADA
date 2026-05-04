@@ -15072,12 +15072,24 @@ export class DbStorage implements IStorage {
       );
     }
 
+    const rootId = parent.parentProposalId ?? parent.id;
+
     return await db.transaction(async (tx) => {
+      const familyRows = await tx
+        .select()
+        .from(schema.proposals)
+        .where(or(eq(schema.proposals.id, rootId), eq(schema.proposals.parentProposalId, rootId)));
+      const latest = familyRows
+        .filter((r) => r.status !== 'superseded')
+        .sort((a, b) => (b.version ?? 1) - (a.version ?? 1))[0] ?? parent;
+      const supersedeId = latest.id;
+
       await tx.update(schema.proposals)
         .set({ status: 'superseded', updatedAt: new Date() })
-        .where(eq(schema.proposals.id, parentId));
+        .where(eq(schema.proposals.id, supersedeId));
 
-      const nextVersion = (parent.version ?? 1) + 1;
+      const maxVersion = familyRows.reduce((m, r) => Math.max(m, r.version ?? 1), parent.version ?? 1);
+      const nextVersion = maxVersion + 1;
       const newNumber = await this.getNextProposalNumber();
 
       const baseValues: typeof schema.proposals.$inferInsert = {
