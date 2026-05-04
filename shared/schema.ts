@@ -6263,6 +6263,7 @@ export const takeoffPlanPages = pgTable("takeoff_plan_pages", {
   planId: varchar("plan_id").notNull().references(() => takeoffPlans.id, { onDelete: "cascade" }),
   companyId: varchar("company_id").notNull().references(() => companies.id),
   pageNumber: integer("page_number").notNull().default(1),
+  name: text("name"),
   isScaled: boolean("is_scaled").notNull().default(false),
   scaleRatio: doublePrecision("scale_ratio"),
   calibrationPixelLength: doublePrecision("calibration_pixel_length"),

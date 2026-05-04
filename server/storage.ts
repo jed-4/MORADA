@@ -22098,6 +22098,17 @@ export class DbStorage implements IStorage {
 
   async createTakeoffPlan(data: schema.InsertTakeoffPlan): Promise<schema.TakeoffPlan> {
     const [row] = await db.insert(schema.takeoffPlans).values(data).returning();
+    const pageCount = Math.max(1, row.pageCount ?? 1);
+    const pageRows = Array.from({ length: pageCount }, (_, i) => ({
+      planId: row.id,
+      companyId: row.companyId,
+      pageNumber: i + 1,
+    }));
+    await db.insert(schema.takeoffPlanPages)
+      .values(pageRows)
+      .onConflictDoNothing({
+        target: [schema.takeoffPlanPages.planId, schema.takeoffPlanPages.pageNumber],
+      });
     return row;
   }
 

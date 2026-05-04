@@ -7,6 +7,7 @@ import { useUpload } from "@/hooks/use-upload";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,8 +31,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, MoreVertical, Plus, Upload, FileText, Trash2, Pencil } from "lucide-react";
-import type { TakeoffPlan } from "@shared/schema";
+import {
+  Loader2, MoreVertical, Plus, Upload, FileText, Trash2, Pencil,
+  ChevronRight, ChevronDown,
+} from "lucide-react";
+import type { TakeoffPlan, TakeoffPlanPage } from "@shared/schema";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -55,6 +59,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   const [renaming, setRenaming] = useState<TakeoffPlan | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const plansKey = ["/api/projects", projectId, "takeoff/plans"];
   const { data: plans = [], isLoading } = useQuery<TakeoffPlan[]>({
@@ -153,7 +158,7 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
         <div>
           <h2 className="text-xl font-semibold">Plans</h2>
           <p className="text-sm text-muted-foreground">
-            Click any plan to open it in the take-off viewer
+            Click any page to open it in the take-off viewer
           </p>
         </div>
         <Button onClick={triggerUpload} disabled={busy} data-testid="button-upload-plan">
@@ -186,18 +191,24 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
           <div className="text-sm text-muted-foreground">PDF, up to 50 MB</div>
         </button>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="space-y-6 divide-y divide-border">
           {plans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              onOpen={() => onOpenPlan(plan, 1)}
-              onDelete={() => setPendingDelete(plan)}
-              onRename={() => {
-                setRenaming(plan);
-                setRenameValue(plan.name);
-              }}
-            />
+            <div key={plan.id} className="pt-6 first:pt-0">
+              <PlanGroup
+                plan={plan}
+                projectId={projectId}
+                collapsed={!!collapsed[plan.id]}
+                onToggleCollapsed={() =>
+                  setCollapsed((prev) => ({ ...prev, [plan.id]: !prev[plan.id] }))
+                }
+                onOpenPage={(pageNumber) => onOpenPlan(plan, pageNumber)}
+                onDelete={() => setPendingDelete(plan)}
+                onRename={() => {
+                  setRenaming(plan);
+                  setRenameValue(plan.name);
+                }}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -257,18 +268,170 @@ export default function TakeoffPlansTab({ projectId, onOpenPlan }: Props) {
   );
 }
 
-interface PlanCardProps {
+interface PlanGroupProps {
   plan: TakeoffPlan;
-  onOpen: () => void;
+  projectId: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onOpenPage: (pageNumber: number) => void;
   onDelete: () => void;
   onRename: () => void;
 }
 
-function PlanCard({ plan, onOpen, onDelete, onRename }: PlanCardProps) {
+const THUMB_WIDTH = 160;
+
+function PlanGroup({
+  plan,
+  projectId,
+  collapsed,
+  onToggleCollapsed,
+  onOpenPage,
+  onDelete,
+  onRename,
+}: PlanGroupProps) {
+  const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
+  const { data: pages = [] } = useQuery<TakeoffPlanPage[]>({ queryKey: pagesKey });
+  const [pdfPageCount, setPdfPageCount] = useState<number>(plan.pageCount || 1);
+
+  const renamePage = useMutation({
+    mutationFn: async ({ pageNumber, name }: { pageNumber: number; name: string }) => {
+      return await apiRequest(
+        `/api/projects/${projectId}/takeoff/plans/${plan.id}/pages`,
+        "POST",
+        { pageNumber, name },
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: pagesKey });
+    },
+  });
+
+  const pageNumbers = Array.from(
+    { length: Math.max(plan.pageCount || 1, pdfPageCount) },
+    (_, i) => i + 1,
+  );
+
+  return (
+    <section data-testid={`section-plan-${plan.id}`} className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? "Expand plan" : "Collapse plan"}
+          data-testid={`button-toggle-plan-${plan.id}`}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </Button>
+        <button
+          onClick={onToggleCollapsed}
+          className="flex-1 min-w-0 text-left"
+          data-testid={`button-plan-header-${plan.id}`}
+        >
+          <div
+            className="text-base font-semibold truncate"
+            title={plan.name}
+            data-testid={`text-plan-name-${plan.id}`}
+          >
+            {plan.name}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {pageNumbers.length} page{pageNumbers.length === 1 ? "" : "s"}
+          </div>
+        </button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onDelete}
+          aria-label="Delete plan"
+          data-testid={`button-delete-plan-${plan.id}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Plan options"
+              data-testid={`button-plan-menu-${plan.id}`}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onRename} data-testid={`menu-rename-plan-${plan.id}`}>
+              <Pencil className="h-4 w-4 mr-2" /> Rename plan
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive"
+              data-testid={`menu-delete-plan-${plan.id}`}
+            >
+              <Trash2 className="h-4 w-4 mr-2" /> Delete plan
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {!collapsed && (
+        <div className="pl-10">
+          <Document
+            file={{ url: plan.objectPath, withCredentials: true } as any}
+            onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
+            loading={
+              <div className="p-8 text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading pages…
+              </div>
+            }
+            error={
+              <div className="p-8 text-sm text-destructive">Failed to load PDF</div>
+            }
+          >
+            <div
+              className="grid gap-4"
+              style={{
+                gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB_WIDTH}px, 1fr))`,
+              }}
+            >
+              {pageNumbers.map((pageNumber) => {
+                const pageRow = pages.find((p) => p.pageNumber === pageNumber);
+                return (
+                  <PageThumb
+                    key={pageNumber}
+                    planId={plan.id}
+                    pageNumber={pageNumber}
+                    pageRow={pageRow}
+                    onOpen={() => onOpenPage(pageNumber)}
+                    onRename={(name) => renamePage.mutate({ pageNumber, name })}
+                  />
+                );
+              })}
+            </div>
+          </Document>
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface PageThumbProps {
+  planId: string;
+  pageNumber: number;
+  pageRow?: TakeoffPlanPage;
+  onOpen: () => void;
+  onRename: (name: string) => void;
+}
+
+function PageThumb({ planId, pageNumber, pageRow, onOpen, onRename }: PageThumbProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const [thumbWidth, setThumbWidth] = useState(280);
-  const [pageCount, setPageCount] = useState<number>(plan.pageCount || 1);
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState("");
 
   useEffect(() => {
     if (!wrapRef.current || visible) return;
@@ -289,104 +452,103 @@ function PlanCard({ plan, onOpen, onDelete, onRename }: PlanCardProps) {
     return () => io.disconnect();
   }, [visible]);
 
-  useEffect(() => {
-    const update = () => {
-      if (!wrapRef.current) return;
-      setThumbWidth(Math.max(200, wrapRef.current.clientWidth));
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
+  const displayName = pageRow?.name?.trim() || `Page ${pageNumber}`;
+  const scaleLabel = pageRow?.isScaled
+    ? pageRow.scaleRatio
+      ? `1:${pageRow.scaleRatio}`
+      : "Calibrated"
+    : "Not scaled";
+
+  const startEdit = () => {
+    setDraftName(displayName);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    const next = draftName.trim();
+    setEditing(false);
+    if (!next || next === displayName) return;
+    onRename(next);
+  };
 
   return (
     <div
       ref={wrapRef}
-      data-testid={`card-plan-${plan.id}`}
-      className="group relative rounded-md border border-border bg-card overflow-hidden hover-elevate cursor-pointer flex flex-col"
-      onClick={onOpen}
+      data-testid={`card-page-${planId}-${pageNumber}`}
+      className="group relative rounded-md border border-border bg-card hover-elevate cursor-pointer flex flex-col"
+      onClick={() => {
+        if (!editing) onOpen();
+      }}
     >
-      <div className="relative aspect-[3/4] bg-muted overflow-hidden flex items-center justify-center">
+      <div
+        className="relative bg-muted flex items-center justify-center overflow-hidden rounded-t-md"
+        style={{ width: "100%", aspectRatio: "3 / 4" }}
+      >
         {visible ? (
-          <Document
-            file={{ url: plan.objectPath, withCredentials: true } as any}
-            onLoadSuccess={({ numPages }) => setPageCount(numPages)}
+          <Page
+            pageNumber={pageNumber}
+            width={THUMB_WIDTH}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
             loading={
               <div className="flex items-center justify-center text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             }
             error={
-              <div className="flex items-center justify-center text-muted-foreground p-2 text-xs">
+              <div className="text-xs text-muted-foreground p-2 text-center">
                 Preview unavailable
               </div>
             }
-          >
-            <Page
-              pageNumber={1}
-              width={thumbWidth}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-              loading={
-                <div className="flex items-center justify-center text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
-              }
-            />
-          </Document>
+          />
         ) : (
-          <FileText className="h-10 w-10 text-muted-foreground opacity-40" />
+          <FileText className="h-6 w-6 text-muted-foreground opacity-40" />
         )}
+        <div className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0.5 rounded-sm bg-background/80 text-muted-foreground border border-border">
+          {pageNumber}
+        </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 p-3 border-t border-border">
-        <div className="min-w-0 flex-1">
+      <div className="p-2 flex flex-col gap-1.5">
+        {editing ? (
+          <Input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+              }
+            }}
+            className="h-7 text-xs"
+            data-testid={`input-page-name-${planId}-${pageNumber}`}
+          />
+        ) : (
           <div
-            className="text-sm font-medium truncate"
-            data-testid={`text-plan-name-${plan.id}`}
-            title={plan.name}
+            className="text-xs font-medium truncate"
+            title={`${displayName} — double-click to rename`}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              startEdit();
+            }}
+            data-testid={`text-page-name-${planId}-${pageNumber}`}
           >
-            {plan.name}
+            {displayName}
           </div>
-          <div className="text-xs text-muted-foreground">
-            {pageCount} page{pageCount === 1 ? "" : "s"}
-          </div>
-        </div>
-        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onDelete}
-            data-testid={`button-delete-plan-${plan.id}`}
-            aria-label="Delete plan"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                data-testid={`button-plan-menu-${plan.id}`}
-                aria-label="Plan options"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onRename} data-testid={`menu-rename-plan-${plan.id}`}>
-                <Pencil className="h-4 w-4 mr-2" /> Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onDelete}
-                className="text-destructive"
-                data-testid={`menu-delete-plan-${plan.id}`}
-              >
-                <Trash2 className="h-4 w-4 mr-2" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        )}
+        <Badge
+          variant={pageRow?.isScaled ? "secondary" : "outline"}
+          className="self-start text-[10px] px-1.5 py-0"
+          data-testid={`badge-page-scale-${planId}-${pageNumber}`}
+        >
+          {scaleLabel}
+        </Badge>
       </div>
     </div>
   );
