@@ -35,11 +35,13 @@ app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+    "worker-src 'self' blob:; " +
+    "child-src 'self' blob:; " +
     "style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data: blob:; " +
     "font-src 'self' data:; " +
-    "connect-src 'self' ws: wss:; " +
+    "connect-src 'self' ws: wss: blob: data:; " +
     "frame-src 'self' blob:; " +
     "object-src 'self' blob:; " +
     "frame-ancestors *;"
