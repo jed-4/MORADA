@@ -314,6 +314,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     }
   };
 
+  const documentFile = useMemo(
+    () => ({ url: plan.objectPath, withCredentials: true } as any),
+    [plan.objectPath],
+  );
+
   const scaleChip = useMemo(() => {
     if (!isScaled || !currentPageData) return "Not scaled";
     if (currentPageData.scaleRatio) return `1:${currentPageData.scaleRatio}`;
@@ -463,7 +468,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             onClick={handleSelectClick}
           >
             <Document
-              file={{ url: plan.objectPath, withCredentials: true } as any}
+              file={documentFile}
               onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
               loading={
                 <div className="p-8 text-sm text-muted-foreground flex items-center gap-2">
