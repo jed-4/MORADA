@@ -2408,6 +2408,10 @@ export const proposals = pgTable("proposals", {
   version: integer("version").notNull().default(1),
   parentProposalId: varchar("parent_proposal_id").references((): AnyPgColumn => proposals.id), // Links all revisions back to the original (Rev A) proposal — mirrors parentEstimateId pattern
 
+  // Opaque random token used to authorise public /portal/proposal access without
+  // requiring a logged-in session. Required on /client-view and /acceptances.
+  shareToken: varchar("share_token").notNull().default(sql`gen_random_uuid()`).unique(),
+
   // Snapshot of full proposal frozen at send-time (sections + items + milestones + totals + T&Cs)
   contentSnapshot: jsonb("content_snapshot"),
 

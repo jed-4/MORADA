@@ -179,11 +179,22 @@ export default function ProposalPortal() {
   const [decision, setDecision] = useState<"accepted" | "rejected" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
+  const shareToken = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("token") ?? ""
+    : "";
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (!shareToken) {
+        if (!cancelled) {
+          setError("This proposal link is missing its access token. Please use the link sent to you.");
+          setIsLoading(false);
+        }
+        return;
+      }
       try {
-        const res = await fetch(`/api/proposals/${id}/client-view`);
+        const res = await fetch(`/api/proposals/${id}/client-view?token=${encodeURIComponent(shareToken)}`);
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           if (!cancelled) setError(j.error || "Failed to load proposal");
@@ -201,7 +212,7 @@ export default function ProposalPortal() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, shareToken]);
 
   async function submit(status: "accepted" | "rejected") {
     if (!data) return;
@@ -219,6 +230,7 @@ export default function ProposalPortal() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          shareToken,
           status,
           signedByName: signerName,
           signedByEmail: signerEmail,

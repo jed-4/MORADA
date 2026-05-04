@@ -1188,6 +1188,25 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
         Create new revision
       </Button>
 
+      {proposal.shareToken && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            const url = `${window.location.origin}/portal/proposal/${proposal.id}?token=${encodeURIComponent(proposal.shareToken)}`;
+            navigator.clipboard.writeText(url).then(
+              () => toast({ title: 'Share link copied', description: 'Send this link to your client.' }),
+              () => toast({ title: 'Copy failed', variant: 'destructive' as const }),
+            );
+          }}
+          data-testid="button-copy-share-link"
+        >
+          <Copy className="w-4 h-4 mr-2" />
+          Copy client share link
+        </Button>
+      )}
+
       <div className="space-y-2">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <History className="w-3 h-3" /> Revision history

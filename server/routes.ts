@@ -13893,7 +13893,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) {
         return res.status(404).json({ error: "Proposal not found" });
       }
-      // Reject acceptances on superseded/expired/archived/already-finalised proposals.
+      const bodyToken = typeof req.body?.shareToken === "string" ? req.body.shareToken : "";
+      const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+      const token = bodyToken || queryToken;
+      if (!token || token !== existing.shareToken) {
+        return res.status(403).json({ error: "Invalid or missing share token" });
+      }
       if (existing.status === "superseded") {
         return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be accepted." });
       }
@@ -13947,9 +13952,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { sentAt } = req.body;
 
-      // Capture full content snapshot at the moment of sending — proposal data
-      // plus resolved company branding/T&Cs so client-rendered output stays
-      // identical even if companySettings are later edited.
       const [sections, items, milestones, companySettings] = await Promise.all([
         storage.getProposalSections(req.params.id),
         storage.getProposalItems(req.params.id),
@@ -14212,10 +14214,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET variant for the client portal — returns the proposal as the client should see it
-  // (preferring contentSnapshot when present) and records the view.
   app.get("/api/proposals/:id/client-view", async (req, res) => {
     try {
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      if (!token) {
+        return res.status(401).json({ error: "Share token is required" });
+      }
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Proposal not found" });
+      if (existing.shareToken !== token) {
+        return res.status(403).json({ error: "Invalid share token" });
+      }
       const device = (req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
