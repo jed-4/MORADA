@@ -14082,15 +14082,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // State-gated in storage: only sent/viewed/rejected/accepted proposals can be revised.
   // Retries once on a unique-constraint collision against proposalNumber, mirroring POST /api/proposals.
   // Exposed under both /new-revision (spec'd path) and /revision (kept as alias).
+  // Body is strictly allowlisted — server controls proposalNumber, status, version,
+  // parentProposalId, view/snapshot/audit fields. Any extra keys are stripped.
+  const revisionOverridesSchema = z.object({
+    name: z.string().min(1).optional(),
+    notes: z.string().nullable().optional(),
+    expiryDate: z.coerce.date().optional(),
+  }).strict();
+
   const handleCreateProposalRevision = async (req: any, res: any) => {
     try {
+      const parsedOverrides = revisionOverridesSchema.safeParse(req.body ?? {});
+      if (!parsedOverrides.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsedOverrides.error).toString(),
+        });
+      }
+      const overrides = parsedOverrides.data;
+
       let created;
       try {
-        created = await storage.createProposalRevision(req.params.id, req.body || {});
+        created = await storage.createProposalRevision(req.params.id, overrides as any);
       } catch (e: any) {
         if (String(e?.message || '').toLowerCase().includes('duplicate') ||
             String(e?.code || '') === '23505') {
-          created = await storage.createProposalRevision(req.params.id, req.body || {});
+          created = await storage.createProposalRevision(req.params.id, overrides as any);
         } else {
           throw e;
         }

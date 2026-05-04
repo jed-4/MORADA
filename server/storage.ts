@@ -15114,8 +15114,19 @@ export class DbStorage implements IStorage {
         lastViewedAt: null,
         viewerDevice: null,
         layoutSettings: parent.layoutSettings ?? {},
-        ...(overrides || {}),
       };
+
+      // Apply ONLY allowlisted override keys. Server-controlled invariants
+      // (proposalNumber, status, version, parentProposalId, view/snapshot
+      // fields, audit columns) are never overridable from request body.
+      const REVISION_OVERRIDE_ALLOWLIST = ['name', 'notes', 'expiryDate'] as const;
+      if (overrides) {
+        for (const key of REVISION_OVERRIDE_ALLOWLIST) {
+          if ((overrides as any)[key] !== undefined) {
+            cloneValues[key] = (overrides as any)[key];
+          }
+        }
+      }
       const created = (await tx.insert(schema.proposals).values(cloneValues).returning())[0];
 
       // Clone sections + items + milestones inside the transaction
