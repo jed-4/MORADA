@@ -451,7 +451,7 @@ export default function ProposalDetail() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 min-h-0 overflow-hidden p-4">
         {isNewProposal ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-md">
