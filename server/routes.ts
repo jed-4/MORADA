@@ -14079,6 +14079,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded).
+  // State-gated in storage: only sent/viewed/rejected/accepted proposals can be revised.
   // Retries once on a unique-constraint collision against proposalNumber, mirroring POST /api/proposals.
   app.post("/api/proposals/:id/revision", async (req, res) => {
     try {
@@ -14095,6 +14096,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.status(201).json(created);
     } catch (error: any) {
+      // Surface state-gate violations as 400 instead of 500
+      if (error?.code === 'INVALID_STATE') {
+        return res.status(400).json({ error: error?.message || "Proposal cannot be revised in its current state" });
+      }
+      if (String(error?.message || '').includes('Parent proposal not found')) {
+        return res.status(404).json({ error: error.message });
+      }
       console.error("Error creating proposal revision:", error);
       res.status(500).json({ error: error?.message || "Failed to create revision" });
     }
@@ -14232,14 +14240,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reorder payment milestones for a proposal
+  // Reorder payment milestones for a proposal.
+  // Enforces unique IDs and exact set match against the proposal's current milestones
+  // so a malformed payload can't leave milestones in an ambiguous order.
   app.post("/api/proposals/:id/milestones/reorder", async (req, res) => {
     try {
-      const parsed = z.object({ orderedIds: z.array(z.string()).min(0) }).safeParse(req.body);
+      const parsed = z.object({ orderedIds: z.array(z.string().min(1)).min(0) }).safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
       }
-      const updated = await storage.reorderProposalPaymentMilestones(req.params.id, parsed.data.orderedIds);
+      const { orderedIds } = parsed.data;
+
+      // Reject duplicate IDs in payload
+      if (new Set(orderedIds).size !== orderedIds.length) {
+        return res.status(400).json({ error: "orderedIds contains duplicate ids" });
+      }
+
+      // Cross-check against current milestones for this proposal
+      const current = await storage.getProposalPaymentMilestones(req.params.id);
+      const currentIds = new Set(current.map((m) => m.id));
+      if (orderedIds.length !== currentIds.size) {
+        return res.status(400).json({
+          error: `orderedIds length (${orderedIds.length}) does not match current milestone count (${currentIds.size})`,
+        });
+      }
+      for (const id of orderedIds) {
+        if (!currentIds.has(id)) {
+          return res.status(400).json({ error: `Milestone id "${id}" does not belong to this proposal` });
+        }
+      }
+
+      const updated = await storage.reorderProposalPaymentMilestones(req.params.id, orderedIds);
       res.json(updated);
     } catch (error: any) {
       console.error("Error reordering proposal milestones:", error);

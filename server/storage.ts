@@ -15053,6 +15053,18 @@ export class DbStorage implements IStorage {
     const parent = await this.getProposal(parentId);
     if (!parent) throw new Error('Parent proposal not found');
 
+    // State gate: only proposals that have actually been "issued" can be revised.
+    // draft -> just edit it; superseded -> already revised once, can't fork again.
+    const REVISABLE = new Set(['sent', 'viewed', 'rejected', 'accepted']);
+    if (!REVISABLE.has(String(parent.status))) {
+      const err: any = new Error(
+        `Cannot revise a proposal in status "${parent.status}". ` +
+        `Only sent, viewed, rejected or accepted proposals can be revised.`
+      );
+      err.code = 'INVALID_STATE';
+      throw err;
+    }
+
     return await db.transaction(async (tx) => {
       // Mark parent as superseded inside the transaction so failure rolls back.
       await tx.update(schema.proposals)
