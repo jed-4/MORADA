@@ -15146,18 +15146,25 @@ export class DbStorage implements IStorage {
 
       const created = (await tx.insert(schema.proposals).values(cloneValues).returning())[0];
 
-      // Clone sections + items + milestones inside the transaction.
-      // Strip auto-generated columns via typed destructuring (no `as any`),
-      // then re-point proposalId at the new revision.
       const sections = await this.getProposalSections(parentId);
+      const sectionIdMap = new Map<string, string>();
       for (const s of sections) {
-        const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = s;
-        await tx.insert(schema.proposalSections).values({ ...rest, proposalId: created.id });
+        const { id: oldId, createdAt: _c, updatedAt: _u, ...rest } = s;
+        const inserted = await tx
+          .insert(schema.proposalSections)
+          .values({ ...rest, proposalId: created.id })
+          .returning({ id: schema.proposalSections.id });
+        if (inserted[0]) sectionIdMap.set(oldId, inserted[0].id);
       }
       const items = await this.getProposalItems(parentId);
       for (const it of items) {
-        const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = it;
-        await tx.insert(schema.proposalItems).values({ ...rest, proposalId: created.id });
+        const { id: _id, createdAt: _c, updatedAt: _u, sectionId: oldSectionId, ...rest } = it;
+        const newSectionId = oldSectionId ? sectionIdMap.get(oldSectionId) ?? null : null;
+        await tx.insert(schema.proposalItems).values({
+          ...rest,
+          proposalId: created.id,
+          sectionId: newSectionId,
+        });
       }
       const ms = await this.getProposalPaymentMilestones(parentId);
       for (const m of ms) {

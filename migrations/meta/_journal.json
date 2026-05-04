@@ -71,6 +71,13 @@
       "when": 1775732647109,
       "tag": "0009_focus_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777862400000,
+      "tag": "0011_proposals_share_token",
+      "breakpoints": true
     }
   ]
 }
