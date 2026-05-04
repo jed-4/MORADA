@@ -160,6 +160,17 @@ import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schem
 // modify the interface with any CRUD methods
 // you might need
 
+// Thrown by createProposalRevision when the parent proposal is in a state that
+// disallows revision (e.g. still draft, already superseded). Routes catch this
+// to map to HTTP 400 instead of 500.
+export class InvalidProposalStateError extends Error {
+  readonly code = 'INVALID_STATE';
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidProposalStateError';
+  }
+}
+
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
@@ -15057,12 +15068,10 @@ export class DbStorage implements IStorage {
     // draft -> just edit it; superseded -> already revised once, can't fork again.
     const REVISABLE = new Set(['sent', 'viewed', 'rejected', 'accepted']);
     if (!REVISABLE.has(String(parent.status))) {
-      const err: any = new Error(
+      throw new InvalidProposalStateError(
         `Cannot revise a proposal in status "${parent.status}". ` +
         `Only sent, viewed, rejected or accepted proposals can be revised.`
       );
-      err.code = 'INVALID_STATE';
-      throw err;
     }
 
     return await db.transaction(async (tx) => {
@@ -15159,8 +15168,12 @@ export class DbStorage implements IStorage {
     if (!existing) return undefined;
     const isFirst = (existing.viewCount ?? 0) === 0;
     const now = new Date();
-    const patch: any = {
-      viewCount: sql`${schema.proposals.viewCount} + 1` as any,
+    // drizzle's .set() accepts SQL expressions for any column on this table —
+    // type the patch as the table's $inferInsert keys so we get TS coverage
+    // on every property assignment without an `any` escape.
+    type ProposalUpdate = Partial<typeof schema.proposals.$inferInsert>;
+    const patch: ProposalUpdate = {
+      viewCount: sql<number>`${schema.proposals.viewCount} + 1`,
       lastViewedAt: now,
       updatedAt: now,
     };

@@ -1,6 +1,6 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, InvalidProposalStateError } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
@@ -14091,7 +14091,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     expiryDate: z.coerce.date().optional(),
   }).strict();
 
-  const handleCreateProposalRevision = async (req: any, res: any) => {
+  const handleCreateProposalRevision = async (req: Request, res: Response) => {
     try {
       const parsedOverrides = revisionOverridesSchema.safeParse(req.body ?? {});
       if (!parsedOverrides.success) {
@@ -14107,25 +14107,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let created;
       try {
         created = await storage.createProposalRevision(req.params.id, overrides);
-      } catch (e: any) {
-        if (String(e?.message || '').toLowerCase().includes('duplicate') ||
-            String(e?.code || '') === '23505') {
+      } catch (e) {
+        const msg = e instanceof Error ? e.message.toLowerCase() : '';
+        const code = (e as { code?: string } | null)?.code ?? '';
+        if (msg.includes('duplicate') || code === '23505') {
           created = await storage.createProposalRevision(req.params.id, overrides);
         } else {
           throw e;
         }
       }
       res.status(201).json(created);
-    } catch (error: any) {
+    } catch (error) {
       // Surface state-gate violations as 400 instead of 500
-      if (error?.code === 'INVALID_STATE') {
-        return res.status(400).json({ error: error?.message || "Proposal cannot be revised in its current state" });
+      if (error instanceof InvalidProposalStateError) {
+        return res.status(400).json({ error: error.message });
       }
-      if (String(error?.message || '').includes('Parent proposal not found')) {
-        return res.status(404).json({ error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('Parent proposal not found')) {
+        return res.status(404).json({ error: message });
       }
       console.error("Error creating proposal revision:", error);
-      res.status(500).json({ error: error?.message || "Failed to create revision" });
+      res.status(500).json({ error: message || "Failed to create revision" });
     }
   };
   app.post("/api/proposals/:id/new-revision", handleCreateProposalRevision);
@@ -14150,7 +14152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         milestones,
         acceptances,
       };
-      const updated = await storage.updateProposal(req.params.id, { contentSnapshot: snapshot } as any);
+      const updated = await storage.updateProposal(req.params.id, { contentSnapshot: snapshot });
       res.json(updated);
     } catch (error) {
       console.error("Error capturing proposal snapshot:", error);
@@ -14179,7 +14181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const device = (req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
-      const snapshot = (proposal as any).contentSnapshot ?? null;
+      const snapshot = proposal.contentSnapshot ?? null;
       if (snapshot && typeof snapshot === 'object') {
         return res.json({ proposal, snapshot, source: 'snapshot' });
       }
