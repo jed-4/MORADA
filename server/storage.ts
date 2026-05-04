@@ -15102,6 +15102,11 @@ export class DbStorage implements IStorage {
     const rootId = parent.parentProposalId ?? parent.id;
 
     return await db.transaction(async (tx) => {
+      const year = new Date().getFullYear();
+      const numPrefix = `PROP-${year}-`;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(43, hashtext(${rootId}))`);
+
       const familyRows = await tx
         .select()
         .from(schema.proposals)
@@ -15118,9 +15123,6 @@ export class DbStorage implements IStorage {
       const maxVersion = familyRows.reduce((m, r) => Math.max(m, r.version ?? 1), parent.version ?? 1);
       const nextVersion = maxVersion + 1;
 
-      const year = new Date().getFullYear();
-      const numPrefix = `PROP-${year}-`;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(42, ${year})`);
       const numResult = await tx.execute(sql`
         SELECT COALESCE(MAX(CAST(SUBSTRING(proposal_number FROM ${numPrefix.length + 1}) AS INTEGER)), 0) AS max_num
         FROM proposals
