@@ -57,6 +57,12 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     setOpenPages((prev) => (prev.includes(initialPage) ? prev : [...prev, initialPage]));
   }, [initialPage]);
 
+  // Switching pages should exit any in-progress drawing.
+  useEffect(() => {
+    setActiveMeasurementId(null);
+    setDrawMode("select");
+  }, [currentPage]);
+
   const openPage = (p: number) => {
     setOpenPages((prev) => (prev.includes(p) ? prev : [...prev, p]));
     setCurrentPage(p);
@@ -83,7 +89,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [markupColor, setMarkupColor] = useState<string>(MARKUP_COLORS[0]);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [pending, setPending] = useState<PendingMeasurement | null>(null);
+  const [activeMeasurementId, setActiveMeasurementId] = useState<string | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [calibrationPxLength, setCalibrationPxLength] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Ready");
@@ -212,6 +218,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const handleStartCalibration = async () => {
     await ensurePageRow();
     setMarkupMode(null);
+    setActiveMeasurementId(null);
     setDrawMode("calibrate");
     setStatusMessage("Click two points along a known dimension, then double-click to finish");
   };
@@ -220,6 +227,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     const dx = b.x - a.x, dy = b.y - a.y;
     setCalibrationPxLength(Math.sqrt(dx * dx + dy * dy));
     setScaleModalOpen(true);
+    setActiveMeasurementId(null);
     setDrawMode("select");
   };
 
@@ -252,45 +260,87 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     setCreateOpen(true);
   };
 
+  const activeMeasurement = activeMeasurementId
+    ? pageMeasurements.find((m) => m.id === activeMeasurementId) ?? null
+    : null;
+
   const handlePending = async (data: PendingMeasurement) => {
-    setPending(data);
     setCreateOpen(false);
+    const page = await ensurePageRow();
+    const created = (await createMeasurement.mutateAsync({
+      planId: plan.id, pageId: page.id, categoryId: data.categoryId,
+      name: data.name, measurementType: data.measurementType, color: data.color,
+      geometry: [] as any, quantity: 0,
+      unit: data.measurementType === "manual" ? "" : defaultUnitForType(data.measurementType),
+      multiplier: data.multiplier, wastePercent: data.wastePercent,
+    })) as TakeoffMeasurement;
+
     if (data.measurementType === "manual") {
-      const page = await ensurePageRow();
-      await createMeasurement.mutateAsync({
-        planId: plan.id, pageId: page.id, categoryId: data.categoryId,
-        name: data.name, measurementType: data.measurementType, color: data.color,
-        geometry: [] as any, quantity: 0, unit: "",
-        multiplier: data.multiplier, wastePercent: data.wastePercent,
-      });
-      setPending(null);
+      setStatusMessage("Saved");
       return;
     }
+    setMarkupMode(null);
+    setActiveMeasurementId(created.id);
     setDrawMode(data.measurementType as DrawMode);
     setStatusMessage(
       data.measurementType === "count"
-        ? "Click to drop count markers — click another tool to finish"
-        : "Click to add points — double-click to finish",
+        ? `Drawing ${data.name} — click to drop markers, click another row or tool to finish`
+        : `Drawing ${data.name} — click to add points, double-click to finish`,
+    );
+  };
+
+  const handleActivateMeasurement = (m: TakeoffMeasurement) => {
+    if (m.measurementType === "manual") {
+      toast({ title: "Manual measurements aren't drawn", description: "Edit the quantity directly on the row." });
+      return;
+    }
+    if (activeMeasurementId === m.id) {
+      setActiveMeasurementId(null);
+      setDrawMode("select");
+      setStatusMessage("Ready");
+      return;
+    }
+    if (!isScaled) {
+      toast({ title: "Set a scale first", variant: "destructive" });
+      return;
+    }
+    setMarkupMode(null);
+    setSelection(null);
+    setActiveMeasurementId(m.id);
+    setDrawMode(m.measurementType as DrawMode);
+    setStatusMessage(
+      m.measurementType === "count"
+        ? `Drawing ${m.name} — click to drop markers, click another row or tool to finish`
+        : `Drawing ${m.name} — click to add points, double-click to finish`,
     );
   };
 
   const finishGeometry = async (geometryPx: Point[], type: MeasurementType) => {
-    if (!pending) return;
+    const target = activeMeasurement;
+    if (!target) return;
     const page = await ensurePageRow();
-    const geometryFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+    let geometryFractions = pixelsToFractions(geometryPx, finalRenderWidth, finalRenderHeight);
+    if (type === "count") {
+      const existing = (target.geometry as Point[] | null) ?? [];
+      if (Array.isArray(existing) && existing.length > 0) {
+        geometryFractions = [...existing, ...geometryFractions];
+      }
+    }
     const { quantity, unit } = computeQuantity(
       geometryFractions, type, page, finalRenderWidth, finalRenderHeight, pageWidthMm,
     );
-    await createMeasurement.mutateAsync({
-      planId: plan.id, pageId: page.id, categoryId: pending.categoryId,
-      name: pending.name, measurementType: type, color: pending.color,
-      geometry: geometryFractions as any, quantity, unit: unit || defaultUnitForType(type),
-      multiplier: pending.multiplier, wastePercent: pending.wastePercent,
+    await updateMeasurement.mutateAsync({
+      id: target.id,
+      data: {
+        geometry: geometryFractions as any,
+        quantity,
+        unit: unit || defaultUnitForType(type),
+      } as any,
     });
     if (type !== "count") {
-      setPending(null);
+      setActiveMeasurementId(null);
       setDrawMode("select");
-      setStatusMessage("Ready");
+      setStatusMessage("Saved");
     }
   };
 
@@ -361,9 +411,14 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const setMeasureMode = (mode: DrawMode) => {
     setMarkupMode(null);
     setDrawMode(mode);
+    if (mode === "select" || mode === "pan") {
+      setActiveMeasurementId(null);
+      setStatusMessage("Ready");
+    }
   };
   const setMarkup = (mode: MarkupMode) => {
     setDrawMode("select");
+    setActiveMeasurementId(null);
     setMarkupMode(mode);
     setStatusMessage(
       mode === "text" ? "Click on the plan to drop a text label" :
@@ -661,13 +716,13 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                   width={finalRenderWidth}
                   height={finalRenderHeight}
                   drawMode={markupMode ? "select" : drawMode}
-                  selectedColor={pending?.color ?? "#A890D4"}
+                  selectedColor={activeMeasurement?.color ?? "#A890D4"}
                   measurements={pageMeasurements}
                   highlightedId={highlightedId}
                   onAreaComplete={(pts) => finishGeometry(pts, "area")}
                   onLinearComplete={(pts) => finishGeometry(pts, "linear")}
                   onCountClick={async (p) => {
-                    if (!pending) return;
+                    if (!activeMeasurement) return;
                     await finishGeometry([p], "count");
                   }}
                   onCalibrateComplete={handleCalibrateComplete}
@@ -710,15 +765,17 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             highlightedId={highlightedId}
             onHighlight={setHighlightedId}
             onAddClick={beginCreate}
+            activeDrawingId={activeMeasurementId}
+            onActivateDrawing={handleActivateMeasurement}
           />
         </div>
       </div>
 
       <div className="h-8 flex items-center px-3 text-xs bg-[#3d3d3d] text-[#cccccc]">
         <span data-testid="status-message">{statusMessage}</span>
-        {pending && (
+        {activeMeasurement && (
           <span className="ml-3 opacity-80">
-            Drawing: <span className="font-medium">{pending.name}</span> ({pending.measurementType})
+            Drawing: <span className="font-medium">{activeMeasurement.name}</span> ({activeMeasurement.measurementType})
           </span>
         )}
         {markupMode && (

@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Eye, EyeOff, Plus, Trash2, GripVertical } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, GripVertical, Pencil } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -32,6 +32,8 @@ interface Props {
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
   onAddClick: () => void;
+  activeDrawingId?: string | null;
+  onActivateDrawing?: (m: TakeoffMeasurement) => void;
 }
 
 export default function TakeoffMeasurementPanel({
@@ -42,6 +44,8 @@ export default function TakeoffMeasurementPanel({
   highlightedId,
   onHighlight,
   onAddClick,
+  activeDrawingId = null,
+  onActivateDrawing,
 }: Props) {
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -183,6 +187,8 @@ export default function TakeoffMeasurementPanel({
                           updateMeasurement.mutate({ id: m.id, data: { isVisible: !m.isVisible } as any })
                         }
                         onDelete={() => deleteMeasurement.mutate(m.id)}
+                        active={m.id === activeDrawingId}
+                        onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
                       />
                     ))}
                   </SortableContext>
@@ -205,6 +211,7 @@ export default function TakeoffMeasurementPanel({
 function SortableRow({
   m, editing, editName, setEditName, onStartEdit, onCommitName,
   highlighted, onHighlight, onColor, onToggleVisible, onDelete,
+  active, onActivate,
 }: {
   m: TakeoffMeasurement;
   editing: boolean;
@@ -217,6 +224,8 @@ function SortableRow({
   onColor: (c: string) => void;
   onToggleVisible: () => void;
   onDelete: () => void;
+  active: boolean;
+  onActivate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: m.id });
@@ -225,14 +234,30 @@ function SortableRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+  const handleRowClick = (e: React.MouseEvent) => {
+    if (!onActivate) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, [role='button']")) return;
+    onActivate();
+  };
+  const canDraw = m.measurementType !== "manual";
   return (
     <div
       ref={setNodeRef}
       style={style}
       onMouseEnter={() => onHighlight(m.id)}
       onMouseLeave={() => onHighlight(null)}
-      className={`flex items-center gap-1 px-2 py-2 border-b border-border ${highlighted ? "bg-primary/5" : ""}`}
+      onClick={handleRowClick}
+      className={`flex items-center gap-1 px-2 py-2 border-b border-border ${
+        active
+          ? "bg-primary/15 ring-1 ring-inset ring-primary"
+          : highlighted
+            ? "bg-primary/5"
+            : ""
+      } ${canDraw && onActivate ? "cursor-pointer hover-elevate" : ""}`}
       data-testid={`panel-row-${m.id}`}
+      data-active={active ? "true" : "false"}
+      title={canDraw && onActivate ? (active ? "Click to stop drawing" : "Click to draw on plan") : undefined}
     >
       <button
         {...attributes}
@@ -260,11 +285,14 @@ function SortableRow({
             className="h-7 text-sm"
           />
         ) : (
-          <div className="text-sm truncate cursor-text" title="Double-click to rename" onDoubleClick={onStartEdit}>
-            {m.name}
+          <div className="text-sm truncate cursor-text flex items-center gap-1.5" title="Double-click to rename" onDoubleClick={onStartEdit}>
+            {active && <Pencil className="h-3 w-3 text-primary flex-shrink-0" />}
+            <span className="truncate">{m.name}</span>
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{m.measurementType}</div>
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          {active ? "Drawing… click to stop" : m.measurementType}
+        </div>
       </div>
       <div className="text-sm tabular-nums w-20 text-right">
         {Math.round((m.quantity ?? 0) * 100) / 100}
