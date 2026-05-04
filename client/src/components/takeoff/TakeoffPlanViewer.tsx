@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   ArrowLeft, Hand, MousePointer2, Square, Minus, Hash, Pencil, Ruler,
   ZoomIn, ZoomOut, Maximize2, RotateCw, Loader2,
-  Type, Cloud, Brush, Trash2, X,
+  Type, Cloud, Brush, Trash2, X, Plus, AlertTriangle,
 } from "lucide-react";
 import type {
   TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement, TakeoffCategory, TakeoffMarkup,
@@ -46,6 +46,34 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfPageCount, setPdfPageCount] = useState(plan.pageCount || 1);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [openPages, setOpenPages] = useState<number[]>([initialPage]);
+  const [pagesPopoverOpen, setPagesPopoverOpen] = useState(false);
+  const [scalePopoverOpen, setScalePopoverOpen] = useState(false);
+
+  // If parent navigates to a different starting page (new click from grid),
+  // adopt it as the active tab and ensure it's in the open list.
+  useEffect(() => {
+    setCurrentPage(initialPage);
+    setOpenPages((prev) => (prev.includes(initialPage) ? prev : [...prev, initialPage]));
+  }, [initialPage]);
+
+  const openPage = (p: number) => {
+    setOpenPages((prev) => (prev.includes(p) ? prev : [...prev, p]));
+    setCurrentPage(p);
+  };
+
+  const closePage = (p: number) => {
+    setOpenPages((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((x) => x !== p);
+      if (currentPage === p) {
+        const idx = prev.indexOf(p);
+        const fallback = next[Math.max(0, idx - 1)] ?? next[0];
+        setCurrentPage(fallback);
+      }
+      return next;
+    });
+  };
   const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
   const [pageWidthMm, setPageWidthMm] = useState<number>(420);
   const [zoom, setZoom] = useState(1);
@@ -358,22 +386,95 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         </Badge>
       </div>
 
-      {pdfPageCount > 1 && (
-        <div className="h-9 flex items-center gap-1 px-3 border-b border-border overflow-x-auto bg-background">
-          {Array.from({ length: pdfPageCount }, (_, i) => i + 1).map((p) => (
+      <div className="h-9 flex items-center gap-1 px-3 border-b border-border overflow-x-auto bg-background">
+        {openPages.map((p) => (
+          <div
+            key={p}
+            className={`flex items-center text-xs h-7 rounded-md pl-3 pr-1 gap-1 ${
+              currentPage === p
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid={`tab-page-${p}`}
+          >
             <button
-              key={p}
               onClick={() => setCurrentPage(p)}
-              className={`text-xs px-3 h-7 rounded-md ${
-                currentPage === p ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover-elevate"
-              }`}
+              className="cursor-pointer"
               data-testid={`button-page-${p}`}
             >
               Page {p}
             </button>
-          ))}
-        </div>
-      )}
+            {openPages.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closePage(p);
+                }}
+                className="ml-1 p-0.5 rounded hover-elevate"
+                aria-label={`Close page ${p}`}
+                data-testid={`button-close-tab-${p}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        ))}
+        {pdfPageCount > 1 && (
+          <Popover open={pagesPopoverOpen} onOpenChange={setPagesPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                data-testid="button-add-page-tab"
+              >
+                <Plus className="h-3 w-3 mr-1" /> Pages
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[420px] max-h-[480px] overflow-auto p-3"
+            >
+              <div className="text-xs text-muted-foreground mb-2">
+                Click any page to open it in a new tab
+              </div>
+              <Document file={documentFile} loading={null} error={null}>
+                <div className="grid grid-cols-3 gap-2">
+                  {Array.from({ length: pdfPageCount }, (_, i) => i + 1).map((p) => {
+                    const isOpen = openPages.includes(p);
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          openPage(p);
+                          setPagesPopoverOpen(false);
+                        }}
+                        className={`relative border rounded-md p-1 hover-elevate text-left ${
+                          isOpen ? "border-primary" : "border-border"
+                        }`}
+                        data-testid={`thumb-page-${p}`}
+                      >
+                        <div className="overflow-hidden rounded bg-muted/30 flex items-center justify-center" style={{ height: 140 }}>
+                          <Page
+                            pageNumber={p}
+                            width={120}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                        </div>
+                        <div className="text-[11px] mt-1 flex items-center justify-between">
+                          <span>Page {p}</span>
+                          {isOpen && <span className="text-primary">Open</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Document>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
 
       <div className="h-11 flex items-center gap-1 px-3 border-b border-border bg-background">
         <ToolBtn active={drawMode === "select" && !markupMode} onClick={() => setMeasureMode("select")} label="Select" testId="tool-select">
@@ -458,6 +559,64 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           onMouseUp={() => { panState.current = null; }}
           onMouseLeave={() => { panState.current = null; }}
         >
+          {!isScaled && (
+            <div
+              className="sticky top-0 z-50 -mx-3 -mt-3 mb-3 px-4 py-2 flex items-center gap-3 text-white"
+              style={{ backgroundColor: "#DA988A" }}
+              data-testid="banner-not-scaled"
+            >
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm flex-1">
+                This plan is not scaled — select a scale or calibrate before measuring
+              </span>
+              <Popover open={scalePopoverOpen} onOpenChange={setScalePopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="bg-white/15 border-white/40 text-white hover:bg-white/25"
+                    data-testid="button-open-set-scale"
+                  >
+                    <Ruler className="h-4 w-4 mr-1" /> Set Scale
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 p-3">
+                  <div className="text-sm font-semibold mb-1">Set scale</div>
+                  <div className="text-xs text-muted-foreground mb-3">
+                    Pick a standard architect's scale, or calibrate against a known dimension on the plan.
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {STANDARD_SCALES.map((r) => (
+                      <Button
+                        key={r}
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          await handleStandardScale(r);
+                          setScalePopoverOpen(false);
+                        }}
+                        data-testid={`button-scale-${r}`}
+                      >
+                        1:{r}
+                      </Button>
+                    ))}
+                  </div>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setScalePopoverOpen(false);
+                      handleStartCalibration();
+                    }}
+                    data-testid="button-calibrate-from-plan"
+                  >
+                    <Ruler className="h-4 w-4 mr-1" /> Calibrate from a plan dimension
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
           <div
             className="mx-auto bg-white shadow-sm relative"
             style={{
@@ -528,27 +687,6 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
               </>
             )}
           </div>
-
-          {!isScaled && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="bg-card border border-border rounded-md shadow-lg p-5 max-w-sm w-full pointer-events-auto">
-                <div className="text-base font-semibold mb-1">Set scale before measuring</div>
-                <div className="text-xs text-muted-foreground mb-3">
-                  Pick a standard architect's scale, or calibrate against a known dimension on the plan.
-                </div>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {STANDARD_SCALES.map((r) => (
-                    <Button key={r} variant="outline" size="sm" onClick={() => handleStandardScale(r)} data-testid={`button-scale-${r}`}>
-                      1:{r}
-                    </Button>
-                  ))}
-                </div>
-                <Button variant="default" size="sm" className="w-full" onClick={handleStartCalibration} data-testid="button-calibrate-from-plan">
-                  <Ruler className="h-4 w-4 mr-1" /> Calibrate from a plan dimension
-                </Button>
-              </div>
-            </div>
-          )}
 
           {selectedMeasurement && selection && (
             <SelectionToolbar
