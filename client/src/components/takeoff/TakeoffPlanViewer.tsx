@@ -777,24 +777,33 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
                 onLoadSuccess={(page: any) => {
-                  // page.originalWidth is in PDF points and already accounts for
-                  // the page's internal /Rotate so it matches the rendered width.
-                  // page.view is the raw, unrotated mediabox; if we have to use
-                  // it we must swap width/height for 90/270° rotated pages,
-                  // otherwise scaled measurements come out short by sqrt(2)
-                  // (e.g. an 18.055m dimension reads as 12.77m).
-                  if (typeof page.originalWidth === "number" && page.originalWidth > 0) {
-                    setPageWidthMm(page.originalWidth * (25.4 / 72));
-                  } else if (Array.isArray(page.view) && page.view.length === 4) {
-                    let widthPt = page.view[2] - page.view[0];
-                    let heightPt = page.view[3] - page.view[1];
-                    const rot = ((page.rotate ?? 0) % 360 + 360) % 360;
-                    if (rot === 90 || rot === 270) {
-                      const tmp = widthPt;
-                      widthPt = heightPt;
-                      heightPt = tmp;
+                  // We need the *rendered* (rotation-aware) page width in PDF
+                  // user units so scaled measurements line up with what the
+                  // user actually sees on screen.
+                  //
+                  // pdf.js's getViewport({scale:1}).width is the canonical
+                  // source — it applies the page's internal /Rotate. The
+                  // react-pdf `originalWidth` / `view` properties are taken
+                  // from the unrotated MediaBox, so for landscape A-series
+                  // paper (√2 aspect ratio) using them gives an 18.055m line
+                  // reading as 12.77m (= 18055 / √2).
+                  let widthPt = 0;
+                  try {
+                    if (typeof page.getViewport === "function") {
+                      const vp = page.getViewport({ scale: 1 });
+                      if (vp && typeof vp.width === "number") widthPt = vp.width;
                     }
-                    setPageWidthMm(widthPt * (25.4 / 72));
+                  } catch {/* fall through to manual calc */}
+                  if (widthPt <= 0 && Array.isArray(page.view) && page.view.length === 4) {
+                    let w = page.view[2] - page.view[0];
+                    let h = page.view[3] - page.view[1];
+                    const rot = ((page.rotate ?? 0) % 360 + 360) % 360;
+                    if (rot === 90 || rot === 270) [w, h] = [h, w];
+                    widthPt = w;
+                  }
+                  if (widthPt > 0) {
+                    const userUnit = typeof page.userUnit === "number" && page.userUnit > 0 ? page.userUnit : 1;
+                    setPageWidthMm(widthPt * userUnit * (25.4 / 72));
                   }
                 }}
                 onRenderSuccess={(page: any) =>
