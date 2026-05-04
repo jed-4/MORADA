@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  ArrowLeft, Hand, MousePointer2, Square, Minus, Hash, Pencil, Ruler,
+  ArrowLeft, Hand, MousePointer2, Ruler,
   ZoomIn, ZoomOut, Maximize2, RotateCw, Loader2,
   Type, Cloud, Brush, Trash2, X, Plus, AlertTriangle,
 } from "lucide-react";
@@ -18,9 +18,10 @@ import type {
 } from "@shared/schema";
 import TakeoffDrawingCanvas, { type DrawMode } from "./TakeoffDrawingCanvas";
 import TakeoffScaleModal from "./TakeoffScaleModal";
-import TakeoffCreateMeasurementModal, {
-  type PendingMeasurement, type MeasurementType,
-} from "./TakeoffCreateMeasurementModal";
+import TakeoffMeasurementFormModal, {
+  type MeasurementFormData, type MeasurementType,
+  type FillPattern, type LineType,
+} from "./TakeoffMeasurementFormModal";
 import TakeoffMeasurementPanel from "./TakeoffMeasurementPanel";
 import TakeoffMarkupCanvas, { type MarkupMode } from "./TakeoffMarkupCanvas";
 import TakeoffColorPicker, { MARKUP_COLORS } from "./TakeoffColorPicker";
@@ -89,6 +90,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [markupColor, setMarkupColor] = useState<string>(MARKUP_COLORS[0]);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingMeasurement, setEditingMeasurement] = useState<TakeoffMeasurement | null>(null);
   const [activeMeasurementId, setActiveMeasurementId] = useState<string | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [calibrationPxLength, setCalibrationPxLength] = useState(0);
@@ -264,16 +266,45 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     ? pageMeasurements.find((m) => m.id === activeMeasurementId) ?? null
     : null;
 
-  const handlePending = async (data: PendingMeasurement) => {
+  const handleFormSubmit = async (data: MeasurementFormData) => {
+    if (editingMeasurement) {
+      await updateMeasurement.mutateAsync({
+        id: editingMeasurement.id,
+        data: {
+          name: data.name,
+          categoryId: data.categoryId,
+          color: data.color,
+          multiplier: data.multiplier,
+          wastePercent: data.wastePercent,
+          unit: data.unit === "__blank__" ? "" : data.unit,
+          fillPattern: data.fillPattern,
+          lineType: data.lineType,
+          lineSize: data.lineSize,
+        } as any,
+      });
+      setEditingMeasurement(null);
+      setCreateOpen(false);
+      setStatusMessage(`Updated ${data.name}`);
+      return;
+    }
+
     setCreateOpen(false);
     const page = await ensurePageRow();
+    const unitToSave =
+      data.unit === "__blank__"
+        ? ""
+        : data.unit ||
+          (data.measurementType === "manual" ? "" : defaultUnitForType(data.measurementType));
     const created = (await createMeasurement.mutateAsync({
       planId: plan.id, pageId: page.id, categoryId: data.categoryId,
       name: data.name, measurementType: data.measurementType, color: data.color,
       geometry: [] as any, quantity: 0,
-      unit: data.measurementType === "manual" ? "" : defaultUnitForType(data.measurementType),
+      unit: unitToSave,
       multiplier: data.multiplier, wastePercent: data.wastePercent,
-    })) as TakeoffMeasurement;
+      fillPattern: data.fillPattern,
+      lineType: data.lineType,
+      lineSize: data.lineSize,
+    } as any)) as TakeoffMeasurement;
 
     if (data.measurementType === "manual") {
       setStatusMessage("Saved");
@@ -287,6 +318,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         ? `Drawing ${data.name} — click to drop markers, click another row or tool to finish`
         : `Drawing ${data.name} — click to add points, double-click to finish`,
     );
+  };
+
+  const handleEditMeasurement = (m: TakeoffMeasurement) => {
+    setEditingMeasurement(m);
+    setCreateOpen(true);
   };
 
   const handleActivateMeasurement = (m: TakeoffMeasurement) => {
@@ -556,19 +592,6 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           <Hand className="h-4 w-4" />
         </ToolBtn>
         <Divider />
-        <ToolBtn active={drawMode === "area"} onClick={beginCreate} disabled={!isScaled} label="Area" testId="tool-area">
-          <Square className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn active={drawMode === "linear"} onClick={beginCreate} disabled={!isScaled} label="Linear" testId="tool-linear">
-          <Minus className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn active={drawMode === "count"} onClick={beginCreate} disabled={!isScaled} label="Count" testId="tool-count">
-          <Hash className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn onClick={beginCreate} disabled={!isScaled} label="Manual" testId="tool-manual">
-          <Pencil className="h-4 w-4" />
-        </ToolBtn>
-        <Divider />
         <ToolBtn active={markupMode === "dimension"} onClick={() => setMarkup("dimension")} label="Dimension" testId="tool-dim">
           <Ruler className="h-4 w-4" />
         </ToolBtn>
@@ -734,6 +757,9 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                   height={finalRenderHeight}
                   drawMode={markupMode ? "select" : drawMode}
                   selectedColor={activeMeasurement?.color ?? "#A890D4"}
+                  selectedFillPattern={(activeMeasurement?.fillPattern as FillPattern) || "solid"}
+                  selectedLineType={(activeMeasurement?.lineType as LineType) || "solid"}
+                  selectedLineSize={activeMeasurement?.lineSize ?? 2}
                   measurements={pageMeasurements}
                   highlightedId={highlightedId}
                   onAreaComplete={(pts) => finishGeometry(pts, "area")}
@@ -782,6 +808,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
             highlightedId={highlightedId}
             onHighlight={setHighlightedId}
             onAddClick={beginCreate}
+            onEditClick={handleEditMeasurement}
             activeDrawingId={activeMeasurementId}
             onActivateDrawing={handleActivateMeasurement}
           />
@@ -802,12 +829,16 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
         )}
       </div>
 
-      <TakeoffCreateMeasurementModal
+      <TakeoffMeasurementFormModal
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setEditingMeasurement(null);
+        }}
         projectId={projectId}
         categories={categories}
-        onCreate={handlePending}
+        editing={editingMeasurement}
+        onSubmit={handleFormSubmit}
       />
 
       <TakeoffScaleModal

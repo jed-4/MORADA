@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { TakeoffMeasurement } from "@shared/schema";
 import { normalizeShapes, type Point } from "./useTakeoffGeometry";
+import {
+  PatternDef, lineDashArray,
+  type FillPattern, type LineType,
+} from "./TakeoffMeasurementFormModal";
 
 export type DrawMode = "select" | "pan" | "area" | "linear" | "count" | "calibrate";
 
@@ -9,6 +13,9 @@ interface Props {
   height: number;
   drawMode: DrawMode;
   selectedColor: string;
+  selectedFillPattern?: FillPattern;
+  selectedLineType?: LineType;
+  selectedLineSize?: number;
   measurements: TakeoffMeasurement[];
   highlightedId?: string | null;
   /** Called when a polygon (area) or polyline (linear) drawing finishes (double-click). */
@@ -25,6 +32,9 @@ export default function TakeoffDrawingCanvas({
   height,
   drawMode,
   selectedColor,
+  selectedFillPattern = "solid",
+  selectedLineType = "solid",
+  selectedLineSize = 2,
   measurements,
   highlightedId,
   onAreaComplete,
@@ -92,6 +102,11 @@ export default function TakeoffDrawingCanvas({
     drawMode === "count" ||
     drawMode === "calibrate";
 
+  // Build the list of visible area measurements that need pattern defs.
+  const visibleAreaMeasurements = measurements.filter(
+    (m) => m.isVisible && m.measurementType === "area",
+  );
+
   return (
     <svg
       ref={svgRef}
@@ -107,11 +122,22 @@ export default function TakeoffDrawingCanvas({
       }}
       data-testid="takeoff-svg-overlay"
     >
+      <defs>
+        {visibleAreaMeasurements.map((m) => (
+          <PatternDef
+            key={m.id}
+            id={`tk-pat-${m.id}`}
+            pattern={(m.fillPattern as FillPattern) || "solid"}
+            color={m.color}
+          />
+        ))}
+        <PatternDef id="tk-pat-inprogress" pattern={selectedFillPattern} color={selectedColor} />
+      </defs>
+
       {measurements
         .filter((m) => m.isVisible)
         .map((m) => {
           const isHighlighted = m.id === highlightedId;
-          const strokeWidth = isHighlighted ? 3 : 1.5;
 
           if (m.measurementType === "count") {
             const geo = (m.geometry as Point[] | null) ?? [];
@@ -137,7 +163,14 @@ export default function TakeoffDrawingCanvas({
           const shapes = normalizeShapes(m.geometry);
           if (shapes.length === 0) return null;
 
+          const lineType = (m.lineType as LineType) || "solid";
+          const baseStrokeWidth = m.lineSize ?? 2;
+          const strokeWidth = isHighlighted ? baseStrokeWidth + 1 : baseStrokeWidth;
+          const strokeDash = lineDashArray(lineType);
+
           if (m.measurementType === "area") {
+            const fillPattern = (m.fillPattern as FillPattern) || "solid";
+            const fill = fillPattern === "none" ? "transparent" : `url(#tk-pat-${m.id})`;
             return (
               <g key={m.id}>
                 {shapes.map((shape, idx) => {
@@ -147,9 +180,10 @@ export default function TakeoffDrawingCanvas({
                     <polygon
                       key={idx}
                       points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
-                      fill={m.color + "33"}
+                      fill={fill}
                       stroke={m.color}
                       strokeWidth={strokeWidth}
+                      strokeDasharray={strokeDash}
                     />
                   );
                 })}
@@ -168,7 +202,8 @@ export default function TakeoffDrawingCanvas({
                       points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
                       fill="none"
                       stroke={m.color}
-                      strokeWidth={isHighlighted ? 3 : 2}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={strokeDash}
                     />
                   );
                 })}
@@ -183,16 +218,18 @@ export default function TakeoffDrawingCanvas({
           {drawMode === "area" && inProgressPoints.length >= 3 ? (
             <polygon
               points={inProgressPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-              fill={selectedColor + "33"}
+              fill={selectedFillPattern === "none" ? "transparent" : "url(#tk-pat-inprogress)"}
               stroke={selectedColor}
-              strokeWidth={1.5}
+              strokeWidth={selectedLineSize}
+              strokeDasharray={lineDashArray(selectedLineType)}
             />
           ) : (
             <polyline
               points={inProgressPoints.map((p) => `${p.x},${p.y}`).join(" ")}
               fill="none"
               stroke={selectedColor}
-              strokeWidth={drawMode === "linear" ? 2 : 1.5}
+              strokeWidth={drawMode === "linear" ? selectedLineSize : 1.5}
+              strokeDasharray={drawMode === "linear" ? lineDashArray(selectedLineType) : undefined}
             />
           )}
           {inProgressPoints.map((p, i) => (

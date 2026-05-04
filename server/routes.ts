@@ -7423,6 +7423,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const updateTakeoffMarkupSchema = insertTakeoffMarkupSchema
       .pick({ color: true, geometry: true, label: true, fontSize: true, strokeWidth: true })
       .partial();
+    // Measurement mutable fields — explicit allowlist (excludes projectId/planId/pageId/companyId).
+    const updateTakeoffMeasurementSchema = insertTakeoffMeasurementSchema
+      .pick({
+        name: true, categoryId: true, color: true, geometry: true,
+        quantity: true, unit: true, multiplier: true, wastePercent: true,
+        fillPattern: true, lineType: true, lineSize: true,
+        isVisible: true, order: true,
+      })
+      .partial();
     // Create payload — body fields only; planId/projectId/companyId/pageNumber are server-derived.
     const createTakeoffMarkupBodySchema = insertTakeoffMarkupSchema
       .pick({ markupType: true, color: true, geometry: true, label: true, fontSize: true, strokeWidth: true, pageNumber: true })
@@ -7574,7 +7583,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const existing = await storage.getTakeoffMeasurement(req.params.id, req.user.companyId);
         if (!existing || existing.projectId !== req.params.projectId) return res.status(404).json({ error: "Measurement not found" });
-        const updated = await storage.updateTakeoffMeasurement(req.params.id, req.user.companyId, req.body);
+        const parsed = updateTakeoffMeasurementSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: "Invalid measurement data", details: parsed.error.flatten() });
+        // If categoryId is being changed (to a non-null id), verify it belongs to this project.
+        if (parsed.data.categoryId) {
+          const cat = await storage.getTakeoffCategory(parsed.data.categoryId, req.user.companyId);
+          if (!cat || cat.projectId !== req.params.projectId) return res.status(403).json({ error: "Invalid category" });
+        }
+        const updated = await storage.updateTakeoffMeasurement(req.params.id, req.user.companyId, parsed.data);
         if (!updated) return res.status(404).json({ error: "Measurement not found" });
         res.json(updated);
       } catch (e) { console.error("[takeoff] updateMeasurement:", e); res.status(500).json({ error: "Failed to update measurement" }); }

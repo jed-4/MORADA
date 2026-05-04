@@ -32,6 +32,7 @@ interface Props {
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
   onAddClick: () => void;
+  onEditClick?: (m: TakeoffMeasurement) => void;
   activeDrawingId?: string | null;
   onActivateDrawing?: (m: TakeoffMeasurement) => void;
 }
@@ -44,6 +45,7 @@ export default function TakeoffMeasurementPanel({
   highlightedId,
   onHighlight,
   onAddClick,
+  onEditClick,
   activeDrawingId = null,
   onActivateDrawing,
 }: Props) {
@@ -187,6 +189,7 @@ export default function TakeoffMeasurementPanel({
                           updateMeasurement.mutate({ id: m.id, data: { isVisible: !m.isVisible } as any })
                         }
                         onDelete={() => deleteMeasurement.mutate(m.id)}
+                        onEdit={onEditClick ? () => onEditClick(m) : undefined}
                         active={m.id === activeDrawingId}
                         onActivate={onActivateDrawing ? () => onActivateDrawing(m) : undefined}
                       />
@@ -210,7 +213,7 @@ export default function TakeoffMeasurementPanel({
 
 function SortableRow({
   m, editing, editName, setEditName, onStartEdit, onCommitName,
-  highlighted, onHighlight, onColor, onToggleVisible, onDelete,
+  highlighted, onHighlight, onColor, onToggleVisible, onDelete, onEdit,
   active, onActivate,
 }: {
   m: TakeoffMeasurement;
@@ -224,6 +227,7 @@ function SortableRow({
   onColor: (c: string) => void;
   onToggleVisible: () => void;
   onDelete: () => void;
+  onEdit?: () => void;
   active: boolean;
   onActivate?: () => void;
 }) {
@@ -298,6 +302,17 @@ function SortableRow({
         {Math.round((m.quantity ?? 0) * 100) / 100}
         <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
       </div>
+      {onEdit && (
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          data-testid={`button-edit-${m.id}`}
+          title="Edit details"
+        >
+          <Pencil className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      )}
       <Button size="icon" variant="ghost" onClick={onDelete} data-testid={`button-delete-${m.id}`}>
         <Trash2 className="h-4 w-4 text-muted-foreground" />
       </Button>
