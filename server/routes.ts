@@ -13912,6 +13912,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.isArchived) {
         return res.status(400).json({ error: "This proposal is archived and cannot be accepted." });
       }
+      if (existing.status !== "sent" && existing.status !== "viewed") {
+        return res.status(400).json({ error: "Only sent or viewed proposals can be accepted." });
+      }
       const validationResult = insertProposalAcceptanceSchema.safeParse({
         ...req.body,
         proposalId: req.params.id
@@ -14250,6 +14253,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) return res.status(404).json({ error: "Proposal not found" });
       if (existing.shareToken !== token) {
         return res.status(403).json({ error: "Invalid share token" });
+      }
+      if (existing.status === "draft") {
+        return res.status(400).json({ error: "This proposal has not been sent yet." });
+      }
+      if (existing.isArchived) {
+        return res.status(400).json({ error: "This proposal is archived and cannot be viewed." });
       }
       const device = (req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
