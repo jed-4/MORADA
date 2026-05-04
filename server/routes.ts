@@ -13703,17 +13703,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      // Always assign server-authoritative sequential proposal number.
-      // Retry once on collision (concurrent insert race).
-      const data: any = { ...validationResult.data };
-      data.proposalNumber = await storage.getNextProposalNumber();
+      let data: InsertProposal = {
+        ...validationResult.data,
+        proposalNumber: await storage.getNextProposalNumber(),
+      };
       let proposal;
       try {
         proposal = await storage.createProposal(data);
-      } catch (e: any) {
-        if (String(e?.message || '').toLowerCase().includes('duplicate') ||
-            String(e?.code || '') === '23505') {
-          data.proposalNumber = await storage.getNextProposalNumber();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message.toLowerCase() : '';
+        const code = (e as { code?: string } | null)?.code ?? '';
+        if (msg.includes('duplicate') || code === '23505') {
+          data = { ...data, proposalNumber: await storage.getNextProposalNumber() };
           proposal = await storage.createProposal(data);
         } else {
           throw e;
@@ -14001,8 +14002,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) {
         return res.status(404).json({ error: "Proposal not found" });
       }
-
-      // Validate state transition
+      if (existing.status === "superseded") {
+        return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be accepted." });
+      }
+      if (existing.status === "expired") {
+        return res.status(400).json({ error: "This proposal has expired and can no longer be accepted." });
+      }
+      if (existing.status === "accepted" || existing.status === "rejected") {
+        return res.status(400).json({ error: `This proposal has already been ${existing.status}.` });
+      }
+      if (existing.isArchived) {
+        return res.status(400).json({ error: "This proposal is archived and cannot be accepted." });
+      }
       if (existing.status !== "sent") {
         return res.status(400).json({ error: "Only sent proposals can be accepted" });
       }
@@ -14035,8 +14046,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) {
         return res.status(404).json({ error: "Proposal not found" });
       }
-
-      // Validate state transition  
+      if (existing.status === "superseded") {
+        return res.status(400).json({ error: "This proposal has been superseded by a newer revision and can no longer be rejected." });
+      }
+      if (existing.status === "expired") {
+        return res.status(400).json({ error: "This proposal has expired and can no longer be rejected." });
+      }
+      if (existing.status === "accepted" || existing.status === "rejected") {
+        return res.status(400).json({ error: `This proposal has already been ${existing.status}.` });
+      }
+      if (existing.isArchived) {
+        return res.status(400).json({ error: "This proposal is archived and cannot be rejected." });
+      }
       if (existing.status !== "sent") {
         return res.status(400).json({ error: "Only sent proposals can be rejected" });
       }
