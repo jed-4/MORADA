@@ -88,6 +88,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [markupMode, setMarkupMode] = useState<MarkupMode>(null);
   const [markupColor, setMarkupColor] = useState<string>(MARKUP_COLORS[0]);
+  const [brushSize, setBrushSize] = useState<number>(4);
+  const [brushOpacity, setBrushOpacity] = useState<number>(1);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingMeasurement, setEditingMeasurement] = useState<TakeoffMeasurement | null>(null);
@@ -97,6 +99,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [selection, setSelection] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
   const panState = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const pagesKey = ["/api/projects", projectId, "takeoff/plans", plan.id, "pages"];
@@ -440,8 +443,10 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     if (hit) {
       setSelection({ id: hit.id, x: e.clientX, y: e.clientY });
       setHighlightedId(hit.id);
+      setSelectedMarkupId(null);
     } else {
       setSelection(null);
+      setSelectedMarkupId(null);
     }
   };
 
@@ -608,6 +613,41 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           color={markupColor} onChange={setMarkupColor}
           palette={MARKUP_COLORS} testId="markup-color"
         />
+        {markupMode === "brush" && (
+          <>
+            <Divider />
+            <div className="flex items-center gap-1.5 text-xs" data-testid="brush-size-control">
+              <span className="text-muted-foreground">Size</span>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                step={1}
+                value={brushSize}
+                onChange={(e) => setBrushSize(parseInt(e.target.value, 10))}
+                className="w-20"
+                aria-label="Brush size"
+                data-testid="input-brush-size"
+              />
+              <span className="tabular-nums w-5 text-right">{brushSize}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs" data-testid="brush-opacity-control">
+              <span className="text-muted-foreground">Opacity</span>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={Math.round(brushOpacity * 100)}
+                onChange={(e) => setBrushOpacity(parseInt(e.target.value, 10) / 100)}
+                className="w-20"
+                aria-label="Brush opacity"
+                data-testid="input-brush-opacity"
+              />
+              <span className="tabular-nums w-9 text-right">{Math.round(brushOpacity * 100)}%</span>
+            </div>
+          </>
+        )}
         <Divider />
         <Button variant="ghost" size="sm" onClick={handleStartCalibration} data-testid="tool-calibrate">
           <Ruler className="h-4 w-4 mr-1" /> Calibrate
@@ -737,12 +777,24 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
                 onLoadSuccess={(page: any) => {
-                  // page.view = [x0, y0, x1, y1] in PDF points (1pt = 25.4/72 mm).
-                  if (Array.isArray(page.view) && page.view.length === 4) {
-                    const widthPt = page.view[2] - page.view[0];
-                    setPageWidthMm(widthPt * (25.4 / 72));
-                  } else if (typeof page.originalWidth === "number") {
+                  // page.originalWidth is in PDF points and already accounts for
+                  // the page's internal /Rotate so it matches the rendered width.
+                  // page.view is the raw, unrotated mediabox; if we have to use
+                  // it we must swap width/height for 90/270° rotated pages,
+                  // otherwise scaled measurements come out short by sqrt(2)
+                  // (e.g. an 18.055m dimension reads as 12.77m).
+                  if (typeof page.originalWidth === "number" && page.originalWidth > 0) {
                     setPageWidthMm(page.originalWidth * (25.4 / 72));
+                  } else if (Array.isArray(page.view) && page.view.length === 4) {
+                    let widthPt = page.view[2] - page.view[0];
+                    let heightPt = page.view[3] - page.view[1];
+                    const rot = ((page.rotate ?? 0) % 360 + 360) % 360;
+                    if (rot === 90 || rot === 270) {
+                      const tmp = widthPt;
+                      widthPt = heightPt;
+                      heightPt = tmp;
+                    }
+                    setPageWidthMm(widthPt * (25.4 / 72));
                   }
                 }}
                 onRenderSuccess={(page: any) =>
@@ -775,6 +827,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
                   height={finalRenderHeight}
                   markupMode={markupMode}
                   selectedColor={markupColor}
+                  brushSize={brushSize}
+                  brushOpacity={brushOpacity}
+                  selectMode={drawMode === "select" && !markupMode}
+                  selectedMarkupId={selectedMarkupId}
+                  onSelectMarkup={setSelectedMarkupId}
                   markups={markups}
                   visible={true}
                   formatDimensionLabel={formatDimensionLabel}
