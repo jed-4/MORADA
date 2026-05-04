@@ -63,12 +63,21 @@ function richTextToPlain(html: string): string {
     .trim();
 }
 
+function formatCents(cents: number | null | undefined): string {
+  if (cents == null) return "—";
+  return `$${(Number(cents) / 100).toFixed(2)}`;
+}
+
 function SectionView({
   section,
+  items,
   milestones,
+  showPricing,
 }: {
   section: ProposalSection;
+  items: ProposalItem[];
   milestones: ProposalPaymentMilestone[];
+  showPricing: boolean;
 }) {
   const content = (section.content as Record<string, unknown>) || {};
   const label = SECTION_LABELS[section.sectionType] || "Section";
@@ -77,7 +86,71 @@ function SectionView({
 
   let body: React.ReactNode = null;
 
-  if (section.sectionType === "payment_schedule") {
+  if (section.sectionType === "estimate" || section.sectionType === "allowances") {
+    const sectionItems = items.filter(
+      (it) => it.sectionId === section.id && it.showInProposal !== false,
+    );
+    const subtotal = sectionItems.reduce((sum, it) => sum + (it.totalPrice || 0), 0);
+    body = (
+      <div className="space-y-2">
+        {sectionItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No line items.</p>
+        ) : (
+          <div className="border rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2">Item</th>
+                  <th className="text-right px-3 py-2 w-20">Qty</th>
+                  <th className="text-left px-3 py-2 w-24">Unit</th>
+                  {showPricing && <th className="text-right px-3 py-2 w-28">Unit Price</th>}
+                  {showPricing && <th className="text-right px-3 py-2 w-28">Total</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {sectionItems.map((it) => {
+                  const itShowsPricing = showPricing && it.showPricing !== false;
+                  return (
+                    <tr key={it.id} className="border-t align-top">
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{it.name}</div>
+                        {it.description && (
+                          <div className="text-xs text-muted-foreground whitespace-pre-line">
+                            {it.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{it.quantity}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{it.unitType}</td>
+                      {showPricing && (
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {itShowsPricing ? formatCents(it.unitPrice) : "—"}
+                        </td>
+                      )}
+                      {showPricing && (
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {itShowsPricing ? formatCents(it.totalPrice) : "—"}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {showPricing && sectionItems.length > 0 && (
+                  <tr className="border-t bg-muted/50">
+                    <td className="px-3 py-2 font-medium" colSpan={3}>Subtotal</td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">
+                      {formatCents(subtotal)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  } else if (section.sectionType === "payment_schedule") {
     const sorted = [...milestones].sort((a, b) => a.order - b.order);
     body = (
       <div className="space-y-1">
@@ -284,6 +357,7 @@ export default function ProposalPortal() {
 
   const proposal = data.snapshot?.proposal || data.proposal;
   const sections = (data.snapshot?.sections || []).filter((s) => s.isEnabled !== false).sort((a, b) => a.order - b.order);
+  const items = data.snapshot?.items || [];
   const milestones = data.snapshot?.milestones || [];
   const existingAcceptances = data.snapshot?.acceptances || [];
   const existingDecision = existingAcceptances.find((a) => a.status === "accepted") ||
@@ -331,7 +405,13 @@ export default function ProposalPortal() {
         </Card>
 
         {sections.map((section) => (
-          <SectionView key={section.id} section={section} milestones={milestones} />
+          <SectionView
+            key={section.id}
+            section={section}
+            items={items}
+            milestones={milestones}
+            showPricing={proposal.showPricing !== false}
+          />
         ))}
 
         <Card data-testid="card-portal-acceptance">

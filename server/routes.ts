@@ -14119,12 +14119,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new revision of a proposal (clones sections/items/milestones, marks parent superseded).
-  // State-gated in storage: only sent/viewed/rejected/accepted proposals can be revised.
-  // Retries once on a unique-constraint collision against proposalNumber, mirroring POST /api/proposals.
-  // Exposed under both /new-revision (spec'd path) and /revision (kept as alias).
-  // Body is strictly allowlisted — server controls proposalNumber, status, version,
-  // parentProposalId, view/snapshot/audit fields. Any extra keys are stripped.
   const revisionOverridesSchema = z.object({
     name: z.string().min(1).optional(),
     notes: z.string().nullable().optional(),
@@ -14140,8 +14134,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(parsedOverrides.error).toString(),
         });
       }
-      // Typed Partial<InsertProposal> — no casts. Schema fields (name, notes,
-      // expiryDate) are all valid keys of InsertProposal with compatible types.
       const overrides: Partial<InsertProposal> = parsedOverrides.data;
 
       let created;
@@ -14200,10 +14192,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public client-view endpoint — increments view counter, returns snapshot if available.
-  // Status sent->viewed is bumped inside storage.recordProposalView (first-view only).
   app.post("/api/proposals/:id/view", async (req, res) => {
     try {
+      const bodyToken = typeof req.body?.shareToken === "string" ? req.body.shareToken : "";
+      const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+      const token = bodyToken || queryToken;
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Proposal not found" });
+      if (!token || token !== existing.shareToken) {
+        return res.status(403).json({ error: "Invalid or missing share token" });
+      }
       const device = (req.body?.device || req.headers['user-agent'] || null) as string | null;
       const proposal = await storage.recordProposalView(req.params.id, device);
       if (!proposal) return res.status(404).json({ error: "Proposal not found" });
