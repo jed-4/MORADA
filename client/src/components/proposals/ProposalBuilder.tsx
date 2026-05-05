@@ -1465,31 +1465,46 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   const [draft, setDraft] = useState<DraftMilestone[]>([]);
   const [templateName, setTemplateName] = useState('');
   const hasAutoSeededRef = useRef(false);
+  // Hash of the last payload we either received from the server or sent to
+  // it. Used to break the "save → invalidate → refetch → setDraft → save"
+  // ping-pong loop: if the draft serialises to the same value, autosave
+  // becomes a no-op.
+  const lastSyncedHashRef = useRef<string>('');
+
+  const draftToPayload = (items: DraftMilestone[]) =>
+    items.map((m, i) => ({
+      name: m.name || `Milestone ${i + 1}`,
+      percentage: m.mode === '%' ? m.percentage : null,
+      amountCents: m.mode === '$' ? m.amountCents : null,
+      description: m.description || null,
+      order: i,
+    }));
 
   useEffect(() => {
-    setDraft(
-      milestones.map((m, i) => ({
-        name: m.name,
-        percentage: m.percentage != null ? Number(m.percentage) : null,
-        amountCents: m.amountCents != null ? Number(m.amountCents) : null,
-        description: m.description ?? null,
-        order: i,
-        mode: m.amountCents != null && m.percentage == null ? '$' : '%',
-      })),
-    );
+    const hydrated = milestones.map((m, i) => ({
+      name: m.name,
+      percentage: m.percentage != null ? Number(m.percentage) : null,
+      amountCents: m.amountCents != null ? Number(m.amountCents) : null,
+      description: m.description ?? null,
+      order: i,
+      mode: (m.amountCents != null && m.percentage == null ? '$' : '%') as '%' | '$',
+    }));
+    setDraft(hydrated);
+    // Mark this payload as already in sync with the server so the
+    // subsequent autosave effect tick treats it as a no-op.
+    lastSyncedHashRef.current = JSON.stringify(draftToPayload(hydrated));
   }, [milestones]);
 
   const replaceMutation = useMutation({
     mutationFn: async (items: DraftMilestone[]) => {
-      return await apiRequest(`/api/proposals/${proposalId}/milestones`, 'PUT', {
-        milestones: items.map((m, i) => ({
-          name: m.name || `Milestone ${i + 1}`,
-          percentage: m.mode === '%' ? m.percentage : null,
-          amountCents: m.mode === '$' ? m.amountCents : null,
-          description: m.description || null,
-          order: i,
-        })),
+      const payload = draftToPayload(items);
+      const result = await apiRequest(`/api/proposals/${proposalId}/milestones`, 'PUT', {
+        milestones: payload,
       });
+      // Record the hash *before* invalidating so the refetch's setDraft
+      // doesn't trigger another autosave.
+      lastSyncedHashRef.current = JSON.stringify(payload);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId, 'milestones'] });
@@ -1499,14 +1514,13 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
     },
   });
 
-  // Optimistic auto-save: persist any change to the milestone draft after a short debounce.
-  const initialSyncRef = useRef(true);
+  // Optimistic auto-save: persist any change to the milestone draft after a
+  // short debounce. Skips saves when the draft already matches the last
+  // server payload to avoid the invalidate/refetch/save loop.
   useEffect(() => {
-    if (initialSyncRef.current) {
-      initialSyncRef.current = false;
-      return;
-    }
     if (draft.length === 0) return;
+    const payloadHash = JSON.stringify(draftToPayload(draft));
+    if (payloadHash === lastSyncedHashRef.current) return;
     const handle = setTimeout(() => {
       replaceMutation.mutate(draft);
     }, 800);
@@ -1694,7 +1708,7 @@ interface RevisionHistoryPanelProps {
   projectId?: string;
 }
 
-function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPanelProps) {
+export function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPanelProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const parentId = proposal.parentProposalId || proposal.id;

@@ -126,6 +126,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.letterText || ""}
                 onChange={(html) => setContent({ ...content, letterText: html })}
                 placeholder="Enter your cover letter text..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -137,6 +138,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.scopeText || ""}
                 onChange={(html) => setContent({ ...content, scopeText: html })}
                 placeholder="Describe the scope of work..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -148,6 +150,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.closingText || ""}
                 onChange={(html) => setContent({ ...content, closingText: html })}
                 placeholder="Enter your closing text..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -159,6 +162,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.summaryText || ""}
                 onChange={(html) => setContent({ ...content, summaryText: html })}
                 placeholder="Enter project summary..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -171,6 +175,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                   content={content.inclusionsText || ""}
                   onChange={(html) => setContent({ ...content, inclusionsText: html })}
                   placeholder="What is included..."
+                  placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
                 />
               </div>
               <div className="space-y-2">
@@ -179,6 +184,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                   content={content.exclusionsText || ""}
                   onChange={(html) => setContent({ ...content, exclusionsText: html })}
                   placeholder="What is excluded..."
+                  placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
                 />
               </div>
             </div>
@@ -191,6 +197,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.termsText || ""}
                 onChange={(html) => setContent({ ...content, termsText: html })}
                 placeholder="Enter terms and conditions..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -202,6 +209,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
                 content={content.customText || ""}
                 onChange={(html) => setContent({ ...content, customText: html })}
                 placeholder="Enter section content..."
+                placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
               />
             </div>
           )}
@@ -299,6 +307,7 @@ function AttachmentsEditor({ content, setContent }: AttachmentsEditorProps) {
           content={content.attachmentsText || ""}
           onChange={(html) => setContent({ ...content, attachmentsText: html })}
           placeholder="Optional text shown above the attachment list..."
+          placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
         />
       </div>
 
