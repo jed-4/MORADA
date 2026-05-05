@@ -40,15 +40,21 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalTasksWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "purple",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   personalMetrics: {
-    type: "personalMetrics", 
+    type: "personalMetrics",
     name: "Personal Metrics",
     description: "Track your productivity: tasks completed, hours logged, overdue items",
     icon: BarChart3,
     component: PersonalMetricsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "teal",
+    defaultColumns: 4,
+    defaultRowSpan: 2,
   },
   personalCalendar: {
     type: "personalCalendar",
@@ -58,6 +64,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: UnifiedCalendarWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "schedule",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   crossProjectDeadlines: {
     type: "crossProjectDeadlines",
@@ -67,6 +76,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: CrossProjectDeadlinesWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "amber",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   personalQuickActions: {
     type: "personalQuickActions",
@@ -76,6 +88,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalQuickActionsWidget,
     defaultSize: "sm",
     configurable: true,
+    accent: "purple",
+    defaultColumns: 2,
+    defaultRowSpan: 2,
   },
   personalMemos: {
     type: "personalMemos",
@@ -85,6 +100,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalMemosWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "amber",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   personalReminders: {
     type: "personalReminders",
@@ -94,6 +112,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalRemindersWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "coral",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   myDay: {
     type: "myDay",
@@ -103,6 +124,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: MyDayWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "purple",
+    defaultColumns: 4,
+    defaultRowSpan: 4,
   },
   personalActivity: {
     type: "personalActivity",
@@ -112,6 +136,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalActivityWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "teal",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   personalAISummary: {
     type: "personalAISummary",
@@ -121,6 +148,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalAISummaryWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "purple",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   actionableItems: {
     type: "actionableItems",
@@ -130,6 +160,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: ActionableItemsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "coral",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   pinnedItems: {
     type: "pinnedItems",
@@ -139,6 +172,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PinnedItemsWidget,
     defaultSize: "sm",
     configurable: true,
+    accent: "green",
+    defaultColumns: 2,
+    defaultRowSpan: 2,
   },
   myProjects: {
     type: "myProjects",
@@ -148,6 +184,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: MyProjectsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "project",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   personalKPIs: {
     type: "personalKPIs",
@@ -157,6 +196,9 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     component: PersonalKPIsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "financial",
+    defaultColumns: 4,
+    defaultRowSpan: 2,
   },
 };
 

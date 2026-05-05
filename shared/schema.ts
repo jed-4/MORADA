@@ -5785,6 +5785,14 @@ export const dashboardViewTypeEnum = pgEnum("dashboard_view_type", [
   "business",     // Company-wide business dashboard
 ]);
 
+// Newer-style dashboard scope used by per-user workspace persistence.
+// Additive enum so existing `view_type` data remains untouched.
+export const dashboardTypeEnum = pgEnum("dashboard_type", [
+  "business",
+  "project",
+  "user_workspace",
+]);
+
 // Dashboard Views - shared across all projects for a company
 export const dashboardViews = pgTable("dashboard_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -5792,6 +5800,10 @@ export const dashboardViews = pgTable("dashboard_views", {
   creatorId: varchar("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   viewType: dashboardViewTypeEnum("view_type").notNull().default("personal"), // personal or business
+  // New nullable scope; user_workspace rows store per-user layout in `widgets`
+  dashboardType: dashboardTypeEnum("dashboard_type"),
+  // For user_workspace rows, the owning user (one row per user)
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   visibility: dashboardViewVisibilityEnum("visibility").notNull().default("private"),
   widgets: jsonb("widgets").notNull().default([]), // Array of Widget objects
   backgroundId: text("background_id").default("default"),
@@ -5804,6 +5816,8 @@ export const dashboardViews = pgTable("dashboard_views", {
   companyIdx: index("dashboard_views_company_idx").on(table.companyId),
   creatorIdx: index("dashboard_views_creator_idx").on(table.creatorId),
   viewTypeIdx: index("dashboard_views_view_type_idx").on(table.viewType),
+  dashboardTypeIdx: index("dashboard_views_dashboard_type_idx").on(table.dashboardType),
+  userIdx: index("dashboard_views_user_idx").on(table.userId),
 }));
 
 // Dashboard View Permissions - for role/user sharing
@@ -5878,6 +5892,31 @@ export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
 
 export type InsertPinnedItem = z.infer<typeof insertPinnedItemSchema>;
 export type PinnedItem = typeof pinnedItems.$inferSelect;
+
+// User Memos - free-form notes pinned to the user workspace
+export const userMemos = pgTable("user_memos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  content: text("content").notNull().default(""),
+  pinned: boolean("pinned").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("user_memos_user_idx").on(table.userId),
+}));
+
+export const insertUserMemoSchema = createInsertSchema(userMemos).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserMemo = z.infer<typeof insertUserMemoSchema>;
+export type UserMemo = typeof userMemos.$inferSelect;
 
 export const businessScheduleProjects = pgTable("business_schedule_projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

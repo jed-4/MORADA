@@ -1,26 +1,16 @@
-import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { 
-  Plus, 
-  Settings, 
-  ChevronDown, 
-  Check, 
-  PlusCircle,
-  Trash2,
-  GripVertical,
-  X,
+import {
+  Plus,
+  Settings,
   Palette,
-  Pencil
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -34,24 +24,26 @@ import type { User, DashboardTheme } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
 import DashboardThemeSettings from "../DashboardThemeSettings";
 import { personalWidgetRegistry, getPersonalWidgetDefinition } from "./widgets/PersonalWidgetRegistry";
-import { 
-  DndContext, 
-  closestCenter, 
-  KeyboardSensor, 
-  PointerSensor, 
-  useSensor, 
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  rectSortingStrategy
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import PersonalWidgetContainer from "./widgets/PersonalWidgetContainer";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface UserOverviewProps {
   user: User;
@@ -59,7 +51,7 @@ interface UserOverviewProps {
   currentUserId?: string;
 }
 
-interface DashboardView {
+interface UserWorkspaceView {
   id: string;
   name: string;
   widgets: Widget[];
@@ -76,39 +68,25 @@ const DEFAULT_WIDGETS: Widget[] = [
   { id: "8", type: "personalAISummary", title: "AI Summary", size: "md" },
 ];
 
-const DEFAULT_VIEW: DashboardView = {
-  id: "overview",
-  name: "Overview",
-  widgets: DEFAULT_WIDGETS,
-};
-
-function SortableWidget({ 
-  widget, 
-  onUpdate, 
-  onRemove, 
-  isConfiguring, 
+function SortableWidget({
+  widget,
+  onUpdate,
+  onRemove,
   onConfigure,
   userId,
-  themeStyle
-}: { 
-  widget: Widget; 
+  themeStyle,
+}: {
+  widget: Widget;
   onUpdate: (widget: Widget) => void;
   onRemove: (id: string) => void;
-  isConfiguring: boolean;
   onConfigure: (id: string | null) => void;
   userId?: string;
   themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
   const [isResizing, setIsResizing] = useState(false);
-  
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: widget.id, disabled: isResizing });
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: widget.id, disabled: isResizing });
 
   const definition = getPersonalWidgetDefinition(widget.type);
   if (!definition) return null;
@@ -122,50 +100,40 @@ function SortableWidget({
     xl: "col-span-8",
   };
 
-  const getColSpanClass = () => {
-    if (widget.dimensions?.columns) {
-      const colSpanMap: Record<number, string> = {
-        1: 'col-span-1',
-        2: 'col-span-2', 
-        3: 'col-span-3',
-        4: 'col-span-4',
-        5: 'col-span-5',
-        6: 'col-span-6',
-        7: 'col-span-7',
-        8: 'col-span-8',
-      };
-      return colSpanMap[widget.dimensions.columns] || sizeClasses[widget.size];
-    }
-    return sizeClasses[widget.size];
+  const colSpanMap: Record<number, string> = {
+    1: "col-span-1", 2: "col-span-2", 3: "col-span-3", 4: "col-span-4",
+    5: "col-span-5", 6: "col-span-6", 7: "col-span-7", 8: "col-span-8",
   };
 
+  const cols = widget.dimensions?.columns ?? definition.defaultColumns;
+  const colSpanClass = (cols && colSpanMap[cols]) || sizeClasses[widget.size];
+
   const handleResizeEnd = (columns: number, height: number) => {
-    onUpdate({
-      ...widget,
-      dimensions: { columns, height }
-    });
+    onUpdate({ ...widget, dimensions: { columns, height } });
   };
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: isResizing ? 'none' : transition,
+    transition: isResizing ? "none" : transition,
     opacity: isDragging ? 0.5 : 1,
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={getColSpanClass()}
-    >
+    <div ref={setNodeRef} style={style} className={colSpanClass}>
       <PersonalWidgetContainer
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
+        accent={definition.accent}
         onRemove={() => onRemove(widget.id)}
         onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
         dragHandleProps={{ ...attributes, ...listeners }}
         onResizeEnd={handleResizeEnd}
-        dimensions={widget.dimensions}
+        dimensions={
+          widget.dimensions ?? {
+            columns: definition.defaultColumns,
+            height: definition.defaultRowSpan ? definition.defaultRowSpan * 120 : undefined,
+          }
+        }
         isResizing={isResizing}
         setIsResizing={setIsResizing}
         themeClassName={themeStyle?.className}
@@ -186,138 +154,99 @@ function SortableWidget({
 
 export default function UserOverview({ user, isOwnPage, currentUserId }: UserOverviewProps) {
   const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
-  const [savedViews, setSavedViews] = useState<DashboardView[]>([DEFAULT_VIEW]);
-  const [activeViewId, setActiveViewId] = useState("overview");
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
-  const [isCreatingView, setIsCreatingView] = useState(false);
   const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
-  const [editingView, setEditingView] = useState<DashboardView | null>(null);
-  const [editViewName, setEditViewName] = useState("");
+  const initializedRef = useRef(false);
+  const { toast } = useToast();
 
-  // Fetch user dashboard theme
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   const { data: theme } = useQuery<DashboardTheme | null>({
     queryKey: ["/api/dashboard-themes/user"],
   });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  // Server-side persisted layout (one row per user)
+  const viewQueryKey = useMemo(
+    () => ["/api/user-workspace/views", user.id] as const,
+    [user.id],
   );
+  const { data: serverView, isLoading: isLoadingView } = useQuery<UserWorkspaceView | null>({
+    queryKey: viewQueryKey,
+    enabled: isOwnPage,
+  });
 
-  const storageKey = `user-workspace-widgets-${user.id}`;
-  const viewsStorageKey = `user-workspace-views-${user.id}`;
-  const activeViewKey = `user-workspace-active-view-${user.id}`;
+  const saveMutation = useMutation({
+    mutationFn: async (next: Widget[]) => {
+      return apiRequest(`/api/user-workspace/views/${user.id}`, "POST", {
+        name: "Overview",
+        widgets: next,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: viewQueryKey });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Couldn't save layout",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
+  // Load from server, with one-time localStorage migration
   useEffect(() => {
-    const savedViewsJson = localStorage.getItem(viewsStorageKey);
-    if (savedViewsJson) {
+    if (!isOwnPage || isLoadingView || initializedRef.current) return;
+
+    // Any existing server row is authoritative — including an intentionally empty layout
+    if (serverView && Array.isArray(serverView.widgets)) {
+      setWidgets(serverView.widgets as Widget[]);
+      initializedRef.current = true;
+      return;
+    }
+
+    // No server doc — try one-time migration from localStorage
+    const legacyKey = `user-workspace-widgets-${user.id}`;
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy) {
       try {
-        const parsedViews = JSON.parse(savedViewsJson);
-        setSavedViews(parsedViews);
-        
-        const savedActiveView = localStorage.getItem(activeViewKey);
-        if (savedActiveView && parsedViews.find((v: DashboardView) => v.id === savedActiveView)) {
-          setActiveViewId(savedActiveView);
-          const view = parsedViews.find((v: DashboardView) => v.id === savedActiveView);
-          if (view) setWidgets(view.widgets);
-        } else {
-          setWidgets(parsedViews[0]?.widgets || DEFAULT_WIDGETS);
+        const parsed = JSON.parse(legacy) as Widget[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setWidgets(parsed);
+          saveMutation.mutate(parsed, {
+            onSuccess: () => {
+              localStorage.removeItem(legacyKey);
+              localStorage.removeItem(`user-workspace-views-${user.id}`);
+              localStorage.removeItem(`user-workspace-active-view-${user.id}`);
+            },
+          });
+          initializedRef.current = true;
+          return;
         }
-      } catch (e) {
-        console.error("Failed to load views", e);
-      }
-    } else {
-      const savedWidgetsJson = localStorage.getItem(storageKey);
-      if (savedWidgetsJson) {
-        try {
-          setWidgets(JSON.parse(savedWidgetsJson));
-        } catch (e) {
-          console.error("Failed to load widgets", e);
-        }
+      } catch {
+        // fall through to defaults
       }
     }
-  }, [user.id]);
 
-  const saveWidgets = (newWidgets: Widget[]) => {
-    localStorage.setItem(storageKey, JSON.stringify(newWidgets));
-    const updatedViews = savedViews.map(v => 
-      v.id === activeViewId ? { ...v, widgets: newWidgets } : v
-    );
-    setSavedViews(updatedViews);
-    localStorage.setItem(viewsStorageKey, JSON.stringify(updatedViews));
-  };
+    // Truly empty — seed with defaults & persist
+    setWidgets(DEFAULT_WIDGETS);
+    saveMutation.mutate(DEFAULT_WIDGETS);
+    initializedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwnPage, isLoadingView, serverView, user.id]);
 
-  const saveViews = (views: DashboardView[]) => {
-    localStorage.setItem(viewsStorageKey, JSON.stringify(views));
-  };
-
-  const activeView = savedViews.find(v => v.id === activeViewId);
-
-  const switchToView = (viewId: string) => {
-    const view = savedViews.find(v => v.id === viewId);
-    if (view) {
-      setActiveViewId(viewId);
-      setWidgets(view.widgets);
-      localStorage.setItem(activeViewKey, viewId);
-    }
-  };
-
-  const createNewView = () => {
-    if (isCreatingView) return;
-    setIsCreatingView(true);
-    
-    const newViewId = `view-${Date.now()}`;
-    const newView: DashboardView = {
-      id: newViewId,
-      name: `View ${savedViews.length + 1}`,
-      widgets: [...widgets],
-    };
-    const updatedViews = [...savedViews, newView];
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    setActiveViewId(newViewId);
-    localStorage.setItem(activeViewKey, newViewId);
-    
-    setTimeout(() => setIsCreatingView(false), 500);
-  };
-
-  const deleteView = (viewId: string) => {
-    if (savedViews.length <= 1) return;
-    if (viewId === "overview") return;
-    const updatedViews = savedViews.filter(v => v.id !== viewId);
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    
-    if (activeViewId === viewId) {
-      const newActiveView = updatedViews[0];
-      setActiveViewId(newActiveView.id);
-      setWidgets(newActiveView.widgets);
-      localStorage.setItem(activeViewKey, newActiveView.id);
-    }
-  };
-
-  const openEditViewModal = (view: DashboardView) => {
-    setEditingView(view);
-    setEditViewName(view.name);
-  };
-
-  const saveEditView = () => {
-    if (!editingView || !editViewName.trim()) return;
-    
-    const updatedViews = savedViews.map(v => 
-      v.id === editingView.id ? { ...v, name: editViewName.trim() } : v
-    );
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    setEditingView(null);
-    setEditViewName("");
+  const persist = (next: Widget[]) => {
+    setWidgets(next);
+    if (isOwnPage) saveMutation.mutate(next);
   };
 
   const addWidget = (type: string) => {
     const definition = getPersonalWidgetDefinition(type);
     if (!definition) return;
-
     const newWidget: Widget = {
       id: Date.now().toString(),
       type,
@@ -325,38 +254,26 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
       size: definition.defaultSize,
       config: {},
     };
-
-    const updatedWidgets = [...widgets, newWidget];
-    setWidgets(updatedWidgets);
-    saveWidgets(updatedWidgets);
+    persist([...widgets, newWidget]);
     setIsAddingWidget(false);
   };
 
-  const removeWidget = (widgetId: string) => {
-    const updatedWidgets = widgets.filter(w => w.id !== widgetId);
-    setWidgets(updatedWidgets);
-    saveWidgets(updatedWidgets);
-  };
+  const removeWidget = (widgetId: string) => persist(widgets.filter(w => w.id !== widgetId));
 
-  const updateWidget = (updatedWidget: Widget) => {
-    const updatedWidgets = widgets.map(w => w.id === updatedWidget.id ? updatedWidget : w);
-    setWidgets(updatedWidgets);
-    saveWidgets(updatedWidgets);
-    if (configuringWidget === updatedWidget.id) {
-      setConfiguringWidget(null);
-    }
+  const updateWidget = (updated: Widget) => {
+    persist(widgets.map(w => (w.id === updated.id ? updated : w)));
+    if (configuringWidget === updated.id) setConfiguringWidget(null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
-    setWidgets((widgets) => {
-      const oldIndex = widgets.findIndex((widget) => widget.id === active.id);
-      const newIndex = widgets.findIndex((widget) => widget.id === over.id);
-      const newWidgets = arrayMove(widgets, oldIndex, newIndex);
-      saveWidgets(newWidgets);
-      return newWidgets;
+    setWidgets(prev => {
+      const oldIndex = prev.findIndex(w => w.id === active.id);
+      const newIndex = prev.findIndex(w => w.id === over.id);
+      const next = arrayMove(prev, oldIndex, newIndex);
+      if (isOwnPage) saveMutation.mutate(next);
+      return next;
     });
   };
 
@@ -367,22 +284,12 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     return "Good evening";
   };
 
-  const hexToRgba = (hex: string, opacity: number) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
-  };
-
   const getThemeBackground = (): React.CSSProperties => {
     if (!theme) return {};
-    
-    if (theme.backgroundType === "color" && theme.backgroundColor) {
-      return { backgroundColor: theme.backgroundColor };
-    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
-      return { background: theme.backgroundGradient };
-    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
-      return { 
+    if (theme.backgroundType === "color" && theme.backgroundColor) return { backgroundColor: theme.backgroundColor };
+    if (theme.backgroundType === "gradient" && theme.backgroundGradient) return { background: theme.backgroundGradient };
+    if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return {
         backgroundImage: `url(${theme.backgroundImage})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
@@ -395,91 +302,25 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     if (!theme) return { className: "" };
     const opacity = (theme.widgetOpacity ?? 100) / 100;
     if (theme.widgetBackgroundType === "frosted") {
-      return { 
-        className: "backdrop-blur-sm", 
-        style: { backgroundColor: `hsl(var(--card) / ${opacity * 0.8})` }
-      };
+      return { className: "backdrop-blur-sm", style: { backgroundColor: `hsl(var(--card) / ${opacity * 0.8})` } };
     }
     if (theme.widgetBackgroundType === "transparent") {
-      return { 
-        className: "border-white/20", 
-        style: { backgroundColor: 'transparent' }
-      };
+      return { className: "border-white/20", style: { backgroundColor: "transparent" } };
     }
-    if (opacity < 1) {
-      return { 
-        className: "", 
-        style: { backgroundColor: `hsl(var(--card) / ${opacity})` }
-      };
-    }
+    if (opacity < 1) return { className: "", style: { backgroundColor: `hsl(var(--card) / ${opacity})` } };
     return { className: "" };
   };
 
   return (
-    <div className="flex flex-col h-full px-4 pt-2" data-testid="user-overview">
-      {/* Toolbar row - sits on page background */}
+    <div className="flex flex-col h-full px-4 pt-2" data-testid="user-overview" style={getThemeBackground()}>
       <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1.5"
-                data-testid="button-view-switcher"
-              >
-                <span>{activeView?.name || 'Overview'}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {savedViews.map((view) => (
-                <DropdownMenuItem 
-                  key={view.id}
-                  className="text-xs flex items-center justify-between gap-2 group"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <button
-                    className="flex-1 text-left flex items-center gap-2"
-                    onClick={() => switchToView(view.id)}
-                  >
-                    <span className="flex-1 truncate">{view.name}</span>
-                    {view.id === activeViewId && (
-                      <Check className="w-3 h-3 text-primary flex-shrink-0" />
-                    )}
-                  </button>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditViewModal(view);
-                      }}
-                      className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground"
-                      data-testid={`button-edit-view-${view.id}`}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    {savedViews.length > 1 && view.id !== "overview" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteView(view.id);
-                        }}
-                        className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
-                        data-testid={`button-delete-view-${view.id}`}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          
           <span className="text-xs text-muted-foreground">
-            {isOwnPage ? `${getGreeting()}, ${user.firstName || 'there'}` : `${user.firstName}'s workspace`}
+            {isOwnPage ? `${getGreeting()}, ${user.firstName || "there"}` : `${user.firstName}'s workspace`}
           </span>
+          {saveMutation.isPending && (
+            <span className="text-xs text-muted-foreground">Saving…</span>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -492,30 +333,15 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                 >
                   <Plus className="w-3 h-3" />
                   <span>Add Widget</span>
-                  <ChevronDown className="w-3 h-3 ml-0.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem 
-                  className="text-xs flex items-center gap-2"
-                  onClick={() => setIsAddingWidget(true)}
-                >
+                <DropdownMenuItem className="text-xs flex items-center gap-2" onClick={() => setIsAddingWidget(true)}>
                   <Plus className="w-3 h-3" />
                   <span>Add Widget</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  className="text-xs flex items-center gap-2"
-                  onClick={createNewView}
-                  disabled={isCreatingView}
-                >
-                  <PlusCircle className="w-3 h-3" />
-                  <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  className="text-xs flex items-center gap-2"
-                  onClick={() => setIsThemeSettingsOpen(true)}
-                >
+                <DropdownMenuItem className="text-xs flex items-center gap-2" onClick={() => setIsThemeSettingsOpen(true)}>
                   <Palette className="w-3 h-3" />
                   <span>Theme Settings</span>
                 </DropdownMenuItem>
@@ -525,17 +351,9 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         </div>
       </div>
 
-      {/* Widgets Grid - sits directly on page background */}
       <div className="flex-1 overflow-auto">
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext 
-            items={widgets.map(w => w.id)}
-            strategy={rectSortingStrategy}
-          >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={widgets.map(w => w.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
               {widgets.map((widget) => (
                 <SortableWidget
@@ -543,13 +361,12 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   widget={widget}
                   onUpdate={updateWidget}
                   onRemove={removeWidget}
-                  isConfiguring={configuringWidget === widget.id}
                   onConfigure={setConfiguringWidget}
                   userId={currentUserId}
                   themeStyle={getWidgetStyle()}
                 />
               ))}
-              
+
               {widgets.length === 0 && (
                 <div className="col-span-full">
                   <Card className="border-dashed border-2 border-primary/20 bg-card/80">
@@ -559,15 +376,17 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                           <p className="text-sm">Your workspace is empty</p>
                           <p className="text-xs">Add widgets to customize your dashboard</p>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsAddingWidget(true)}
-                          data-testid="button-add-first-widget"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Widget
-                        </Button>
+                        {isOwnPage && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsAddingWidget(true)}
+                            data-testid="button-add-first-widget"
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Widget
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -578,7 +397,6 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         </DndContext>
       </div>
 
-      {/* Add Widget Dialog */}
       <Dialog open={isAddingWidget} onOpenChange={setIsAddingWidget}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -596,9 +414,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   <definition.icon className="h-4 w-4 text-primary" />
                   <span className="text-xs font-medium">{definition.name}</span>
                 </div>
-                <p className="text-data text-muted-foreground line-clamp-2">
-                  {definition.description}
-                </p>
+                <p className="text-xs text-muted-foreground line-clamp-2">{definition.description}</p>
               </button>
             ))}
           </div>
@@ -610,72 +426,6 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         onOpenChange={setIsThemeSettingsOpen}
         dashboardType="user"
       />
-
-      {/* Edit View Modal */}
-      <Dialog open={!!editingView} onOpenChange={(open) => !open && setEditingView(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Edit View</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-xs">View Name</Label>
-              <Input
-                value={editViewName}
-                onChange={(e) => setEditViewName(e.target.value)}
-                placeholder="Enter view name"
-                className="h-8 text-sm"
-                data-testid="input-edit-view-name"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setEditingView(null)}
-              >
-                Cancel
-              </Button>
-              <Button 
-                size="sm"
-                onClick={saveEditView}
-                data-testid="button-save-view"
-              >
-                Save
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Widget Config Modal */}
-      <Dialog open={!!configuringWidget} onOpenChange={(open) => !open && setConfiguringWidget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm flex items-center gap-2">
-              <Settings className="h-4 w-4 text-primary" />
-              Configure Widget
-            </DialogTitle>
-          </DialogHeader>
-          {configuringWidget && (() => {
-            const configWidget = widgets.find(w => w.id === configuringWidget);
-            if (!configWidget) return null;
-            const definition = getPersonalWidgetDefinition(configWidget.type);
-            if (!definition) return null;
-            const WidgetComponent = definition.component;
-            return (
-              <WidgetComponent
-                widget={configWidget}
-                onUpdate={updateWidget}
-                onRemove={removeWidget}
-                isConfiguring={true}
-                onCloseConfig={() => setConfiguringWidget(null)}
-                userId={currentUserId}
-              />
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

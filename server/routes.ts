@@ -132,6 +132,9 @@ import {
   type InsertProposal,
   insertPinnedItemSchema,
   pinnedItems,
+  userMemos,
+  insertUserMemoSchema,
+  dashboardViews,
   businessScheduleProjects,
   insertBusinessScheduleProjectSchema,
   insertChecklistStatusTriggerSchema,
@@ -26851,6 +26854,188 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error) {
       console.error("Error deleting focus block:", error);
       res.status(500).json({ error: "Failed to delete focus block" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // User Workspace — DB-persisted dashboard layout (one row per user)
+  // ─────────────────────────────────────────────────────────────────────
+  app.get("/api/user-workspace/views/:userId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { userId } = req.params;
+      // Only the owner (or an admin via permission middleware in future) may read another user's layout
+      if (userId !== user.id) return res.status(403).json({ error: "Forbidden" });
+
+      const [row] = await db
+        .select()
+        .from(dashboardViews)
+        .where(and(
+          eq(dashboardViews.companyId, user.companyId),
+          eq(dashboardViews.dashboardType, "user_workspace"),
+          eq(dashboardViews.userId, userId),
+        ))
+        .limit(1);
+
+      if (!row) return res.json(null);
+      res.json(row);
+    } catch (error: any) {
+      console.error("[GET /api/user-workspace/views] error:", error);
+      res.status(500).json({ error: "Failed to fetch user workspace view" });
+    }
+  });
+
+  // Upsert (create or update) the single user_workspace row for this user
+  app.post("/api/user-workspace/views/:userId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { userId } = req.params;
+      if (userId !== user.id) return res.status(403).json({ error: "Forbidden" });
+
+      const widgets = Array.isArray(req.body?.widgets) ? req.body.widgets : [];
+      const name = typeof req.body?.name === "string" ? req.body.name : "Overview";
+
+      const [existing] = await db
+        .select()
+        .from(dashboardViews)
+        .where(and(
+          eq(dashboardViews.companyId, user.companyId),
+          eq(dashboardViews.dashboardType, "user_workspace"),
+          eq(dashboardViews.userId, userId),
+        ))
+        .limit(1);
+
+      if (existing) {
+        const [updated] = await db
+          .update(dashboardViews)
+          .set({ widgets, name, updatedAt: new Date() })
+          .where(eq(dashboardViews.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+
+      const [created] = await db
+        .insert(dashboardViews)
+        .values({
+          companyId: user.companyId,
+          creatorId: user.id,
+          userId,
+          dashboardType: "user_workspace",
+          viewType: "personal",
+          visibility: "private",
+          name,
+          widgets,
+        })
+        .returning();
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("[POST /api/user-workspace/views] error:", error);
+      res.status(500).json({ error: "Failed to save user workspace view" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // User Memos — CRUD scoped to req.user
+  // ─────────────────────────────────────────────────────────────────────
+  app.get("/api/user-memos", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const memos = await db
+        .select()
+        .from(userMemos)
+        .where(and(eq(userMemos.userId, user.id), eq(userMemos.companyId, user.companyId)))
+        .orderBy(desc(userMemos.pinned), asc(userMemos.sortOrder), desc(userMemos.updatedAt));
+      res.json(memos);
+    } catch (error: any) {
+      console.error("[GET /api/user-memos] error:", error);
+      res.status(500).json({ error: "Failed to fetch memos" });
+    }
+  });
+
+  app.post("/api/user-memos", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = insertUserMemoSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
+      const [memo] = await db
+        .insert(userMemos)
+        .values({ ...parsed.data, userId: user.id, companyId: user.companyId })
+        .returning();
+      res.status(201).json(memo);
+    } catch (error: any) {
+      console.error("[POST /api/user-memos] error:", error);
+      res.status(500).json({ error: "Failed to create memo" });
+    }
+  });
+
+  app.patch("/api/user-memos/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = insertUserMemoSchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
+      const [memo] = await db
+        .update(userMemos)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(
+          eq(userMemos.id, req.params.id),
+          eq(userMemos.userId, user.id),
+          eq(userMemos.companyId, user.companyId),
+        ))
+        .returning();
+      if (!memo) return res.status(404).json({ error: "Memo not found" });
+      res.json(memo);
+    } catch (error: any) {
+      console.error("[PATCH /api/user-memos] error:", error);
+      res.status(500).json({ error: "Failed to update memo" });
+    }
+  });
+
+  app.delete("/api/user-memos/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const result = await db
+        .delete(userMemos)
+        .where(and(
+          eq(userMemos.id, req.params.id),
+          eq(userMemos.userId, user.id),
+          eq(userMemos.companyId, user.companyId),
+        ))
+        .returning();
+      if (!result.length) return res.status(404).json({ error: "Memo not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[DELETE /api/user-memos] error:", error);
+      res.status(500).json({ error: "Failed to delete memo" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // AI capability probe — used by widgets to decide whether to render AI UI
+  // ─────────────────────────────────────────────────────────────────────
+  app.get("/api/ai/capabilities", requireAuth, async (_req, res) => {
+    res.json({
+      dailySummary: Boolean(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY),
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // GET /api/tasks/my — thin alias for current user's tasks across projects
+  // ─────────────────────────────────────────────────────────────────────
+  app.get("/api/tasks/my", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const tasks = await storage.getTasksByUser(user.id, user.companyId);
+      res.json(tasks);
+    } catch (error: any) {
+      console.error("[GET /api/tasks/my] error:", error);
+      res.status(500).json({ error: "Failed to fetch user tasks" });
     }
   });
 

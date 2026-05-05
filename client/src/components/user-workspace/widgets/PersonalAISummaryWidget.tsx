@@ -68,6 +68,12 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     setConfigShowSuggestedActions(widget.config?.showSuggestedActions ?? true);
   }, [widget.title, widget.config]);
 
+  const { data: capabilities, isLoading: isLoadingCapabilities } = useQuery<{ dailySummary: boolean }>({
+    queryKey: ["/api/ai/capabilities"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const aiAvailable = capabilities?.dailySummary !== false;
+
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
@@ -306,6 +312,21 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
       color: "text-status-success dark:text-green-400" 
     },
   ];
+
+  if (!isLoadingCapabilities && !aiAvailable) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center h-full p-4 text-center"
+        data-testid="ai-summary-unavailable"
+      >
+        <Sparkles className="h-6 w-6 text-muted-foreground mb-2" />
+        <p className="text-xs font-medium">AI Summary unavailable</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Add an OpenAI API key to enable daily summaries.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <ScrollArea className="h-full">
