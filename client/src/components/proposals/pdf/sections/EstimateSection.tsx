@@ -14,6 +14,8 @@ interface EstimateSectionProps {
   proposalName?: string;
   proposalNumber?: string;
   expiryDate?: string;
+  pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
+  showGst?: boolean;
 }
 
 export function EstimateSection({
@@ -25,12 +27,14 @@ export function EstimateSection({
   proposalName,
   proposalNumber,
   expiryDate,
+  pricingMode = 'itemised',
+  showGst = true,
 }: EstimateSectionProps) {
   if (!estimateData) {
     return null;
   }
 
-  const content = section.content as Record<string, any> || {};
+  const content = (section.content as Record<string, unknown>) || {};
   // The Layout panel writes column visibility as a string[] under
   // `visibleColumns` (one entry per visible column). The legacy section
   // editor writes a Record<string, boolean> under `columnToggles`. Bridge
@@ -38,7 +42,7 @@ export function EstimateSection({
   const visibleColumns: string[] | undefined = Array.isArray(content.visibleColumns)
     ? (content.visibleColumns as string[])
     : undefined;
-  const fallbackToggles = content.columnToggles || {
+  const fallbackToggles = (content.columnToggles as Record<string, boolean>) || {
     description: true,
     quantity: false,
     unitCostExTax: false,
@@ -49,7 +53,7 @@ export function EstimateSection({
     showSubtotals: true,
     showZeroLines: false,
   };
-  const toggles: Record<string, boolean> = visibleColumns
+  const baseToggles: Record<string, boolean> = visibleColumns
     ? {
         description: visibleColumns.includes('description'),
         quantity: visibleColumns.includes('quantity'),
@@ -59,12 +63,53 @@ export function EstimateSection({
         markup: visibleColumns.includes('markup'),
         amountExTax: visibleColumns.includes('amountExTax'),
         amountIncTax: visibleColumns.includes('amountIncTax'),
-        // showSubtotals / showZeroLines are not part of the layout column
-        // toggle set; preserve any previously-saved boolean.
         showSubtotals: fallbackToggles.showSubtotals !== false,
         showZeroLines: fallbackToggles.showZeroLines === true,
       }
     : fallbackToggles;
+
+  // Layout-level overrides:
+  // - lump_sum: hide every column + per-group subtotals; only the grand total renders.
+  // - section_totals: hide individual line columns but keep group subtotals.
+  // - itemised: respect baseToggles.
+  // - showGst=false: suppress every "inc tax" column / total in favour of ex-tax.
+  const toggles: Record<string, boolean> = (() => {
+    if (pricingMode === 'lump_sum') {
+      return {
+        description: false,
+        quantity: false,
+        unit: false,
+        unitCostExTax: false,
+        unitCostIncTax: false,
+        markup: false,
+        amountExTax: false,
+        amountIncTax: false,
+        showSubtotals: false,
+        showZeroLines: false,
+      };
+    }
+    const next = { ...baseToggles };
+    if (pricingMode === 'section_totals') {
+      next.description = false;
+      next.quantity = false;
+      next.unit = false;
+      next.unitCostExTax = false;
+      next.unitCostIncTax = false;
+      next.markup = false;
+      next.amountExTax = false;
+      next.amountIncTax = false;
+      next.showSubtotals = true;
+    }
+    if (!showGst) {
+      next.unitCostIncTax = false;
+      next.amountIncTax = false;
+      if (!next.amountExTax && (baseToggles.amountIncTax || pricingMode === 'itemised')) {
+        next.amountExTax = true;
+      }
+    }
+    return next;
+  })();
+  const hideLineItems = pricingMode === 'lump_sum' || pricingMode === 'section_totals';
 
   const { estimate, groups, items } = estimateData;
 
@@ -256,8 +301,8 @@ export function EstimateSection({
         <View style={styles.groupHeader}>
           <Text>{group.name}</Text>
         </View>
-        {renderTableHeader()}
-        {groupItems.map(renderTableRow)}
+        {!hideLineItems && renderTableHeader()}
+        {!hideLineItems && groupItems.map(renderTableRow)}
         {toggles.showSubtotals && (
           <>
             {toggles.amountExTax && (
@@ -309,7 +354,7 @@ export function EstimateSection({
       {sortedGroups.map(renderGroup)}
 
       {/* Render ungrouped items */}
-      {ungroupedItems.length > 0 && (
+      {ungroupedItems.length > 0 && !hideLineItems && (
         <View>
           <View style={styles.groupHeader}>
             <Text>Other Items</Text>
@@ -326,16 +371,16 @@ export function EstimateSection({
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalExTax)}</Text>
         </View>
       )}
-      {toggles.amountIncTax && (
+      {toggles.amountIncTax && showGst && (
         <View style={styles.totalRow}>
           <Text style={[styles.col, { flex: 1 }]}>Total Price (inc. tax)</Text>
           <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalIncTax)}</Text>
         </View>
       )}
-      {!toggles.amountExTax && !toggles.amountIncTax && (
+      {!toggles.amountExTax && !(toggles.amountIncTax && showGst) && (
         <View style={styles.totalRow}>
           <Text style={[styles.col, { flex: 1 }]}>Total Price</Text>
-          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalIncTax)}</Text>
+          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(showGst ? grandTotalIncTax : grandTotalExTax)}</Text>
         </View>
       )}
     </Page>

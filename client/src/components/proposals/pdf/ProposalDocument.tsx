@@ -54,6 +54,17 @@ export function ProposalDocument({
   milestones = [],
   acceptance = null,
 }: ProposalDocumentProps) {
+  // Pull layout-level rendering preferences off the proposal so the live PDF
+  // preview reflects pricing mode / GST / logo toggles set in the Layout tab.
+  const layout = (proposal.layoutSettings as {
+    pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
+    showGst?: boolean;
+    showLogo?: boolean;
+  } | null) ?? null;
+  const pricingMode = layout?.pricingMode ?? 'itemised';
+  const showGst = layout?.showGst ?? true;
+  const showLogo = layout?.showLogo ?? true;
+  const effectiveLogo = showLogo ? companyLogo : undefined;
   // Compute the estimate total (inc GST, in cents) from any linked estimate
   // section so {{estimate.total_inc_gst}} renders against real data.
   // EstimateItem.priceIncTax is stored in dollars (doublePrecision in the
@@ -108,7 +119,7 @@ export function ProposalDocument({
                 section={section}
                 project={project}
                 client={client}
-                companyLogo={companyLogo}
+                companyLogo={effectiveLogo}
                 companyName={companyName}
                 primaryColor={primaryColor}
               />
@@ -218,12 +229,14 @@ export function ProposalDocument({
                 key={section.id}
                 section={section}
                 estimateData={estimateData}
-                companyLogo={companyLogo}
+                companyLogo={effectiveLogo}
                 companyName={companyName}
                 primaryColor={primaryColor}
                 proposalName={proposal.name}
                 proposalNumber={proposal.proposalNumber}
                 expiryDate={proposal.expiryDate ? new Date(proposal.expiryDate).toISOString() : undefined}
+                pricingMode={pricingMode}
+                showGst={showGst}
               />
             );
           }
