@@ -58,11 +58,20 @@ export function ProposalDocument({
   // section so {{estimate.total_inc_gst}} renders against real data.
   // EstimateItem.priceIncTax is stored in dollars (doublePrecision in the
   // schema), so we convert to integer cents for the formatter.
+  // Resolve the effective estimate id for an estimate section: prefer the
+  // explicit per-section pick, then fall back to the proposal-level
+  // estimateId so revision changes from the Revisions panel still surface
+  // in the live preview.
+  const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined): string | undefined => {
+    const explicit = sectionContent && typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
+    return explicit || proposal.estimateId || undefined;
+  };
+
   let estimateTotalIncGstCents: number | undefined;
   for (const s of sections) {
     if (s.sectionType !== 'estimate') continue;
     const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
-    const estimateId = typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
+    const estimateId = resolveEstimateId(sectionContent);
     const data = estimateId ? estimatesData[estimateId] : undefined;
     if (!data) continue;
     const incDollars = data.items.reduce((acc: number, item: EstimateItem) => {
@@ -201,7 +210,7 @@ export function ProposalDocument({
             );
           case 'estimate': {
             const content = (section.content as Record<string, unknown>) || {};
-            const estimateId = content.estimateId as string | undefined;
+            const estimateId = resolveEstimateId(content);
             const estimateData = estimateId ? estimatesData[estimateId] : undefined;
             if (!estimateData) return null;
             return (

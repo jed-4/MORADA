@@ -78,8 +78,9 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   };
 
   const [localName, setLocalName] = useState(section.name);
+  const sectionDescriptionHtml = (section as ProposalSection & { descriptionHtml?: string | null }).descriptionHtml;
   const [localDescriptionHtml, setLocalDescriptionHtml] = useState<string>(
-    (section as any).descriptionHtml || section.description || "",
+    sectionDescriptionHtml || section.description || "",
   );
   const [localDescriptionText, setLocalDescriptionText] = useState<string>(section.description || "");
   const [localContent, setLocalContent] = useState<Record<string, any>>(section.content || {});
@@ -88,8 +89,9 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   // Only reset local state when the section ID changes (switching to a different section)
   // This prevents infinite loops while still allowing updates from the server
   useEffect(() => {
+    const html = (section as ProposalSection & { descriptionHtml?: string | null }).descriptionHtml;
     setLocalName(section.name);
-    setLocalDescriptionHtml((section as any).descriptionHtml || section.description || "");
+    setLocalDescriptionHtml(html || section.description || "");
     setLocalDescriptionText(section.description || "");
     setLocalContent(section.content || {});
     setLocalIsEnabled(section.isEnabled !== false);
@@ -274,7 +276,15 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                   proposalId={section.proposalId}
                   currentEstimateId={(localContent.estimateId as string | undefined) || null}
                   projectId={projectId}
-                  onPick={(id) => setLocalContent({ ...localContent, estimateId: id })}
+                  onPick={(id) => {
+                    // Authoritative: update local state AND immediately
+                    // persist the section content patch so the live preview
+                    // refetches against the new revision without waiting
+                    // for the user to press Save Changes.
+                    const next = { ...localContent, estimateId: id };
+                    setLocalContent(next);
+                    onSectionUpdate(section.id, { content: next });
+                  }}
                 />
                 <EstimateEditor
                   content={localContent}
@@ -580,13 +590,20 @@ export function ProposalBuilder({
       setIsGenerating(true);
       
       try {
-        // Collect all estimate IDs from sections
-        const estimateIds = sections
-          .filter((s) => {
+        // Collect all estimate IDs from sections, falling back to the
+        // proposal-level estimateId when the section hasn't picked an
+        // explicit revision yet. This keeps the live preview in sync after
+        // changing the linked estimate from the Revisions panel.
+        const sectionEstimateIds = sections
+          .filter((s) => s.sectionType === 'estimate')
+          .map((s) => {
             const c = (s.content as Record<string, unknown> | null) ?? {};
-            return s.sectionType === 'estimate' && typeof c.estimateId === 'string';
+            return typeof c.estimateId === 'string' && c.estimateId
+              ? (c.estimateId as string)
+              : (proposal.estimateId || null);
           })
-          .map((s) => ((s.content as Record<string, unknown>).estimateId as string));
+          .filter((id): id is string => !!id);
+        const estimateIds = Array.from(new Set(sectionEstimateIds));
 
         // Fetch all estimate data in parallel
         const estimatesDataMap: Record<string, any> = {};
@@ -834,6 +851,23 @@ type LayoutSettings = {
   preset?: PresetKey;
 };
 
+// Section types that each preset should enable. Anything not listed is
+// disabled when the preset is applied. Aligned with the BuildPro spec.
+const PRESET_ENABLED_SECTION_TYPES: Record<PresetKey, Set<string>> = {
+  lump_sum_quote: new Set([
+    'cover_page', 'scope', 'estimate', 'payment_schedule', 'terms_conditions', 'signature',
+  ]),
+  itemised_quote: new Set([
+    'cover_page', 'scope', 'estimate', 'allowances', 'inclusions_exclusions',
+    'payment_schedule', 'terms_conditions', 'signature',
+  ]),
+  standard_residential: new Set([
+    'cover_page', 'cover_letter', 'scope', 'estimate', 'summary', 'allowances',
+    'inclusions_exclusions', 'payment_schedule', 'closing', 'attachments',
+    'terms_conditions', 'signature',
+  ]),
+};
+
 // Presets aligned to BuildPro spec: Lump Sum / Itemised / Standard Residential
 const LAYOUT_PRESETS: Record<PresetKey, Partial<LayoutSettings>> = {
   lump_sum_quote: {
@@ -868,14 +902,15 @@ const PRICING_MODE_OPTIONS: Array<{ value: PricingMode; label: string }> = [
   { value: 'itemised', label: 'Itemised' },
 ];
 
+// Canonical estimate columns per BuildPro spec: Description, Quantity, Unit,
+// Unit Price, Total. Keys are kept in sync with EstimateSection toggle keys
+// so the bridge in pdf/sections/EstimateSection.tsx renders the right cells.
 const ESTIMATE_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'description', label: 'Description' },
   { key: 'quantity', label: 'Quantity' },
-  { key: 'unitCostExTax', label: 'Unit Cost (ex GST)' },
-  { key: 'unitCostIncTax', label: 'Unit Cost (inc GST)' },
-  { key: 'markup', label: 'Markup %' },
-  { key: 'amountExTax', label: 'Amount (ex GST)' },
-  { key: 'amountIncTax', label: 'Amount (inc GST)' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'unitCostIncTax', label: 'Unit Price' },
+  { key: 'amountIncTax', label: 'Total' },
 ];
 
 function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) {
@@ -990,6 +1025,20 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     if (p.showLogo !== undefined) setShowLogo(!!p.showLogo);
     if (p.showGst !== undefined) setShowGst(!!p.showGst);
     if (p.pricingMode) setPricingMode(p.pricingMode);
+
+    // Bundle section enable/disable toggles per preset. Each preset names the
+    // section types that should be enabled; everything else is disabled. We
+    // call onSectionUpdate per affected section so the existing autosave
+    // pipeline persists the change.
+    const enabledTypes = PRESET_ENABLED_SECTION_TYPES[name as PresetKey];
+    if (enabledTypes) {
+      for (const s of sections) {
+        const shouldEnable = enabledTypes.has(s.sectionType || 'custom');
+        if ((s.isEnabled !== false) !== shouldEnable) {
+          onSectionUpdate(s.id, { isEnabled: shouldEnable });
+        }
+      }
+    }
   };
 
   // Estimate sections — column visibility per section
@@ -1231,7 +1280,7 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
 
   // Sibling revisions = same parent (or itself)
   const siblings = parentId
-    ? projectEstimates.filter((e) => e.id === parentId || (e as any).parentEstimateId === parentId)
+    ? projectEstimates.filter((e) => e.id === parentId || e.parentEstimateId === parentId)
     : projectEstimates;
   const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
 

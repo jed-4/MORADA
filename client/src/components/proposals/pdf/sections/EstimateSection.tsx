@@ -53,6 +53,7 @@ export function EstimateSection({
     ? {
         description: visibleColumns.includes('description'),
         quantity: visibleColumns.includes('quantity'),
+        unit: visibleColumns.includes('unit'),
         unitCostExTax: visibleColumns.includes('unitCostExTax'),
         unitCostIncTax: visibleColumns.includes('unitCostIncTax'),
         markup: visibleColumns.includes('markup'),
@@ -211,6 +212,7 @@ export function EstimateSection({
       <Text style={[styles.col, { width: colWidths.item }]}>Item</Text>
       {toggles.description && <Text style={[styles.col, { width: colWidths.description }]}>Description</Text>}
       {toggles.quantity && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Qty</Text>}
+      {toggles.unit && <Text style={[styles.col, { width: colWidths.numeric }]}>Unit</Text>}
       {toggles.unitCostExTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Unit Cost (ex)</Text>}
       {toggles.unitCostIncTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Unit Cost (inc)</Text>}
       {toggles.markup && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>Markup %</Text>}
@@ -234,6 +236,7 @@ export function EstimateSection({
         <Text style={[styles.col, { width: colWidths.item }]}>{item.name || "Untitled"}</Text>
         {toggles.description && <Text style={[styles.col, { width: colWidths.description }]}>{item.description || "-"}</Text>}
         {toggles.quantity && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatQuantity(item.quantity)}</Text>}
+        {toggles.unit && <Text style={[styles.col, { width: colWidths.numeric }]}>{item.unitType || ''}</Text>}
         {toggles.unitCostExTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(item.unitCostExTax)}</Text>}
         {toggles.unitCostIncTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(unitCostIncTax)}</Text>}
         {toggles.markup && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{item.markupPercent ?? estimate.projectMarkupPercent ?? 0}%</Text>}
