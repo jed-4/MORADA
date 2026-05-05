@@ -481,7 +481,12 @@ export default function ProposalDetail() {
                 manage versions and re-link the estimate revision without
                 opening the builder's right-hand tabs. */}
             <div className="rounded-md border p-3">
-              <RevisionHistoryPanel proposal={proposal!} projectId={project?.id} />
+              <RevisionHistoryPanel
+                proposal={proposal!}
+                projectId={project?.id}
+                sections={localSections}
+                onSectionUpdate={handleSectionUpdate}
+              />
             </div>
             <div className="flex-1 min-h-0">
               <ProposalBuilder

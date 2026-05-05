@@ -1718,9 +1718,15 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
 interface RevisionHistoryPanelProps {
   proposal: Proposal;
   projectId?: string;
+  // Optional: parent supplies the proposal's sections + section-update
+  // callback so the top-level estimate revision selector can also sync
+  // every estimate section's `content.estimateId` (not just rely on the
+  // section-level fallback to `proposals.estimateId`).
+  sections?: ProposalSection[];
+  onSectionUpdate?: (sectionId: string, updates: Partial<ProposalSection>) => void;
 }
 
-export function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPanelProps) {
+export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionUpdate }: RevisionHistoryPanelProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const parentId = proposal.parentProposalId || proposal.id;
@@ -1814,10 +1820,21 @@ export function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPan
             proposalId={proposal.id}
             projectId={projectId}
             currentEstimateId={proposal.estimateId || null}
-            onPick={() => {
+            onPick={(newEstimateId) => {
               // The selector also persists to proposals.estimateId; refresh
               // proposal cache so downstream consumers see the new link.
               queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+              // Authoritative sync: also update every estimate section's
+              // content.estimateId so sections that had an explicit pick
+              // switch to the new revision rather than retaining stale data.
+              if (sections && onSectionUpdate) {
+                for (const s of sections) {
+                  if (s.sectionType !== 'estimate') continue;
+                  const c = (s.content as Record<string, unknown> | null) ?? {};
+                  if (c.estimateId === newEstimateId) continue;
+                  onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
+                }
+              }
             }}
           />
         </div>
