@@ -28,7 +28,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { type KPIPeriod } from "./business-widgets/kpiDefinitions";
 import {
   Dialog,
   DialogContent,
@@ -82,6 +87,94 @@ const DEFAULT_WIDGETS: Widget[] = [
   { id: "7", type: "businessFinancials", title: "Financial Summary", size: "md", dimensions: { columns: 4 } },
   { id: "8", type: "businessTimesheets", title: "Timesheets", size: "md", dimensions: { columns: 4 } },
 ];
+
+function BusinessKpisPeriodTabs({
+  widget,
+  onUpdate,
+}: {
+  widget: Widget;
+  onUpdate: (widget: Widget) => void;
+}) {
+  const period = ((widget.config?.period as KPIPeriod) || "month") as KPIPeriod;
+  const setPeriod = (p: KPIPeriod) => {
+    onUpdate({ ...widget, config: { ...(widget.config || {}), period: p } });
+  };
+  const options: { value: KPIPeriod; label: string }[] = [
+    { value: "month", label: "Month" },
+    { value: "quarter", label: "Quarter" },
+    { value: "year", label: "Year" },
+  ];
+  return (
+    <div className="flex items-center gap-4" data-testid="kpi-period-tabs">
+      {options.map((o) => {
+        const active = period === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => setPeriod(o.value)}
+            className={cn(
+              "text-[12px] transition-colors pb-0.5",
+              active
+                ? "text-bp-purple font-medium border-b-2 border-bp-purple"
+                : "text-bp-muted hover:text-bp-card-foreground",
+            )}
+            data-testid={`kpi-period-${o.value}`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BusinessKpisMenuItems({
+  widget,
+  onUpdate,
+  onOpenEdit,
+}: {
+  widget: Widget;
+  onUpdate: (widget: Widget) => void;
+  onOpenEdit: () => void;
+}) {
+  const columns = ([1, 2, 3, 4].includes(widget.config?.columns)
+    ? widget.config!.columns
+    : 4) as 1 | 2 | 3 | 4;
+  const setColumns = (n: 1 | 2 | 3 | 4) => {
+    onUpdate({ ...widget, config: { ...(widget.config || {}), columns: n } });
+  };
+  return (
+    <>
+      <DropdownMenuItem onClick={onOpenEdit} data-testid="kpi-menu-edit">
+        <Pencil className="h-3.5 w-3.5 mr-2" />
+        Edit KPIs
+      </DropdownMenuItem>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger data-testid="kpi-menu-columns">
+          Columns
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          {([1, 2, 3, 4] as const).map((n) => (
+            <DropdownMenuItem
+              key={n}
+              onClick={() => setColumns(n)}
+              data-testid={`kpi-menu-columns-${n}`}
+            >
+              <Check
+                className={cn(
+                  "h-3.5 w-3.5 mr-2",
+                  columns === n ? "opacity-100" : "opacity-0",
+                )}
+              />
+              {n}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    </>
+  );
+}
 
 function SortableWidget({ 
   widget, 
@@ -171,7 +264,13 @@ function SortableWidget({
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
         onRemove={() => onRemove(widget.id)}
-        onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
+        onConfigure={
+          widget.type === "businessKPIs"
+            ? undefined
+            : definition.configurable
+            ? () => onConfigure(widget.id)
+            : undefined
+        }
         dragHandleProps={{ ...attributes, ...listeners }}
         onResizeEnd={handleResizeEnd}
         dimensions={widget.dimensions}
@@ -181,6 +280,20 @@ function SortableWidget({
         themeStyleOverride={themeStyle?.style}
         accent={definition.accent}
         locked={isLocked}
+        headerExtra={
+          widget.type === "businessKPIs" ? (
+            <BusinessKpisPeriodTabs widget={widget} onUpdate={onUpdate} />
+          ) : undefined
+        }
+        extraMenuItems={
+          widget.type === "businessKPIs" ? (
+            <BusinessKpisMenuItems
+              widget={widget}
+              onUpdate={onUpdate}
+              onOpenEdit={() => onConfigure(widget.id)}
+            />
+          ) : undefined
+        }
       >
         <WidgetComponent
           widget={widget}

@@ -11,11 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GripVertical, Pencil, Lock, RefreshCw, ChevronDown, AlertCircle } from "lucide-react";
+import { GripVertical, Lock, RefreshCw, ChevronDown, AlertCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import {
@@ -427,17 +426,17 @@ function KPICell({
 
   return (
     <div
-      className="relative rounded-md border border-bp-border bg-bp-card px-3 py-2 flex flex-col gap-1 min-h-[78px]"
+      className="relative px-4 py-2.5 flex flex-col gap-1 min-h-[64px]"
       data-testid={`kpi-${def.key}`}
     >
       <div
-        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md"
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
         style={{ backgroundColor: accentColor }}
         aria-hidden
       />
       <div className="flex items-baseline justify-between gap-2 text-bp-muted">
         <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="text-[11px] font-medium uppercase tracking-wide truncate text-bp-card-foreground">
+          <span className="text-[9px] font-medium uppercase tracking-wide truncate text-bp-muted">
             {def.label}
           </span>
           {def.labelDetail && (
@@ -465,7 +464,7 @@ function KPICell({
         )}
       </div>
       <div
-        className="text-xl font-semibold leading-tight"
+        className="text-[20px] font-bold leading-tight text-bp-card-foreground"
         data-testid={`kpi-value-${def.key}`}
       >
         {renderValue()}
@@ -483,7 +482,7 @@ function KPICell({
   );
 }
 
-export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
+export default function BusinessKPIsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const hasFinancialAccess = useFinancialPermission();
   const { data: xeroStatus } = useXeroStatus();
   const xeroConnected = !!xeroStatus?.connected;
@@ -508,8 +507,20 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
     }
   }, [editOpen, selectedKeys, cashConfig]);
 
-  const setPeriod = (next: KPIPeriod) => {
-    onUpdate?.({ ...widget, config: { ...config, period: next } });
+  const columnsRaw = config.columns;
+  const columns: 1 | 2 | 3 | 4 = ([1, 2, 3, 4].includes(columnsRaw)
+    ? columnsRaw
+    : 4) as 1 | 2 | 3 | 4;
+
+  useEffect(() => {
+    if (isConfiguring) setEditOpen(true);
+  }, [isConfiguring]);
+
+  const handleEditOpenChange = (open: boolean) => {
+    setEditOpen(open);
+    if (!open && isConfiguring) {
+      onCloseConfig?.();
+    }
   };
 
   const saveSelection = () => {
@@ -522,7 +533,7 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
         cashXero: editCashConfig,
       },
     });
-    setEditOpen(false);
+    handleEditOpenChange(false);
   };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -542,58 +553,67 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
     return [...editKeys, ...remaining];
   }, [editKeys]);
 
+  const gridColsClass: Record<2 | 3 | 4, string> = {
+    2: "grid-cols-2",
+    3: "grid-cols-3",
+    4: "grid-cols-4",
+  };
+  const gridDividerClass: Record<2 | 3 | 4, string> = {
+    2: "[&>*:not(:nth-child(2n+1))]:border-l [&>*]:border-bp-border",
+    3: "[&>*:not(:nth-child(3n+1))]:border-l [&>*]:border-bp-border",
+    4: "[&>*:not(:nth-child(4n+1))]:border-l [&>*]:border-bp-border",
+  };
+  const oneColScroll = columns === 1 && selectedKeys.length > 6;
+
+  const renderCells = () =>
+    selectedKeys.map((key) => {
+      const def = KPI_DEFINITIONS[key];
+      if (!def) return null;
+      return (
+        <KPICell
+          key={key}
+          def={def}
+          period={period}
+          hasFinancialAccess={hasFinancialAccess}
+          xeroConnected={xeroConnected}
+          cashConfig={cashConfig}
+        />
+      );
+    });
+
   return (
     <div className="flex h-full flex-col" data-testid="business-kpis-widget">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <Tabs value={period} onValueChange={(v) => setPeriod(v as KPIPeriod)}>
-          <TabsList className="h-7">
-            <TabsTrigger value="month" className="h-6 text-xs px-2" data-testid="kpi-period-month">
-              Month
-            </TabsTrigger>
-            <TabsTrigger value="quarter" className="h-6 text-xs px-2" data-testid="kpi-period-quarter">
-              Quarter
-            </TabsTrigger>
-            <TabsTrigger value="year" className="h-6 text-xs px-2" data-testid="kpi-period-year">
-              Year
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setEditOpen(true)}
-          data-testid="kpi-edit-button"
-        >
-          <Pencil className="h-3 w-3 mr-1" />
-          Edit KPIs
-        </Button>
-      </div>
-
       {selectedKeys.length === 0 ? (
         <WidgetEmpty
           title="No KPIs selected"
-          message="Click Edit KPIs to choose which metrics to display."
+          message="Open the menu and choose Edit KPIs to add metrics."
         />
+      ) : columns === 1 ? (
+        <div
+          className={cn(
+            "flex-1",
+            oneColScroll && "max-h-[400px] overflow-y-auto",
+          )}
+        >
+          <div className="flex flex-col [&>*:not(:last-child)]:border-b [&>*]:border-bp-border">
+            {renderCells()}
+          </div>
+        </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 flex-1 content-start">
-          {selectedKeys.map((key) => {
-            const def = KPI_DEFINITIONS[key];
-            if (!def) return null;
-            return (
-              <KPICell
-                key={key}
-                def={def}
-                period={period}
-                hasFinancialAccess={hasFinancialAccess}
-                xeroConnected={xeroConnected}
-                cashConfig={cashConfig}
-              />
-            );
-          })}
+        <div className="flex-1">
+          <div
+            className={cn(
+              "grid content-start",
+              gridColsClass[columns],
+              gridDividerClass[columns],
+            )}
+          >
+            {renderCells()}
+          </div>
         </div>
       )}
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
         <DialogContent className="max-w-md" data-testid="kpi-edit-dialog">
           <DialogHeader>
             <DialogTitle>Edit KPIs</DialogTitle>
@@ -642,7 +662,7 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
             </DndContext>
           </ScrollArea>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} data-testid="kpi-edit-cancel">
+            <Button variant="outline" onClick={() => handleEditOpenChange(false)} data-testid="kpi-edit-cancel">
               Cancel
             </Button>
             <Button onClick={saveSelection} data-testid="kpi-edit-save">

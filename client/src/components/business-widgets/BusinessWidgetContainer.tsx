@@ -28,6 +28,11 @@ interface BusinessWidgetContainerProps {
   locked?: boolean;
   lockedMessage?: string;
   headerExtra?: React.ReactNode;
+  /**
+   * Additional menu items rendered inside the ⋯ dropdown, immediately
+   * before the Remove entry. Surrounding separators are added automatically.
+   */
+  extraMenuItems?: React.ReactNode;
 }
 
 export default function BusinessWidgetContainer({
@@ -47,39 +52,49 @@ export default function BusinessWidgetContainer({
   locked = false,
   lockedMessage = "You don't have permission to view this content.",
   headerExtra,
+  extraMenuItems,
 }: BusinessWidgetContainerProps) {
+  const hasMenu = !!onConfigure || !!onRemove || !!extraMenuItems;
   const headerRight = (
     <>
       {icon && <div className="flex-shrink-0 text-bp-muted">{icon}</div>}
       {headerExtra}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
-            <MoreVertical className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {onConfigure && (
-            <DropdownMenuItem onClick={onConfigure}>
-              <Settings className="h-3.5 w-3.5 mr-2" />
-              Configure
-            </DropdownMenuItem>
-          )}
-          {onRemove && (
-            <>
-              {onConfigure && <DropdownMenuSeparator />}
-              <DropdownMenuItem onClick={onRemove} className="text-destructive">
-                <X className="h-3.5 w-3.5 mr-2" />
-                Remove
+      {hasMenu && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {onConfigure && (
+              <DropdownMenuItem onClick={onConfigure}>
+                <Settings className="h-3.5 w-3.5 mr-2" />
+                Configure
               </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            )}
+            {extraMenuItems && (
+              <>
+                {onConfigure && <DropdownMenuSeparator />}
+                {extraMenuItems}
+              </>
+            )}
+            {onRemove && (
+              <>
+                {(onConfigure || extraMenuItems) && <DropdownMenuSeparator />}
+                <DropdownMenuItem onClick={onRemove} className="text-destructive">
+                  <X className="h-3.5 w-3.5 mr-2" />
+                  Remove
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {dragHandleProps && (
         <div
           {...dragHandleProps}
-          className="cursor-grab rounded p-0.5 flex-shrink-0 text-bp-muted hover-elevate"
+          className="cursor-grab rounded p-0.5 flex-shrink-0 text-bp-muted hover-elevate opacity-0 group-hover:opacity-100 transition-opacity"
           data-testid="widget-drag-handle"
         >
           <GripVertical className="h-3.5 w-3.5" />
@@ -90,7 +105,7 @@ export default function BusinessWidgetContainer({
 
   return (
     <div
-      className={cn("relative h-full", themeClassName)}
+      className={cn("group relative h-full", themeClassName)}
       style={{
         height: dimensions?.height ? `${dimensions.height}px` : undefined,
         ...themeStyleOverride,
