@@ -8456,6 +8456,268 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================================
+  // BuildPro Business Dashboard analytics endpoints (task #237)
+  // ============================================================
+
+  app.get("/api/business/kpis", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const period = (req.query.period as string) || "month";
+      const now = new Date();
+      const start = new Date(now);
+      if (period === "year") start.setFullYear(now.getFullYear() - 1);
+      else if (period === "quarter") start.setMonth(now.getMonth() - 3);
+      else start.setMonth(now.getMonth() - 1);
+
+      const [canViewInvoices, canViewBudget, canViewBills] = await Promise.all([
+        storage.checkUserPermission(user.id, "financial.invoices", "view").catch(() => false),
+        storage.checkUserPermission(user.id, "financial.budget", "view").catch(() => false),
+        storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false),
+      ]);
+      const hasFinancialAccess = canViewInvoices || canViewBudget || canViewBills;
+
+      const { projects: projectsTbl, clientInvoices: invoicesTbl, variations: variationsTbl, bills: billsTbl, budgets: budgetsTbl, estimates: estimatesTbl, timesheets: timesheetsTbl } = await import("@shared/schema");
+
+      const [projectRows, invoiceRows, variationRows, taskRows, billRows, budgetRows, estimateRows, timesheetRows] = await Promise.all([
+        db.select().from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(invoicesTbl),
+        db.select().from(variationsTbl),
+        storage.getTasks(undefined, undefined, undefined, undefined, undefined, companyId).catch(() => []),
+        db.select().from(billsTbl),
+        db.select().from(budgetsTbl),
+        db.select().from(estimatesTbl),
+        db.select().from(timesheetsTbl),
+      ]);
+
+      const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
+      const inCompany = (projectId: string) => companyProjectIds.has(projectId);
+      const inPeriod = (d: Date | string | null) => {
+        if (!d) return false;
+        const t = new Date(d).getTime();
+        return t >= start.getTime() && t <= now.getTime();
+      };
+
+      const activeProjects = projectRows.filter((p: any) => p.status === "active" && !p.isArchived).length;
+
+      const periodInvoices = invoiceRows.filter((i: any) => inCompany(i.projectId) && inPeriod(i.invoiceDate));
+      const totalRevenue = periodInvoices
+        .filter((i: any) => i.status === "paid" || i.status === "partial")
+        .reduce((s: number, i: any) => s + (Number(i.paidAmount) || 0), 0) / 100;
+
+      const outstandingInvoices = invoiceRows
+        .filter((i: any) => inCompany(i.projectId) && (i.status === "sent" || i.status === "partial" || i.status === "overdue"))
+        .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
+
+      const variationsPending = variationRows
+        .filter((v: any) => inCompany(v.projectId) && (v.status === "pending" || v.status === "action"))
+        .length;
+
+      const proposalsOpen = estimateRows
+        .filter((e: any) => inCompany(e.projectId) && e.status !== "approved" && e.status !== "rejected")
+        .length;
+
+      const overdueTasks = taskRows
+        .filter((t: any) =>
+          t.status !== "done" &&
+          t.status !== "complete" &&
+          t.dueDate &&
+          new Date(t.dueDate).getTime() < now.getTime() &&
+          (!t.projectId || inCompany(t.projectId)),
+        ).length;
+
+      const periodTimesheets = timesheetRows.filter((t: any) => inPeriod(t.date) && (!t.projectId || inCompany(t.projectId)));
+      const hoursLogged = periodTimesheets.reduce((s: number, t: any) => s + (Number(t.hours) || 0), 0);
+      const periodWeeks = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)));
+      const targetHours = 40 * periodWeeks;
+      const teamUtilisation = Math.min(150, (hoursLogged / Math.max(1, targetHours)) * 100);
+
+      const companyBudgets = budgetRows.filter((b: any) => inCompany(b.projectId));
+      const margins = companyBudgets
+        .filter((b: any) => (Number(b.revisedAmount) || 0) > 0)
+        .map((b: any) => ((Number(b.profitAmount) || 0) / (Number(b.revisedAmount) || 1)) * 100);
+      const avgMargin = margins.length > 0 ? margins.reduce((a: number, b: number) => a + b, 0) / margins.length : 0;
+
+      const cashPosition = totalRevenue - billRows
+        .filter((b: any) => inCompany(b.projectId) && (b.status === "paid"))
+        .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0) / 100;
+
+      const budgetVariance = companyBudgets
+        .reduce((s: number, b: any) => s + ((Number(b.revisedAmount) || 0) - (Number(b.forecastAmount) || 0)), 0) / 100;
+
+      res.json({
+        values: {
+          active_projects: activeProjects,
+          total_revenue: hasFinancialAccess ? totalRevenue : null,
+          outstanding_invoices: hasFinancialAccess ? outstandingInvoices : null,
+          variations_pending: variationsPending,
+          proposals_open: proposalsOpen,
+          team_utilisation: teamUtilisation,
+          overdue_tasks: overdueTasks,
+          new_leads: 0,
+          avg_project_margin: hasFinancialAccess ? avgMargin : null,
+          cash_position: hasFinancialAccess ? cashPosition : null,
+          budget_variance: hasFinancialAccess ? budgetVariance : null,
+          safety_incidents: 0,
+        },
+      });
+    } catch (err) {
+      console.error("[/api/business/kpis] error:", err);
+      res.status(500).json({ error: "Failed to compute KPIs" });
+    }
+  });
+
+  app.get("/api/business/revenue-trends", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projects: projectsTbl, clientInvoices: invoicesTbl } = await import("@shared/schema");
+      const [projectRows, invoiceRows] = await Promise.all([
+        db.select({ id: projectsTbl.id }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(invoicesTbl),
+      ]);
+      const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
+
+      const months: { label: string; key: string; revenue: number; outstanding: number }[] = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+          label: d.toLocaleDateString("en", { month: "short" }),
+          key: `${d.getFullYear()}-${d.getMonth()}`,
+          revenue: 0,
+          outstanding: 0,
+        });
+      }
+
+      for (const inv of invoiceRows) {
+        if (!companyProjectIds.has(inv.projectId)) continue;
+        const d = new Date(inv.invoiceDate);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        const bucket = months.find((m) => m.key === key);
+        if (!bucket) continue;
+        if (inv.status === "paid" || inv.status === "partial") {
+          bucket.revenue += (Number(inv.paidAmount) || 0) / 100;
+        }
+        if (inv.status === "sent" || inv.status === "partial" || inv.status === "overdue") {
+          bucket.outstanding += (Number(inv.balanceAmount) || 0) / 100;
+        }
+      }
+
+      res.json({ months });
+    } catch (err) {
+      console.error("[/api/business/revenue-trends] error:", err);
+      res.status(500).json({ error: "Failed to compute revenue trends" });
+    }
+  });
+
+  app.get("/api/business/financial-summary", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projects: projectsTbl, clientInvoices: invoicesTbl, bills: billsTbl } = await import("@shared/schema");
+      const [projectRows, invoiceRows, billRows] = await Promise.all([
+        db.select({ id: projectsTbl.id }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(invoicesTbl),
+        db.select().from(billsTbl),
+      ]);
+      const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
+      const ytdStart = new Date(new Date().getFullYear(), 0, 1).getTime();
+
+      const companyInvoices = invoiceRows.filter((i: any) => companyProjectIds.has(i.projectId));
+      const companyBills = billRows.filter((b: any) => companyProjectIds.has(b.projectId));
+
+      const revenueYtd = companyInvoices
+        .filter((i: any) => new Date(i.invoiceDate).getTime() >= ytdStart && (i.status === "paid" || i.status === "partial"))
+        .reduce((s: number, i: any) => s + (Number(i.paidAmount) || 0), 0) / 100;
+
+      const outstanding = companyInvoices
+        .filter((i: any) => i.status === "sent" || i.status === "partial" || i.status === "overdue")
+        .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
+
+      const billsPaid = companyBills
+        .filter((b: any) => b.status === "paid")
+        .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0) / 100;
+
+      const netPosition = revenueYtd - billsPaid;
+
+      const recentTransactions = [
+        ...companyInvoices.map((i: any) => ({
+          id: `invoice-${i.id}`,
+          type: "invoice" as const,
+          name: i.name,
+          amount: (Number(i.totalAmount) || 0) / 100,
+          date: i.invoiceDate,
+          status: i.status,
+        })),
+        ...companyBills.map((b: any) => ({
+          id: `bill-${b.id}`,
+          type: "bill" as const,
+          name: b.billNumber,
+          amount: -(Number(b.total) || 0) / 100,
+          date: b.billDate,
+          status: b.status,
+        })),
+      ]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 10);
+
+      res.json({ revenueYtd, outstanding, billsPaid, netPosition, recentTransactions });
+    } catch (err) {
+      console.error("[/api/business/financial-summary] error:", err);
+      res.status(500).json({ error: "Failed to compute financial summary" });
+    }
+  });
+
+  app.get("/api/business/project-profitability", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projects: projectsTbl, budgets: budgetsTbl } = await import("@shared/schema");
+      const [projectRows, budgetRows] = await Promise.all([
+        db.select().from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(budgetsTbl),
+      ]);
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p]));
+
+      const items = budgetRows
+        .filter((b: any) => projectsMap.has(b.projectId))
+        .map((b: any) => {
+          const project = projectsMap.get(b.projectId)!;
+          const revised = Number(b.revisedAmount) || 0;
+          const actual = Number(b.actualAmount) || 0;
+          const profit = Number(b.profitAmount) || 0;
+          const marginPercent = revised > 0 ? (profit / revised) * 100 : 0;
+          const variance = revised - (Number(b.forecastAmount) || 0);
+          return {
+            projectId: b.projectId,
+            projectName: (project as any).name,
+            revisedAmount: revised / 100,
+            actualAmount: actual / 100,
+            profitAmount: profit / 100,
+            varianceAmount: variance / 100,
+            marginPercent,
+          };
+        })
+        .sort((a, b) => b.marginPercent - a.marginPercent)
+        .slice(0, 10);
+
+      res.json({ projects: items });
+    } catch (err) {
+      console.error("[/api/business/project-profitability] error:", err);
+      res.status(500).json({ error: "Failed to compute project profitability" });
+    }
+  });
+
   // Business Dashboard Views Routes (with access control)
   app.get("/api/business-dashboard-views", requireAuth, async (req, res) => {
     try {

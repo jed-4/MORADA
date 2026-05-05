@@ -51,6 +51,7 @@ import {
 import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
 import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
+import { useFinancialPermission } from "@/hooks/use-permission";
 import type { DashboardTheme, Company, BusinessDashboardView } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -98,7 +99,8 @@ function SortableWidget({
   themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
   const [isResizing, setIsResizing] = useState(false);
-  
+  const hasFinancialAccess = useFinancialPermission();
+
   const {
     attributes,
     listeners,
@@ -112,6 +114,7 @@ function SortableWidget({
   if (!definition) return null;
 
   const WidgetComponent = definition.component;
+  const isLocked = !!definition.financialGated && !hasFinancialAccess;
 
   const sizeClasses: Record<string, string> = {
     sm: "col-span-2",
@@ -168,6 +171,8 @@ function SortableWidget({
         setIsResizing={setIsResizing}
         themeClassName={themeStyle?.className}
         themeStyleOverride={themeStyle?.style}
+        accent={definition.accent}
+        locked={isLocked}
       >
         <WidgetComponent
           widget={widget}

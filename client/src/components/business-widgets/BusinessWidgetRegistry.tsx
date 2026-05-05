@@ -1,17 +1,16 @@
-import { 
-  DollarSign, 
-  Users, 
-  TrendingUp, 
+import {
+  DollarSign,
+  Users,
   Activity,
   Building2,
   Clock,
-  FileText,
   BarChart3,
   Briefcase,
   AlertCircle,
   LineChart,
   PieChart,
-  Gauge
+  Gauge,
+  GitBranch,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import BusinessKPIsWidget from "./BusinessKPIsWidget";
@@ -25,16 +24,19 @@ import BusinessAlertsWidget from "./BusinessAlertsWidget";
 import BusinessRevenueWidget from "./BusinessRevenueWidget";
 import BusinessProfitabilityWidget from "./BusinessProfitabilityWidget";
 import BusinessUtilizationWidget from "./BusinessUtilizationWidget";
+import BusinessVariationsPendingWidget from "./BusinessVariationsPendingWidget";
 
 export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
   businessKPIs: {
     type: "businessKPIs",
     name: "Business KPIs",
-    description: "Key metrics: revenue, expenses, active projects, team members",
+    description: "Configurable KPI strip with period selector",
     icon: BarChart3,
     component: BusinessKPIsWidget,
     defaultSize: "xl",
     configurable: true,
+    accent: "purple",
+    defaultColumns: 8,
   },
   businessActivity: {
     type: "businessActivity",
@@ -44,6 +46,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessActivityWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "teal",
+    defaultColumns: 4,
   },
   businessTeam: {
     type: "businessTeam",
@@ -53,6 +57,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessTeamWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "green",
+    defaultColumns: 4,
   },
   businessProjects: {
     type: "businessProjects",
@@ -62,6 +68,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessProjectsWidget,
     defaultSize: "lg",
     configurable: true,
+    accent: "project",
+    defaultColumns: 6,
   },
   businessFinancials: {
     type: "businessFinancials",
@@ -71,6 +79,9 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessFinancialsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "financial",
+    financialGated: true,
+    defaultColumns: 4,
   },
   businessQuickActions: {
     type: "businessQuickActions",
@@ -80,6 +91,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessQuickActionsWidget,
     defaultSize: "sm",
     configurable: false,
+    accent: "purple",
+    defaultColumns: 2,
   },
   businessTimesheets: {
     type: "businessTimesheets",
@@ -89,6 +102,8 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessTimesheetsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "teal",
+    defaultColumns: 4,
   },
   businessAlerts: {
     type: "businessAlerts",
@@ -98,15 +113,20 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessAlertsWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "danger",
+    defaultColumns: 4,
   },
   businessRevenue: {
     type: "businessRevenue",
     name: "Revenue Trends",
-    description: "6-month revenue and expense trends with profit analysis",
+    description: "Monthly revenue trends and analysis",
     icon: LineChart,
     component: BusinessRevenueWidget,
-    defaultSize: "md",
+    defaultSize: "lg",
     configurable: true,
+    accent: "financial",
+    financialGated: true,
+    defaultColumns: 6,
   },
   businessProfitability: {
     type: "businessProfitability",
@@ -114,8 +134,11 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     description: "Margin analysis and budget variance by project",
     icon: PieChart,
     component: BusinessProfitabilityWidget,
-    defaultSize: "md",
+    defaultSize: "lg",
     configurable: true,
+    accent: "financial",
+    financialGated: true,
+    defaultColumns: 6,
   },
   businessUtilization: {
     type: "businessUtilization",
@@ -125,6 +148,19 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessUtilizationWidget,
     defaultSize: "md",
     configurable: true,
+    accent: "green",
+    defaultColumns: 4,
+  },
+  businessVariationsPending: {
+    type: "businessVariationsPending",
+    name: "Variations Pending",
+    description: "Pending variations across all projects, with amount + days waiting",
+    icon: GitBranch,
+    component: BusinessVariationsPendingWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "amber",
+    defaultColumns: 4,
   },
 };
 

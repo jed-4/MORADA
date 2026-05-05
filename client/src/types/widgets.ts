@@ -15,6 +15,18 @@ export interface Widget {
   };
 }
 
+export type WidgetAccent =
+  | "purple"
+  | "teal"
+  | "green"
+  | "amber"
+  | "coral"
+  | "financial"
+  | "project"
+  | "schedule"
+  | "success"
+  | "danger";
+
 export interface WidgetDefinition {
   type: string;
   name: string;
@@ -23,6 +35,10 @@ export interface WidgetDefinition {
   component: React.ComponentType<WidgetProps>;
   defaultSize: "sm" | "md" | "lg" | "xl";
   configurable?: boolean;
+  accent?: WidgetAccent;
+  financialGated?: boolean;
+  defaultColumns?: number;
+  defaultRowSpan?: number;
 }
 
 export interface WidgetProps {
