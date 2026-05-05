@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '@/hooks/use-auth';
 import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -910,6 +911,15 @@ const ESTIMATE_COLUMNS: Array<{ key: string; label: string }> = [
 
 function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  // Permission gate: only admin / owner roles may edit company defaults.
+  // Non-admins see the controls in true read-only state — no edit toggle,
+  // disabled inputs, no save buttons — instead of the previous best-effort
+  // "click and hope PATCH succeeds" UX.
+  const roleName = (user as { roleName?: string; role?: string } | null)?.roleName
+    ?? (user as { role?: string } | null)?.role
+    ?? '';
+  const canEditCompanyDefaults = ['Admin', 'Owner', 'admin', 'owner'].includes(roleName);
   const settings = (proposal.layoutSettings as LayoutSettings) || {};
 
   // Pull company-wide defaults: brand color + logo policy.
@@ -925,10 +935,11 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const companyShowLogo = companySettings?.proposalShowLogo;
   const companyLogoUrl = companySettings?.logoUrl || '';
 
-  // Best-effort permission probe: assume any authenticated user with company
-  // settings access can write defaults; if PATCH 403s the toast surfaces it.
-  // Expose a simple "edit defaults" toggle so non-admins see read-only values.
+  // Edit toggle is only meaningful when the user has permission. For users
+  // without permission this stays false and the UI hides save controls and
+  // disables value inputs.
   const [editCompanyDefaults, setEditCompanyDefaults] = useState(false);
+  const canEdit = canEditCompanyDefaults && editCompanyDefaults;
 
   const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
@@ -1047,12 +1058,14 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   ]);
 
   const updateVisibleColumns = (section: ProposalSection, columnKey: string, on: boolean) => {
-    const content = (section.content as Record<string, any>) || {};
+    const content = (section.content as Record<string, unknown> | null) ?? {};
+    const visibleColumnsRaw = (content as { visibleColumns?: unknown }).visibleColumns;
+    const togglesRaw = (content as { columnToggles?: unknown }).columnToggles;
     let current: string[];
-    if (Array.isArray(content.visibleColumns)) {
-      current = content.visibleColumns;
-    } else if (content.columnToggles && typeof content.columnToggles === 'object') {
-      const t = content.columnToggles as Record<string, boolean>;
+    if (Array.isArray(visibleColumnsRaw)) {
+      current = visibleColumnsRaw.filter((v): v is string => typeof v === 'string');
+    } else if (togglesRaw && typeof togglesRaw === 'object') {
+      const t = togglesRaw as Record<string, boolean>;
       current = ESTIMATE_COLUMNS.filter((c) => t[c.key] === true).map((c) => c.key);
     } else {
       // Legacy section with no saved visibility config — start from the same
@@ -1062,17 +1075,19 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     }
     const next = on ? Array.from(new Set([...current, columnKey])) : current.filter((k) => k !== columnKey);
     onSectionUpdate(section.id, {
-      content: { ...content, visibleColumns: next },
-    } as Partial<ProposalSection>);
+      content: { ...content, visibleColumns: next } as ProposalSection['content'],
+    });
   };
 
   const isColumnVisible = (section: ProposalSection, columnKey: string): boolean => {
-    const content = (section.content as Record<string, any>) || {};
-    if (Array.isArray(content.visibleColumns)) {
-      return content.visibleColumns.includes(columnKey);
+    const content = (section.content as Record<string, unknown> | null) ?? {};
+    const visibleColumnsRaw = (content as { visibleColumns?: unknown }).visibleColumns;
+    if (Array.isArray(visibleColumnsRaw)) {
+      return visibleColumnsRaw.includes(columnKey);
     }
-    if (content.columnToggles && typeof content.columnToggles === 'object') {
-      return (content.columnToggles as Record<string, boolean>)[columnKey] === true;
+    const togglesRaw = (content as { columnToggles?: unknown }).columnToggles;
+    if (togglesRaw && typeof togglesRaw === 'object') {
+      return (togglesRaw as Record<string, boolean>)[columnKey] === true;
     }
     return DEFAULT_VISIBLE_COLUMN_KEYS.has(columnKey);
   };
@@ -1105,28 +1120,34 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
             type="color"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!editCompanyDefaults && primaryColor === companyColor}
+            disabled={!canEdit && primaryColor === companyColor}
             data-testid="input-layout-primary-color"
             className="w-16 h-9 p-1"
           />
           <Input
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!editCompanyDefaults && primaryColor === companyColor}
+            disabled={!canEdit && primaryColor === companyColor}
             className="flex-1"
             data-testid="input-layout-primary-color-text"
           />
         </div>
         <div className="flex items-center justify-between gap-2 text-xs">
-          <button
-            type="button"
-            className="text-primary underline-offset-2 hover:underline"
-            onClick={() => setEditCompanyDefaults((v) => !v)}
-            data-testid="button-toggle-edit-company-defaults"
-          >
-            {editCompanyDefaults ? 'Lock company defaults' : 'Edit company defaults'}
-          </button>
-          {editCompanyDefaults && (
+          {canEditCompanyDefaults ? (
+            <button
+              type="button"
+              className="text-primary underline-offset-2 hover:underline"
+              onClick={() => setEditCompanyDefaults((v) => !v)}
+              data-testid="button-toggle-edit-company-defaults"
+            >
+              {editCompanyDefaults ? 'Lock company defaults' : 'Edit company defaults'}
+            </button>
+          ) : (
+            <span className="text-muted-foreground" data-testid="text-company-defaults-readonly">
+              Read-only — admin permission required to edit company defaults
+            </span>
+          )}
+          {canEdit && (
             <Button
               size="sm"
               variant="outline"
@@ -1201,12 +1222,12 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
           <Switch
             id="layout-logo"
             checked={showLogo}
-            disabled={!editCompanyDefaults && companyShowLogo !== undefined && showLogo === companyShowLogo}
+            disabled={!canEdit && companyShowLogo !== undefined && showLogo === companyShowLogo}
             onCheckedChange={setShowLogo}
             data-testid="switch-layout-logo"
           />
         </div>
-        {editCompanyDefaults && (
+        {canEdit && (
           <div className="flex justify-end">
             <Button
               size="sm"
