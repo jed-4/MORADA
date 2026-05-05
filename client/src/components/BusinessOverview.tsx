@@ -51,7 +51,7 @@ import {
 import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
 import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
-import { useFinancialPermission } from "@/hooks/use-permission";
+import { useFinancialPermission, usePermission } from "@/hooks/use-permission";
 import type { DashboardTheme, Company, BusinessDashboardView } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -100,6 +100,12 @@ function SortableWidget({
 }) {
   const [isResizing, setIsResizing] = useState(false);
   const hasFinancialAccess = useFinancialPermission();
+  const definitionForPerm = getBusinessWidgetDefinition(widget.type);
+  const reqPerm = definitionForPerm?.requiredPermission;
+  const hasSpecificPermission = usePermission(
+    reqPerm?.key ?? "__noop__",
+    reqPerm?.action ?? "view",
+  );
 
   const {
     attributes,
@@ -114,7 +120,9 @@ function SortableWidget({
   if (!definition) return null;
 
   const WidgetComponent = definition.component;
-  const isLocked = !!definition.financialGated && !hasFinancialAccess;
+  const isLocked = definition.requiredPermission
+    ? !hasSpecificPermission
+    : !!definition.financialGated && !hasFinancialAccess;
 
   const sizeClasses: Record<string, string> = {
     sm: "col-span-2",

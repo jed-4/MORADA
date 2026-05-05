@@ -5,18 +5,22 @@ import type { Project, Task, Estimate } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
-export default function BusinessProjectsWidget({ widget }: WidgetProps) {
+export default function BusinessProjectsWidget({}: WidgetProps) {
   const [, navigate] = useLocation();
-  
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
 
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
-  });
+  const projectsQ = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+
+  if (projectsQ.isLoading) return <WidgetSkeleton rows={4} />;
+  if (projectsQ.isError)
+    return <WidgetError onRetry={() => projectsQ.refetch()} message="Couldn't load projects." />;
+
+  const projects = projectsQ.data ?? [];
 
   const activeProjects = projects.filter(p => p.status === "active");
 
@@ -46,14 +50,7 @@ export default function BusinessProjectsWidget({ widget }: WidgetProps) {
     }
   };
 
-  if (activeProjects.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-32 text-muted-foreground text-sm" data-testid="business-projects-widget">
-        <Building2 className="h-8 w-8 mb-2 opacity-50" />
-        No active projects
-      </div>
-    );
-  }
+  if (activeProjects.length === 0) return <WidgetEmpty title="No active projects" />;
 
   return (
     <ScrollArea className="h-[320px]" data-testid="business-projects-widget">

@@ -4,20 +4,33 @@ import type { WidgetProps } from "@/types/widgets";
 import type { Task, Bill, Reminder } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Clock, DollarSign, Bell, CheckCircle } from "lucide-react";
+import { AlertTriangle, Clock, DollarSign, Bell } from "lucide-react";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
-export default function BusinessAlertsWidget({ widget }: WidgetProps) {
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
-  });
+export default function BusinessAlertsWidget({}: WidgetProps) {
+  const tasksQ = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const billsQ = useQuery<Bill[]>({ queryKey: ["/api/bills"] });
+  const remindersQ = useQuery<Reminder[]>({ queryKey: ["/api/reminders"] });
 
-  const { data: bills = [] } = useQuery<Bill[]>({
-    queryKey: ["/api/bills"],
-  });
+  if (tasksQ.isLoading || billsQ.isLoading || remindersQ.isLoading)
+    return <WidgetSkeleton rows={4} />;
+  if (tasksQ.isError || billsQ.isError || remindersQ.isError)
+    return (
+      <WidgetError
+        message="Couldn't load alerts."
+        onRetry={() => {
+          tasksQ.refetch();
+          billsQ.refetch();
+          remindersQ.refetch();
+        }}
+      />
+    );
 
-  const { data: reminders = [] } = useQuery<Reminder[]>({
-    queryKey: ["/api/reminders"],
-  });
+  const tasks = tasksQ.data ?? [];
+  const bills = billsQ.data ?? [];
+  const reminders = remindersQ.data ?? [];
 
   const now = new Date();
   const upcomingThreshold = addDays(now, 7);
@@ -77,11 +90,10 @@ export default function BusinessAlertsWidget({ widget }: WidgetProps) {
 
   if (alerts.length === 0 && pendingBillsCount === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-32 text-muted-foreground text-sm" data-testid="business-alerts-widget">
-        <CheckCircle className="h-8 w-8 mb-2 text-green-500 opacity-50" />
-        <p>All caught up!</p>
-        <p className="text-xs">No alerts or overdue items</p>
-      </div>
+      <WidgetEmpty
+        title="All caught up!"
+        message="No alerts or overdue items"
+      />
     );
   }
 

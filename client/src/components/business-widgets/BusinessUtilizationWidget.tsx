@@ -7,20 +7,22 @@ import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
+
 const TARGET_HOURS_PER_WEEK = 40;
 
-export default function BusinessUtilizationWidget({ widget }: WidgetProps) {
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
+export default function BusinessUtilizationWidget({}: WidgetProps) {
+  const usersQ = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: timesheets = [] } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
 
-  const { data: timesheets = [] } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets"],
-  });
-
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
-  });
+  if (usersQ.isLoading) return <WidgetSkeleton rows={4} />;
+  if (usersQ.isError)
+    return <WidgetError onRetry={() => usersQ.refetch()} message="Couldn't load utilization." />;
+  const users = usersQ.data ?? [];
+  if (users.length === 0) return <WidgetEmpty title="No team members yet" />;
 
   const now = new Date();
   const weekStart = startOfWeek(now);

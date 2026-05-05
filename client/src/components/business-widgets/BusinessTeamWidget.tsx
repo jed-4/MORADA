@@ -5,23 +5,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
-export default function BusinessTeamWidget({ widget }: WidgetProps) {
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
+export default function BusinessTeamWidget({}: WidgetProps) {
+  const usersQ = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { data: timesheets = [] } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: roles = [] } = useQuery<UserRole[]>({ queryKey: ["/api/user-roles"] });
 
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
-  });
-
-  const { data: timesheets = [] } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets"],
-  });
-
-  const { data: roles = [] } = useQuery<UserRole[]>({
-    queryKey: ["/api/user-roles"],
-  });
+  if (usersQ.isLoading) return <WidgetSkeleton rows={4} />;
+  if (usersQ.isError)
+    return <WidgetError onRetry={() => usersQ.refetch()} message="Couldn't load team." />;
+  const users = usersQ.data ?? [];
 
   const activeUsers = users.filter(u => u.status !== "inactive");
 
@@ -57,13 +54,7 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
     return role?.name || null;
   };
 
-  if (activeUsers.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground text-sm" data-testid="business-team-widget">
-        No team members found
-      </div>
-    );
-  }
+  if (activeUsers.length === 0) return <WidgetEmpty title="No team members found" />;
 
   return (
     <ScrollArea className="h-[280px]" data-testid="business-team-widget">

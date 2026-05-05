@@ -37,6 +37,14 @@ export interface WidgetDefinition {
   configurable?: boolean;
   accent?: WidgetAccent;
   financialGated?: boolean;
+  /**
+   * Specific permission required to view this widget. When set, the
+   * dashboard renders a locked overlay if the user lacks this permission,
+   * matching the backend `requirePermission` middleware on the widget's
+   * data endpoint. Takes precedence over the broader `financialGated`
+   * "any financial.*" check.
+   */
+  requiredPermission?: { key: string; action?: "view" | "edit" | "add" | "delete" | "approve" };
   defaultColumns?: number;
   defaultRowSpan?: number;
 }

@@ -81,7 +81,9 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "financial",
     financialGated: true,
+    requiredPermission: { key: "financial.invoices", action: "view" },
     defaultColumns: 4,
+    defaultRowSpan: 2,
   },
   businessQuickActions: {
     type: "businessQuickActions",
@@ -126,7 +128,9 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "financial",
     financialGated: true,
+    requiredPermission: { key: "financial.invoices", action: "view" },
     defaultColumns: 6,
+    defaultRowSpan: 2,
   },
   businessProfitability: {
     type: "businessProfitability",
@@ -138,7 +142,9 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "financial",
     financialGated: true,
+    requiredPermission: { key: "financial.budget", action: "view" },
     defaultColumns: 6,
+    defaultRowSpan: 2,
   },
   businessUtilization: {
     type: "businessUtilization",

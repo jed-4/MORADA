@@ -5,19 +5,20 @@ import type { Timesheet, User, Project } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Clock, CheckCircle, AlertCircle, XCircle } from "lucide-react";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
-export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
-  const { data: timesheets = [] } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets"],
-  });
+export default function BusinessTimesheetsWidget({}: WidgetProps) {
+  const timesheetsQ = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
-
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
+  if (timesheetsQ.isLoading) return <WidgetSkeleton rows={4} />;
+  if (timesheetsQ.isError)
+    return <WidgetError onRetry={() => timesheetsQ.refetch()} message="Couldn't load timesheets." />;
+  const timesheets = timesheetsQ.data ?? [];
+  if (timesheets.length === 0) return <WidgetEmpty title="No timesheet entries yet" />;
 
   const now = new Date();
   const weekStart = startOfWeek(now);
