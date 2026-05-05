@@ -76,13 +76,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }, [widget.title, widget.config]);
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: userId }],
-    queryFn: async () => {
-      if (!userId) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${userId}`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      return response.json();
-    },
+    queryKey: ["/api/tasks/my"],
     enabled: !!userId,
   });
 
@@ -99,7 +93,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: userId }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });

@@ -12,7 +12,7 @@ import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 interface Memo {
   id: string;
   content: string;
-  isPinned?: boolean;
+  pinned?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -30,25 +30,13 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
   }, [widget.title, widget.config]);
 
   const { data: memos = [], isLoading } = useQuery<Memo[]>({
-    queryKey: ["/api/memos", userId],
-    queryFn: async () => {
-      if (!userId) return [];
-      try {
-        const response = await fetch(`/api/memos?userId=${userId}`, {
-          credentials: 'include'
-        });
-        if (!response.ok) return [];
-        return response.json();
-      } catch {
-        return [];
-      }
-    },
+    queryKey: ["/api/user-memos"],
     enabled: !!userId,
   });
 
   const sortedMemos = [...memos].sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
     return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
   });
 
@@ -158,7 +146,7 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
               data-testid={`memo-${memo.id}`}
             >
               <div className="flex items-start gap-2">
-                {memo.isPinned ? (
+                {memo.pinned ? (
                   <Pin className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
                 ) : (
                   <FileText className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />

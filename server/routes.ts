@@ -27032,7 +27032,31 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const user = req.user as any;
       if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
       const tasks = await storage.getTasksByUser(user.id, user.companyId);
-      res.json(tasks);
+
+      // Enrich each task with the project display name (when applicable) so
+      // widgets can render context without a second projects fetch.
+      const projectIds = Array.from(new Set(
+        tasks
+          .map((t: any) => t.projectId || (t.taskContextType === "project" ? t.taskContextId : null))
+          .filter((id: string | null): id is string => Boolean(id)),
+      ));
+
+      let projectNameMap = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const allProjects = await storage.getProjects();
+        projectNameMap = new Map(
+          allProjects
+            .filter((p: any) => projectIds.includes(p.id))
+            .map((p: any) => [p.id, p.name as string]),
+        );
+      }
+
+      const enriched = tasks.map((t: any) => {
+        const pid = t.projectId || (t.taskContextType === "project" ? t.taskContextId : null);
+        return { ...t, projectName: pid ? projectNameMap.get(pid) ?? null : null };
+      });
+
+      res.json(enriched);
     } catch (error: any) {
       console.error("[GET /api/tasks/my] error:", error);
       res.status(500).json({ error: "Failed to fetch user tasks" });
