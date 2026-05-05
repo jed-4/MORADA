@@ -1053,13 +1053,23 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     } as Partial<ProposalSection>);
   };
 
+  // Renderer defaults for legacy estimate sections that have neither
+  // `visibleColumns` nor explicit `columnToggles` saved. Mirrors the
+  // canonical 5-column spec so the checkbox UI matches what the PDF
+  // actually shows.
+  const DEFAULT_VISIBLE_COLUMN_KEYS = new Set([
+    'description', 'quantity', 'unit', 'unitCostIncTax', 'amountIncTax',
+  ]);
+
   const isColumnVisible = (section: ProposalSection, columnKey: string): boolean => {
     const content = (section.content as Record<string, any>) || {};
     if (Array.isArray(content.visibleColumns)) {
       return content.visibleColumns.includes(columnKey);
     }
-    const t = (content.columnToggles || {}) as Record<string, boolean>;
-    return t[columnKey] === true;
+    if (content.columnToggles && typeof content.columnToggles === 'object') {
+      return (content.columnToggles as Record<string, boolean>)[columnKey] === true;
+    }
+    return DEFAULT_VISIBLE_COLUMN_KEYS.has(columnKey);
   };
 
   return (
