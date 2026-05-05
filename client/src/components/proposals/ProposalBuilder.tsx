@@ -764,7 +764,6 @@ export function ProposalBuilder({
           <TabsList className="w-full">
             <TabsTrigger value="sections" className="flex-1" data-testid="tab-sections">Sections</TabsTrigger>
             <TabsTrigger value="layout" className="flex-1" data-testid="tab-layout">Layout</TabsTrigger>
-            <TabsTrigger value="revisions" className="flex-1" data-testid="tab-revisions">Revisions</TabsTrigger>
           </TabsList>
           <TabsContent value="sections" className="flex-1 flex flex-col min-h-0 mt-4">
             <div className="flex items-center justify-between mb-4">
@@ -819,10 +818,6 @@ export function ProposalBuilder({
 
           <TabsContent value="layout" className="flex-1 min-h-0 mt-4 overflow-auto">
             <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
-          </TabsContent>
-
-          <TabsContent value="revisions" className="flex-1 min-h-0 mt-4 overflow-auto">
-            <RevisionHistoryPanel proposal={proposal} projectId={project?.id} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1319,6 +1314,7 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
           {ordered.map((e) => (
             <SelectItem key={e.id} value={e.id} className="text-xs">
               {revisionLabel(e.version)} — {e.name}
+              {e.status ? ` (${e.status})` : ''}
             </SelectItem>
           ))}
         </SelectContent>
@@ -1754,8 +1750,8 @@ export function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPan
           className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs space-y-1"
           data-testid="banner-superseded"
         >
-          <p className="font-medium">This revision has been superseded.</p>
-          <p className="text-muted-foreground">A newer version exists. Edits should be made to the latest revision.</p>
+          <p className="font-medium">This revision has been superseded — clients cannot accept this revision.</p>
+          <p className="text-muted-foreground">A newer version exists. Edits and acceptance should be made on the latest revision.</p>
         </div>
       )}
 
