@@ -19,10 +19,26 @@ declare module 'express-session' {
 }
 
 /**
- * Safe user helper that removes all sensitive fields
+ * Safe user helper that removes all sensitive fields before sending to the
+ * client. The User schema does not have a `password` column — credentials
+ * live in `passwordHash`, plus OAuth tokens. All of these must be stripped.
  */
-export function toSafeUser(user: User): Omit<User, 'password'> {
-  const { password, ...safeUser } = user;
+export type SafeUser = Omit<
+  User,
+  | 'passwordHash'
+  | 'googleCalendarAccessToken'
+  | 'googleCalendarRefreshToken'
+  | 'googleCalendarTokenExpiry'
+>;
+
+export function toSafeUser(user: User): SafeUser {
+  const {
+    passwordHash: _ph,
+    googleCalendarAccessToken: _gat,
+    googleCalendarRefreshToken: _grt,
+    googleCalendarTokenExpiry: _gte,
+    ...safeUser
+  } = user;
   return safeUser;
 }
 

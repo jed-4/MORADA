@@ -75,6 +75,24 @@ export default {
         "coral-light": "hsl(var(--coral-light))",
         "rose-accent": "hsl(var(--rose) / <alpha-value>)",
         "rose-light": "hsl(var(--rose-light))",
+        // BuildPro foundation tokens
+        bp: {
+          card: "hsl(var(--bp-card) / <alpha-value>)",
+          "card-foreground": "hsl(var(--bp-card-foreground) / <alpha-value>)",
+          border: "hsl(var(--bp-border) / <alpha-value>)",
+          muted: "hsl(var(--bp-muted) / <alpha-value>)",
+          subtle: "hsl(var(--bp-subtle) / <alpha-value>)",
+          purple: "hsl(var(--bp-purple) / <alpha-value>)",
+          teal: "hsl(var(--bp-teal) / <alpha-value>)",
+          green: "hsl(var(--bp-green) / <alpha-value>)",
+          amber: "hsl(var(--bp-amber) / <alpha-value>)",
+          coral: "hsl(var(--bp-coral) / <alpha-value>)",
+          "accent-financial": "hsl(var(--bp-accent-financial) / <alpha-value>)",
+          "accent-project": "hsl(var(--bp-accent-project) / <alpha-value>)",
+          "accent-schedule": "hsl(var(--bp-accent-schedule) / <alpha-value>)",
+          "accent-success": "hsl(var(--bp-accent-success) / <alpha-value>)",
+          "accent-danger": "hsl(var(--bp-accent-danger) / <alpha-value>)",
+        },
         // Status pill (soft pastel) tokens — declared on `colors` so both
         // `text-status-*` and `bg-status-*-bg` utilities are generated.
         "status-success": {

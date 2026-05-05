@@ -6589,15 +6589,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const company = await storage.getCompany(user.companyId);
         companyNickname = company?.nickname || company?.name || null;
       }
-      
+
+      // Build the user's effective permission map: { [permissionKey]: actions[] }
+      // and an authoritative `isAdminLike` flag. Both are used by the frontend
+      // usePermission() / useFinancialPermission() hooks (BuildPro WidgetCard
+      // locked overlay). The flag mirrors the server `requirePermission`
+      // bypass: built-in role AND name matches admin / owner / general manage.
+      const effectivePermissions: Record<string, string[]> = {};
+      let isAdminLike = false;
+      if (user.roleId) {
+        try {
+          const role = await storage.getUserRole(user.roleId);
+          if (role) {
+            const roleName = (role.name ?? '').toLowerCase();
+            isAdminLike =
+              !!role.isBuiltIn &&
+              (roleName.includes('admin') ||
+                roleName.includes('owner') ||
+                roleName.includes('general manage'));
+          }
+          const rps = await storage.getRolePermissions(user.roleId);
+          for (const rp of rps) {
+            const perm = await storage.getPermission(rp.permissionId);
+            if (!perm) continue;
+            const actions = Array.isArray(rp.allowedActions)
+              ? (rp.allowedActions as string[])
+              : [];
+            effectivePermissions[perm.key] = actions;
+          }
+        } catch (permErr) {
+          console.error('[GET /api/auth/user] effectivePermissions error:', permErr);
+        }
+      }
+
       console.log('✅ [GET /api/auth/user] Returning user:', {
         id: safeUser.id,
         email: safeUser.email,
         companyId: safeUser.companyId,
         roleId: safeUser.roleId,
         companyNickname,
+        isAdminLike,
       });
-      res.json({ ...safeUser, companyNickname });
+      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });

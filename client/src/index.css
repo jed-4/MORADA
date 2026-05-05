@@ -152,6 +152,31 @@
   --status-action-fg:  184 51% 63%;          /* #70CAD0 teal */
   --status-action-bg:  183 56% 92%;          /* #DFF5F6 */
 
+  /* ====================================================
+   * BUILDPRO DESIGN TOKENS — Foundation (light)
+   * Used by WidgetCard chrome and the per-dashboard widgets.
+   * Layered ON TOP of existing per-view DashboardThemeSettings.
+   * ==================================================== */
+  --bp-card: 0 0% 100%;                      /* widget surface */
+  --bp-card-foreground: 26 9% 16%;
+  --bp-border: 60 5% 91%;                    /* widget hairline */
+  --bp-muted: 36 4% 52%;                     /* secondary widget text */
+  --bp-subtle: 48 14% 96%;                   /* skeleton / divider tint */
+
+  /* Accent palette — drives the WidgetCard top accent bar */
+  --bp-purple: 261 44% 70%;                  /* #A890D4 */
+  --bp-teal:   184 51% 63%;                  /* #70CAD0 */
+  --bp-green:  147 39% 65%;                  /* #82C8A2 */
+  --bp-amber:  42 54% 64%;                   /* #D4B670 */
+  --bp-coral:  11 52% 70%;                   /* #DA988A */
+
+  /* Semantic accent aliases (per dashboard widget category) */
+  --bp-accent-financial: var(--bp-amber);
+  --bp-accent-project:   var(--bp-purple);
+  --bp-accent-schedule:  var(--bp-teal);
+  --bp-accent-success:   var(--bp-green);
+  --bp-accent-danger:    var(--bp-coral);
+
   /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
 
   /* Fallback for older browsers */
@@ -329,6 +354,28 @@
   --status-danger-bg:  11 52% 70% / 0.18;
   --status-action-fg:  184 51% 63%;
   --status-action-bg:  184 51% 63% / 0.18;
+
+  /* ====================================================
+   * BUILDPRO DESIGN TOKENS — Foundation (dark)
+   * ==================================================== */
+  --bp-card: 36 7% 14%;                      /* #252320 — slight elevation */
+  --bp-card-foreground: 40 21% 89%;
+  --bp-border: 36 6% 17%;                    /* #2E2C29 */
+  --bp-muted: 40 6% 64%;                     /* #A8A49C */
+  --bp-subtle: 36 7% 18%;                    /* skeleton tint on dark */
+
+  /* Accent palette — same hues as light, dark mode keeps brand colour */
+  --bp-purple: 261 44% 70%;
+  --bp-teal:   184 51% 63%;
+  --bp-green:  147 39% 65%;
+  --bp-amber:  42 54% 64%;
+  --bp-coral:  11 52% 70%;
+
+  --bp-accent-financial: var(--bp-amber);
+  --bp-accent-project:   var(--bp-purple);
+  --bp-accent-schedule:  var(--bp-teal);
+  --bp-accent-success:   var(--bp-green);
+  --bp-accent-danger:    var(--bp-coral);
 }
 
 /* =========================================================
