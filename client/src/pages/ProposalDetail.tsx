@@ -498,7 +498,7 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                primaryColor={companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
+                primaryColor={(proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor || companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
               />
             </div>
           </div>
