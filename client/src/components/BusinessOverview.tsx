@@ -320,16 +320,20 @@ export default function BusinessOverview() {
     const definition = getBusinessWidgetDefinition(type);
     if (!definition) return;
 
+    const fallbackColumns =
+      definition.defaultSize === 'xl' ? 8 :
+      definition.defaultSize === 'lg' ? 6 :
+      definition.defaultSize === 'md' ? 4 : 2;
+
     const newWidget: Widget = {
       id: Date.now().toString(),
       type,
       title: definition.name,
       size: definition.defaultSize,
-      dimensions: { 
-        columns: definition.defaultSize === 'xl' ? 8 : 
-                 definition.defaultSize === 'lg' ? 6 : 
-                 definition.defaultSize === 'md' ? 4 : 2 
-      }
+      dimensions: {
+        columns: definition.defaultColumns ?? fallbackColumns,
+        ...(definition.defaultRowSpan ? { height: definition.defaultRowSpan * 180 } : {}),
+      },
     };
 
     const newWidgets = [...widgets, newWidget];

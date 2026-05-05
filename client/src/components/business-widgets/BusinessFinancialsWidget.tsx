@@ -1,91 +1,72 @@
 import { useQuery } from "@tanstack/react-query";
 import type { WidgetProps } from "@/types/widgets";
-import type { Bill, Estimate, Variation } from "@shared/schema";
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Wallet } from "lucide-react";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
-export default function BusinessFinancialsWidget({ widget }: WidgetProps) {
-  const { data: bills = [] } = useQuery<Bill[]>({
-    queryKey: ["/api/bills"],
+interface FinancialSummary {
+  revenueYtd: number;
+  outstanding: number;
+  billsPaid: number | null;
+  netPosition: number | null;
+  recentTransactions: Array<{
+    id: string;
+    type: "invoice" | "bill";
+    name: string;
+    amount: number;
+    date: string;
+    status: string;
+  }>;
+  canViewBills: boolean;
+}
+
+function formatCurrency(value: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
+export default function BusinessFinancialsWidget({}: WidgetProps) {
+  const { data, isLoading, isError, refetch } = useQuery<FinancialSummary>({
+    queryKey: ["/api/business/financial-summary"],
   });
 
-  const { data: estimates = [] } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates"],
-  });
-
-  const { data: variations = [] } = useQuery<Variation[]>({
-    queryKey: ["/api/variations"],
-  });
-
-  const totalBilled = bills
-    .filter(b => b.status === "approved" || b.status === "paid")
-    .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
-  const pendingBills = bills
-    .filter(b => b.status === "pending")
-    .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
-  const totalEstimated = estimates.reduce((sum, e) => sum + (Number(e.totalCost) || 0), 0);
-
-  const approvedVariations = variations
-    .filter(v => v.status === "approved")
-    .reduce((sum, v) => sum + (Number(v.amount) || 0), 0);
-
-  const formatCurrency = (value: number) => {
-    if (isNaN(value) || value === null || value === undefined) return "$0";
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
-    return `$${value.toFixed(0)}`;
-  };
-
-  const grossMargin = totalEstimated - totalBilled;
+  if (isLoading) return <WidgetSkeleton rows={4} />;
+  if (isError)
+    return <WidgetError onRetry={() => refetch()} message="Couldn't load financial summary." />;
+  if (!data) return <WidgetEmpty title="No financial data" />;
 
   const metrics = [
-    {
-      label: "Total Estimated",
-      value: formatCurrency(totalEstimated),
-      icon: DollarSign,
-      color: "text-blue-500",
-    },
-    {
-      label: "Costs (Approved)",
-      value: formatCurrency(totalBilled),
-      icon: TrendingDown,
-      color: "text-orange-500",
-    },
-    {
-      label: "Costs (Pending)",
-      value: formatCurrency(pendingBills),
-      icon: TrendingDown,
-      color: "text-yellow-500",
-    },
-    {
-      label: "Approved Variations",
-      value: formatCurrency(approvedVariations),
-      icon: TrendingUp,
-      color: "text-purple-500",
-    },
+    { label: "Revenue YTD", value: formatCurrency(data.revenueYtd), icon: DollarSign },
+    { label: "Outstanding", value: formatCurrency(data.outstanding), icon: TrendingUp },
+    { label: "Bills Paid", value: formatCurrency(data.billsPaid), icon: TrendingDown },
+    { label: "Net Position", value: formatCurrency(data.netPosition), icon: Wallet },
   ];
 
   return (
-    <div className="space-y-3" data-testid="widget-financial-summary">
-      {metrics.map((metric, index) => (
-        <div key={index} className="flex items-center justify-between p-2 rounded-md border" data-testid={`metric-${metric.label.toLowerCase().replace(/\s+/g, '-')}`}>
+    <div className="space-y-2" data-testid="widget-financial-summary">
+      {metrics.map((metric) => (
+        <div
+          key={metric.label}
+          className="flex items-center justify-between rounded-md border border-bp-border px-2 py-1.5"
+          data-testid={`metric-${metric.label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
           <div className="flex items-center gap-2">
-            <metric.icon className={`h-4 w-4 ${metric.color}`} />
-            <span className="text-sm text-muted-foreground">{metric.label}</span>
+            <metric.icon className="h-3.5 w-3.5 text-bp-muted" />
+            <span className="text-sm text-bp-muted">{metric.label}</span>
           </div>
-          <span className="text-sm font-semibold" data-testid={`value-${metric.label.toLowerCase().replace(/\s+/g, '-')}`}>{metric.value}</span>
-        </div>
-      ))}
-      
-      <div className="pt-2 border-t mt-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Gross Margin</span>
-          <span className={`text-sm font-bold ${grossMargin >= 0 ? 'text-status-success' : 'text-status-danger'}`} data-testid="value-gross-margin">
-            {formatCurrency(grossMargin)}
+          <span
+            className="text-sm font-semibold"
+            data-testid={`value-${metric.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            {metric.value}
           </span>
         </div>
-      </div>
+      ))}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GripVertical, Pencil, Lock } from "lucide-react";
 import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 import {
   DndContext,
   closestCenter,
@@ -215,7 +216,10 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
                     <def.icon className="h-3 w-3" />
                   )}
                 </div>
-                <div className="text-xl font-semibold leading-tight">
+                <div
+                  className="text-xl font-semibold leading-tight"
+                  data-testid={`kpi-value-${key}`}
+                >
                   {display}
                 </div>
               </div>
@@ -224,9 +228,7 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
         </div>
       )}
 
-      {isError && (
-        <p className="mt-2 text-xs text-bp-muted">Some metrics could not be loaded.</p>
-      )}
+      {isError && <WidgetError message="Some metrics could not be loaded." />}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-md" data-testid="kpi-edit-dialog">

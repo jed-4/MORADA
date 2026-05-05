@@ -8622,11 +8622,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
+      const canViewBills = await storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false);
+
       const { projects: projectsTbl, clientInvoices: invoicesTbl, bills: billsTbl } = await import("@shared/schema");
       const [projectRows, invoiceRows, billRows] = await Promise.all([
         db.select({ id: projectsTbl.id }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
         db.select().from(invoicesTbl),
-        db.select().from(billsTbl),
+        canViewBills ? db.select().from(billsTbl) : Promise.resolve([] as any[]),
       ]);
       const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
       const ytdStart = new Date(new Date().getFullYear(), 0, 1).getTime();
@@ -8642,34 +8644,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter((i: any) => i.status === "sent" || i.status === "partial" || i.status === "overdue")
         .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
 
-      const billsPaid = companyBills
-        .filter((b: any) => b.status === "paid")
-        .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0) / 100;
+      const billsPaid = canViewBills
+        ? companyBills
+            .filter((b: any) => b.status === "paid")
+            .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0) / 100
+        : null;
 
-      const netPosition = revenueYtd - billsPaid;
+      const netPosition = canViewBills && billsPaid !== null ? revenueYtd - billsPaid : null;
 
-      const recentTransactions = [
-        ...companyInvoices.map((i: any) => ({
-          id: `invoice-${i.id}`,
-          type: "invoice" as const,
-          name: i.name,
-          amount: (Number(i.totalAmount) || 0) / 100,
-          date: i.invoiceDate,
-          status: i.status,
-        })),
-        ...companyBills.map((b: any) => ({
-          id: `bill-${b.id}`,
-          type: "bill" as const,
-          name: b.billNumber,
-          amount: -(Number(b.total) || 0) / 100,
-          date: b.billDate,
-          status: b.status,
-        })),
-      ]
+      const invoiceTxns = companyInvoices.map((i: any) => ({
+        id: `invoice-${i.id}`,
+        type: "invoice" as const,
+        name: i.name,
+        amount: (Number(i.totalAmount) || 0) / 100,
+        date: i.invoiceDate,
+        status: i.status,
+      }));
+      const billTxns = canViewBills
+        ? companyBills.map((b: any) => ({
+            id: `bill-${b.id}`,
+            type: "bill" as const,
+            name: b.billNumber,
+            amount: -(Number(b.total) || 0) / 100,
+            date: b.billDate,
+            status: b.status,
+          }))
+        : [];
+      const recentTransactions = [...invoiceTxns, ...billTxns]
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 10);
 
-      res.json({ revenueYtd, outstanding, billsPaid, netPosition, recentTransactions });
+      res.json({ revenueYtd, outstanding, billsPaid, netPosition, recentTransactions, canViewBills });
     } catch (err) {
       console.error("[/api/business/financial-summary] error:", err);
       res.status(500).json({ error: "Failed to compute financial summary" });
