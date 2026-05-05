@@ -1120,14 +1120,12 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
             type="color"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!canEditCompanyDefaults}
             data-testid="input-layout-primary-color"
             className="w-16 h-9 p-1"
           />
           <Input
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            disabled={!canEditCompanyDefaults}
             className="flex-1"
             data-testid="input-layout-primary-color-text"
           />
@@ -1222,7 +1220,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
           <Switch
             id="layout-logo"
             checked={showLogo}
-            disabled={!canEditCompanyDefaults}
             onCheckedChange={setShowLogo}
             data-testid="switch-layout-logo"
           />
