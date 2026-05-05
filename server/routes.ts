@@ -9003,6 +9003,150 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Xero-backed KPI endpoints (revenue, outstanding A/R, cash position)
+  // ---------------------------------------------------------------------------
+  // Small in-process cache so repeated dashboard renders within the TTL window
+  // don't hammer Xero. Keyed by `${connectionId}:${kpi}:${suffix}` where suffix
+  // captures any query params (period, sorted account-ids list). Cache is
+  // cleared whenever a company disconnects Xero.
+  type XeroKpiCacheEntry = { value: any; expiresAt: number };
+  const xeroKpiCache = new Map<string, XeroKpiCacheEntry>();
+  const XERO_KPI_TTL = {
+    revenue: 15 * 60 * 1000,
+    outstanding: 15 * 60 * 1000,
+    cash: 5 * 60 * 1000,
+  };
+  const xeroKpiCacheGet = (key: string): any | null => {
+    const hit = xeroKpiCache.get(key);
+    if (!hit) return null;
+    if (hit.expiresAt <= Date.now()) {
+      xeroKpiCache.delete(key);
+      return null;
+    }
+    return hit.value;
+  };
+  const xeroKpiCacheSet = (key: string, value: any, ttlMs: number) => {
+    xeroKpiCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  };
+  const xeroKpiCacheClearForConnection = (connectionId: string) => {
+    const prefix = `${connectionId}:`;
+    for (const key of Array.from(xeroKpiCache.keys())) {
+      if (key.startsWith(prefix)) xeroKpiCache.delete(key);
+    }
+  };
+  // Expose so the /api/xero/disconnect route can flush this connection's cache.
+  (app as any).locals.xeroKpiCacheClearForConnection = xeroKpiCacheClearForConnection;
+
+  // True when the failure is "Xero is unavailable" (no connection / token
+  // expired / refresh failed / 401 from Xero) rather than a real bug. The
+  // widget needs to distinguish "no Xero" from "real bug".
+  const isXeroUnavailableError = (err: any): boolean => {
+    const msg = String(err?.message || "");
+    return /not active|reconnect Xero|refresh token has expired|invalid_grant|\b401\b/i.test(msg);
+  };
+
+  app.get("/api/kpis/revenue-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const period = parseKpiPeriod(req.query.period);
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.json({ error: "xero_unavailable" });
+
+      const cacheKey = `${connection.id}:revenue:${period}`;
+      const cached = xeroKpiCacheGet(cacheKey);
+      if (cached !== null) return res.json(cached);
+
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const fromDate = start.toISOString().slice(0, 10);
+      const toDate = end.toISOString().slice(0, 10);
+      const total = await xeroService.getRevenueTotal(connection.id, fromDate, toDate);
+      const payload = { value: total };
+      xeroKpiCacheSet(cacheKey, payload, XERO_KPI_TTL.revenue);
+      res.json(payload);
+    } catch (err: any) {
+      if (isXeroUnavailableError(err)) {
+        return res.json({ error: "xero_unavailable" });
+      }
+      console.error("[/api/kpis/revenue-xero] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/outstanding-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.json({ error: "xero_unavailable" });
+
+      const cacheKey = `${connection.id}:outstanding:all`;
+      const cached = xeroKpiCacheGet(cacheKey);
+      if (cached !== null) return res.json(cached);
+
+      const total = await xeroService.getOutstandingReceivablesTotal(connection.id);
+      const payload = { value: total };
+      xeroKpiCacheSet(cacheKey, payload, XERO_KPI_TTL.outstanding);
+      res.json(payload);
+    } catch (err: any) {
+      if (isXeroUnavailableError(err)) {
+        return res.json({ error: "xero_unavailable" });
+      }
+      console.error("[/api/kpis/outstanding-xero] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/cash-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.json({ error: "xero_unavailable" });
+
+      const rawAccountIds = typeof req.query.accountIds === "string" ? req.query.accountIds : "";
+      const requestedIds = rawAccountIds
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const sortedIds = [...new Set(requestedIds)].sort();
+      const cacheSuffix = sortedIds.length > 0 ? sortedIds.join(",") : "all";
+      const cacheKey = `${connection.id}:cash:${cacheSuffix}`;
+      const cached = xeroKpiCacheGet(cacheKey);
+      if (cached !== null) return res.json(cached);
+
+      const allAccounts = await xeroService.getBankAccountBalances(connection.id);
+      const filtered = sortedIds.length > 0
+        ? allAccounts.filter((a) => sortedIds.includes(a.accountId))
+        : allAccounts;
+
+      const accounts = filtered.map((a) => ({
+        id: a.accountId,
+        name: a.name,
+        statementBalance: a.statementBalance,
+        xeroBalance: a.xeroBalance,
+      }));
+      const totalStatement = accounts.reduce((s, a) => s + (Number(a.statementBalance) || 0), 0);
+      const totalXero = accounts.reduce((s, a) => s + (Number(a.xeroBalance) || 0), 0);
+      const payload = { accounts, totalStatement, totalXero };
+      xeroKpiCacheSet(cacheKey, payload, XERO_KPI_TTL.cash);
+      res.json(payload);
+    } catch (err: any) {
+      if (isXeroUnavailableError(err)) {
+        return res.json({ error: "xero_unavailable" });
+      }
+      console.error("[/api/kpis/cash-xero] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
   app.get("/api/business/revenue-trends", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
     try {
       const user = req.user as any;
@@ -25340,6 +25484,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       }
 
       await storage.deleteXeroConnection(connection.id);
+      const clear = (app as any).locals.xeroKpiCacheClearForConnection;
+      if (typeof clear === "function") clear(connection.id);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error disconnecting Xero:", error);

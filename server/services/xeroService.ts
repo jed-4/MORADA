@@ -1198,6 +1198,182 @@ export class XeroService {
     const contact = await this.findOrCreateContact(accessToken, connection.tenantId, name);
     return { contactId: contact.ContactID, name: contact.Name };
   }
+
+  /**
+   * Single-column P&L total revenue (income) for an arbitrary date range.
+   * Uses Xero's ProfitAndLoss report without periods/timeframe so the entire
+   * window collapses into one column. Income rows are classified by account
+   * Type (REVENUE / SALES / OTHERINCOME) and fall back to section-title
+   * keywords when account UUID isn't resolvable. Used by /api/kpis/revenue-xero.
+   */
+  async getRevenueTotal(connectionId: string, fromDate: string, toDate: string): Promise<number> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-Tenant-Id": connection.tenantId,
+      Accept: "application/json",
+    };
+    const params = new URLSearchParams({ fromDate, toDate, standardLayout: "true" });
+    const [response, accountsResponse] = await Promise.all([
+      fetch(`${XERO_API_BASE}/Reports/ProfitAndLoss?${params}`, { headers }),
+      fetch(`${XERO_API_BASE}/Accounts`, { headers }),
+    ]);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch P&L revenue: ${response.status} ${errorText}`);
+    }
+
+    const uuidToType = new Map<string, string>();
+    if (accountsResponse.ok) {
+      const accountsData = (await accountsResponse.json()) as any;
+      for (const acc of (accountsData.Accounts || [])) {
+        if (acc.AccountID && acc.Type) uuidToType.set(acc.AccountID as string, (acc.Type as string).toUpperCase());
+      }
+    }
+    const INCOME_TYPES = new Set(["REVENUE", "SALES", "OTHERINCOME"]);
+    const INCOME_SECTION_KEYWORDS = ["revenue", "income", "sales", "trading income", "other income"];
+    const SUMMARY_KEYWORDS = ["gross profit", "net profit", "total"];
+
+    const data = (await response.json()) as any;
+    const report = data.Reports?.[0];
+    if (!report) return 0;
+
+    let total = 0;
+    const visit = (rows: any[], insideIncomeSection: boolean) => {
+      for (const row of rows) {
+        if (row.RowType === "Section") {
+          const title: string = (row.Title || row.Cells?.[0]?.Value || "").toLowerCase();
+          const isSummary = SUMMARY_KEYWORDS.some(k => title.includes(k));
+          const nextIncome = isSummary
+            ? insideIncomeSection
+            : (title ? INCOME_SECTION_KEYWORDS.some(k => title.includes(k)) : insideIncomeSection);
+          if (row.Rows) visit(row.Rows, nextIncome);
+        } else if (row.RowType === "Row" && row.Cells) {
+          const rowTitle = String(row.Cells[0]?.Value || "");
+          if (SUMMARY_KEYWORDS.some(k => rowTitle.toLowerCase().includes(k))) continue;
+          const accountUuid = row.Cells[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value || "";
+          const accountType = accountUuid ? uuidToType.get(accountUuid) : undefined;
+          const isIncome = accountType ? INCOME_TYPES.has(accountType) : insideIncomeSection;
+          if (!isIncome) continue;
+          // First numeric cell after the title is the period total (single-column report).
+          const val = parseFloat(row.Cells[1]?.Value || "0") || 0;
+          total += val;
+        } else if (row.Rows) {
+          visit(row.Rows, insideIncomeSection);
+        }
+      }
+    };
+    visit(report.Rows || [], false);
+    return total;
+  }
+
+  /**
+   * Sum of AmountDue across AUTHORISED ACCREC (customer) invoices. Mirrors
+   * Xero's outstanding A/R total. Paginated via Xero's standard page param.
+   * Used by /api/kpis/outstanding-xero.
+   */
+  async getOutstandingReceivablesTotal(connectionId: string): Promise<number> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const where = `Type=="ACCREC" AND Status=="AUTHORISED"`;
+    let total = 0;
+    const maxPages = 50;
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams({ where, page: String(page), order: "Date DESC" });
+      const response = await fetch(`${XERO_API_BASE}/Invoices?${params}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          Accept: "application/json",
+        },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch outstanding invoices: ${response.status} ${errorText}`);
+      }
+      const data = (await response.json()) as any;
+      const invoices: any[] = data.Invoices || [];
+      for (const inv of invoices) {
+        const due = Number(inv.AmountDue ?? 0);
+        if (Number.isFinite(due)) total += due;
+      }
+      if (invoices.length < 100) break; // Xero default page size
+    }
+    return total;
+  }
+
+  /**
+   * Returns Xero BANK accounts and their current statement / Xero balances.
+   * Bank account list comes from /Accounts?where=Type=="BANK"; balances are
+   * derived from the BankSummary report. Used by /api/kpis/cash-xero.
+   */
+  async getBankAccountBalances(connectionId: string): Promise<Array<{
+    accountId: string;
+    name: string;
+    code?: string;
+    statementBalance: number;
+    xeroBalance: number;
+  }>> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-Tenant-Id": connection.tenantId,
+      Accept: "application/json",
+    };
+    const [accountsResponse, summaryResponse] = await Promise.all([
+      fetch(`${XERO_API_BASE}/Accounts?where=Type=="BANK"`, { headers }),
+      fetch(`${XERO_API_BASE}/Reports/BankSummary`, { headers }),
+    ]);
+    if (!accountsResponse.ok) {
+      const errorText = await accountsResponse.text();
+      throw new Error(`Failed to fetch BANK accounts: ${accountsResponse.status} ${errorText}`);
+    }
+    const accountsData = (await accountsResponse.json()) as any;
+    const accounts: any[] = accountsData.Accounts || [];
+
+    // BankSummary parsing: each non-summary section corresponds to one bank
+    // account. The header row carries the account UUID via the `account`
+    // Attribute; the SummaryRow inside the section carries the closing
+    // balance (last numeric cell).
+    const balances = new Map<string, { statement: number; xero: number }>();
+    if (summaryResponse.ok) {
+      const summaryData = (await summaryResponse.json()) as any;
+      const report = summaryData.Reports?.[0];
+      const sections: any[] = report?.Rows || [];
+      for (const section of sections) {
+        if (section.RowType !== "Section" || !Array.isArray(section.Rows)) continue;
+        const headerRow = section.Rows.find((r: any) => r.RowType === "Row");
+        const accountUuid = headerRow?.Cells?.[0]?.Attributes?.find((a: any) => a.Id === "account")?.Value;
+        if (!accountUuid) continue;
+        const summaryRow = section.Rows.find((r: any) => r.RowType === "SummaryRow");
+        const cells: any[] = summaryRow?.Cells || headerRow?.Cells || [];
+        const numericCells = cells
+          .map((c: any) => parseFloat(c?.Value || ""))
+          .filter((v: number) => Number.isFinite(v));
+        const closing = numericCells.length > 0 ? numericCells[numericCells.length - 1] : 0;
+        balances.set(accountUuid, { statement: closing, xero: closing });
+      }
+    }
+
+    return accounts.map((a: any) => {
+      const bal = balances.get(a.AccountID) || { statement: 0, xero: 0 };
+      return {
+        accountId: a.AccountID,
+        name: a.Name,
+        code: a.Code,
+        statementBalance: bal.statement,
+        xeroBalance: bal.xero,
+      };
+    });
+  }
 }
 
 export const xeroService = new XeroService();
