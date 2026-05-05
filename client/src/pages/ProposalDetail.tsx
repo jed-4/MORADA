@@ -328,12 +328,9 @@ export default function ProposalDetail() {
         description: "The proposal now uses the selected revision.",
       });
     },
-    onError: () => {
-      toast({
-        title: "Could not link estimate revision",
-        variant: "destructive",
-      });
-    },
+    // No onError toast here — the selector surfaces a single destructive
+    // toast on failure (and rolls back its optimistic label). Keeping it in
+    // both places caused duplicate error toasts.
   });
 
   const handleEstimateRevisionPick = async (estimateId: string) => {
