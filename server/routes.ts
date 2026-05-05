@@ -8570,6 +8570,435 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/business/kpis", requireAuth, legacyKpisHandler);
   app.get("/api/business/kpis_legacy_removed", requireAuth, legacyKpisHandler);
 
+  // ============================================================
+  // BuildPro KPI endpoints (task #248)
+  // Per-KPI read-only endpoints powering the new business dashboard
+  // KPI widget. Each returns { value: number | null } (and { trend }
+  // for budget-variance). Period-filtered endpoints accept
+  // ?period=month|quarter|year; snapshot endpoints ignore it.
+  // ============================================================
+
+  type KPIPeriod = "month" | "quarter" | "year";
+
+  // Mirror of client/src/components/business-widgets/kpiPeriod.ts so the
+  // server picks the same date window the widget displays. Honours the
+  // company's configured fiscal-year start (MM-DD) for the "year" period
+  // and falls back to the AU default of July if no setting exists.
+  async function resolveKpiPeriodRange(
+    companyId: string,
+    period: KPIPeriod,
+    now: Date = new Date(),
+  ): Promise<{ start: Date; end: Date }> {
+    const end = new Date(now);
+    if (period === "month") {
+      return { start: new Date(now.getFullYear(), now.getMonth(), 1), end };
+    }
+    if (period === "quarter") {
+      const q = Math.floor(now.getMonth() / 3);
+      return { start: new Date(now.getFullYear(), q * 3, 1), end };
+    }
+    let fyStartMonth = 7;
+    try {
+      const settings = await storage.getCompanySettings();
+      const raw = (settings as any)?.fiscalYearStart;
+      if (typeof raw === "string") {
+        const m = parseInt(raw.split("-")[0] || "", 10);
+        if (m >= 1 && m <= 12) fyStartMonth = m;
+      }
+    } catch {}
+    const month = now.getMonth() + 1;
+    const fyStartYear = month >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1;
+    return { start: new Date(fyStartYear, fyStartMonth - 1, 1), end };
+  }
+
+  function parseKpiPeriod(value: unknown): KPIPeriod {
+    return value === "year" || value === "quarter" ? value : "month";
+  }
+
+  async function loadCompanyProjectIdSet(companyId: string): Promise<Set<string>> {
+    const rows = await db
+      .select({ id: projectsTable.id })
+      .from(projectsTable)
+      .where(eq(projectsTable.companyId, companyId));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  // ---- Snapshot counts -------------------------------------------------
+
+  app.get("/api/kpis/in-construction", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const rows = await db
+        .select({ id: projectsTable.id })
+        .from(projectsTable)
+        .where(
+          and(
+            eq(projectsTable.companyId, companyId),
+            eq(projectsTable.currentSystemPhase, "construction"),
+            eq(projectsTable.isArchived, false),
+          ),
+        );
+      res.json({ value: rows.length });
+    } catch (err) {
+      console.error("[/api/kpis/in-construction] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/pre-construction", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const rows = await db
+        .select({ id: projectsTable.id })
+        .from(projectsTable)
+        .where(
+          and(
+            eq(projectsTable.companyId, companyId),
+            eq(projectsTable.currentSystemPhase, "pre_construction"),
+            eq(projectsTable.isArchived, false),
+          ),
+        );
+      res.json({ value: rows.length });
+    } catch (err) {
+      console.error("[/api/kpis/pre-construction] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/variations-pending", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { variations: variationsTbl } = await import("@shared/schema");
+      const companyProjectIds = await loadCompanyProjectIdSet(companyId);
+      if (companyProjectIds.size === 0) return res.json({ value: 0 });
+      const rows = await db
+        .select({ id: variationsTbl.id })
+        .from(variationsTbl)
+        .where(
+          and(
+            inArray(variationsTbl.status, ["pending", "action"] as any),
+            inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
+          ),
+        );
+      res.json({ value: rows.length });
+    } catch (err) {
+      console.error("[/api/kpis/variations-pending] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/pipeline-value", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const rows = await db
+        .select()
+        .from(projectsTable)
+        .where(
+          and(
+            eq(projectsTable.companyId, companyId),
+            eq(projectsTable.currentSystemPhase, "lead"),
+            eq(projectsTable.isArchived, false),
+          ),
+        );
+      // Pipeline projects are pre-contract: prefer the client's stated budget,
+      // then any agreed contract figure, then the legacy internal budget.
+      const totalCents = rows.reduce((sum: number, p: any) => {
+        const v =
+          (Number(p.clientBudget) || 0) ||
+          (Number(p.contractCost) || 0) ||
+          (Number(p.contractPrice) || 0) ||
+          (Number(p.budget) || 0);
+        return sum + v;
+      }, 0);
+      res.json({ value: totalCents / 100 });
+    } catch (err) {
+      console.error("[/api/kpis/pipeline-value] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/outstanding-buildpro", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { clientInvoices: invoicesTbl } = await import("@shared/schema");
+      const companyProjectIds = await loadCompanyProjectIdSet(companyId);
+      if (companyProjectIds.size === 0) return res.json({ value: 0 });
+      const rows = await db
+        .select({ status: invoicesTbl.status, balanceAmount: invoicesTbl.balanceAmount })
+        .from(invoicesTbl)
+        .where(
+          and(
+            inArray(invoicesTbl.projectId, Array.from(companyProjectIds)),
+            inArray(invoicesTbl.status, ["sent", "partial", "overdue"]),
+          ),
+        );
+      const totalCents = rows.reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0);
+      res.json({ value: totalCents / 100 });
+    } catch (err) {
+      console.error("[/api/kpis/outstanding-buildpro] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  // ---- Period-filtered endpoints --------------------------------------
+
+  app.get("/api/kpis/revenue-buildpro", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const period = parseKpiPeriod(req.query.period);
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const { clientInvoices: invoicesTbl } = await import("@shared/schema");
+      const companyProjectIds = await loadCompanyProjectIdSet(companyId);
+      if (companyProjectIds.size === 0) return res.json({ value: 0 });
+      const rows = await db
+        .select({ paidAmount: invoicesTbl.paidAmount, invoiceDate: invoicesTbl.invoiceDate })
+        .from(invoicesTbl)
+        .where(
+          and(
+            inArray(invoicesTbl.projectId, Array.from(companyProjectIds)),
+            inArray(invoicesTbl.status, ["paid", "partial"]),
+            gte(invoicesTbl.invoiceDate, start),
+            lte(invoicesTbl.invoiceDate, end),
+          ),
+        );
+      const totalCents = rows.reduce((s: number, i: any) => s + (Number(i.paidAmount) || 0), 0);
+      res.json({ value: totalCents / 100 });
+    } catch (err) {
+      console.error("[/api/kpis/revenue-buildpro] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/variations-approved", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const period = parseKpiPeriod(req.query.period);
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const { variations: variationsTbl } = await import("@shared/schema");
+      const companyProjectIds = await loadCompanyProjectIdSet(companyId);
+      if (companyProjectIds.size === 0) return res.json({ value: 0 });
+      const rows = await db
+        .select({ totalAmount: variationsTbl.totalAmount })
+        .from(variationsTbl)
+        .where(
+          and(
+            eq(variationsTbl.status, "approved"),
+            inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
+            gte(variationsTbl.approvedDate, start),
+            lte(variationsTbl.approvedDate, end),
+          ),
+        );
+      const totalCents = rows.reduce((s: number, v: any) => s + (Number(v.totalAmount) || 0), 0);
+      res.json({ value: totalCents / 100 });
+    } catch (err) {
+      console.error("[/api/kpis/variations-approved] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/overdue-tasks", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const period = parseKpiPeriod(req.query.period);
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const taskRows = await storage
+        .getTasks(undefined, undefined, undefined, undefined, undefined, companyId)
+        .catch(() => [] as any[]);
+      const count = taskRows.filter((t: any) => {
+        if (t.status === "done" || t.status === "complete") return false;
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate).getTime();
+        // "Became overdue within the period": due date is in the window and
+        // already past. We use end (≈ now) as the reference.
+        return due >= start.getTime() && due <= end.getTime();
+      }).length;
+      res.json({ value: count });
+    } catch (err) {
+      console.error("[/api/kpis/overdue-tasks] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  // ---- Composite endpoints -------------------------------------------
+
+  app.get("/api/kpis/budget-variance", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const period = parseKpiPeriod(req.query.period);
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const { bills: billsTbl, budgets: budgetsTbl } = await import("@shared/schema");
+
+      const projectRows = await db
+        .select()
+        .from(projectsTable)
+        .where(and(eq(projectsTable.companyId, companyId), eq(projectsTable.isArchived, false)));
+      const activeProjectIds = new Set(
+        projectRows.filter((p: any) => p.status === "active").map((p: any) => p.id),
+      );
+      if (activeProjectIds.size === 0) return res.json({ value: null, trend: [] });
+
+      const activeIdsArr = Array.from(activeProjectIds);
+      const [billRows, budgetRows] = await Promise.all([
+        db
+          .select({ projectId: billsTbl.projectId, status: billsTbl.status, paidAmount: billsTbl.paidAmount, billDate: billsTbl.billDate })
+          .from(billsTbl)
+          .where(and(inArray(billsTbl.projectId, activeIdsArr), eq(billsTbl.status, "paid"))),
+        db
+          .select({ revisedAmount: budgetsTbl.revisedAmount })
+          .from(budgetsTbl)
+          .where(inArray(budgetsTbl.projectId, activeIdsArr)),
+      ]);
+
+      const totalRevisedCents = budgetRows.reduce(
+        (s: number, b: any) => s + (Number(b.revisedAmount) || 0),
+        0,
+      );
+
+      // Pro-rate the annual budget down to the period length so the variance
+      // is comparable to the actual spend over the same window.
+      const periodMs = Math.max(1, end.getTime() - start.getTime());
+      const yearMs = 365 * 24 * 60 * 60 * 1000;
+      const proRataFactor = Math.min(1, periodMs / yearMs);
+      const proRatedBudgetDollars = (totalRevisedCents * proRataFactor) / 100;
+
+      const periodPaidCents = billRows
+        .filter((b: any) => {
+          const t = b.billDate ? new Date(b.billDate).getTime() : 0;
+          return t >= start.getTime() && t <= end.getTime();
+        })
+        .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0);
+      const periodActualDollars = periodPaidCents / 100;
+
+      const variancePercent =
+        proRatedBudgetDollars > 0
+          ? ((proRatedBudgetDollars - periodActualDollars) / proRatedBudgetDollars) * 100
+          : null;
+
+      // Trend: last 6 months of (budget - actual) / budget * 100, where the
+      // budget for each month is the company-wide revised budget pro-rated to
+      // 1/12. Returns at most as many months as we have any bill data for.
+      const monthlyBudgetDollars = totalRevisedCents / 12 / 100;
+      const trend: { month: string; variance: number }[] = [];
+      const now = end;
+      let monthsWithBills = 0;
+      for (let i = 5; i >= 0; i--) {
+        const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+        const monthPaidCents = billRows
+          .filter((b: any) => {
+            const t = b.billDate ? new Date(b.billDate).getTime() : 0;
+            return t >= mStart.getTime() && t < mEnd.getTime();
+          })
+          .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0);
+        if (monthPaidCents > 0) monthsWithBills += 1;
+        const monthActual = monthPaidCents / 100;
+        const monthVariance =
+          monthlyBudgetDollars > 0
+            ? ((monthlyBudgetDollars - monthActual) / monthlyBudgetDollars) * 100
+            : 0;
+        trend.push({
+          month: mStart.toLocaleDateString("en", { month: "short" }),
+          variance: monthVariance,
+        });
+      }
+
+      if (monthsWithBills < 2) {
+        return res.json({ value: null, trend: [] });
+      }
+
+      res.json({ value: variancePercent, trend });
+    } catch (err) {
+      console.error("[/api/kpis/budget-variance] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
+  app.get("/api/kpis/avg-margin", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const period = parseKpiPeriod(req.query.period);
+      const { start, end } = await resolveKpiPeriodRange(companyId, period);
+      const { clientInvoices: invoicesTbl, bills: billsTbl } = await import("@shared/schema");
+
+      const projectRows = await db
+        .select()
+        .from(projectsTable)
+        .where(and(eq(projectsTable.companyId, companyId), eq(projectsTable.isArchived, false)));
+      const activeProjectIds = new Set(
+        projectRows.filter((p: any) => p.status === "active").map((p: any) => p.id),
+      );
+      if (activeProjectIds.size === 0) return res.json({ value: null });
+
+      const activeIdsArr = Array.from(activeProjectIds);
+      const [invoiceRows, billRows] = await Promise.all([
+        db
+          .select({ projectId: invoicesTbl.projectId, paidAmount: invoicesTbl.paidAmount })
+          .from(invoicesTbl)
+          .where(
+            and(
+              inArray(invoicesTbl.projectId, activeIdsArr),
+              inArray(invoicesTbl.status, ["paid", "partial"]),
+              gte(invoicesTbl.invoiceDate, start),
+              lte(invoicesTbl.invoiceDate, end),
+            ),
+          ),
+        db
+          .select({ projectId: billsTbl.projectId, paidAmount: billsTbl.paidAmount })
+          .from(billsTbl)
+          .where(
+            and(
+              inArray(billsTbl.projectId, activeIdsArr),
+              eq(billsTbl.status, "paid"),
+              gte(billsTbl.billDate, start),
+              lte(billsTbl.billDate, end),
+            ),
+          ),
+      ]);
+
+      const invByProject = new Map<string, number>();
+      for (const i of invoiceRows as any[]) {
+        invByProject.set(i.projectId, (invByProject.get(i.projectId) || 0) + (Number(i.paidAmount) || 0));
+      }
+      const billByProject = new Map<string, number>();
+      for (const b of billRows as any[]) {
+        billByProject.set(b.projectId, (billByProject.get(b.projectId) || 0) + (Number(b.paidAmount) || 0));
+      }
+
+      const margins: number[] = [];
+      for (const [pid, invCents] of invByProject) {
+        const billCents = billByProject.get(pid);
+        if (!billCents || invCents <= 0) continue;
+        margins.push(((invCents - billCents) / invCents) * 100);
+      }
+      if (margins.length === 0) return res.json({ value: null });
+      const avg = margins.reduce((a, b) => a + b, 0) / margins.length;
+      res.json({ value: avg });
+    } catch (err) {
+      console.error("[/api/kpis/avg-margin] error:", err);
+      res.status(500).json({ error: "Failed to compute KPI" });
+    }
+  });
+
   app.get("/api/business/revenue-trends", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
     try {
       const user = req.user as any;
