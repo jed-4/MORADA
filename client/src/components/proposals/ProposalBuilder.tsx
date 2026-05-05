@@ -1490,6 +1490,9 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   const { data: companySettings } = useQuery<{ paymentScheduleTemplates?: Array<{ id: string; name: string; milestones: DraftMilestone[] }> } | null>({
     queryKey: ['/api/company-settings'],
   });
+  const { data: proposalForSeed } = useQuery<Proposal | null>({
+    queryKey: ['/api/proposals', proposalId],
+  });
 
   const [draft, setDraft] = useState<DraftMilestone[]>([]);
   const [templateName, setTemplateName] = useState('');
@@ -1588,6 +1591,9 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   // resolve from the server (isFetched) before seeding, otherwise the default
   // empty array from useQuery would cause us to overwrite a proposal that
   // already has a saved schedule.
+  //
+  // We also persist a `milestonesSeeded` flag on the proposal so re-opening
+  // an intentionally-emptied schedule never reseeds it.
   useEffect(() => {
     if (hasAutoSeededRef.current) return;
     if (!milestonesFetched) return;
@@ -1596,9 +1602,19 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
       return;
     }
     if (replaceMutation.isPending) return;
+    const layout = (proposalForSeed?.layoutSettings as { milestonesSeeded?: boolean } | null) ?? null;
+    if (layout?.milestonesSeeded) {
+      hasAutoSeededRef.current = true;
+      return;
+    }
     hasAutoSeededRef.current = true;
     setDraft(DEFAULT_MILESTONE_SEED);
     replaceMutation.mutate(DEFAULT_MILESTONE_SEED);
+    // Persist the seeded marker; failure here is non-fatal — the in-memory
+    // hasAutoSeededRef still prevents reseeding within this session.
+    apiRequest(`/api/proposals/${proposalId}`, 'PATCH', {
+      layoutSettings: { ...(layout || {}), milestonesSeeded: true },
+    }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [milestones, milestonesFetched]);
 
@@ -1891,6 +1907,9 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
                     <span className="font-medium" data-testid={`revision-label-${p.id}`}>
                       {revisionLabel(p.version)}
                     </span>
+                    <Badge variant="outline" className="text-xs" data-testid={`revision-version-${p.id}`}>
+                      v{Math.max(1, Number(p.version || 1))}
+                    </Badge>
                     <span className="truncate text-xs text-muted-foreground">{p.name}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
