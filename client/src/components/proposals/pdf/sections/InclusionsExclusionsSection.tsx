@@ -19,9 +19,19 @@ export function InclusionsExclusionsSection({
   const inclusionsHtml = (content.inclusionsText as string) || '';
   const exclusionsHtml = (content.exclusionsText as string) || '';
 
+  // Two-column layout per spec — Inclusions on the left, Exclusions on the
+  // right, separated by a thin divider so each side stays scannable.
   const styles = StyleSheet.create({
-    column: { marginBottom: 16 },
-    columnTitle: { fontSize: 13, fontWeight: 'bold', marginBottom: 6, color: '#1F2937' },
+    columns: { flexDirection: 'row', marginTop: 8, gap: 16 },
+    column: { flex: 1 },
+    columnTitle: {
+      fontSize: 13,
+      fontWeight: 'bold',
+      marginBottom: 6,
+      color: primaryColor,
+      borderBottom: `1px solid ${primaryColor}`,
+      paddingBottom: 4,
+    },
   });
 
   return (
@@ -33,24 +43,28 @@ export function InclusionsExclusionsSection({
         primaryColor={primaryColor}
       />
       <View style={sharedSectionStyle.section}>
-        <Text style={sharedSectionStyle.sectionTitle}>{section.name || 'Inclusions & Exclusions'}</Text>
+        <Text style={[sharedSectionStyle.sectionTitle, { color: primaryColor }]}>
+          {section.name || 'Inclusions & Exclusions'}
+        </Text>
 
-        <View style={styles.column}>
-          <Text style={styles.columnTitle}>Inclusions</Text>
-          {inclusionsHtml ? (
-            <RichTextBlocks html={inclusionsHtml} />
-          ) : (
-            <Text style={sharedSectionStyle.muted}>No inclusions specified.</Text>
-          )}
-        </View>
+        <View style={styles.columns}>
+          <View style={styles.column}>
+            <Text style={styles.columnTitle}>Inclusions</Text>
+            {inclusionsHtml ? (
+              <RichTextBlocks html={inclusionsHtml} />
+            ) : (
+              <Text style={sharedSectionStyle.muted}>No inclusions specified.</Text>
+            )}
+          </View>
 
-        <View style={styles.column}>
-          <Text style={styles.columnTitle}>Exclusions</Text>
-          {exclusionsHtml ? (
-            <RichTextBlocks html={exclusionsHtml} />
-          ) : (
-            <Text style={sharedSectionStyle.muted}>No exclusions specified.</Text>
-          )}
+          <View style={styles.column}>
+            <Text style={styles.columnTitle}>Exclusions</Text>
+            {exclusionsHtml ? (
+              <RichTextBlocks html={exclusionsHtml} />
+            ) : (
+              <Text style={sharedSectionStyle.muted}>No exclusions specified.</Text>
+            )}
+          </View>
         </View>
       </View>
       <PageFooter companyName={companyName} primaryColor={primaryColor} />
