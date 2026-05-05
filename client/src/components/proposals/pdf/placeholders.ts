@@ -31,9 +31,31 @@ function formatDate(date: unknown): string {
   try {
     const d = new Date(date as string);
     if (Number.isNaN(d.getTime())) return '';
+    // Guard against the Unix epoch (and other clearly bogus pre-2000 values)
+    // sneaking through as "1 January 1970". Treat anything before 2000 as
+    // an unset date — see formatProposalDate() for the same rule.
+    if (d.getUTCFullYear() < 2000) return '';
     return d.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
   } catch {
     return '';
+  }
+}
+
+/**
+ * Safe date formatter for proposal date fields. Returns `null` when the
+ * value is missing, unparseable, or earlier than 2000 (which catches the
+ * Unix epoch / `Date(0)` "1 January 1970" bug). Callers can fall back to
+ * "Not set" or render nothing.
+ */
+export function formatProposalDate(date: unknown, locale: string = 'en-AU'): string | null {
+  if (!date) return null;
+  try {
+    const d = new Date(date as string | number | Date);
+    if (Number.isNaN(d.getTime())) return null;
+    if (d.getUTCFullYear() < 2000) return null;
+    return d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return null;
   }
 }
 
@@ -64,19 +86,24 @@ export const PROPOSAL_PLACEHOLDER_TOKENS: Array<{ token: string; label: string }
 export function buildSubstitutionMap(ctx: PlaceholderContext): Record<string, string> {
   const { proposal, project, client, companyName, companyPhone, estimateTotalIncGstCents } = ctx;
   const p = proposal as ProposalDateFields;
+  // When a referenced entity is missing (e.g. no client linked to the
+  // proposal yet), fall back to a bracketed placeholder string rather than
+  // an empty string. The empty-string behaviour caused the cover letter to
+  // read "Dear ," which looked broken; the bracketed form makes it obvious
+  // to the user that the field still needs to be filled in.
   return {
-    'client.name': client?.name || '',
-    'client.email': client?.email || '',
-    'project.name': project?.name || '',
-    'project.address': projectAddress(project),
+    'client.name': client?.name || '[Client Name]',
+    'client.email': client?.email || '[Client Email]',
+    'project.name': project?.name || '[Project Name]',
+    'project.address': projectAddress(project) || '[Project Address]',
     'proposal.number': proposal.proposalNumber || '',
     'proposal.date': formatDate(p.sentDate) || formatDate(p.createdAt) || todayString(),
     'proposal.expiry': formatDate(p.expiryDate),
     'proposal.total': formatCurrencyCents(p.totalAmount),
     'estimate.total_inc_gst': formatCurrencyCents(estimateTotalIncGstCents ?? p.totalAmount),
-    'builder.company': companyName || '',
+    'builder.company': companyName || '[Company Name]',
     'builder.phone': companyPhone || '',
-    'company.name': companyName || '',
+    'company.name': companyName || '[Company Name]',
     'date.today': todayString(),
   };
 }

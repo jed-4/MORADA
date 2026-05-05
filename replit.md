@@ -1,182 +1,67 @@
-# Replit Configuration
+# BuildPro
+BuildPro is a project management software for Australian residential builders, streamlining workflows, enhancing collaboration, and providing robust financial oversight.
 
-## Overview
-BuildPro is a project management software for Australian residential builders. Its purpose is to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking, through a dashboard-centric interface. Key capabilities include customizable widget-based dashboards, comprehensive task management, and a system for managing construction projects, tasks, schedules, and teams. The project aims to simplify complex construction project management, improving efficiency and profitability for builders.
+## Run & Operate
+- **Run Dev Server**: `npm run dev`
+- **Build Frontend**: `npm run build:client`
+- **Build Backend**: `npm run build:server`
+- **Typecheck**: `npm run typecheck`
+- **DB Migrations**: `drizzle-kit push:pg` (additive migrations only, never destructive in deploy build)
+- **Environment Variables**: `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `RESEND_API_KEY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`, `S3_ENDPOINT`
 
-## User Preferences
+## Stack
+- **Frontend**: React 18, TypeScript, Vite, Wouter, TanStack Query, Radix UI, shadcn/ui, Tailwind CSS
+- **Backend**: Express.js, TypeScript
+- **ORM**: Drizzle ORM (PostgreSQL dialect)
+- **Database**: PostgreSQL (Neon serverless)
+- **Validation**: React Hook Form
+- **Build Tool**: Vite (frontend), esbuild (backend)
+
+## Where things live
+- **Client-side code**: `/client`
+- **Server-side code**: `/server`
+- **Shared code**: `/shared`
+- **Mobile app**: `/expo-mobile`
+- **DB Schema**: `server/db/schema.ts`
+- **Frontend Entry**: `client/src/main.tsx`
+- **Backend Entry**: `server/index.ts`
+- **Custom Design System/Styling**: `client/tailwind.config.cjs`, `client/src/index.css`
+- **Core UI Libraries**: `client/src/components`
+- **Utility Formatters**: `client/src/lib/formatters.ts`
+- **Shared DataTable**: `client/src/components/data-table/DataTable.tsx`
+- **Notion-like Editor**: `client/src/components/NotionEditor.tsx`
+
+## Architecture decisions
+- **Monorepo Structure**: Client, server, and shared code are co-located for simplified development and dependency management.
+- **Custom Authentication with OAuth**: Implemented a standalone email/password system alongside optional Google OAuth for flexibility, with secure session management.
+- **Serverless-first Data Layer**: Utilizes Neon for PostgreSQL with Drizzle ORM and connection pooling, optimizing for scalability and cost efficiency.
+- **Unified UI Component Strategy**: Leverages Radix UI primitives with shadcn/ui and Tailwind CSS for a consistent, accessible, and themeable interface across the web application.
+- **Mobile-first Backend Design**: The Express API is designed to serve both web and mobile clients (Expo/React Native), using session-based authentication compatible with both platforms.
+- **Attachment Storage Strategy**: Files are uploaded to object storage *before* AI processing, ensuring data persistence even if AI extraction fails.
+
+## Product
+- **Project Management**: Customizable dashboards, comprehensive task management (Kanban, List, Calendar views), schedule management with Gantt charts, site diaries, checklist system.
+- **Financial Management**: Budget tracking, client invoices, purchase orders, allowances system, Xero integration, CFO dashboard for overheads.
+- **Collaboration & Communication**: Scheduled messaging, file attachments in messages, internal documentation system, notes & memos.
+- **AI-Powered Features**: AI Bill Reader for automated invoice/bill data extraction.
+- **User & Business Customization**: Roles & permissions, user view preferences, company-isolated settings, E-Notes template system.
+- **Mobile Access**: Dedicated Expo/React Native app for on-the-go access to key features like tasks, site diaries, and notes.
+
+## User preferences
 Preferred communication style: Simple, everyday language.
 
-## System Architecture
+## Gotchas
+- **Production Database**: The production deployment *must* point to the same Neon database/branch as the development workspace. Verify `[DB] connected` logs for matching host and database name. A silent override of `DATABASE_URL` can lead to data appearing lost.
+- **Destructive DB Operations**: Never introduce destructive database queries (`DELETE`, `TRUNCATE`, `DROP`) or `drizzle-kit` commands into the deploy build. Only additive migrations are allowed in production.
+- **DataTable Storage**: When multiple `DataTable` instances on a page should share column state, ensure they use the same `storageKey`.
+- **LineItemTable Inputs**: For cells with embedded inputs/selects in `LineItemTable`, set `truncate: false` to prevent input collapse.
 
-### Frontend
-- **Framework**: React 18 with TypeScript and Vite.
-- **Routing**: Wouter.
-- **State Management**: TanStack Query for server state, React Context for UI state.
-- **UI Framework**: Radix UI primitives with shadcn/ui.
-- **Styling**: Tailwind CSS with a custom design system, supporting light/dark modes, a white & minimalist aesthetic with muted blue accents, and Inter font family.
-- **Dashboard**: Widget-based with drag & drop, a grid-based layout. Business dashboard views are database-backed with access control.
-- **UI/UX Decisions**: Minimalist theme, column resizing for tables, accessibility compliance, inspired by Buildern-style interfaces.
-
-### Backend
-- **Framework**: Express.js with TypeScript.
-- **API Design**: RESTful API (`/api` prefix).
-- **Session Management**: Express sessions with PostgreSQL session store.
-- **Error Handling**: Centralized middleware.
-
-### Authentication
-- **Custom Authentication**: Standalone email/password registration and login with bcrypt hashing.
-- **Google OAuth**: Optional Google login with CSRF state token validation.
-- **Session Security**: httpOnly cookies, secure in production, lax sameSite, 7-day TTL.
-- **Account Linking**: Google accounts linked to existing users by email.
-- **Password Reset**: Manager-initiated password reset via tokenized email links.
-
-### Data Layer
-- **ORM**: Drizzle ORM with PostgreSQL dialect.
-- **Database**: PostgreSQL with Neon serverless hosting.
-- **Schema Management**: Drizzle Kit for migrations.
-- **Connection Pooling**: Neon serverless connection pooling with WebSocket support.
-
-### Development and Build
-- **Build Tool**: Vite for frontend bundling.
-- **Development Server**: Integrated Vite dev server with Express backend.
-- **TypeScript**: Strict mode enabled with path mapping.
-- **Module System**: ESM modules.
-- **Project Structure**: Monorepo with client, server, and shared code.
-
-### Feature Specifications & System Design
-- **Client Invoice Improvements (v2)**: Auto-generated invoice numbers (project prefix + sequence), collapsible intro/closing text sections, locked contract pricing when estimate is approved/locked, configurable column display with drag-to-reorder (column picker popover with lock icon for required columns), inc/exc GST toggle, variations modal (approved-only selection), allowances modal (finalized PC/PS items from linked estimate), custom lines with name field. Backend: `GET /api/client-invoices/next-number`, allowances CRUD (`GET/POST/PATCH/DELETE`), variation PATCH for claim percent. Schema additions: `lockedContractPrice`, `columnConfig`, `showAmountsIncTax` on `clientInvoices`; `name` on `clientInvoiceItems`; `invoiceAllowances` junction table.
-- **Client Invoice Layout (v3)**: Full-width single-column layout (removed right-side summary panel). New "Invoice Summary" card below costing sections with: left column breakdown (Contract Price, Variations, Allowances, Custom Lines, ex-GST, GST), right column grand total (3xl bold), paid/balance due. Inc/exc GST toggle moved to Invoice Summary card header. Column picker remains in Contract Price section.
-- **Demo Data Seeder**: `server/seed-lenny.ts` seeds current account with 13 funny Australian celebrity contacts (clients: Steve & Terri Irwin, Dame Edna Everage, Bindi & Chandler Powell; suppliers: Paul Hogan's Plumbing, Kylie Minogue Kitchens, Hugh Jackman Joinery, etc.; trades: Cathy Freeman Concreting, Tim Minchin Tiling, Chris Hemsworth Electrical). 3 fully-linked projects across construction/pre-construction/lead phases with estimates, variations, invoices, bills, schedule, tasks, site diary. Idempotent (checks sentinel project name). Endpoints: `POST /api/demo/seed`, `GET /api/demo/status`. UI: "Demo Data" card in System Configuration page with seed button + seeded state indicator.
-- **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine, storing real dollar values.
-- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Supports inline creation with contextual defaults, task duplication, and reminder setting. Reminders generate notifications with deep links.
-- **Site Diary System**: Company-wide templates define form structure, project-specific entries record daily activities. Features include template import/export (Excel and JSON), deep search across field values, checkbox accountability, file/photo uploads, voice notes (mobile audio recording via expo-av), weather data recording, calendar view for entries, and PDF export for reports.
-- **Checklist System**: Templates with group functionality, dashboard widget integration, and color-coded status indicators.
-- **Cost Code Management**: Company-isolated merge functionality.
-- **Import System**: Flexible CSV/Excel import for schedules with column mapping.
-- **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups.
-- **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items.
-- **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
-- **E-Notes Template System**: Named template sets (enoteTemplateSets table) allowing estimates to be saved as reusable E-Notes templates, with "Save as Template" and "Apply Template" flows (replace or merge) in EstimateEnotes.tsx. Template sets are managed in EstimateTemplates.tsx E-Notes tab.
-- **Purchase Orders System**: Create POs from estimate items via bulk selection with GST mode (inclusive/exclusive/gst_free), delivery details (reference, attention, contact, address, instructions), print/PDF with delivery instructions, send to supplier with status locking, receive goods workflow, duplicate PO, and delete. Shopping cart icons on estimate items indicate linked POs.
-- **AI Bill Reader (file-first)**: OpenAI GPT-4o vision-based invoice/bill extraction. `/api/ocr/process-invoice` saves the uploaded file to object storage **before** running AI so the source attachment is never lost on AI failure; the response includes `attachment.objectPath` (also returned on AI errors). Bills move through a 5-stage lifecycle — `draft` → `needs_review` (intermediate stage for AI-extracted bills awaiting human sign-off) → `awaiting_approval` → `awaiting_payment` → `paid`. Applying AI extractions sets the bill to `needs_review`; the user clicks **Confirm & Send for Approval** (POST `/api/bills/:id/confirm-extraction`) to promote it into the approver's queue.
-- **Xero Integration**: OAuth2 connection flow with token storage and auto-refresh. Bills with "Send to Xero" checkbox push to Xero as AP invoices on save. Xero connection management in Business Settings > Integrations.
-- **Supplier Bill Defaults**: Suppliers carry `defaultCostCodeId` and `xeroDefaultAccountCode` that auto-fill new bill lines (existing values are never overwritten). On a new bill, an inline prompt above Cost Lines suggests saving the most-used cost code/account as defaults for that supplier (Save / Not now / Don't ask). The "Don't ask" choice flips a `suppressDefaultsPrompt` flag on the contact. A "Defaults" gear next to the "Pay to" label opens a Supplier Defaults dialog. A small "default" pill renders next to cost code/account cells when they match the supplier default.
-- **Bill Attachment Viewer**: Inline preview of PDF and image attachments in bill sidebar with click-to-expand fullscreen overlay.
-- **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters).
-- **Optimistic UI Updates**: Implemented for responsiveness.
-- **Searchable Select Components**: Reusable typeahead components for dropdowns.
-- **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, Notion-style flexible filtering with saved views, and user timezone support.
-- **Roles & Permissions**: Company-isolated user roles with granular control over 25 permissions. Built-in admin roles bypass checks.
-- **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
-- **Timesheets System**: Global access, compact table design, configurable columns, tabbed views, rapid approval modal, and company-level date format setting. Includes a subcontractor workflow with PO generation and status tracking.
-- **User Workspace**: Customizable widget-based dashboard including personal widgets, resizing, drag-and-drop reordering, and saved views.
-- **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos. Redesigned as a Notion-like split-panel interface: left panel (w-72) shows grouped/pinned notes list with search, sort, groups, archive toggle; right panel hosts inline block editor (NotionEditor) with auto-save (800ms debounce). New notes created immediately on click.
-- **Docs**: Company-level documentation hub (SOPs, procedures, guides) at `/docs`. Split-panel layout: left panel shows folders (collapsible, context menu for create/rename/delete) and unfiled docs; right panel hosts the same NotionEditor with auto-save. Tables: `doc_folders`, `docs`. API: `/api/docs`, `/api/doc-folders`. Accessible from the sidebar System section.
-- **NotionEditor**: Shared TipTap-based block editor component (`client/src/components/NotionEditor.tsx`). BubbleMenu on selection (Bold, Italic, Underline, Strike, H1-H3, clear format). FloatingMenu on empty paragraphs (block type picker). Slash command menu via "/" trigger. Extensions: StarterKit, Underline, TextStyle, TaskList, TaskItem. Props: content (HTML), onChange(html, text), placeholder, className, editable.
-- **Onboarding Flow**: Two-step process for user profile completion and company creation.
-- **Activity Feed Settings**: Company-level settings to toggle visibility of activity types in the ActivityWidget.
-- **Business Dashboard Views**: Database-backed views with company-wide access control and widget configuration persistence.
-- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month), supporting stacked and timeline display. Weekend muting and detail modal on click.
-- **Schedule Improvements**: Working days system (Saturday/Sunday toggles + non-working days/holidays), named baselines with ghost bar rendering on Gantt, sub-items (formerly "steps") within schedule items with reordering, parent auto-completion calculation, lock/unlock edit workflow with beforeunload guard, CSV export, checklist/task linking, client visibility weeks, consolidated toolbar dropdown, baseline selector. Per-item weekend override toggle, trade/contact schedule colour picker with Gantt bar colouring, task linking with relative date offsets, week start day from company settings, right-click context menu on Gantt bars with duplicate action. Company-wide non-working days (in Business Settings > Schedule Settings) separate from schedule-specific non-working days, with merged display in schedule dialog. Company-level default client visibility weeks setting with per-schedule override. Inline assignee editing in Gantt table via ContactSelect popover. Parent items (Level 1) hide status/assignee/color as containers.
-- **Company Workload Planner**: Resource planner with Gantt-style horizontal bars, dynamic viewport-filling timeline, weekend half-width columns, expandable/collapsible assignee rows, click-to-open item detail dialog, overload warning indicators (amber/red), and filter popover for hiding/showing assignees and projects.
-- **Business Schedule Three-Tab View**: Business > Schedule now has three sub-tabs — Projects (existing per-project Gantt bar view), Workload (trade/assignee planner), and Schedules (new master Gantt). All three share a consistent tab strip with icons.
-- **Master Schedules Gantt**: Cross-project windowed Gantt view (2/4/6 week window, prev/today/next navigation). Each project is a collapsible parent row with a full-span project bar (light project colour fill). Expanded projects show all schedule items as sub-rows with light colour fills; company-assigned items render darker. Vertical milestone lines span each project's rows for contract and build-start/end dates. Weekend shading, week gridlines, and today line included.
-- **Schedule Milestones in Project Settings**: New "Schedule Milestones" card in Project Settings. Contract Start/End date pickers (saved immediately, shown as red dashed vertical lines on Gantts). Schedule Item milestone selectors — pick any schedule item as the "Build Start" or "Build End" marker (shown as solid coloured vertical lines). These lines appear on both the individual project Gantt and the master Schedules view. DB columns: `contract_start_date`, `contract_end_date`, `milestone_start_item_id`, `milestone_end_item_id` on `business_schedule_projects` table.
-- **Project Creation**: Team member selection during project creation with auto-add for admin roles.
-- **Default Diary**: Weekly view of recurring tasks, with automated generation for current + next week, and template syncing to future uncompleted tasks.
-- **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action.
-- **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, including contact merging and dedicated `contactInsurances` table.
-- **Business Overheads CFO Dashboard**: New "Overheads" tab in Business page. 4 sub-tabs: Register (spreadsheet by category/item with frequency, budget, Xero account code, monthly equivalent), Monthly Actuals (full P&L grid — Income row + Overheads + OH% + Net Profit, rolling 12-month with editable income cells), Forecast (last-12-month bar chart vs budget, next-12-month projection, KPI cards), OH Predictor (breakeven revenue calculator, weighted pipeline jobs, traffic light coverage indicator). Schema: `overhead_categories`, `overhead_items`, `overhead_month_actuals` (with `drifted_since_confirmed`), `overhead_month_status`, `company_oh_settings`, `oh_pipeline_jobs`, `oh_frequency` enum, `company_income_actuals`. API: `/api/overheads` (GET all, includes income actuals), `/api/xero/sync-overhead-actuals` (smart 1-click sync, also upserts income), `/api/overheads/income-actual` (PUT for manual income entry), `/api/overheads/month-status`. Monthly Actuals tab has Monthly Grid view (13 rows: income + OH items + net profit, 12 columns) and Prev 12 Summary view (Total/Avg/% of Income + MoM arrows). `XeroService.getProfitAndLossReport()` now returns `incomeTotals` in addition to expense data. Nightly sync also upserts income actuals.
-
-### Mobile App (Expo/React Native)
-- **Framework**: React Native with Expo SDK 52.
-- **Location**: `/expo-mobile` directory.
-- **Dashboard**: ClickUp-style home screen with greeting, horizontally scrollable category cards (Messages, Activity, Mentions, Assigned), collapsible sections (Today's Tasks, Overdue Tasks, Upcoming Tasks, Recent Activity, Calendar, Favourites, Timesheet), notification bell with unread badge, user menu with logout. Customizable layout via "Customize Home" settings (toggle visibility and reorder tiles/sections), persisted per user via user-view-preferences API.
-- **Tasks Screen**: Dedicated tasks tab with list view and board/kanban view toggle, grouping by status/priority/project/due date, task view modal with full details, and inline edit mode for updating tasks.
-- **Site Diary**: Template selector with pre-fetching and auto-select default in both Projects and More > Site Diary screens. Calendar popover with entry count dots. Voice notes with audio recording and playback. Deep search across field values.
-- **Notes**: Notion-like notes experience accessible from More tab. NotesListScreen shows personal notes with search, pin/unpin, archive, delete (long-press actions). NoteEditorScreen provides a block-based editor with block types: text, H1, H2, bullet, numbered, todo (with checkbox toggle), divider. Keyboard toolbar for block type switching. Auto-save with 1.5s debounce via PATCH. Content stored as HTML (`contentHtml`) compatible with web NotionEditor, plus plain text (`contentText`). Notes synced with web app via existing `/api/notes` endpoints.
-- **Screens**: Login, Dashboard, Tasks, Projects List, Project Detail, Timesheets (clock in/out, log hours, week navigation, detail/edit/delete), Notes List, Note Editor.
-- **Navigation**: React Navigation with bottom tabs (Workspace, Projects, Tasks, Timesheets, More) and native stack.
-- **Dark Mode**: Automatic via useColorScheme.
-- **Backend Connection**: Uses same Express API on port 5000, session-based auth via X-Session-ID header.
-
-## External Dependencies
-
-### Core UI Libraries
-- **Radix UI**: Primitive component library.
-- **shadcn/ui**: Component library built on Radix UI.
-- **Lucide React**: Icon library.
-- **@dnd-kit**: For drag & drop functionality.
-- **@tiptap/react**: Rich text editor.
-- **@react-pdf/renderer**: PDF generation.
-
-### Data and State Management
-- **TanStack Query**: Server state management.
-- **React Hook Form**: Form management and validation.
-
-### Database and Backend
-- **Neon Database**: Serverless PostgreSQL.
-- **Drizzle ORM**: Type-safe ORM.
-- **connect-pg-simple**: PostgreSQL session store.
-- **ws**: WebSocket library.
-- **Resend**: Transactional email service.
-
-### Development and Build Tools
-- **Vite**: Build tool and dev server.
-- **esbuild**: JavaScript bundler.
-- **tsx**: TypeScript execution.
-
-### Styling and Design
-- **Tailwind CSS**: Utility-first CSS framework.
-
-### Date and Utility Libraries
-- **date-fns**: Date utility library.
-- **nanoid**: Unique string ID generator.
-
-### Integrations
-- **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
-- **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
-
-## Production database
-
-The app uses a single Neon PostgreSQL instance accessed via the `DATABASE_URL` env var. The production deployment **must point at the same Neon database / branch as the dev workspace** — there is no separate "prod DB" by design. If a deployment-scoped secret silently overrides `DATABASE_URL` to a fresh / empty branch, every republish will look like "half the data disappeared" because writes made through the live URL will land in the wrong DB.
-
-**Confirming which DB the app is using.** On startup, `server/db.ts` logs:
-
-```
-[DB] connected — host=<neon-host> db=<db-name> env=<NODE_ENV>
-```
-
-This line appears in both the dev workflow logs and the deployment logs. Compare the two — `host` and `db` must match. If they differ after a publish, the deployment has its own `DATABASE_URL` secret that needs to be removed (so it inherits the workspace one) or repointed at the canonical Neon endpoint.
-
-**What is NOT a cause** (verified during the #225 audit):
-- `dbStorage.initialize()` is fully idempotent — every `ensure*` helper is upsert-by-key and `backfillScheduleIsOnline` only flips already-`online`/`locked` rows. Nothing is dropped or re-seeded on startup.
-- `seedLennyDemo` is gated by an `isDemoSeeded` sentinel project and is only reachable via an explicit POST route — it does not run on boot.
-- The deploy build (`vite build && esbuild …` in `package.json`) does **not** include `drizzle-kit push`, so the production schema is not re-pushed on every release.
-
-**Rule for future agents:** never add a destructive query (`DELETE`, `TRUNCATE`, `DROP`, schema-narrowing column rename) inside any module imported from `server/index.ts`, and never add `db:push` or `drizzle-kit` calls to the deploy build. Use additive migrations only.
-
-## Shared Pro DataTable
-All list/table pages render through the shared `<DataTable>` (`client/src/components/data-table/DataTable.tsx`), built on TanStack Table + @dnd-kit. Features: column resize, drag-to-reorder, sort, show/hide via `<DataTableColumnPicker>`, sticky first column.
-
-**Storage convention**: each page passes `storageKey="<scope>"` and `legacyConfigKey="<scope>-column-config-v1"` (defensively, for old per-page localStorage layouts). Per-DataTable state is persisted under `buildpro_table_{hidden,order,widths}_<scope>` in localStorage. When a page renders multiple DataTables that should share column state (e.g. one per category in CostCodes / BusinessOverheads, or one per group in Tasks/BusinessTasks list view), all instances pass the same `storageKey`.
-
-Pages that intentionally do NOT use DataTable: kanban/board views, calendar views, Gantt timelines (HBCFTracker uses DataTable but pivots weeks as columns; CompanyWorkload remains a custom Gantt), and detail-screen inline editors (e.g. estimate template editor). Detail/inline-edit grids are out of scope for the pro table rollout.
-
-## Shared UI Primitives
-Use these instead of redefining the same helpers per page:
-
-- **Formatters** (`client/src/lib/formatters.ts`):
-  - `formatCurrency(cents, opts?)` — AUD by default; pass `{ fromDollars: true }` if the value is already in dollars. Whole numbers render without cents.
-  - `formatDate(date, fmt?)` — defaults to `"d MMM yyyy"`; returns `"—"` for null.
-  - `formatTime`, `formatDateTime`, `formatRelativeDistance`, `formatNumber`, `formatPercent`.
-  - `getRelativeDate(date, { completed? })` — bucket + label (Today / Tomorrow / Yesterday / overdue).
-- **Status pills** (`client/src/components/StatusBadge.tsx`): single source of truth for status colours. Pass any status string — it auto-maps to the success / warning / info / danger / action / neutral palette and humanises the label. Override with `tone` or `label` when needed.
-- **Empty states** (`client/src/components/EmptyState.tsx`): `<EmptyState icon={Icon} title="…" description="…" action={{ label, onClick }} />`. Use `variant="card"` (default) for the body of a list page or `variant="inline"` when nesting inside another surface.
-- **List page header** (`client/src/components/ListPageToolbar.tsx`): replaces the per-page header card. Renders the standard two-row pattern (title + count + lilac primary CTA on row 1; search + filters + columns slot on row 2). The right-hand `rightSlot` is the natural home for `<DataTableColumnPicker>`.
-- **Line-item / sub-table** (`client/src/components/LineItemTable.tsx`): wraps shadcn `<Table>` with a column-descriptor API for in-page sub-tables (estimate templates, schedule templates, payment-term lists, selection options, variation cost lines, bill line items). Pass `columns` (each with `key`, `header`, optional `align`, `width`, `truncate`, `className`, `cell`), `data`, and `rowKey`. Optional features: `selection` (controlled `Set` of row keys with header + per-row checkboxes), `actions` (right-edge cell, e.g. delete buttons), `totalsRow` (footer row), `emptyState`, `onRowClick`, `rowClassName`, `size` (`sm`/`md`). Cells with embedded inputs/selects should use `truncate: false` so the wrapping `<div>` does not collapse the input. Resize handles were intentionally **removed** from the BillDetail and VariationDetail tables when migrating to this primitive — widths are now fixed defaults supplied by each page.
-
-## Messaging Features
-- **Scheduled Messages**: Messages can be scheduled for future delivery via a datetime picker (calendar popover). Background processor (`ScheduledMessageProcessor`) checks every minute and delivers due messages via the existing socket broadcast. Schema: `scheduledAt` column on `messages` table.
-- **Message File Attachments** (web only): Full upload/view flow for attachments on channel messages and thread replies. Schema: `messageAttachments` table (id, messageId, fileName, fileUrl, mimeType, fileSize). Storage object route: `POST /api/uploads/request-url` → PUT to presigned URL → `POST /api/messages/:id/attachments`. `GET /api/channels/:channelId/messages` joins attachments. Images render inline with a fullscreen lightbox; documents render as download cards. Attach button (Paperclip) in compose area. Thread reply bubbles also render attachments from the shared `attachmentsMap` state.
-- **Replit Object Storage**: File upload support via presigned URLs using @uppy/core, @uppy/dashboard, @uppy/aws-s3.
+## Pointers
+- **shadcn/ui Documentation**: [https://ui.shadcn.com/docs](https://ui.shadcn.com/docs)
+- **Drizzle ORM Documentation**: [https://orm.drizzle.team/docs/overview](https://orm.drizzle.team/docs/overview)
+- **TanStack Query Documentation**: [https://tanstack.com/query/latest](https://tanstack.com/query/latest)
+- **Tailwind CSS Documentation**: [https://tailwindcss.com/docs](https://tailwindcss.com/docs)
+- **Vite Documentation**: [https://vitejs.dev/guide/](https://vitejs.dev/guide/)
+- **React Native Documentation**: [https://reactnative.dev/docs/getting-started](https://reactnative.dev/docs/getting-started)
+- **Expo Documentation**: [https://docs.expo.dev/](https://docs.expo.dev/)
+- **NotionEditor Component**: `client/src/components/NotionEditor.tsx`
