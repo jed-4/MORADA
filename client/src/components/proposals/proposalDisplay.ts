@@ -24,10 +24,14 @@ export function formatViewedTooltip(
   const relative = lastViewedAt
     ? formatDistanceToNow(new Date(lastViewedAt), { addSuffix: true })
     : null;
+  const lastSegment = relative
+    ? `Last ${relative}${device ? ` on ${device}` : ""}`
+    : device
+    ? `on ${device}`
+    : null;
   return [
     `Viewed ${count} time${count === 1 ? "" : "s"}`,
-    relative ? `Last ${relative}` : null,
-    device ? `on ${device}` : null,
+    lastSegment,
   ]
     .filter(Boolean)
     .join(" · ");

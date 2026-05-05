@@ -458,7 +458,7 @@ export default function Proposals() {
                     className="inline-flex items-center text-muted-foreground/40"
                     data-testid={`icon-unviewed-${proposal.id}`}
                   >
-                    <Eye className="w-4 h-4" strokeWidth={1.5} />
+                    <Eye className="w-4 h-4" strokeWidth={1.25} />
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>{tooltipText}</TooltipContent>
@@ -472,7 +472,7 @@ export default function Proposals() {
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground"
                   data-testid={`text-view-count-${proposal.id}`}
                 >
-                  <Eye className="w-4 h-4 text-foreground" />
+                  <Eye className="w-4 h-4 text-foreground fill-current" />
                   <span>{count}</span>
                 </span>
               </TooltipTrigger>

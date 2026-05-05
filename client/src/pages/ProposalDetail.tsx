@@ -399,7 +399,7 @@ export default function ProposalDetail() {
                         className="inline-flex items-center gap-1 px-2 h-6 rounded-md text-xs font-medium border bg-muted"
                         data-testid="chip-proposal-views"
                       >
-                        <Eye className="w-3.5 h-3.5" />
+                        <Eye className="w-3.5 h-3.5 fill-current" />
                         Seen {proposal.viewCount}×
                       </span>
                     </TooltipTrigger>
