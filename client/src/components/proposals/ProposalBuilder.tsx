@@ -1013,12 +1013,31 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     setPreset(name);
     const p = LAYOUT_PRESETS[name as PresetKey];
     if (!p) return;
-    if (p.pageSize) setPageSize(p.pageSize);
-    if (p.showFooter !== undefined) setShowFooter(!!p.showFooter);
-    if (p.showPageNumbers !== undefined) setShowPageNumbers(!!p.showPageNumbers);
-    if (p.showLogo !== undefined) setShowLogo(!!p.showLogo);
-    if (p.showGst !== undefined) setShowGst(!!p.showGst);
-    if (p.pricingMode) setPricingMode(p.pricingMode);
+    const nextPageSize = p.pageSize || pageSize;
+    const nextShowFooter = p.showFooter !== undefined ? !!p.showFooter : showFooter;
+    const nextShowPageNumbers = p.showPageNumbers !== undefined ? !!p.showPageNumbers : showPageNumbers;
+    const nextShowLogo = p.showLogo !== undefined ? !!p.showLogo : showLogo;
+    const nextShowGst = p.showGst !== undefined ? !!p.showGst : showGst;
+    const nextPricingMode = p.pricingMode || pricingMode;
+    setPageSize(nextPageSize);
+    setShowFooter(nextShowFooter);
+    setShowPageNumbers(nextShowPageNumbers);
+    setShowLogo(nextShowLogo);
+    setShowGst(nextShowGst);
+    setPricingMode(nextPricingMode);
+
+    // Single layout-settings save so preset application is one mutation
+    // (plus per-section enable toggles which go through the autosave pipeline).
+    saveLayoutMutation.mutate({
+      primaryColor,
+      showPageNumbers: nextShowPageNumbers,
+      showFooter: nextShowFooter,
+      pageSize: nextPageSize,
+      pricingMode: nextPricingMode,
+      showGst: nextShowGst,
+      showLogo: nextShowLogo,
+      preset: name as LayoutSettings['preset'],
+    });
 
     const enabledTypes = PRESET_ENABLED_SECTION_TYPES[name as PresetKey];
     if (enabledTypes) {
