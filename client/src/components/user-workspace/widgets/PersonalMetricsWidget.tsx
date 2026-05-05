@@ -7,6 +7,9 @@ import { CheckSquare, Clock, TrendingUp, Target } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { type Task, type Timesheet } from "@shared/schema";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetError } from "@/components/ui/WidgetError";
 
 export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -18,7 +21,12 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
     setConfigWeeklyTarget(widget.config?.weeklyHoursTarget || 40);
   }, [widget.title, widget.config]);
 
-  const { data: tasks = [] } = useQuery<Task[]>({
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+  } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
       if (!userId) return [];
@@ -31,7 +39,7 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
     enabled: !!userId,
   });
 
-  const { data: timesheets = [] } = useQuery<Timesheet[]>({
+  const { data: timesheets = [], isLoading: timesheetsLoading } = useQuery<Timesheet[]>({
     queryKey: ["/api/timesheets", { odinguserId: userId }],
     queryFn: async () => {
       if (!userId) return [];
@@ -43,6 +51,8 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
     },
     enabled: !!userId,
   });
+
+  const isLoading = tasksLoading || timesheetsLoading;
 
   const today = new Date();
   const startOfWeek = new Date(today);
@@ -123,6 +133,30 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
           </Button>
         </div>
       </div>
+    );
+  }
+
+  if (isLoading) {
+    return <WidgetSkeleton rows={4} />;
+  }
+
+  if (tasksError) {
+    return (
+      <WidgetError
+        message="Couldn't load your metrics."
+        onRetry={() => refetchTasks()}
+      />
+    );
+  }
+
+  const hasAnyData = tasks.length > 0 || timesheets.length > 0;
+  if (!hasAnyData) {
+    return (
+      <WidgetEmpty
+        icon={TrendingUp}
+        title="No activity yet"
+        message="Once you have tasks or timesheets, your weekly metrics will appear here."
+      />
     );
   }
 

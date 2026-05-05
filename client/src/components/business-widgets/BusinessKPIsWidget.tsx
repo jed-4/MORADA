@@ -12,16 +12,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GripVertical, Pencil, Lock } from "lucide-react";
-import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
-import { WidgetError } from "@/components/ui/WidgetError";
 import {
   DndContext,
   closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
-  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -36,15 +34,13 @@ import {
   KPI_DEFINITIONS,
   KPI_KEY_ORDER,
   DEFAULT_SELECTED_KPIS,
+  ACCENT_VAR,
   formatKPIValue,
   type KPIKey,
   type KPIPeriod,
   type KPIDefinition,
 } from "./kpiDefinitions";
-
-interface KPIData {
-  values: Partial<Record<KPIKey, number | null>>;
-}
+import { getPeriodLabel } from "./kpiPeriod";
 
 function SortableKPIRow({
   kpiKey,
@@ -64,6 +60,7 @@ function SortableKPIRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+  const accentColor = `hsl(var(${ACCENT_VAR[def.accent]}))`;
   return (
     <div
       ref={setNodeRef}
@@ -85,13 +82,115 @@ function SortableKPIRow({
         onCheckedChange={(v) => onToggle(!!v)}
         data-testid={`kpi-check-${kpiKey}`}
       />
-      <def.icon className="h-3.5 w-3.5 text-bp-muted" />
-      <span className="text-sm flex-1">{def.label}</span>
+      <span
+        className="h-2.5 w-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: accentColor }}
+        aria-hidden
+      />
+      <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
+        <span className="text-sm truncate">{def.label}</span>
+        {def.labelDetail && (
+          <span className="text-[10px] text-bp-muted uppercase tracking-wide shrink-0">
+            {def.labelDetail}
+          </span>
+        )}
+      </div>
       {def.financialGated && (
         <span className="inline-flex items-center gap-1 text-[10px] text-bp-amber">
           <Lock className="h-2.5 w-2.5" />
           Financial
         </span>
+      )}
+    </div>
+  );
+}
+
+interface KPIResponse {
+  value?: number | null;
+  trend?: Array<{ month: string; variance: number }>;
+  totalStatement?: number | null;
+  totalXero?: number | null;
+  error?: string;
+}
+
+function KPICell({
+  def,
+  period,
+  hasFinancialAccess,
+}: {
+  def: KPIDefinition;
+  period: KPIPeriod;
+  hasFinancialAccess: boolean;
+}) {
+  const gated = def.financialGated && !hasFinancialAccess;
+  const useDate = def.periodFilter;
+  const url = useDate ? `${def.endpoint}?period=${period}` : def.endpoint;
+
+  const { data, isLoading, isError } = useQuery<KPIResponse>({
+    queryKey: useDate ? [def.endpoint, period] : [def.endpoint],
+    queryFn: async () => {
+      const r = await fetch(url, { credentials: "include" });
+      if (!r.ok) {
+        if (r.status === 503) {
+          const body = await r.json().catch(() => null);
+          if (body && typeof body === "object" && (body as any).error === "xero_unavailable") {
+            return { error: "xero_unavailable", value: null };
+          }
+        }
+        throw new Error(`Failed to load (${r.status})`);
+      }
+      return r.json();
+    },
+    enabled: !gated,
+    retry: 1,
+    staleTime: 60_000,
+  });
+
+  const accentColor = `hsl(var(${ACCENT_VAR[def.accent]}))`;
+  const xeroUnavailable = data?.error === "xero_unavailable";
+
+  const renderValue = () => {
+    if (gated) return <span className="text-bp-muted">—</span>;
+    if (isLoading) return <Skeleton className="h-6 w-20 bg-bp-subtle" />;
+    if (xeroUnavailable) {
+      return <span className="text-xs text-bp-muted font-normal">Xero unavailable</span>;
+    }
+    if (isError) return <span className="text-bp-muted">—</span>;
+    const v = data?.value ?? null;
+    return formatKPIValue(v, def.format);
+  };
+
+  return (
+    <div
+      className="relative rounded-md border border-bp-border bg-bp-card px-3 py-2 flex flex-col gap-1 min-h-[78px]"
+      data-testid={`kpi-${def.key}`}
+    >
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md"
+        style={{ backgroundColor: accentColor }}
+        aria-hidden
+      />
+      <div className="flex items-baseline justify-between gap-2 text-bp-muted">
+        <div className="flex items-baseline gap-1.5 min-w-0">
+          <span className="text-[11px] font-medium uppercase tracking-wide truncate text-bp-card-foreground">
+            {def.label}
+          </span>
+          {def.labelDetail && (
+            <span className="text-[9px] uppercase tracking-wide shrink-0">
+              {def.labelDetail}
+            </span>
+          )}
+        </div>
+        {gated && <Lock className="h-3 w-3 text-bp-amber shrink-0" />}
+      </div>
+      <div
+        className="text-xl font-semibold leading-tight"
+        data-testid={`kpi-value-${def.key}`}
+      >
+        {renderValue()}
+      </div>
+      {def.periodFilter && !gated && (
+        <div className="text-[10px] text-bp-muted mt-auto">{getPeriodLabel(period)}</div>
       )}
     </div>
   );
@@ -104,7 +203,8 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
   const period = (config.period as KPIPeriod) || "month";
   const selectedKeys: KPIKey[] = useMemo(() => {
     const fromConfig = Array.isArray(config.selectedKpis) ? (config.selectedKpis as KPIKey[]) : null;
-    return fromConfig && fromConfig.length > 0 ? fromConfig : DEFAULT_SELECTED_KPIS;
+    const valid = (fromConfig || []).filter((k): k is KPIKey => k in KPI_DEFINITIONS);
+    return valid.length > 0 ? valid : DEFAULT_SELECTED_KPIS;
   }, [config.selectedKpis]);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -113,19 +213,6 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
   useEffect(() => {
     if (editOpen) setEditKeys(selectedKeys);
   }, [editOpen, selectedKeys]);
-
-  const { data, isLoading, isError, refetch } = useQuery<KPIData>({
-    queryKey: ["/api/business/kpis", period],
-    queryFn: async () => {
-      const res = await fetch(`/api/business/kpis?period=${period}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to load KPIs (${res.status})`);
-      }
-      return res.json();
-    },
-  });
 
   const setPeriod = (next: KPIPeriod) => {
     onUpdate?.({ ...widget, config: { ...config, period: next } });
@@ -149,7 +236,6 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
     });
   };
 
-  // For the editor: use a combined ordered list (editKeys first, then unselected)
   const editorOrder: KPIKey[] = useMemo(() => {
     const remaining = KPI_KEY_ORDER.filter((k) => !editKeys.includes(k));
     return [...editKeys, ...remaining];
@@ -182,53 +268,27 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
         </Button>
       </div>
 
-      {isLoading ? (
-        <WidgetSkeleton rows={3} />
-      ) : isError ? (
-        <WidgetError message="Couldn't load KPIs." onRetry={() => refetch()} />
-      ) : selectedKeys.length === 0 ? (
-        <WidgetEmpty title="No KPIs selected" message="Click Edit KPIs to choose which metrics to display." />
+      {selectedKeys.length === 0 ? (
+        <WidgetEmpty
+          title="No KPIs selected"
+          message="Click Edit KPIs to choose which metrics to display."
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 flex-1 content-start">
           {selectedKeys.map((key) => {
-            const def: KPIDefinition | undefined = KPI_DEFINITIONS[key];
+            const def = KPI_DEFINITIONS[key];
             if (!def) return null;
-            const gated = def.financialGated && !hasFinancialAccess;
-            const value = data?.values?.[key] ?? null;
-            const display = gated ? "—" : formatKPIValue(value, def.format);
-            const accentColor = `hsl(var(${def.accentVar}))`;
             return (
-              <div
+              <KPICell
                 key={key}
-                className="relative rounded-md border border-bp-border bg-bp-card px-3 py-2 flex flex-col gap-1 min-h-[72px]"
-                data-testid={`kpi-${key}`}
-              >
-                <div
-                  className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md"
-                  style={{ backgroundColor: accentColor }}
-                />
-                <div className="flex items-center justify-between text-bp-muted">
-                  <span className="text-[11px] font-medium uppercase tracking-wide truncate">
-                    {def.shortLabel}
-                  </span>
-                  {gated ? (
-                    <Lock className="h-3 w-3 text-bp-amber" />
-                  ) : (
-                    <def.icon className="h-3 w-3" />
-                  )}
-                </div>
-                <div
-                  className="text-xl font-semibold leading-tight"
-                  data-testid={`kpi-value-${key}`}
-                >
-                  {display}
-                </div>
-              </div>
+                def={def}
+                period={period}
+                hasFinancialAccess={hasFinancialAccess}
+              />
             );
           })}
         </div>
       )}
-
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-md" data-testid="kpi-edit-dialog">
@@ -236,16 +296,19 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
             <DialogTitle>Edit KPIs</DialogTitle>
           </DialogHeader>
           <ScrollArea className="max-h-[420px] pr-2">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => {
-              const { active, over } = e;
-              if (!over || active.id === over.id) return;
-              const oldIndex = editorOrder.indexOf(active.id as KPIKey);
-              const newIndex = editorOrder.indexOf(over.id as KPIKey);
-              if (oldIndex < 0 || newIndex < 0) return;
-              const reordered = arrayMove(editorOrder, oldIndex, newIndex);
-              // Keep only the checked ones, in new order
-              setEditKeys(reordered.filter((k) => editKeys.includes(k)));
-            }}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(e) => {
+                const { active, over } = e;
+                if (!over || active.id === over.id) return;
+                const oldIndex = editorOrder.indexOf(active.id as KPIKey);
+                const newIndex = editorOrder.indexOf(over.id as KPIKey);
+                if (oldIndex < 0 || newIndex < 0) return;
+                const reordered = arrayMove(editorOrder, oldIndex, newIndex);
+                setEditKeys(reordered.filter((k) => editKeys.includes(k)));
+              }}
+            >
               <SortableContext items={editorOrder} strategy={verticalListSortingStrategy}>
                 <div className="flex flex-col gap-1.5">
                   {editorOrder.map((key) => (

@@ -1,180 +1,212 @@
-import {
-  Building2,
-  DollarSign,
-  FileText,
-  GitBranch,
-  Mail,
-  Activity,
-  AlertTriangle,
-  UserPlus,
-  TrendingUp,
-  Wallet,
-  Scale,
-  ShieldAlert,
-  type LucideIcon,
-} from "lucide-react";
-
 export type KPIKey =
-  | "active_projects"
-  | "total_revenue"
-  | "outstanding_invoices"
+  | "in_construction"
+  | "pre_construction"
+  | "revenue_buildpro"
+  | "revenue_xero"
+  | "outstanding_buildpro"
+  | "outstanding_xero"
   | "variations_pending"
-  | "proposals_open"
-  | "team_utilisation"
+  | "variations_approved"
   | "overdue_tasks"
-  | "new_leads"
-  | "avg_project_margin"
-  | "cash_position"
   | "budget_variance"
-  | "safety_incidents";
+  | "cash_xero"
+  | "avg_margin"
+  | "pipeline_value";
 
 export type KPIPeriod = "month" | "quarter" | "year";
 
 export type KPIFormat = "number" | "currency" | "percent";
 
+export type KPIAccent = "teal" | "purple" | "green" | "amber" | "coral";
+
 export interface KPIDefinition {
   key: KPIKey;
   label: string;
-  shortLabel: string;
+  labelDetail?: string;
+  description: string;
   format: KPIFormat;
-  accentVar: string; // hsl var name e.g. "--bp-purple"
-  icon: LucideIcon;
+  accent: KPIAccent;
   financialGated: boolean;
-  description?: string;
+  periodFilter: boolean;
+  endpoint: string;
+  requiresXero?: boolean;
+  hasConfig?: boolean;
+  showTrend?: boolean;
 }
 
+export const ACCENT_VAR: Record<KPIAccent, string> = {
+  teal: "--bp-teal",
+  purple: "--bp-purple",
+  green: "--bp-green",
+  amber: "--bp-amber",
+  coral: "--bp-coral",
+};
+
 export const KPI_DEFINITIONS: Record<KPIKey, KPIDefinition> = {
-  active_projects: {
-    key: "active_projects",
-    label: "Active Projects",
-    shortLabel: "Active Projects",
+  in_construction: {
+    key: "in_construction",
+    label: "In Construction",
+    description: "Active projects currently in the construction phase",
     format: "number",
-    accentVar: "--bp-purple",
-    icon: Building2,
+    accent: "teal",
     financialGated: false,
+    periodFilter: false,
+    endpoint: "/api/kpis/in-construction",
   },
-  total_revenue: {
-    key: "total_revenue",
-    label: "Total Revenue",
-    shortLabel: "Revenue",
-    format: "currency",
-    accentVar: "--bp-amber",
-    icon: DollarSign,
-    financialGated: true,
+  pre_construction: {
+    key: "pre_construction",
+    label: "Pre-Construction",
+    description: "Projects in the pre-construction phase",
+    format: "number",
+    accent: "purple",
+    financialGated: false,
+    periodFilter: false,
+    endpoint: "/api/kpis/pre-construction",
   },
-  outstanding_invoices: {
-    key: "outstanding_invoices",
-    label: "Outstanding Invoices",
-    shortLabel: "Outstanding",
+  revenue_buildpro: {
+    key: "revenue_buildpro",
+    label: "Revenue",
+    labelDetail: "BuildPro",
+    description: "Total revenue from sent/paid invoices in BuildPro",
     format: "currency",
-    accentVar: "--bp-coral",
-    icon: FileText,
+    accent: "green",
     financialGated: true,
+    periodFilter: true,
+    endpoint: "/api/kpis/revenue-buildpro",
+  },
+  revenue_xero: {
+    key: "revenue_xero",
+    label: "Revenue",
+    labelDetail: "Xero",
+    description: "Total revenue from Xero P&L for the selected period",
+    format: "currency",
+    accent: "green",
+    financialGated: true,
+    periodFilter: true,
+    endpoint: "/api/kpis/revenue-xero",
+    requiresXero: true,
+  },
+  outstanding_buildpro: {
+    key: "outstanding_buildpro",
+    label: "Outstanding",
+    labelDetail: "BuildPro",
+    description: "Total value of unpaid invoices in BuildPro",
+    format: "currency",
+    accent: "amber",
+    financialGated: true,
+    periodFilter: false,
+    endpoint: "/api/kpis/outstanding-buildpro",
+  },
+  outstanding_xero: {
+    key: "outstanding_xero",
+    label: "Outstanding",
+    labelDetail: "Xero",
+    description: "Accounts receivable balance from Xero",
+    format: "currency",
+    accent: "amber",
+    financialGated: true,
+    periodFilter: false,
+    endpoint: "/api/kpis/outstanding-xero",
+    requiresXero: true,
   },
   variations_pending: {
     key: "variations_pending",
     label: "Variations Pending",
-    shortLabel: "Variations",
+    description: "Variations sent but not yet approved",
     format: "number",
-    accentVar: "--bp-teal",
-    icon: GitBranch,
+    accent: "amber",
     financialGated: false,
+    periodFilter: false,
+    endpoint: "/api/kpis/variations-pending",
   },
-  proposals_open: {
-    key: "proposals_open",
-    label: "Proposals Open",
-    shortLabel: "Proposals",
-    format: "number",
-    accentVar: "--bp-purple",
-    icon: Mail,
+  variations_approved: {
+    key: "variations_approved",
+    label: "Variations Approved",
+    description: "Total value of variations approved in the selected period",
+    format: "currency",
+    accent: "green",
     financialGated: false,
-  },
-  team_utilisation: {
-    key: "team_utilisation",
-    label: "Team Utilisation",
-    shortLabel: "Utilisation",
-    format: "percent",
-    accentVar: "--bp-green",
-    icon: Activity,
-    financialGated: false,
+    periodFilter: true,
+    endpoint: "/api/kpis/variations-approved",
   },
   overdue_tasks: {
     key: "overdue_tasks",
     label: "Overdue Tasks",
-    shortLabel: "Overdue",
+    description: "Tasks that became overdue within the selected period",
     format: "number",
-    accentVar: "--bp-coral",
-    icon: AlertTriangle,
+    accent: "coral",
     financialGated: false,
-  },
-  new_leads: {
-    key: "new_leads",
-    label: "New Leads",
-    shortLabel: "Leads",
-    format: "number",
-    accentVar: "--bp-teal",
-    icon: UserPlus,
-    financialGated: false,
-  },
-  avg_project_margin: {
-    key: "avg_project_margin",
-    label: "Avg Project Margin",
-    shortLabel: "Margin",
-    format: "percent",
-    accentVar: "--bp-amber",
-    icon: TrendingUp,
-    financialGated: true,
-  },
-  cash_position: {
-    key: "cash_position",
-    label: "Cash Position",
-    shortLabel: "Cash",
-    format: "currency",
-    accentVar: "--bp-green",
-    icon: Wallet,
-    financialGated: true,
+    periodFilter: true,
+    endpoint: "/api/kpis/overdue-tasks",
   },
   budget_variance: {
     key: "budget_variance",
     label: "Budget Variance",
-    shortLabel: "Variance",
-    format: "currency",
-    accentVar: "--bp-amber",
-    icon: Scale,
+    description: "Average variance between actual costs and budget across active projects",
+    format: "percent",
+    accent: "amber",
     financialGated: true,
+    periodFilter: true,
+    endpoint: "/api/kpis/budget-variance",
+    showTrend: true,
   },
-  safety_incidents: {
-    key: "safety_incidents",
-    label: "Safety Incidents",
-    shortLabel: "Incidents",
-    format: "number",
-    accentVar: "--bp-coral",
-    icon: ShieldAlert,
-    financialGated: false,
+  cash_xero: {
+    key: "cash_xero",
+    label: "Cash Position",
+    labelDetail: "Xero",
+    description: "Combined balance of selected Xero bank accounts",
+    format: "currency",
+    accent: "teal",
+    financialGated: true,
+    periodFilter: false,
+    endpoint: "/api/kpis/cash-xero",
+    requiresXero: true,
+    hasConfig: true,
+  },
+  avg_margin: {
+    key: "avg_margin",
+    label: "Avg Project Margin",
+    description: "Average gross margin across active projects in the period",
+    format: "percent",
+    accent: "green",
+    financialGated: true,
+    periodFilter: true,
+    endpoint: "/api/kpis/avg-margin",
+  },
+  pipeline_value: {
+    key: "pipeline_value",
+    label: "Pipeline Value",
+    description: "Combined estimated value of all projects in the lead phase",
+    format: "currency",
+    accent: "purple",
+    financialGated: true,
+    periodFilter: false,
+    endpoint: "/api/kpis/pipeline-value",
   },
 };
 
 export const KPI_KEY_ORDER: KPIKey[] = [
-  "active_projects",
-  "total_revenue",
-  "outstanding_invoices",
+  "in_construction",
+  "pre_construction",
+  "pipeline_value",
+  "revenue_buildpro",
+  "revenue_xero",
+  "outstanding_buildpro",
+  "outstanding_xero",
   "variations_pending",
-  "proposals_open",
-  "team_utilisation",
+  "variations_approved",
   "overdue_tasks",
-  "new_leads",
-  "avg_project_margin",
-  "cash_position",
   "budget_variance",
-  "safety_incidents",
+  "cash_xero",
+  "avg_margin",
 ];
 
 export const DEFAULT_SELECTED_KPIS: KPIKey[] = [
-  "active_projects",
-  "total_revenue",
-  "outstanding_invoices",
+  "in_construction",
+  "pre_construction",
+  "revenue_buildpro",
+  "outstanding_buildpro",
   "variations_pending",
-  "team_utilisation",
   "overdue_tasks",
 ];
 
@@ -188,7 +220,8 @@ export function formatKPIValue(value: number | null | undefined, format: KPIForm
     return `${v < 0 ? "-" : ""}$${abs.toFixed(0)}`;
   }
   if (format === "percent") {
-    return `${value.toFixed(1)}%`;
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toFixed(1)}%`;
   }
   return value.toLocaleString();
 }

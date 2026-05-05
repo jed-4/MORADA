@@ -1150,12 +1150,8 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
       {renderHeader()}
 
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="p-4 space-y-2 w-full">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="animate-pulse h-12 bg-muted rounded-md" />
-            ))}
-          </div>
+        <div className="flex-1 px-4 pt-3">
+          <WidgetSkeleton rows={4} />
         </div>
       ) : (
         <>

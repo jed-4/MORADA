@@ -8463,7 +8463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // BuildPro Business Dashboard analytics endpoints (task #237)
   // ============================================================
 
-  app.get("/api/business/kpis", requireAuth, async (req, res) => {
+  // Deprecated: replaced by per-KPI endpoints under /api/kpis/*. Retained as no-op for safety.
+  app.get("/api/business/kpis_legacy_removed", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -8483,16 +8484,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       const hasFinancialAccess = canViewInvoices || canViewBudget || canViewBills;
 
-      const { projects: projectsTbl, clientInvoices: invoicesTbl, variations: variationsTbl, bills: billsTbl, budgets: budgetsTbl, estimates: estimatesTbl, timesheets: timesheetsTbl } = await import("@shared/schema");
+      const { projects: projectsTbl, clientInvoices: invoicesTbl, variations: variationsTbl, bills: billsTbl, budgets: budgetsTbl, timesheets: timesheetsTbl } = await import("@shared/schema");
 
-      const [projectRows, invoiceRows, variationRows, taskRows, billRows, budgetRows, estimateRows, timesheetRows] = await Promise.all([
+      const [projectRows, invoiceRows, variationRows, taskRows, billRows, budgetRows, timesheetRows] = await Promise.all([
         db.select().from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
         db.select().from(invoicesTbl),
         db.select().from(variationsTbl),
         storage.getTasks(undefined, undefined, undefined, undefined, undefined, companyId).catch(() => []),
         db.select().from(billsTbl),
         db.select().from(budgetsTbl),
-        db.select().from(estimatesTbl),
         db.select().from(timesheetsTbl),
       ]);
 
@@ -8517,10 +8517,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const variationsPending = variationRows
         .filter((v: any) => inCompany(v.projectId) && (v.status === "pending" || v.status === "action"))
-        .length;
-
-      const proposalsOpen = estimateRows
-        .filter((e: any) => inCompany(e.projectId) && e.status !== "approved" && e.status !== "rejected")
         .length;
 
       const overdueTasks = taskRows
@@ -8557,14 +8553,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           total_revenue: hasFinancialAccess ? totalRevenue : null,
           outstanding_invoices: hasFinancialAccess ? outstandingInvoices : null,
           variations_pending: variationsPending,
-          proposals_open: proposalsOpen,
-          team_utilisation: teamUtilisation,
           overdue_tasks: overdueTasks,
-          new_leads: 0,
           avg_project_margin: hasFinancialAccess ? avgMargin : null,
           cash_position: hasFinancialAccess ? cashPosition : null,
           budget_variance: hasFinancialAccess ? budgetVariance : null,
-          safety_incidents: 0,
         },
       });
     } catch (err) {
