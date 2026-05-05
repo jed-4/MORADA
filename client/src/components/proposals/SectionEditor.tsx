@@ -83,12 +83,6 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
-  console.log('SectionEditor rendering:', { 
-    sectionType: section.sectionType, 
-    sectionName: section.name,
-    content: content 
-  });
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
@@ -378,8 +372,6 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
   const estimates = projectId 
     ? allEstimates?.filter(est => est.projectId === projectId)
     : allEstimates;
-
-  console.log('EstimateEditor rendering:', { content, estimates, isLoading, projectId });
 
   const toggles = content.columnToggles || {
     description: true,
