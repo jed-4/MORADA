@@ -151,9 +151,6 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Create all default sections after creating the proposal
         if (result.id) {
-          // Auto-fill T&Cs from company default: prefer a termsTemplates entry
-          // marked defaultFor 'proposal', then any termsTemplates entry, then
-          // the company-wide termsAndConditions text.
           const tpls = companySettings?.termsTemplates ?? [];
           const proposalDefaultTpl =
             tpls.find((t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal')) ??
@@ -161,7 +158,6 @@ export default function ProposalDetail() {
           const defaultTermsContent =
             proposalDefaultTpl?.content || companySettings?.termsAndConditions || '';
 
-          // Default closing body — substitutes [Company Name] from company settings.
           const companyName = companySettings?.companyName || '[Company Name]';
           const defaultClosingHtml =
             `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
@@ -317,8 +313,6 @@ export default function ProposalDetail() {
       return;
     }
 
-    // Seed sensible defaults so freshly-added closing / T&Cs sections
-    // aren't empty — mirrors the new-proposal default seeding.
     let content: Record<string, unknown> | undefined;
     if (newSectionType === 'closing') {
       const companyName = companySettings?.companyName || '[Company Name]';

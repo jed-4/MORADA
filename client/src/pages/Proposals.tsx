@@ -292,11 +292,6 @@ export default function Proposals() {
       });
     }
 
-    // Version column appears only when the *currently visible* set of
-    // proposals contains a revision (version > 1). Conditionally including
-    // the column in the array (rather than relying on meta.defaultHidden,
-    // which DataTable only seeds once) makes show/hide reactive to the
-    // active tab / filter / search.
     const hasRevisions = filteredProposals.some((p) => (p.version ?? 1) > 1);
     if (hasRevisions) {
       cols.push({
@@ -504,7 +499,7 @@ export default function Proposals() {
     );
 
     return cols;
-  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, proposals, filteredProposals]);
+  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, filteredProposals]);
 
   const pickerColumns = useMemo(() => {
     return proposalColumns.map((c) => {

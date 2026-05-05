@@ -32,9 +32,6 @@ export function SignaturePad({ onChange, defaultName = '' }: SignaturePadProps) 
       }
     } else {
       if (hasDrawing && canvasRef.current && !canvasRef.current.isEmpty()) {
-        // Trim transparent whitespace before exporting so the saved PNG is
-        // tightly cropped to the actual ink — this is what the task plan
-        // requires and what the eventual PDF render expects.
         const data = canvasRef.current.getTrimmedCanvas().toDataURL('image/png');
         onChange({ data, method: 'drawn' });
       } else {
