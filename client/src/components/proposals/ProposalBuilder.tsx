@@ -1269,8 +1269,14 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
   });
+  // Also read the proposal so we can anchor revision lineage to the
+  // proposal-level estimateId when no section-specific pick is set yet.
+  const { data: proposal } = useQuery<Proposal>({
+    queryKey: ['/api/proposals', proposalId],
+  });
   const projectEstimates = allEstimates.filter((e) => e.projectId === projectId);
-  const current = projectEstimates.find((e) => e.id === currentEstimateId) || null;
+  const anchorId = currentEstimateId || proposal?.estimateId || null;
+  const current = projectEstimates.find((e) => e.id === anchorId) || null;
   const parentId = (current?.parentEstimateId as string | null | undefined) || current?.id || null;
 
   // Sibling revisions = same parent (or itself)

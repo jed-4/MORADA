@@ -94,7 +94,7 @@ export default function ProposalDetail() {
   const project = proposal ? projects.find(p => p.id === proposal.projectId) : undefined;
 
   // Fetch company settings (optional - for branding)
-  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string; primaryColor?: string } | null>({
+  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string; primaryColor?: string; proposalPrimaryColor?: string } | null>({
     queryKey: ["/api/company-settings"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
@@ -493,7 +493,7 @@ export default function ProposalDetail() {
                 onAddSection={handleAddSection}
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
-                primaryColor={companySettings?.primaryColor || project?.color || undefined}
+                primaryColor={companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
               />
             </div>
           </div>
