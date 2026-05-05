@@ -162,7 +162,7 @@ export default function ProposalDetail() {
           const defaultClosingHtml =
             `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
 
-          const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: any }> = [
+          const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: Record<string, unknown> }> = [
             { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
             { sectionType: 'cover_letter', name: 'Cover Letter', order: 1 },
             { sectionType: 'estimate', name: 'Estimate', order: 2 },

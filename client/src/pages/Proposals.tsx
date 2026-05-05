@@ -19,7 +19,6 @@ import {
   ArchiveRestore,
   Columns3,
   Eye,
-  EyeOff,
 } from "lucide-react";
 import {
   Tooltip,
@@ -456,10 +455,10 @@ export default function Proposals() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
-                    className="inline-flex items-center text-muted-foreground/60"
+                    className="inline-flex items-center text-muted-foreground/40"
                     data-testid={`icon-unviewed-${proposal.id}`}
                   >
-                    <EyeOff className="w-4 h-4" />
+                    <Eye className="w-4 h-4" strokeWidth={1.5} />
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>{tooltipText}</TooltipContent>
