@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/hooks/use-auth';
 import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -343,6 +344,19 @@ interface ProposalBuilderProps {
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
+  /**
+   * Optional DOM element to portal the proposal toolbar into (e.g. the page
+   * header next to the Save button). When omitted, the toolbar renders
+   * inline at the top of the builder.
+   */
+  toolbarSlot?: HTMLElement | null;
+  /**
+   * Called when the user picks an estimate revision from the toolbar
+   * selector. The page-level handler is responsible for cascading the new
+   * estimateId into all estimate sections AND persisting it on the
+   * proposal in a single batched flow (one toast, optimistic refresh).
+   */
+  onEstimateRevisionPick?: (estimateId: string) => void;
 }
 
 // --- Proposal Template (full proposal) ---
@@ -569,6 +583,8 @@ export function ProposalBuilder({
   companyLogo,
   companyName,
   primaryColor,
+  toolbarSlot,
+  onEstimateRevisionPick,
 }: ProposalBuilderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -841,40 +857,48 @@ export function ProposalBuilder({
     />
   );
 
-  return (
-    <div className="flex flex-col h-full gap-3">
-      {/* Proposal toolbar — estimate revision selector (left) + ⋯ menu (right). */}
-      <div className="rounded-md border p-2 flex items-center gap-2" data-testid="proposal-toolbar">
-        <div className="flex-1 min-w-0">
-          {project?.id ? (
-            <EstimateRevisionSelector
-              proposalId={proposal.id}
-              projectId={project.id}
-              currentEstimateId={proposal.estimateId || null}
-              onPick={(newEstimateId) => {
-                queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
-                // Cascade the chosen revision into every estimate section so
-                // the live preview and PDF stay in sync.
-                for (const s of sections) {
-                  if (s.sectionType !== 'estimate') continue;
-                  const c = (s.content as Record<string, unknown> | null) ?? {};
-                  if (c.estimateId === newEstimateId) continue;
-                  onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
-                }
-              }}
-            />
-          ) : (
-            <span className="text-xs text-muted-foreground">No project linked</span>
-          )}
-        </div>
-
-        {isSuperseded && (
-          <Badge variant="outline" className="text-xs" data-testid="badge-superseded">
-            Superseded
-          </Badge>
+  // Toolbar JSX — when a toolbarSlot is provided we portal it into the page
+  // header (next to Save). Otherwise we render it inline at the top of the
+  // builder for backwards compatibility.
+  const toolbarContent = (
+    <div
+      className={toolbarSlot ? 'flex items-center gap-2' : 'rounded-md border p-2 flex items-center gap-2'}
+      data-testid="proposal-toolbar"
+    >
+      <div className={toolbarSlot ? 'min-w-[14rem]' : 'flex-1 min-w-0'}>
+        {project?.id ? (
+          <EstimateRevisionSelector
+            projectId={project.id}
+            currentEstimateId={proposal.estimateId || null}
+            compact={!!toolbarSlot}
+            onPick={(newEstimateId) => {
+              if (onEstimateRevisionPick) {
+                onEstimateRevisionPick(newEstimateId);
+                return;
+              }
+              // Fallback when no page-level handler is wired: persist on the
+              // proposal and cascade into every estimate section.
+              queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+              for (const s of sections) {
+                if (s.sectionType !== 'estimate') continue;
+                const c = (s.content as Record<string, unknown> | null) ?? {};
+                if (c.estimateId === newEstimateId) continue;
+                onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
+              }
+            }}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">No project linked</span>
         )}
+      </div>
 
-        <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
+      {isSuperseded && (
+        <Badge variant="outline" className="text-xs" data-testid="badge-superseded">
+          Superseded
+        </Badge>
+      )}
+
+      <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
           {({ loading, url }) => (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -954,6 +978,13 @@ export function ProposalBuilder({
           )}
         </PDFDownloadLink>
       </div>
+  );
+
+  return (
+    <div className="flex flex-col h-full gap-3">
+      {/* When a toolbarSlot is provided (e.g. the page header), portal the
+          toolbar there. Otherwise render it inline above the preview. */}
+      {toolbarSlot ? createPortal(toolbarContent, toolbarSlot) : toolbarContent}
 
       {/* Revision history side drawer (opened from the ⋯ menu). */}
       <Sheet open={isRevisionHistoryOpen} onOpenChange={setIsRevisionHistoryOpen}>
@@ -1584,22 +1615,26 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 
 // --- Estimate Revision Selector (sibling estimates) ---
 interface EstimateRevisionSelectorProps {
-  proposalId: string;
   currentEstimateId: string | null;
   projectId: string;
   onPick: (id: string) => void;
+  /** Compact mode: no Label, slim trigger — for use inside the page header. */
+  compact?: boolean;
 }
 
-function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, onPick }: EstimateRevisionSelectorProps) {
-  const { toast } = useToast();
+function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact }: EstimateRevisionSelectorProps) {
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
   });
-  const { data: proposal } = useQuery<Proposal>({
-    queryKey: ['/api/proposals', proposalId],
-  });
+  // Optimistic id so the trigger label updates immediately on pick, before
+  // the proposal query refetches. Cleared once the prop catches up.
+  const [optimisticId, setOptimisticId] = useState<string | null>(null);
+  useEffect(() => {
+    if (optimisticId && currentEstimateId === optimisticId) setOptimisticId(null);
+  }, [currentEstimateId, optimisticId]);
+
   const projectEstimates = allEstimates.filter((e) => e.projectId === projectId);
-  const anchorId = currentEstimateId || proposal?.estimateId || null;
+  const anchorId = optimisticId || currentEstimateId || null;
   const current = projectEstimates.find((e) => e.id === anchorId) || null;
   const parentId = (current?.parentEstimateId as string | null | undefined) || current?.id || null;
 
@@ -1612,46 +1647,37 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
   const noAnchor = !parentId;
 
-  const persistMutation = useMutation({
-    mutationFn: async (estimateId: string) => {
-      // Persist the chosen revision both on the proposal (proposals.estimateId)
-      // and on the local section content.
-      return await apiRequest(`/api/proposals/${proposalId}`, 'PATCH', { estimateId });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
-    },
-    onError: () => {
-      toast({ title: 'Could not link estimate revision', variant: 'destructive' });
-    },
-  });
-
   if (ordered.length === 0) return null;
+
+  const trigger = (
+    <Select
+      value={anchorId || ''}
+      onValueChange={(v) => {
+        if (!v) return;
+        setOptimisticId(v);
+        onPick(v);
+      }}
+    >
+      <SelectTrigger className="h-9 text-xs" data-testid="select-estimate-revision">
+        <SelectValue placeholder={noAnchor ? 'Choose an estimate…' : 'Choose a revision…'} />
+      </SelectTrigger>
+      <SelectContent>
+        {ordered.map((e) => (
+          <SelectItem key={e.id} value={e.id} className="text-xs">
+            {revisionLabel(e.version)} — {e.name}
+            {e.status ? ` (${e.status})` : ''}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
+  if (compact) return trigger;
 
   return (
     <div className="space-y-1">
       <Label className="text-xs">{noAnchor ? 'Link estimate' : 'Estimate revision'}</Label>
-      <Select
-        value={anchorId || ''}
-        onValueChange={(v) => {
-          if (!v) return;
-          onPick(v);
-          persistMutation.mutate(v);
-        }}
-      >
-        <SelectTrigger className="h-8 text-xs" data-testid="select-estimate-revision">
-          <SelectValue placeholder={noAnchor ? 'Choose an estimate…' : 'Choose a revision…'} />
-        </SelectTrigger>
-        <SelectContent>
-          {ordered.map((e) => (
-            <SelectItem key={e.id} value={e.id} className="text-xs">
-              {revisionLabel(e.version)} — {e.name}
-              {e.status ? ` (${e.status})` : ''}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {trigger}
     </div>
   );
 }
@@ -2147,7 +2173,6 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
             <FileText className="w-3 h-3" /> Linked estimate revision
           </div>
           <EstimateRevisionSelector
-            proposalId={proposal.id}
             projectId={projectId}
             currentEstimateId={proposal.estimateId || null}
             onPick={(newEstimateId) => {

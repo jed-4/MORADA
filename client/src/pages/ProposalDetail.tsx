@@ -299,6 +299,61 @@ export default function ProposalDetail() {
     updateSectionMutation.mutate({ sectionId, updates });
   };
 
+  // Silent batched cascade for the estimate-revision selector. Persists the
+  // chosen revision on the proposal AND every estimate section in one shot,
+  // showing a single toast instead of one per section.
+  const cascadeEstimateRevisionMutation = useMutation({
+    mutationFn: async (estimateId: string) => {
+      const targets = localSections.filter((s) => {
+        if (s.sectionType !== 'estimate') return false;
+        const c = (s.content as Record<string, unknown> | null) ?? {};
+        return c.estimateId !== estimateId;
+      });
+      await Promise.all([
+        apiRequest(`/api/proposals/${params.id}`, "PATCH", { estimateId }),
+        ...targets.map((s) => {
+          const c = (s.content as Record<string, unknown> | null) ?? {};
+          return apiRequest(`/api/proposal-sections/${s.id}`, "PATCH", {
+            content: { ...c, estimateId },
+          });
+        }),
+      ]);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+      toast({
+        title: "Estimate revision linked",
+        description: "The proposal now uses the selected revision.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Could not link estimate revision",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEstimateRevisionPick = (estimateId: string) => {
+    // Optimistic local update so the live preview reflects the new revision
+    // before the server round-trip resolves.
+    setLocalSections((prev) =>
+      prev.map((s) => {
+        if (s.sectionType !== 'estimate') return s;
+        const c = (s.content as Record<string, unknown> | null) ?? {};
+        if (c.estimateId === estimateId) return s;
+        return { ...s, content: { ...c, estimateId } } as ProposalSection;
+      }),
+    );
+    cascadeEstimateRevisionMutation.mutate(estimateId);
+  };
+
+  // DOM slot for the proposal toolbar (rendered into the title row via portal
+  // by ProposalBuilder).
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+
   const handleAddSection = () => {
     setIsAddingSectionOpen(true);
   };
@@ -418,7 +473,10 @@ export default function ProposalDetail() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Portal target for the proposal toolbar (estimate revision
+                selector + ⋯ menu). Filled by ProposalBuilder via createPortal. */}
+            <div ref={setToolbarSlot} className="flex items-center gap-2" data-testid="proposal-toolbar-slot" />
             <Button
               variant="default"
               onClick={handleSave}
@@ -517,9 +575,9 @@ export default function ProposalDetail() {
           </div>
         ) : (
           <div className="flex flex-col h-full gap-3 min-h-0">
-            {/* Revision controls now live inside ProposalBuilder's top toolbar
-                (estimate revision selector + ⋯ menu with revision history,
-                share link, preview toggle, PDF download). */}
+            {/* Revision controls live in the page title row above (estimate
+                revision selector + ⋯ menu); ProposalBuilder portals them
+                into the title-row toolbar slot. */}
             <div className="flex-1 min-h-0">
               <ProposalBuilder
                 proposal={proposal!}
@@ -531,6 +589,8 @@ export default function ProposalDetail() {
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
                 primaryColor={(proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor || companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
+                toolbarSlot={toolbarSlot}
+                onEstimateRevisionPick={handleEstimateRevisionPick}
               />
             </div>
           </div>
