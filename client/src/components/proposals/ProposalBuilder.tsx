@@ -17,7 +17,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, EyeOff, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck, MoreHorizontal } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useLocation } from 'wouter';
 import { format as formatDate } from 'date-fns';
 import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
@@ -272,20 +274,9 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             {section.sectionType === "estimate" && (
               <div className="space-y-3">
-                <EstimateRevisionSelector
-                  proposalId={section.proposalId}
-                  currentEstimateId={(localContent.estimateId as string | undefined) || null}
-                  projectId={projectId}
-                  onPick={(id) => {
-                    // Authoritative: update local state AND immediately
-                    // persist the section content patch so the live preview
-                    // refetches against the new revision without waiting
-                    // for the user to press Save Changes.
-                    const next = { ...localContent, estimateId: id };
-                    setLocalContent(next);
-                    onSectionUpdate(section.id, { content: next });
-                  }}
-                />
+                {/* Per-section estimate revision selector removed — the
+                    proposal-level toolbar selector now drives every estimate
+                    section's linked revision in one place. */}
                 <EstimateEditor
                   content={localContent}
                   setContent={setLocalContent}
@@ -579,11 +570,62 @@ export function ProposalBuilder({
   companyName,
   primaryColor,
 }: ProposalBuilderProps) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
+
+  // Sibling revisions for the toolbar's "Revision history" drawer.
+  const revisionParentId = proposal.parentProposalId || proposal.id;
+  const { data: revisionSiblings = [] } = useQuery<Proposal[]>({
+    queryKey: ['/api/proposals', 'revisions', revisionParentId],
+    queryFn: async () => {
+      const res = await fetch(`/api/proposals?parentId=${encodeURIComponent(revisionParentId)}`);
+      if (!res.ok) return [];
+      const all = (await res.json()) as Proposal[];
+      return all.filter((p) => p.id === revisionParentId || p.parentProposalId === revisionParentId);
+    },
+  });
+
+  const newRevisionMutation = useMutation({
+    mutationFn: async (): Promise<Proposal> => {
+      const newProposal = await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
+      return newProposal as Proposal;
+    },
+    onSuccess: (newProposal) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Revision created', description: `v${newProposal.version} is ready to edit.` });
+      if (newProposal?.id) {
+        const path = newProposal.projectId
+          ? `/projects/${newProposal.projectId}/proposals/${newProposal.id}`
+          : `/proposals/${newProposal.id}`;
+        setLocation(path);
+      }
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Could not create revision';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    },
+  });
+
+  const handleCopyShareLink = () => {
+    if (!proposal.shareToken) {
+      toast({ title: 'No share link', description: 'This revision does not have a client share token yet.', variant: 'destructive' });
+      return;
+    }
+    const url = `${window.location.origin}/portal/proposal/${proposal.id}?token=${encodeURIComponent(proposal.shareToken)}`;
+    navigator.clipboard.writeText(url).then(
+      () => toast({ title: 'Share link copied', description: 'Send this link to your client.' }),
+      () => toast({ title: 'Copy failed', variant: 'destructive' as const }),
+    );
+  };
+
+  const orderedRevisions = [...revisionSiblings].sort((a, b) => (a.version || 1) - (b.version || 1));
+  const isSuperseded = proposal.status === 'superseded';
   const [pdfEstimatesData, setPdfEstimatesData] = useState<Record<string, {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -782,56 +824,213 @@ export function ProposalBuilder({
     onSectionsReorder(reorderedSections);
   }
 
+  const proposalDocument = (
+    <ProposalDocument
+      proposal={proposal}
+      sections={sections}
+      project={project}
+      client={client}
+      companyLogo={companyLogo}
+      companyName={companyName}
+      companyPhone={companyPhone}
+      primaryColor={primaryColor}
+      estimatesData={pdfEstimatesData}
+      milestones={milestones}
+      acceptance={latestAcceptance}
+      proposalItems={proposalItems}
+    />
+  );
+
   return (
-    <div className="flex h-full gap-4">
-      {/* PDF Preview Panel - 60% */}
-      <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Preview</h2>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowPreview(!showPreview)}
-              data-testid="button-toggle-preview"
-            >
-              <Eye className="w-4 h-4 mr-2" />
-              {showPreview ? 'Hide' : 'Show'} Preview
-            </Button>
-            <PDFDownloadLink
-              document={
-                <ProposalDocument
-                  proposal={proposal}
-                  sections={sections}
-                  project={project}
-                  client={client}
-                  companyLogo={companyLogo}
-                  companyName={companyName}
-                  companyPhone={companyPhone}
-                  primaryColor={primaryColor}
-                  estimatesData={pdfEstimatesData}
-                  milestones={milestones}
-                  acceptance={latestAcceptance}
-                  proposalItems={proposalItems}
-                />
-              }
-              fileName={`${proposal.proposalNumber}.pdf`}
-            >
-              {({ loading }) => (
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={loading}
-                  data-testid="button-download-pdf"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  {loading ? 'Generating...' : 'Download PDF'}
-                </Button>
-              )}
-            </PDFDownloadLink>
-          </div>
+    <div className="flex flex-col h-full gap-3">
+      {/* Proposal toolbar — estimate revision selector (left) + ⋯ menu (right). */}
+      <div className="rounded-md border p-2 flex items-center gap-2" data-testid="proposal-toolbar">
+        <div className="flex-1 min-w-0">
+          {project?.id ? (
+            <EstimateRevisionSelector
+              proposalId={proposal.id}
+              projectId={project.id}
+              currentEstimateId={proposal.estimateId || null}
+              onPick={(newEstimateId) => {
+                queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+                // Cascade the chosen revision into every estimate section so
+                // the live preview and PDF stay in sync.
+                for (const s of sections) {
+                  if (s.sectionType !== 'estimate') continue;
+                  const c = (s.content as Record<string, unknown> | null) ?? {};
+                  if (c.estimateId === newEstimateId) continue;
+                  onSectionUpdate(s.id, { content: { ...c, estimateId: newEstimateId } });
+                }
+              }}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">No project linked</span>
+          )}
         </div>
 
+        {isSuperseded && (
+          <Badge variant="outline" className="text-xs" data-testid="badge-superseded">
+            Superseded
+          </Badge>
+        )}
+
+        <PDFDownloadLink document={proposalDocument} fileName={`${proposal.proposalNumber}.pdf`}>
+          {({ loading, url }) => (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  data-testid="button-proposal-toolbar-menu"
+                  aria-label="Proposal actions"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Revision</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={() => newRevisionMutation.mutate()}
+                  disabled={newRevisionMutation.isPending}
+                  data-testid="menu-create-revision"
+                >
+                  {newRevisionMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Copy className="w-4 h-4 mr-2" />
+                  )}
+                  Create new revision
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={handleCopyShareLink}
+                  disabled={!proposal.shareToken}
+                  data-testid="menu-copy-share-link"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Copy client share link
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setIsRevisionHistoryOpen(true)}
+                  data-testid="menu-revision-history"
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  Revision history
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Preview</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={() => setShowPreview((v) => !v)}
+                  data-testid="menu-toggle-preview"
+                >
+                  {showPreview ? (
+                    <EyeOff className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Eye className="w-4 h-4 mr-2" />
+                  )}
+                  {showPreview ? 'Hide preview' : 'Show preview'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  asChild
+                  disabled={loading || !url}
+                  data-testid="menu-download-pdf"
+                >
+                  <a
+                    href={url || '#'}
+                    download={`${proposal.proposalNumber}.pdf`}
+                    onClick={(e) => {
+                      if (loading || !url) e.preventDefault();
+                    }}
+                  >
+                    {loading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    {loading ? 'Generating PDF…' : 'Download PDF'}
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </PDFDownloadLink>
+      </div>
+
+      {/* Revision history side drawer (opened from the ⋯ menu). */}
+      <Sheet open={isRevisionHistoryOpen} onOpenChange={setIsRevisionHistoryOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto" data-testid="sheet-revision-history">
+          <SheetHeader>
+            <SheetTitle>Revision history</SheetTitle>
+            <SheetDescription>
+              All revisions of this proposal. Click a revision to open it.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-2">
+            {orderedRevisions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No revisions yet.</p>
+            ) : (
+              orderedRevisions.map((p) => {
+                const isCurrent = p.id === proposal.id;
+                const status = (p.status || 'draft') as string;
+                const statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' =
+                  status === 'accepted' ? 'default'
+                    : status === 'rejected' ? 'destructive'
+                    : status === 'sent' || status === 'viewed' ? 'secondary'
+                    : 'outline';
+                const StatusIcon =
+                  status === 'accepted' ? CheckCircle
+                    : status === 'rejected' ? XCircle
+                    : status === 'sent' || status === 'viewed' ? Send
+                    : status === 'superseded' ? FileCheck
+                    : FileText;
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-start gap-2 border rounded-md px-2 py-2 text-sm ${isCurrent ? 'bg-muted' : ''}`}
+                    data-testid={`sheet-revision-item-${p.id}`}
+                  >
+                    <StatusIcon className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{revisionLabel(p.version)}</span>
+                        <Badge variant="outline" className="text-xs">v{Math.max(1, Number(p.version || 1))}</Badge>
+                        <span className="truncate text-xs text-muted-foreground">{p.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                        <span>#{p.proposalNumber}</span>
+                        {p.sentDate && (
+                          <span>Sent {formatDate(new Date(p.sentDate), 'd MMM yyyy')}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant={statusVariant} className="text-xs capitalize">{status}</Badge>
+                    {!isCurrent && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          const path = p.projectId
+                            ? `/projects/${p.projectId}/proposals/${p.id}`
+                            : `/proposals/${p.id}`;
+                          setIsRevisionHistoryOpen(false);
+                          setLocation(path);
+                        }}
+                        aria-label="Open revision"
+                        data-testid={`sheet-button-open-revision-${p.id}`}
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex flex-1 min-h-0 gap-4">
+      {/* PDF Preview Panel - 60% */}
+      <div className="flex-1 flex flex-col">
         {showPreview ? (
           <div className="flex-1 border rounded-lg overflow-hidden bg-muted relative">
             {isGenerating ? (
@@ -919,6 +1118,7 @@ export function ProposalBuilder({
             <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
           </TabsContent>
         </Tabs>
+      </div>
       </div>
     </div>
   );

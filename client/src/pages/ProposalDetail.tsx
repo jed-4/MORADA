@@ -41,7 +41,7 @@ import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ProposalBuilder, RevisionHistoryPanel } from "@/components/proposals/ProposalBuilder";
+import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
 
 interface ProposalDetailParams {
   id?: string;
@@ -517,17 +517,9 @@ export default function ProposalDetail() {
           </div>
         ) : (
           <div className="flex flex-col h-full gap-3 min-h-0">
-            {/* Revision history surfaces at the proposal level so users can
-                manage versions and re-link the estimate revision without
-                opening the builder's right-hand tabs. */}
-            <div className="rounded-md border p-3">
-              <RevisionHistoryPanel
-                proposal={proposal!}
-                projectId={project?.id}
-                sections={localSections}
-                onSectionUpdate={handleSectionUpdate}
-              />
-            </div>
+            {/* Revision controls now live inside ProposalBuilder's top toolbar
+                (estimate revision selector + ⋯ menu with revision history,
+                share link, preview toggle, PDF download). */}
             <div className="flex-1 min-h-0">
               <ProposalBuilder
                 proposal={proposal!}
