@@ -336,9 +336,10 @@ export default function ProposalDetail() {
     },
   });
 
-  const handleEstimateRevisionPick = (estimateId: string) => {
+  const handleEstimateRevisionPick = async (estimateId: string) => {
     // Optimistic local update so the live preview reflects the new revision
     // before the server round-trip resolves.
+    const previous = localSections;
     setLocalSections((prev) =>
       prev.map((s) => {
         if (s.sectionType !== 'estimate') return s;
@@ -347,7 +348,13 @@ export default function ProposalDetail() {
         return { ...s, content: { ...c, estimateId } } as ProposalSection;
       }),
     );
-    cascadeEstimateRevisionMutation.mutate(estimateId);
+    try {
+      await cascadeEstimateRevisionMutation.mutateAsync(estimateId);
+    } catch (err) {
+      // Roll back the optimistic local section update on failure.
+      setLocalSections(previous);
+      throw err;
+    }
   };
 
   // DOM slot for the proposal toolbar (rendered into the title row via portal

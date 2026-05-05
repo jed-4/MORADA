@@ -871,14 +871,16 @@ export function ProposalBuilder({
             projectId={project.id}
             currentEstimateId={proposal.estimateId || null}
             compact={!!toolbarSlot}
+            // When no page-level cascade is wired, fall back to persisting
+            // proposal.estimateId from inside the selector itself.
+            persistOnProposalId={onEstimateRevisionPick ? undefined : proposal.id}
             onPick={(newEstimateId) => {
               if (onEstimateRevisionPick) {
-                onEstimateRevisionPick(newEstimateId);
-                return;
+                return onEstimateRevisionPick(newEstimateId);
               }
-              // Fallback when no page-level handler is wired: persist on the
-              // proposal and cascade into every estimate section.
-              queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+              // Fallback cascade: update each estimate section so the live
+              // preview stays in sync. Proposal-level persist is handled by
+              // `persistOnProposalId` above.
               for (const s of sections) {
                 if (s.sectionType !== 'estimate') continue;
                 const c = (s.content as Record<string, unknown> | null) ?? {};
@@ -1617,12 +1619,25 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
 interface EstimateRevisionSelectorProps {
   currentEstimateId: string | null;
   projectId: string;
-  onPick: (id: string) => void;
+  /**
+   * Called when the user picks a revision. May return a promise; if it
+   * rejects, the optimistic trigger label is rolled back automatically.
+   */
+  onPick: (id: string) => void | Promise<void>;
   /** Compact mode: no Label, slim trigger — for use inside the page header. */
   compact?: boolean;
+  /**
+   * If provided, the selector will internally PATCH `proposals.estimateId`
+   * after `onPick`. Use this for legacy callsites where the parent doesn't
+   * persist the proposal-level link itself. Leave undefined when the parent
+   * already handles persistence (e.g. the page-level cascade in
+   * ProposalDetail).
+   */
+  persistOnProposalId?: string;
 }
 
-function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact }: EstimateRevisionSelectorProps) {
+function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compact, persistOnProposalId }: EstimateRevisionSelectorProps) {
+  const { toast } = useToast();
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
   });
@@ -1652,13 +1667,28 @@ function EstimateRevisionSelector({ currentEstimateId, projectId, onPick, compac
   const trigger = (
     <Select
       value={anchorId || ''}
-      onValueChange={(v) => {
+      onValueChange={async (v) => {
         if (!v) return;
         setOptimisticId(v);
-        onPick(v);
+        try {
+          await Promise.resolve(onPick(v));
+          if (persistOnProposalId) {
+            await apiRequest(`/api/proposals/${persistOnProposalId}`, 'PATCH', { estimateId: v });
+            queryClient.invalidateQueries({ queryKey: ['/api/proposals', persistOnProposalId] });
+            queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+          }
+        } catch {
+          // Roll back optimistic label so the user isn't stuck on a failed pick.
+          setOptimisticId(null);
+          toast({ title: 'Could not link estimate revision', variant: 'destructive' });
+        }
       }}
     >
-      <SelectTrigger className="h-9 text-xs" data-testid="select-estimate-revision">
+      <SelectTrigger
+        className="h-9 text-xs"
+        aria-label={noAnchor ? 'Link estimate' : 'Estimate revision'}
+        data-testid="select-estimate-revision"
+      >
         <SelectValue placeholder={noAnchor ? 'Choose an estimate…' : 'Choose a revision…'} />
       </SelectTrigger>
       <SelectContent>
@@ -2175,8 +2205,8 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
           <EstimateRevisionSelector
             projectId={projectId}
             currentEstimateId={proposal.estimateId || null}
+            persistOnProposalId={proposal.id}
             onPick={(newEstimateId) => {
-              queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
               if (sections && onSectionUpdate) {
                 for (const s of sections) {
                   if (s.sectionType !== 'estimate') continue;
