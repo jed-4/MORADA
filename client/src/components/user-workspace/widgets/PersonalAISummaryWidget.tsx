@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, startOfDay, subDays, isToday, isTomorrow, isBefore, isWithinInterval, addDays, differenceInDays } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
@@ -315,16 +316,11 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
 
   if (!isLoadingCapabilities && !aiAvailable) {
     return (
-      <div
-        className="flex flex-col items-center justify-center h-full p-4 text-center"
-        data-testid="ai-summary-unavailable"
-      >
-        <Sparkles className="h-6 w-6 text-muted-foreground mb-2" />
-        <p className="text-xs font-medium">AI Summary unavailable</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Add an OpenAI API key to enable daily summaries.
-        </p>
-      </div>
+      <WidgetEmpty
+        icon={Sparkles}
+        title="AI Summary unavailable"
+        message="Add an OpenAI API key to enable daily summaries."
+      />
     );
   }
 

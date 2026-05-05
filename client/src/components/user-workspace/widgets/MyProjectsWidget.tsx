@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import type { Project } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
@@ -128,16 +130,12 @@ export default function MyProjectsWidget({ widget, onUpdate, isConfiguring, onCl
 
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="flex items-center justify-center h-20">
-            <span className="text-sm text-muted-foreground">Loading...</span>
-          </div>
+          <WidgetSkeleton rows={3} />
         ) : myProjects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-20 gap-2 text-center px-4">
-            <FolderOpen className="h-5 w-5 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
-              {searchQuery ? "No matching projects found" : "No active projects"}
-            </span>
-          </div>
+          <WidgetEmpty
+            icon={FolderOpen}
+            message={searchQuery ? "No matching projects found" : "No active projects"}
+          />
         ) : (
           <div className="p-1">
             {myProjects.map((project) => (

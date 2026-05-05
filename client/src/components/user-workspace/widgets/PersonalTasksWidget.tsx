@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { type Task, type Project } from "@shared/schema";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -452,15 +454,9 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-2 pr-2">
           {isLoading ? (
-            <div className="space-y-1">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="animate-pulse h-7 bg-muted rounded" />
-              ))}
-            </div>
+            <WidgetSkeleton rows={3} />
           ) : filteredTasks.length === 0 ? (
-            <div className="text-center py-4 text-xs text-muted-foreground">
-              No tasks match your filters
-            </div>
+            <WidgetEmpty icon={CheckSquare} message="No tasks match your filters" />
           ) : groupBy === 'none' ? (
             <div className="space-y-0.5">
               {filteredTasks.map((task) => {

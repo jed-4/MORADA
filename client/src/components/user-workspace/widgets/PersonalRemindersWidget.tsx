@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Bell, Clock, AlertCircle, Plus, Check, BellOff } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import { format, formatDistanceToNow, isPast, isToday } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -150,19 +152,9 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
       
       <div className="space-y-1">
         {isLoading ? (
-          <div className="space-y-1">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse p-2 border rounded-md">
-                <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
-                <div className="h-2 bg-muted rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
+          <WidgetSkeleton rows={3} />
         ) : displayReminders.length === 0 ? (
-          <div className="text-center py-3 text-xs text-muted-foreground">
-            <Bell className="h-6 w-6 mx-auto mb-1 opacity-30" />
-            No active reminders
-          </div>
+          <WidgetEmpty icon={Bell} message="No active reminders" />
         ) : (
           displayReminders.map((reminder) => {
             const status = getReminderStatus(reminder);

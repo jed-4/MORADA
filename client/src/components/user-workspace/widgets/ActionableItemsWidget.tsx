@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { Link } from "wouter";
 import { FileSpreadsheet, ChevronRight, Clock, CheckCircle, AlertCircle, Calendar, ListTodo, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -334,37 +336,33 @@ export default function ActionableItemsWidget({
   }
 
   if (isLoading) {
-    return (
-      <div className="p-3 space-y-2">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="animate-pulse h-12 bg-muted rounded-md" />
-        ))}
-      </div>
-    );
+    return <WidgetSkeleton rows={3} />;
   }
 
   if (!hasAnyActionableStatuses) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[120px]">
-        <AlertCircle className="h-6 w-6 text-amber-500 mb-2" />
-        <p className="text-xs text-muted-foreground">
-          No statuses marked as actionable.
-        </p>
-        <Link href="/settings/fields">
-          <Button variant="link" size="sm" className="h-6 text-data mt-1">
-            Configure in Field Settings
-          </Button>
-        </Link>
-      </div>
+      <WidgetEmpty
+        icon={AlertCircle}
+        title="No actionable statuses"
+        message="No statuses marked as actionable."
+        action={
+          <Link href="/settings/fields">
+            <Button variant="link" size="sm" className="h-6 text-data">
+              Configure in Field Settings
+            </Button>
+          </Link>
+        }
+      />
     );
   }
 
   if (actionableItems.length === 0) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[120px]">
-        <CheckCircle className="h-6 w-6 text-green-500 mb-2" />
-        <p className="text-xs text-muted-foreground">All caught up! No actionable items.</p>
-      </div>
+      <WidgetEmpty
+        icon={CheckCircle}
+        title="All caught up!"
+        message="No actionable items."
+      />
     );
   }
 

@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project, type FocusBlock } from "@shared/schema";
@@ -601,19 +603,13 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       </div>
 
       {isLoading ? (
-        <div className="space-y-1">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse p-2 border rounded-md">
-              <div className="h-3 bg-muted rounded w-3/4"></div>
-            </div>
-          ))}
-        </div>
+        <WidgetSkeleton rows={3} />
       ) : visibleSections.length === 0 ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          <Sun className="h-8 w-8 mx-auto mb-2 text-amber-400" />
-          <p>No sections enabled</p>
-          <p className="text-muted-foreground">Configure widget to show sections</p>
-        </div>
+        <WidgetEmpty
+          icon={Sun}
+          title="No sections enabled"
+          message="Configure widget to show sections"
+        />
       ) : (
         <div className="space-y-1">
           {visibleSections.map(section => renderSection(section))}

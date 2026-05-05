@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -303,16 +305,9 @@ export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onC
 
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="flex items-center justify-center h-20">
-            <span className="text-sm text-muted-foreground">Loading...</span>
-          </div>
+          <WidgetSkeleton rows={3} />
         ) : sortedItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-20 gap-2 text-center px-4">
-            <Pin className="h-5 w-5 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
-              No pinned items yet. Click + to add favorites.
-            </span>
-          </div>
+          <WidgetEmpty icon={Pin} message="No pinned items yet. Click + to add favorites." />
         ) : (
           <DndContext
             sensors={sensors}

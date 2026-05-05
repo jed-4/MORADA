@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { getUserDisplayName } from "@/lib/utils";
@@ -170,20 +172,13 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
       
       <div className="space-y-1">
         {isLoading ? (
-          <div className="space-y-1">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="animate-pulse p-2 border rounded-md">
-                <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
-                <div className="h-2 bg-muted rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
+          <WidgetSkeleton rows={4} />
         ) : displayActivities.length === 0 ? (
-          <div className="text-center py-4 text-xs text-muted-foreground">
-            <Activity className="h-6 w-6 mx-auto mb-1 opacity-30" />
-            <p>No recent activity</p>
-            <p className="text-data">Activity on your tasks and watched items will appear here</p>
-          </div>
+          <WidgetEmpty
+            icon={Activity}
+            title="No recent activity"
+            message="Activity on your tasks and watched items will appear here"
+          />
         ) : (
           displayActivities.map((activity) => {
             const Icon = getActivityIcon(activity.type);

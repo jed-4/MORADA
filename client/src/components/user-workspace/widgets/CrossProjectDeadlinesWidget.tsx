@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Calendar, AlertCircle } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { type Task, type Project, type Milestone } from "@shared/schema";
 import { useLocation } from "wouter";
 import { format, differenceInDays } from "date-fns";
@@ -194,9 +195,7 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
       
       <div className="space-y-1">
         {displayDeadlines.length === 0 ? (
-          <div className="text-center py-3 text-xs text-muted-foreground">
-            No upcoming deadlines
-          </div>
+          <WidgetEmpty icon={Calendar} message="No upcoming deadlines" />
         ) : (
           displayDeadlines.map((item) => {
             const daysInfo = getDaysLabel(item.daysUntil);

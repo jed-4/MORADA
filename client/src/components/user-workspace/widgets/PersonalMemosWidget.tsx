@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { FileText, Plus, Pin } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
+import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
@@ -125,18 +127,9 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
       
       <div className="space-y-1">
         {isLoading ? (
-          <div className="space-y-1">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse p-2 border rounded-md">
-                <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
-                <div className="h-2 bg-muted rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
+          <WidgetSkeleton rows={3} />
         ) : displayMemos.length === 0 ? (
-          <div className="text-center py-3 text-xs text-muted-foreground">
-            No memos yet
-          </div>
+          <WidgetEmpty icon={FileText} message="No memos yet" />
         ) : (
           displayMemos.map((memo) => (
             <div 
