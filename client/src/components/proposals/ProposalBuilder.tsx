@@ -385,23 +385,49 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
       const tpl = templates.find((t) => t.id === templateId);
       if (!tpl) throw new Error('Template not found');
 
-      // Remove existing sections
+      // Insert template sections first (use a temporary order offset so they
+      // don't collide with existing sections), then delete the originals.
+      // If insertion fails midway we abort and roll back the partial inserts
+      // so the proposal is never left in a half-rebuilt state.
+      const orderOffset = sections.length + 1000;
+      const createdIds: string[] = [];
+      try {
+        for (const ts of tpl.sections) {
+          const created = (await apiRequest(
+            `/api/proposals/${proposal.id}/sections`,
+            'POST',
+            {
+              sectionType: ts.sectionType,
+              name: ts.name,
+              order: orderOffset + ts.order,
+              content: ts.content ?? {},
+              isEnabled: true,
+            },
+          )) as { id?: string } | null;
+          if (created?.id) createdIds.push(created.id);
+        }
+      } catch (err) {
+        await Promise.all(
+          createdIds.map((id) =>
+            apiRequest(`/api/proposal-sections/${id}`, 'DELETE').catch(() => undefined),
+          ),
+        );
+        throw err;
+      }
+
+      // All template sections inserted — now remove the originals and renumber.
       await Promise.all(
         sections.map((s) =>
-          apiRequest(`/api/proposal-sections/${s.id}`, 'DELETE'),
+          apiRequest(`/api/proposal-sections/${s.id}`, 'DELETE').catch(() => undefined),
         ),
       );
-
-      // Insert template sections
-      for (const ts of tpl.sections) {
-        await apiRequest(`/api/proposals/${proposal.id}/sections`, 'POST', {
-          sectionType: ts.sectionType,
-          name: ts.name,
-          order: ts.order,
-          content: ts.content ?? {},
-          isEnabled: true,
-        });
-      }
+      await Promise.all(
+        createdIds.map((id, i) =>
+          apiRequest(`/api/proposal-sections/${id}`, 'PATCH', {
+            order: tpl.sections[i]?.order ?? i,
+          }).catch(() => undefined),
+        ),
+      );
 
       // Apply layout settings
       if (tpl.layoutSettings) {
@@ -437,7 +463,7 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
             order: i,
             content: s.content ?? {},
           })),
-        layoutSettings: (proposal.layoutSettings as Record<string, any>) || undefined,
+        layoutSettings: (proposal.layoutSettings as Record<string, unknown>) || undefined,
       };
       const next = [...templates, newTpl];
       return await apiRequest('/api/company-settings', 'PATCH', { proposalTemplates: next });
