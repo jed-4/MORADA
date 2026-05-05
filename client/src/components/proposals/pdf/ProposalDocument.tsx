@@ -30,6 +30,7 @@ interface ProposalDocumentProps {
   client?: Contact;
   companyLogo?: string;
   companyName?: string;
+  companyPhone?: string;
   primaryColor?: string;
   estimatesData?: Record<string, {
     estimate: Estimate;
@@ -47,12 +48,41 @@ export function ProposalDocument({
   client,
   companyLogo,
   companyName,
+  companyPhone,
   primaryColor = '#3B82F6',
   estimatesData = {},
   milestones = [],
   acceptance = null,
 }: ProposalDocumentProps) {
-  const placeholderCtx: PlaceholderContext = { proposal, project, client, companyName };
+  // Compute the estimate total (inc GST, in cents) from any linked estimate
+  // section so {{estimate.total_inc_gst}} renders against real data.
+  let estimateTotalIncGstCents: number | undefined;
+  for (const s of sections) {
+    if (s.sectionType !== 'estimate') continue;
+    const estimateId = (s.content as Record<string, unknown> | null)?.['estimateId'] as string | undefined;
+    const data = estimateId ? estimatesData[estimateId] : undefined;
+    if (!data) continue;
+    const items = data.items || [];
+    const incCents = items.reduce((acc, item) => {
+      const cents = (item as any).totalIncTaxCents;
+      if (typeof cents === 'number') return acc + cents;
+      const ex = Number((item as any).totalExTaxCents || 0);
+      const taxRate = Number((item as any).taxRatePct || 0);
+      return acc + Math.round(ex * (1 + taxRate / 100));
+    }, 0);
+    if (incCents > 0) {
+      estimateTotalIncGstCents = incCents;
+      break;
+    }
+  }
+  const placeholderCtx: PlaceholderContext = {
+    proposal,
+    project,
+    client,
+    companyName,
+    companyPhone,
+    estimateTotalIncGstCents,
+  };
   const enabledSections = sections.filter((s) => s.isEnabled !== false);
   const sortedSections = [...enabledSections]
     .sort((a, b) => a.order - b.order)

@@ -4,6 +4,13 @@ import StarterKit from '@tiptap/starter-kit';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Underline } from '@tiptap/extension-underline';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   Bold,
@@ -14,6 +21,11 @@ import {
   Type,
 } from 'lucide-react';
 
+export interface RichTextPlaceholder {
+  token: string;
+  label: string;
+}
+
 interface RichTextEditorProps {
   content?: string;
   onChange?: (html: string, text: string) => void;
@@ -21,12 +33,11 @@ interface RichTextEditorProps {
   className?: string;
   disabled?: boolean;
   'data-testid'?: string;
+  placeholders?: RichTextPlaceholder[];
 }
 
-// Static extensions configuration to prevent recreation
 const extensions = [
   StarterKit.configure({
-    // Disable underline in StarterKit since we're adding it separately
     underline: false,
   }),
   TextStyle,
@@ -40,6 +51,7 @@ export function RichTextEditor({
   className,
   disabled = false,
   'data-testid': testId,
+  placeholders,
 }: RichTextEditorProps) {
   const initialContentRef = useRef(content);
   const isInternalChange = useRef(false);
@@ -64,19 +76,15 @@ export function RichTextEditor({
     []
   );
 
-  // Sync content when it changes from outside (not from typing)
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      // Only sync if this is an external change (not from user typing)
       if (!isInternalChange.current) {
         editor.commands.setContent(content);
       }
-      // Reset the flag after checking
       isInternalChange.current = false;
     }
   }, [editor, content]);
 
-  // Update editable state when disabled prop changes
   useEffect(() => {
     if (editor) {
       editor.setEditable(!disabled);
@@ -85,35 +93,36 @@ export function RichTextEditor({
 
   if (!editor) return null;
 
-  const ToolbarButton = ({ 
-    onClick, 
-    isActive, 
-    children, 
-    testId: buttonTestId 
-  }: { 
-    onClick: () => void; 
-    isActive: boolean; 
+  const ToolbarButton = ({
+    onClick,
+    isActive,
+    children,
+    testId: buttonTestId,
+  }: {
+    onClick: () => void;
+    isActive: boolean;
     children: React.ReactNode;
     testId?: string;
   }) => (
     <Button
       type="button"
-      variant={isActive ? "default" : "ghost"}
+      variant={isActive ? 'default' : 'ghost'}
       size="sm"
       onClick={onClick}
-      className={cn(
-        "h-8 w-8 p-0",
-        isActive && "bg-primary text-primary-foreground"
-      )}
+      className={cn('h-8 w-8 p-0', isActive && 'bg-primary text-primary-foreground')}
       data-testid={buttonTestId}
     >
       {children}
     </Button>
   );
 
+  const insertToken = (token: string) => {
+    if (!token) return;
+    editor.chain().focus().insertContent(token).run();
+  };
+
   return (
-    <div className={cn("border rounded-md", className)} data-testid={testId}>
-      {/* Toolbar */}
+    <div className={cn('border rounded-md', className)} data-testid={testId}>
       <div className="border-b p-2 flex items-center gap-1 flex-wrap">
         <div className="flex items-center gap-1">
           <ToolbarButton
@@ -123,7 +132,7 @@ export function RichTextEditor({
           >
             <Bold className="h-4 w-4" />
           </ToolbarButton>
-          
+
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
             isActive={editor.isActive('italic')}
@@ -131,7 +140,7 @@ export function RichTextEditor({
           >
             <Italic className="h-4 w-4" />
           </ToolbarButton>
-          
+
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleUnderline().run()}
             isActive={editor.isActive('underline')}
@@ -140,9 +149,9 @@ export function RichTextEditor({
             <UnderlineIcon className="h-4 w-4" />
           </ToolbarButton>
         </div>
-        
+
         <div className="w-px h-6 bg-border mx-1" />
-        
+
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -151,7 +160,7 @@ export function RichTextEditor({
           >
             <List className="h-4 w-4" />
           </ToolbarButton>
-          
+
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             isActive={editor.isActive('orderedList')}
@@ -162,7 +171,7 @@ export function RichTextEditor({
         </div>
 
         <div className="w-px h-6 bg-border mx-1" />
-        
+
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
@@ -172,26 +181,50 @@ export function RichTextEditor({
             <Type className="h-4 w-4" />
           </ToolbarButton>
         </div>
+
+        {placeholders && placeholders.length > 0 && (
+          <>
+            <div className="w-px h-6 bg-border mx-1" />
+            <Select
+              value=""
+              onValueChange={(v) => insertToken(v)}
+            >
+              <SelectTrigger
+                className="h-8 w-44 text-xs"
+                data-testid={testId ? `${testId}-insert-placeholder` : 'select-insert-placeholder'}
+              >
+                <SelectValue placeholder="Insert placeholder" />
+              </SelectTrigger>
+              <SelectContent>
+                {placeholders.map((p) => (
+                  <SelectItem key={p.token} value={p.token} className="text-xs">
+                    <span>{p.label}</span>
+                    <span className="font-mono ml-2 text-muted-foreground">{p.token}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
       </div>
 
-      {/* Editor Content */}
       <div className="relative">
         <EditorContent
           editor={editor}
           className={cn(
-            "prose prose-sm dark:prose-invert max-w-none p-3 min-h-[120px]",
-            "focus-within:outline-none",
-            "[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:whitespace-pre-wrap",
-            "[&_ul]:list-disc [&_ul]:ml-6",
-            "[&_ol]:list-decimal [&_ol]:ml-6",
-            "[&_li]:list-item",
-            disabled && "opacity-50 cursor-not-allowed"
+            'prose prose-sm dark:prose-invert max-w-none p-3 min-h-[120px]',
+            'focus-within:outline-none',
+            '[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:whitespace-pre-wrap',
+            '[&_ul]:list-disc [&_ul]:ml-6',
+            '[&_ol]:list-decimal [&_ol]:ml-6',
+            '[&_li]:list-item',
+            disabled && 'opacity-50 cursor-not-allowed',
           )}
           data-testid={testId ? `${testId}-content` : undefined}
         />
-        
+
         {(!content || content === '<p></p>') && (
-          <div 
+          <div
             className="absolute pointer-events-none text-muted-foreground px-3 py-3 top-0 left-0"
             data-testid={testId ? `${testId}-placeholder` : undefined}
           >

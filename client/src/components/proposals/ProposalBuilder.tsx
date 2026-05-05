@@ -16,55 +16,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck } from 'lucide-react';
 import { useLocation } from 'wouter';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact } from '@shared/schema';
+import { format as formatDate } from 'date-fns';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact, Estimate } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
 import { RichTextEditor } from '@/components/RichTextEditor';
+import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 
-// --- Placeholder dropdown ---
-const PROPOSAL_PLACEHOLDERS = [
-  { token: '{{client.name}}', label: 'Client Name' },
-  { token: '{{client.email}}', label: 'Client Email' },
-  { token: '{{project.name}}', label: 'Project Name' },
-  { token: '{{project.address}}', label: 'Project Address' },
-  { token: '{{proposal.number}}', label: 'Proposal Number' },
-  { token: '{{proposal.total}}', label: 'Proposal Total' },
-  { token: '{{company.name}}', label: 'Company Name' },
-  { token: '{{date.today}}', label: 'Today\'s Date' },
-];
+const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
-function PlaceholderHint() {
-  const { toast } = useToast();
-  return (
-    <div className="flex items-center gap-2 mb-1">
-      <Select
-        onValueChange={(v) => {
-          if (!v) return;
-          navigator.clipboard.writeText(v).then(
-            () => toast({ title: 'Copied', description: `${v} copied to clipboard` }),
-            () => toast({ title: 'Copy failed', variant: 'destructive' as const }),
-          );
-        }}
-      >
-        <SelectTrigger className="h-7 w-44 text-xs" data-testid="select-placeholder">
-          <SelectValue placeholder="Insert placeholder" />
-        </SelectTrigger>
-        <SelectContent>
-          {PROPOSAL_PLACEHOLDERS.map((p) => (
-            <SelectItem key={p.token} value={p.token} className="text-xs">
-              {p.label} — <span className="font-mono ml-1">{p.token}</span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-[10px] text-muted-foreground">Click to copy &amp; paste into editor</span>
-    </div>
-  );
+function revisionLabel(version: number | null | undefined): string {
+  const v = Math.max(1, Number(version || 1));
+  if (v <= 26) return `Rev ${String.fromCharCode(64 + v)}`;
+  return `Rev ${v}`;
 }
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
@@ -108,7 +78,10 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   };
 
   const [localName, setLocalName] = useState(section.name);
-  const [localDescription, setLocalDescription] = useState(section.description || "");
+  const [localDescriptionHtml, setLocalDescriptionHtml] = useState<string>(
+    (section as any).descriptionHtml || section.description || "",
+  );
+  const [localDescriptionText, setLocalDescriptionText] = useState<string>(section.description || "");
   const [localContent, setLocalContent] = useState<Record<string, any>>(section.content || {});
   const [localIsEnabled, setLocalIsEnabled] = useState(section.isEnabled !== false);
 
@@ -116,24 +89,25 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   // This prevents infinite loops while still allowing updates from the server
   useEffect(() => {
     setLocalName(section.name);
-    setLocalDescription(section.description || "");
+    setLocalDescriptionHtml((section as any).descriptionHtml || section.description || "");
+    setLocalDescriptionText(section.description || "");
     setLocalContent(section.content || {});
     setLocalIsEnabled(section.isEnabled !== false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section.id]);
-  
+
   const handleToggleEnabled = (enabled: boolean) => {
     setLocalIsEnabled(enabled);
-    // Auto-save the enabled state
     onSectionUpdate(section.id, { isEnabled: enabled });
   };
 
   const handleSave = () => {
     onSectionUpdate(section.id, {
       name: localName,
-      description: localDescription,
+      description: localDescriptionText,
+      descriptionHtml: localDescriptionHtml,
       content: localContent,
-    });
+    } as Partial<ProposalSection>);
   };
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
@@ -174,12 +148,15 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
 
             <div className="space-y-2">
               <Label htmlFor={`section-description-${section.id}`}>Description</Label>
-              <Textarea
-                id={`section-description-${section.id}`}
-                value={localDescription}
-                onChange={(e) => setLocalDescription(e.target.value)}
+              <RichTextEditor
+                content={localDescriptionHtml}
+                onChange={(html, text) => {
+                  setLocalDescriptionHtml(html);
+                  setLocalDescriptionText(text);
+                }}
                 placeholder="Optional description"
-                rows={3}
+                placeholders={PROPOSAL_PLACEHOLDERS}
+                data-testid={`richtext-section-description-${section.id}`}
               />
             </div>
 
@@ -187,11 +164,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "cover_letter" && (
               <div className="space-y-2">
                 <Label>Letter Content</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.letterText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, letterText: html })}
                   placeholder="Enter your cover letter text..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -199,11 +176,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "scope" && (
               <div className="space-y-2">
                 <Label>Scope of Work</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.scopeText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, scopeText: html })}
                   placeholder="Describe the scope of work..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -211,11 +188,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {(section.sectionType === "closing_letter" || section.sectionType === "closing") && (
               <div className="space-y-2">
                 <Label>Closing Content</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.closingText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, closingText: html })}
                   placeholder="Enter your closing text..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -223,11 +200,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "summary" && (
               <div className="space-y-2">
                 <Label>Summary Content</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.summaryText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, summaryText: html })}
                   placeholder="Enter project summary..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -235,11 +212,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "allowances" && (
               <div className="space-y-2">
                 <Label>Allowances Notes</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.allowancesText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, allowancesText: html })}
                   placeholder="Optional notes on allowances..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -248,11 +225,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label>Inclusions</Label>
-                  <PlaceholderHint />
                   <RichTextEditor
                     content={localContent.inclusionsText || ""}
                     onChange={(html) => setLocalContent({ ...localContent, inclusionsText: html })}
                     placeholder="What is included..."
+                    placeholders={PROPOSAL_PLACEHOLDERS}
                   />
                 </div>
                 <div className="space-y-2">
@@ -261,6 +238,7 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
                     content={localContent.exclusionsText || ""}
                     onChange={(html) => setLocalContent({ ...localContent, exclusionsText: html })}
                     placeholder="What is excluded..."
+                    placeholders={PROPOSAL_PLACEHOLDERS}
                   />
                 </div>
               </div>
@@ -269,11 +247,11 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "terms_conditions" && (
               <div className="space-y-2">
                 <Label>Terms &amp; Conditions</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.termsText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, termsText: html })}
                   placeholder="Enter terms and conditions..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
@@ -281,21 +259,29 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
             {section.sectionType === "custom" && (
               <div className="space-y-2">
                 <Label>Content</Label>
-                <PlaceholderHint />
                 <RichTextEditor
                   content={localContent.customText || ""}
                   onChange={(html) => setLocalContent({ ...localContent, customText: html })}
                   placeholder="Enter section content..."
+                  placeholders={PROPOSAL_PLACEHOLDERS}
                 />
               </div>
             )}
 
             {section.sectionType === "estimate" && (
-              <EstimateEditor
-                content={localContent}
-                setContent={setLocalContent}
-                projectId={projectId}
-              />
+              <div className="space-y-3">
+                <EstimateRevisionSelector
+                  proposalId={section.proposalId}
+                  currentEstimateId={(localContent.estimateId as string | undefined) || null}
+                  projectId={projectId}
+                  onPick={(id) => setLocalContent({ ...localContent, estimateId: id })}
+                />
+                <EstimateEditor
+                  content={localContent}
+                  setContent={setLocalContent}
+                  projectId={projectId}
+                />
+              </div>
             )}
 
             {section.sectionType === "payment_schedule" && (
@@ -561,6 +547,15 @@ export function ProposalBuilder({
     enabled: !!proposal.id,
   });
 
+  // Fetch company settings for the {{builder.phone}} placeholder context.
+  const { data: companySettingsForPdf } = useQuery<{
+    phone?: string;
+    companyPhone?: string;
+  } | null>({
+    queryKey: ['/api/company-settings'],
+  });
+  const companyPhone = companySettingsForPdf?.phone || companySettingsForPdf?.companyPhone || '';
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -616,6 +611,7 @@ export function ProposalBuilder({
             client={client}
             companyLogo={companyLogo}
             companyName={companyName}
+            companyPhone={companyPhone}
             primaryColor={primaryColor}
             estimatesData={estimatesDataMap}
             milestones={milestones}
@@ -656,7 +652,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, client, companyLogo, companyName, primaryColor, showPreview, milestones, latestAcceptance]);
+  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, showPreview, milestones, latestAcceptance]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -697,6 +693,7 @@ export function ProposalBuilder({
                   client={client}
                   companyLogo={companyLogo}
                   companyName={companyName}
+                  companyPhone={companyPhone}
                   primaryColor={primaryColor}
                   milestones={milestones}
                   acceptance={latestAcceptance}
@@ -804,7 +801,7 @@ export function ProposalBuilder({
           </TabsContent>
 
           <TabsContent value="layout" className="flex-1 min-h-0 mt-4 overflow-auto">
-            <LayoutPanel proposal={proposal} />
+            <LayoutPanel proposal={proposal} sections={sections} onSectionUpdate={onSectionUpdate} />
           </TabsContent>
 
           <TabsContent value="revisions" className="flex-1 min-h-0 mt-4 overflow-auto">
@@ -819,35 +816,117 @@ export function ProposalBuilder({
 // --- Layout Panel ---
 interface LayoutPanelProps {
   proposal: Proposal;
+  sections: ProposalSection[];
+  onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
 }
+
+type PricingMode = 'lump_sum' | 'section_totals' | 'itemised';
+type PresetKey = 'lump_sum_quote' | 'itemised_quote' | 'standard_residential';
 
 type LayoutSettings = {
   primaryColor?: string;
   showPageNumbers?: boolean;
   showFooter?: boolean;
   pageSize?: string;
-  pricingDisplay?: 'show' | 'hide' | 'summary';
+  pricingMode?: PricingMode;
   showGst?: boolean;
   showLogo?: boolean;
-  preset?: 'classic' | 'modern' | 'minimal';
+  preset?: PresetKey;
 };
 
-const LAYOUT_PRESETS: Record<string, Partial<LayoutSettings>> = {
-  classic: { primaryColor: '#1F2937', pageSize: 'A4', showFooter: true, showPageNumbers: true, showLogo: true, pricingDisplay: 'show' },
-  modern: { primaryColor: '#3B82F6', pageSize: 'A4', showFooter: true, showPageNumbers: false, showLogo: true, pricingDisplay: 'show' },
-  minimal: { primaryColor: '#6B7280', pageSize: 'A4', showFooter: false, showPageNumbers: false, showLogo: false, pricingDisplay: 'summary' },
+// Presets aligned to BuildPro spec: Lump Sum / Itemised / Standard Residential
+const LAYOUT_PRESETS: Record<PresetKey, Partial<LayoutSettings>> = {
+  lump_sum_quote: {
+    pageSize: 'A4',
+    showFooter: true,
+    showPageNumbers: true,
+    showLogo: true,
+    pricingMode: 'lump_sum',
+    showGst: true,
+  },
+  itemised_quote: {
+    pageSize: 'A4',
+    showFooter: true,
+    showPageNumbers: true,
+    showLogo: true,
+    pricingMode: 'itemised',
+    showGst: true,
+  },
+  standard_residential: {
+    pageSize: 'A4',
+    showFooter: true,
+    showPageNumbers: true,
+    showLogo: true,
+    pricingMode: 'section_totals',
+    showGst: true,
+  },
 };
 
-function LayoutPanel({ proposal }: LayoutPanelProps) {
+const PRICING_MODE_OPTIONS: Array<{ value: PricingMode; label: string }> = [
+  { value: 'lump_sum', label: 'Lump Sum' },
+  { value: 'section_totals', label: 'Section Totals' },
+  { value: 'itemised', label: 'Itemised' },
+];
+
+const ESTIMATE_COLUMNS: Array<{ key: string; label: string }> = [
+  { key: 'description', label: 'Description' },
+  { key: 'quantity', label: 'Quantity' },
+  { key: 'unitCostExTax', label: 'Unit Cost (ex GST)' },
+  { key: 'unitCostIncTax', label: 'Unit Cost (inc GST)' },
+  { key: 'markup', label: 'Markup %' },
+  { key: 'amountExTax', label: 'Amount (ex GST)' },
+  { key: 'amountIncTax', label: 'Amount (inc GST)' },
+];
+
+function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) {
+  const { toast } = useToast();
   const settings = (proposal.layoutSettings as LayoutSettings) || {};
-  const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || '#3B82F6');
+
+  // Pull company-wide defaults: brand color + logo policy.
+  const { data: companySettings } = useQuery<{
+    proposalPrimaryColor?: string;
+    proposalShowLogo?: boolean;
+    logoUrl?: string;
+  } | null>({
+    queryKey: ['/api/company-settings'],
+  });
+
+  const companyColor = companySettings?.proposalPrimaryColor || '#3B82F6';
+  const companyShowLogo = companySettings?.proposalShowLogo;
+  const companyLogoUrl = companySettings?.logoUrl || '';
+
+  // Best-effort permission probe: assume any authenticated user with company
+  // settings access can write defaults; if PATCH 403s the toast surfaces it.
+  // Expose a simple "edit defaults" toggle so non-admins see read-only values.
+  const [editCompanyDefaults, setEditCompanyDefaults] = useState(false);
+
+  const [primaryColor, setPrimaryColor] = useState<string>(settings.primaryColor || companyColor);
   const [showPageNumbers, setShowPageNumbers] = useState<boolean>(settings.showPageNumbers ?? true);
   const [showFooter, setShowFooter] = useState<boolean>(settings.showFooter ?? true);
   const [pageSize, setPageSize] = useState<string>(settings.pageSize || 'A4');
-  const [pricingDisplay, setPricingDisplay] = useState<'show' | 'hide' | 'summary'>(settings.pricingDisplay || 'show');
+  const [pricingMode, setPricingMode] = useState<PricingMode>(settings.pricingMode || 'itemised');
   const [showGst, setShowGst] = useState<boolean>(settings.showGst ?? true);
-  const [showLogo, setShowLogo] = useState<boolean>(settings.showLogo ?? true);
+  const [showLogo, setShowLogo] = useState<boolean>(
+    settings.showLogo ?? (companyShowLogo ?? !!companyLogoUrl),
+  );
   const [preset, setPreset] = useState<string>(settings.preset || '');
+
+  // Re-sync when settings or company defaults arrive
+  useEffect(() => {
+    if (!settings.primaryColor && companyColor) setPrimaryColor(companyColor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyColor]);
+
+  // Mirror primaryColor's resync for showLogo so the switch reflects the
+  // company default once /api/company-settings resolves. Proposal-level
+  // override (settings.showLogo) always wins; otherwise prefer
+  // companySettings.proposalShowLogo, falling back to logoUrl presence only
+  // when the company has no explicit policy.
+  useEffect(() => {
+    if (settings.showLogo !== undefined) return;
+    setShowLogo(companyShowLogo ?? !!companyLogoUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyShowLogo, companyLogoUrl]);
 
   const saveLayoutMutation = useMutation({
     mutationFn: async (layoutSettings: LayoutSettings) => {
@@ -856,6 +935,35 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
       queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+      toast({ title: 'Layout saved' });
+    },
+  });
+
+  const saveCompanyColorMutation = useMutation({
+    mutationFn: async (proposalPrimaryColor: string) => {
+      return await apiRequest('/api/company-settings', 'PATCH', { proposalPrimaryColor });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
+      toast({ title: 'Company default saved' });
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'You may not have permission to edit company defaults';
+      toast({ title: 'Could not save default', description: msg, variant: 'destructive' });
+    },
+  });
+
+  const saveCompanyShowLogoMutation = useMutation({
+    mutationFn: async (proposalShowLogo: boolean) => {
+      return await apiRequest('/api/company-settings', 'PATCH', { proposalShowLogo });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/company-settings'] });
+      toast({ title: 'Company default saved' });
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'You may not have permission to edit company defaults';
+      toast({ title: 'Could not save default', description: msg, variant: 'destructive' });
     },
   });
 
@@ -865,7 +973,7 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
       showPageNumbers,
       showFooter,
       pageSize,
-      pricingDisplay,
+      pricingMode,
       showGst,
       showLogo,
       preset: (preset || undefined) as LayoutSettings['preset'],
@@ -874,28 +982,54 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
 
   const applyPreset = (name: string) => {
     setPreset(name);
-    const p = LAYOUT_PRESETS[name];
+    const p = LAYOUT_PRESETS[name as PresetKey];
     if (!p) return;
-    if (p.primaryColor) setPrimaryColor(p.primaryColor);
     if (p.pageSize) setPageSize(p.pageSize);
     if (p.showFooter !== undefined) setShowFooter(!!p.showFooter);
     if (p.showPageNumbers !== undefined) setShowPageNumbers(!!p.showPageNumbers);
     if (p.showLogo !== undefined) setShowLogo(!!p.showLogo);
-    if (p.pricingDisplay) setPricingDisplay(p.pricingDisplay);
+    if (p.showGst !== undefined) setShowGst(!!p.showGst);
+    if (p.pricingMode) setPricingMode(p.pricingMode);
+  };
+
+  // Estimate sections — column visibility per section
+  const estimateSections = sections.filter((s) => s.sectionType === 'estimate');
+
+  const updateVisibleColumns = (section: ProposalSection, columnKey: string, on: boolean) => {
+    const content = (section.content as Record<string, any>) || {};
+    const current: string[] = Array.isArray(content.visibleColumns)
+      ? content.visibleColumns
+      : ESTIMATE_COLUMNS.filter((c) => {
+          const t = (content.columnToggles || {}) as Record<string, boolean>;
+          return t[c.key] === true;
+        }).map((c) => c.key);
+    const next = on ? Array.from(new Set([...current, columnKey])) : current.filter((k) => k !== columnKey);
+    onSectionUpdate(section.id, {
+      content: { ...content, visibleColumns: next },
+    } as Partial<ProposalSection>);
+  };
+
+  const isColumnVisible = (section: ProposalSection, columnKey: string): boolean => {
+    const content = (section.content as Record<string, any>) || {};
+    if (Array.isArray(content.visibleColumns)) {
+      return content.visibleColumns.includes(columnKey);
+    }
+    const t = (content.columnToggles || {}) as Record<string, boolean>;
+    return t[columnKey] === true;
   };
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>Preset</Label>
+        <Label>Quick-setup preset</Label>
         <Select value={preset} onValueChange={applyPreset}>
           <SelectTrigger data-testid="select-layout-preset">
             <SelectValue placeholder="Choose a preset" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="classic">Classic</SelectItem>
-            <SelectItem value="modern">Modern</SelectItem>
-            <SelectItem value="minimal">Minimal</SelectItem>
+            <SelectItem value="lump_sum_quote">Lump Sum Quote</SelectItem>
+            <SelectItem value="itemised_quote">Itemised Quote</SelectItem>
+            <SelectItem value="standard_residential">Standard Residential</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -903,18 +1037,53 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
       <Separator />
 
       <div className="space-y-2">
-        <Label htmlFor="layout-primary-color">Primary Color</Label>
-        <Input
-          id="layout-primary-color"
-          type="color"
-          value={primaryColor}
-          onChange={(e) => setPrimaryColor(e.target.value)}
-          data-testid="input-layout-primary-color"
-        />
+        <Label htmlFor="layout-primary-color">
+          Primary colour <span className="text-xs text-muted-foreground">(company default)</span>
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="layout-primary-color"
+            type="color"
+            value={primaryColor}
+            onChange={(e) => setPrimaryColor(e.target.value)}
+            disabled={!editCompanyDefaults && primaryColor === companyColor}
+            data-testid="input-layout-primary-color"
+            className="w-16 h-9 p-1"
+          />
+          <Input
+            value={primaryColor}
+            onChange={(e) => setPrimaryColor(e.target.value)}
+            disabled={!editCompanyDefaults && primaryColor === companyColor}
+            className="flex-1"
+            data-testid="input-layout-primary-color-text"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <button
+            type="button"
+            className="text-primary underline-offset-2 hover:underline"
+            onClick={() => setEditCompanyDefaults((v) => !v)}
+            data-testid="button-toggle-edit-company-defaults"
+          >
+            {editCompanyDefaults ? 'Lock company defaults' : 'Edit company defaults'}
+          </button>
+          {editCompanyDefaults && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveCompanyColorMutation.mutate(primaryColor)}
+              disabled={saveCompanyColorMutation.isPending}
+              data-testid="button-save-company-color"
+            >
+              {saveCompanyColorMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+              Save as company default
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="layout-page-size">Page Size</Label>
+        <Label htmlFor="layout-page-size">Page size</Label>
         <Select value={pageSize} onValueChange={setPageSize}>
           <SelectTrigger id="layout-page-size" data-testid="select-layout-page-size">
             <SelectValue />
@@ -933,16 +1102,15 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
           role="radiogroup"
           data-testid="segmented-pricing-display"
         >
-          {(['show', 'summary', 'hide'] as const).map((opt) => (
+          {PRICING_MODE_OPTIONS.map((opt) => (
             <Button
-              key={opt}
+              key={opt.value}
               size="sm"
-              variant={pricingDisplay === opt ? 'default' : 'ghost'}
-              onClick={() => setPricingDisplay(opt)}
-              className="capitalize"
-              data-testid={`button-pricing-${opt}`}
+              variant={pricingMode === opt.value ? 'default' : 'ghost'}
+              onClick={() => setPricingMode(opt.value)}
+              data-testid={`button-pricing-${opt.value}`}
             >
-              {opt}
+              {opt.label}
             </Button>
           ))}
         </div>
@@ -966,14 +1134,33 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
           data-testid="switch-layout-footer"
         />
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <Label htmlFor="layout-logo">Show logo</Label>
-        <Switch
-          id="layout-logo"
-          checked={showLogo}
-          onCheckedChange={setShowLogo}
-          data-testid="switch-layout-logo"
-        />
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="layout-logo">
+            Show company logo <span className="text-xs text-muted-foreground">(company default)</span>
+          </Label>
+          <Switch
+            id="layout-logo"
+            checked={showLogo}
+            disabled={!editCompanyDefaults && companyShowLogo !== undefined && showLogo === companyShowLogo}
+            onCheckedChange={setShowLogo}
+            data-testid="switch-layout-logo"
+          />
+        </div>
+        {editCompanyDefaults && (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveCompanyShowLogoMutation.mutate(showLogo)}
+              disabled={saveCompanyShowLogoMutation.isPending}
+              data-testid="button-save-company-show-logo"
+            >
+              {saveCompanyShowLogoMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+              Save logo policy as company default
+            </Button>
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="layout-gst">Show GST</Label>
@@ -985,10 +1172,108 @@ function LayoutPanel({ proposal }: LayoutPanelProps) {
         />
       </div>
 
+      {estimateSections.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <Label>Estimate columns visible in PDF</Label>
+            {estimateSections.map((s) => (
+              <div key={s.id} className="border rounded-md p-3 space-y-2" data-testid={`layout-estimate-${s.id}`}>
+                <p className="text-xs font-medium">{s.name}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {ESTIMATE_COLUMNS.map((col) => {
+                    const checked = isColumnVisible(s, col.key);
+                    return (
+                      <label
+                        key={col.key}
+                        className="flex items-center gap-2 text-xs cursor-pointer"
+                        data-testid={`checkbox-col-${s.id}-${col.key}`}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => updateVisibleColumns(s, col.key, !!v)}
+                        />
+                        <span>{col.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <Button onClick={handleSave} disabled={saveLayoutMutation.isPending} className="w-full" data-testid="button-save-layout">
         {saveLayoutMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         Save Layout
       </Button>
+    </div>
+  );
+}
+
+// --- Estimate Revision Selector (sibling estimates) ---
+interface EstimateRevisionSelectorProps {
+  proposalId: string;
+  currentEstimateId: string | null;
+  projectId: string;
+  onPick: (id: string) => void;
+}
+
+function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, onPick }: EstimateRevisionSelectorProps) {
+  const { toast } = useToast();
+  const { data: allEstimates = [] } = useQuery<Estimate[]>({
+    queryKey: ['/api/estimates'],
+  });
+  const projectEstimates = allEstimates.filter((e) => e.projectId === projectId);
+  const current = projectEstimates.find((e) => e.id === currentEstimateId) || null;
+  const parentId = (current?.parentEstimateId as string | null | undefined) || current?.id || null;
+
+  // Sibling revisions = same parent (or itself)
+  const siblings = parentId
+    ? projectEstimates.filter((e) => e.id === parentId || (e as any).parentEstimateId === parentId)
+    : projectEstimates;
+  const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
+
+  const persistMutation = useMutation({
+    mutationFn: async (estimateId: string) => {
+      // Persist the chosen revision both on the proposal (proposals.estimateId)
+      // and on the local section content.
+      return await apiRequest(`/api/proposals/${proposalId}`, 'PATCH', { estimateId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
+    },
+    onError: () => {
+      toast({ title: 'Could not link estimate revision', variant: 'destructive' });
+    },
+  });
+
+  if (ordered.length === 0) return null;
+
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">Estimate revision</Label>
+      <Select
+        value={currentEstimateId || ''}
+        onValueChange={(v) => {
+          if (!v) return;
+          onPick(v);
+          persistMutation.mutate(v);
+        }}
+      >
+        <SelectTrigger className="h-8 text-xs" data-testid="select-estimate-revision">
+          <SelectValue placeholder="Choose a revision…" />
+        </SelectTrigger>
+        <SelectContent>
+          {ordered.map((e) => (
+            <SelectItem key={e.id} value={e.id} className="text-xs">
+              {revisionLabel(e.version)} — {e.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -1007,12 +1292,15 @@ interface DraftMilestone {
   mode: '%' | '$';
 }
 
+// Default milestone seed for residential builds (% must total 100).
+// Spec: Deposit 10, Slab 10, Frame 15, Lock-up 15, Fit-off 20, Practical Completion 30.
 const DEFAULT_MILESTONE_SEED: DraftMilestone[] = [
-  { name: 'Deposit', percentage: 10, amountCents: null, description: 'Initial deposit on signing', order: 0, mode: '%' },
-  { name: 'Mobilisation', percentage: 20, amountCents: null, description: 'On site mobilisation', order: 1, mode: '%' },
-  { name: 'Frame Stage', percentage: 25, amountCents: null, description: 'Completion of structural frame', order: 2, mode: '%' },
-  { name: 'Lockup Stage', percentage: 25, amountCents: null, description: 'Building lockup', order: 3, mode: '%' },
-  { name: 'Practical Completion', percentage: 20, amountCents: null, description: 'On handover', order: 4, mode: '%' },
+  { name: 'Deposit', percentage: 10, amountCents: null, description: 'On signing', order: 0, mode: '%' },
+  { name: 'Slab', percentage: 10, amountCents: null, description: 'On completion of slab', order: 1, mode: '%' },
+  { name: 'Frame', percentage: 15, amountCents: null, description: 'On completion of structural frame', order: 2, mode: '%' },
+  { name: 'Lock-up', percentage: 15, amountCents: null, description: 'On building lock-up', order: 3, mode: '%' },
+  { name: 'Fit-off', percentage: 20, amountCents: null, description: 'On completion of fit-off', order: 4, mode: '%' },
+  { name: 'Practical Completion', percentage: 30, amountCents: null, description: 'On handover', order: 5, mode: '%' },
 ];
 
 interface SortableMilestoneProps {
@@ -1155,9 +1443,26 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposalId, 'milestones'] });
-      toast({ title: 'Schedule saved', description: 'Payment schedule updated.' });
+    },
+    onError: () => {
+      toast({ title: 'Could not save schedule', variant: 'destructive' });
     },
   });
+
+  // Optimistic auto-save: persist any change to the milestone draft after a short debounce.
+  const initialSyncRef = useRef(true);
+  useEffect(() => {
+    if (initialSyncRef.current) {
+      initialSyncRef.current = false;
+      return;
+    }
+    if (draft.length === 0) return;
+    const handle = setTimeout(() => {
+      replaceMutation.mutate(draft);
+    }, 800);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   const saveTemplateMutation = useMutation({
     mutationFn: async (template: { name: string; milestones: DraftMilestone[] }) => {
@@ -1256,18 +1561,33 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
         </SortableContext>
       </DndContext>
 
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">
-          Total: {totalPct.toFixed(2)}% {totalAmt > 0 && `+ $${(totalAmt / 100).toFixed(2)}`}
-        </span>
+      <div className="flex items-center justify-between text-xs gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant={Math.abs(totalPct - 100) < 0.01 ? 'secondary' : 'destructive'}
+            className="text-xs"
+            data-testid="badge-milestone-total-percent"
+          >
+            Total: {totalPct.toFixed(2)}%
+          </Badge>
+          {totalAmt > 0 && (
+            <span className="text-muted-foreground">+ ${(totalAmt / 100).toFixed(2)}</span>
+          )}
+          {replaceMutation.isPending && (
+            <span className="text-muted-foreground inline-flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+            </span>
+          )}
+        </div>
         <Button
           size="sm"
+          variant="outline"
           onClick={() => replaceMutation.mutate(draft)}
           disabled={replaceMutation.isPending}
           data-testid="button-save-milestones"
         >
           {replaceMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-          Save Schedule
+          Save Now
         </Button>
       </div>
 
@@ -1398,19 +1718,51 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
         ) : (
           ordered.map((p) => {
             const isCurrent = p.id === proposal.id;
+            const sentDate = (p as any).sentDate as string | null | undefined;
+            const status = (p.status || 'draft') as string;
+            const statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' =
+              status === 'accepted'
+                ? 'default'
+                : status === 'rejected'
+                ? 'destructive'
+                : status === 'sent' || status === 'viewed'
+                ? 'secondary'
+                : 'outline';
+            const StatusIcon =
+              status === 'accepted'
+                ? CheckCircle
+                : status === 'rejected'
+                ? XCircle
+                : status === 'sent' || status === 'viewed'
+                ? Send
+                : status === 'superseded'
+                ? FileCheck
+                : FileText;
             return (
               <div
                 key={p.id}
-                className={`flex items-center gap-2 border rounded-md px-2 py-2 text-sm ${isCurrent ? 'bg-muted' : ''}`}
+                className={`flex items-start gap-2 border rounded-md px-2 py-2 text-sm ${isCurrent ? 'bg-muted' : ''}`}
                 data-testid={`revision-item-${p.id}`}
               >
-                <FileText className="w-4 h-4 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <p className="truncate font-medium">{p.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">#{p.proposalNumber}</p>
+                <StatusIcon className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium" data-testid={`revision-label-${p.id}`}>
+                      {revisionLabel(p.version)}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">{p.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                    <span>#{p.proposalNumber}</span>
+                    {sentDate && (
+                      <span data-testid={`revision-sent-date-${p.id}`}>
+                        Sent {formatDate(new Date(sentDate), 'd MMM yyyy')}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  v{p.version || 1}
+                <Badge variant={statusVariant} className="text-xs capitalize" data-testid={`revision-status-${p.id}`}>
+                  {status}
                 </Badge>
                 {!isCurrent && (
                   <Button
