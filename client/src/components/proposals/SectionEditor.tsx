@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { ProposalSection, Estimate, Project, Contact } from "@shared/schema";
@@ -197,6 +197,10 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
 
           {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} projectId={projectId} />}
 
+          {section.sectionType === "attachments" && (
+            <AttachmentsEditor content={content} setContent={setContent} />
+          )}
+
           {section.sectionType === "cover_page" && (
             <div className="space-y-4">
               <div className="space-y-2">
@@ -253,6 +257,89 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface AttachmentRow {
+  name?: string;
+  url?: string;
+  type?: string;
+}
+
+interface AttachmentsEditorProps {
+  content: Record<string, any>;
+  setContent: (content: Record<string, any>) => void;
+}
+
+function AttachmentsEditor({ content, setContent }: AttachmentsEditorProps) {
+  const rows: AttachmentRow[] = Array.isArray(content.attachments) ? content.attachments : [];
+  const updateRow = (idx: number, patch: Partial<AttachmentRow>) => {
+    const next = rows.map((r, i) => (i === idx ? { ...r, ...patch } : r));
+    setContent({ ...content, attachments: next });
+  };
+  const addRow = () => setContent({ ...content, attachments: [...rows, { name: "", url: "", type: "" }] });
+  const removeRow = (idx: number) => setContent({ ...content, attachments: rows.filter((_, i) => i !== idx) });
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>Intro Text</Label>
+        <RichTextEditor
+          content={content.attachmentsText || ""}
+          onChange={(html) => setContent({ ...content, attachmentsText: html })}
+          placeholder="Optional text shown above the attachment list..."
+        />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Attachment Links</Label>
+          <Button size="sm" variant="outline" onClick={addRow} data-testid="button-add-attachment">
+            <Plus className="w-3 h-3 mr-1" /> Add
+          </Button>
+        </div>
+        {rows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No attachments. Add a link to a file (e.g. plan, spec, brochure).</p>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((row, idx) => (
+              <div key={idx} className="grid grid-cols-12 gap-2 items-start" data-testid={`row-attachment-${idx}`}>
+                <Input
+                  className="col-span-4"
+                  placeholder="Name"
+                  value={row.name || ""}
+                  onChange={(e) => updateRow(idx, { name: e.target.value })}
+                  data-testid={`input-attachment-name-${idx}`}
+                />
+                <Input
+                  className="col-span-2"
+                  placeholder="Type (PDF, JPG…)"
+                  value={row.type || ""}
+                  onChange={(e) => updateRow(idx, { type: e.target.value })}
+                  data-testid={`input-attachment-type-${idx}`}
+                />
+                <Input
+                  className="col-span-5"
+                  placeholder="https://…"
+                  value={row.url || ""}
+                  onChange={(e) => updateRow(idx, { url: e.target.value })}
+                  data-testid={`input-attachment-url-${idx}`}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => removeRow(idx)}
+                  className="col-span-1"
+                  data-testid={`button-remove-attachment-${idx}`}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

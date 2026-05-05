@@ -21,6 +21,7 @@ import { InclusionsExclusionsSection } from './sections/InclusionsExclusionsSect
 import { TermsSection } from './sections/TermsSection';
 import { ClosingSection } from './sections/ClosingSection';
 import { SignatureSection } from './sections/SignatureSection';
+import { AttachmentsSection } from './sections/AttachmentsSection';
 
 interface ProposalDocumentProps {
   proposal: Proposal;
@@ -141,6 +142,16 @@ export function ProposalDocument({
           case 'closing_letter':
             return (
               <ClosingSection
+                key={section.id}
+                proposal={proposal}
+                section={section}
+                companyName={companyName}
+                primaryColor={primaryColor}
+              />
+            );
+          case 'attachments':
+            return (
+              <AttachmentsSection
                 key={section.id}
                 proposal={proposal}
                 section={section}

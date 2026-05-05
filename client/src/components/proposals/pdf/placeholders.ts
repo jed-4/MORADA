@@ -57,6 +57,8 @@ const RICH_TEXT_KEYS = [
   'projectTitle',
   'clientName',
   'subtitle',
+  'attachmentsText',
+  'introText',
 ];
 
 export function substituteSectionContent(
