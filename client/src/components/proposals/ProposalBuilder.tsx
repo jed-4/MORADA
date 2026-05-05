@@ -1759,8 +1759,8 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
 
   const newRevisionMutation = useMutation({
     mutationFn: async (): Promise<Proposal> => {
-      const res = await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
-      return (await res.json()) as Proposal;
+      const newProposal = await apiRequest(`/api/proposals/${proposal.id}/new-revision`, 'POST', {});
+      return newProposal as Proposal;
     },
     onSuccess: (newProposal) => {
       queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
