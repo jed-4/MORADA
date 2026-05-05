@@ -1016,6 +1016,7 @@ export const companySettings = pgTable("company_settings", {
   
   // Proposal branding
   proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals
+  proposalShowLogo: boolean("proposal_show_logo").default(true), // Whether the company logo is shown on proposal PDFs by default
   proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color
   proposalFontFamily: text("proposal_font_family").default("Inter"), // Font family for proposals
   proposalHeaderText: text("proposal_header_text"), // Default header text for proposals
@@ -1093,7 +1094,15 @@ export const companySettings = pgTable("company_settings", {
   proposalTemplates: jsonb("proposal_templates").$type<Array<{
     id: string;
     name: string;
-    sections: Array<{ sectionType: string; name: string; order: number; content?: any }>;
+    sections: Array<{
+      sectionType: string;
+      name: string;
+      order: number;
+      content?: any;
+      description?: string | null;
+      descriptionHtml?: string | null;
+      isEnabled?: boolean;
+    }>;
     layoutSettings?: Record<string, any>;
   }>>().default([]),
 

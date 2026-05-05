@@ -358,7 +358,15 @@ interface ProposalBuilderProps {
 type ProposalTemplate = {
   id: string;
   name: string;
-  sections: Array<{ sectionType: string; name: string; order: number; content?: any }>;
+  sections: Array<{
+    sectionType: string;
+    name: string;
+    order: number;
+    content?: any;
+    description?: string | null;
+    descriptionHtml?: string | null;
+    isEnabled?: boolean;
+  }>;
   layoutSettings?: Record<string, any>;
 };
 
@@ -401,7 +409,9 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
               name: ts.name,
               order: orderOffset + ts.order,
               content: ts.content ?? {},
-              isEnabled: true,
+              description: ts.description ?? null,
+              descriptionHtml: ts.descriptionHtml ?? null,
+              isEnabled: ts.isEnabled !== false,
             },
           )) as { id?: string } | null;
           if (created?.id) createdIds.push(created.id);
@@ -470,6 +480,9 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
             name: s.name,
             order: i,
             content: s.content ?? {},
+            description: s.description ?? null,
+            descriptionHtml: (s as { descriptionHtml?: string | null }).descriptionHtml ?? null,
+            isEnabled: s.isEnabled !== false,
           })),
         layoutSettings: (proposal.layoutSettings as Record<string, unknown>) || undefined,
       };
