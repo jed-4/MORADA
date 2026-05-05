@@ -114,15 +114,14 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
     if (editOpen) setEditKeys(selectedKeys);
   }, [editOpen, selectedKeys]);
 
-  const { data, isLoading, isError } = useQuery<KPIData>({
+  const { data, isLoading, isError, refetch } = useQuery<KPIData>({
     queryKey: ["/api/business/kpis", period],
     queryFn: async () => {
       const res = await fetch(`/api/business/kpis?period=${period}`, {
         credentials: "include",
       });
       if (!res.ok) {
-        // Fallback: build from existing endpoints if not yet implemented
-        return { values: {} };
+        throw new Error(`Failed to load KPIs (${res.status})`);
       }
       return res.json();
     },
@@ -185,6 +184,8 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
 
       {isLoading ? (
         <WidgetSkeleton rows={3} />
+      ) : isError ? (
+        <WidgetError message="Couldn't load KPIs." onRetry={() => refetch()} />
       ) : selectedKeys.length === 0 ? (
         <WidgetEmpty title="No KPIs selected" message="Click Edit KPIs to choose which metrics to display." />
       ) : (
@@ -228,7 +229,6 @@ export default function BusinessKPIsWidget({ widget, onUpdate }: WidgetProps) {
         </div>
       )}
 
-      {isError && <WidgetError message="Some metrics could not be loaded." />}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-md" data-testid="kpi-edit-dialog">

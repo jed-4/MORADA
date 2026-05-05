@@ -37,6 +37,7 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "purple",
     defaultColumns: 8,
+    multiInstance: true,
   },
   businessActivity: {
     type: "businessActivity",

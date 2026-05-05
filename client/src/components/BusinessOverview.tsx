@@ -340,7 +340,7 @@ export default function BusinessOverview() {
       size: definition.defaultSize,
       dimensions: {
         columns: definition.defaultColumns ?? fallbackColumns,
-        ...(definition.defaultRowSpan ? { height: definition.defaultRowSpan * 180 } : {}),
+        ...(definition.defaultRowSpan ? { height: definition.defaultRowSpan * 120 } : {}),
       },
     };
 
@@ -449,7 +449,11 @@ export default function BusinessOverview() {
 
   const activeView = savedViews.find(v => v.id === activeViewId);
   const availableWidgets = getAvailableBusinessWidgets();
-  const addedWidgetTypes = new Set(widgets.map(w => w.type));
+  const addedWidgetTypes = new Set(
+    widgets
+      .filter(w => !getBusinessWidgetDefinition(w.type)?.multiInstance)
+      .map(w => w.type)
+  );
 
   const getBackgroundStyle = () => {
     if (!theme) return {};

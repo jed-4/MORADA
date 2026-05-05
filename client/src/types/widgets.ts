@@ -47,6 +47,12 @@ export interface WidgetDefinition {
   requiredPermission?: { key: string; action?: "view" | "edit" | "add" | "delete" | "approve" };
   defaultColumns?: number;
   defaultRowSpan?: number;
+  /**
+   * If true, multiple instances of this widget can be added to the same
+   * dashboard with independent configurations (e.g. KPIs widget with
+   * different period + selectedKpis per instance).
+   */
+  multiInstance?: boolean;
 }
 
 export interface WidgetProps {
