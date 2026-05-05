@@ -73,6 +73,7 @@ function SortableWidget({
   onUpdate,
   onRemove,
   onConfigure,
+  isConfiguring,
   userId,
   themeStyle,
 }: {
@@ -80,6 +81,7 @@ function SortableWidget({
   onUpdate: (widget: Widget) => void;
   onRemove: (id: string) => void;
   onConfigure: (id: string | null) => void;
+  isConfiguring: boolean;
   userId?: string;
   themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
@@ -143,7 +145,7 @@ function SortableWidget({
           widget={widget}
           onUpdate={onUpdate}
           onRemove={onRemove}
-          isConfiguring={false}
+          isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
           userId={userId}
         />
@@ -362,6 +364,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   onUpdate={updateWidget}
                   onRemove={removeWidget}
                   onConfigure={setConfiguringWidget}
+                  isConfiguring={configuringWidget === widget.id}
                   userId={currentUserId}
                   themeStyle={getWidgetStyle()}
                 />

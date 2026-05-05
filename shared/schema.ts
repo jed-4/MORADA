@@ -5801,7 +5801,7 @@ export const dashboardViews = pgTable("dashboard_views", {
   name: text("name").notNull(),
   viewType: dashboardViewTypeEnum("view_type").notNull().default("personal"), // personal or business
   // New nullable scope; user_workspace rows store per-user layout in `widgets`
-  dashboardType: dashboardTypeEnum("dashboard_type"),
+  dashboardType: dashboardTypeEnum("dashboard_type").notNull().default("business"),
   // For user_workspace rows, the owning user (one row per user)
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   visibility: dashboardViewVisibilityEnum("visibility").notNull().default("private"),
