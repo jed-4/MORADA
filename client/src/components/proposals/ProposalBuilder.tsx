@@ -1577,7 +1577,6 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   // short debounce. Skips saves when the draft already matches the last
   // server payload to avoid the invalidate/refetch/save loop.
   useEffect(() => {
-    if (draft.length === 0) return;
     const payloadHash = JSON.stringify(draftToPayload(draft));
     if (payloadHash === lastSyncedHashRef.current) return;
     const handle = setTimeout(() => {
