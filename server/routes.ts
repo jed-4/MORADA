@@ -8682,7 +8682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(variationsTbl)
         .where(
           and(
-            inArray(variationsTbl.status, ["pending", "action"] as any),
+            inArray(variationsTbl.status, ["pending", "action"]),
             inArray(variationsTbl.projectId, Array.from(companyProjectIds)),
           ),
         );
@@ -8976,23 +8976,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
 
       const invByProject = new Map<string, number>();
-      for (const i of invoiceRows as any[]) {
+      for (const i of invoiceRows) {
         invByProject.set(i.projectId, (invByProject.get(i.projectId) || 0) + (Number(i.paidAmount) || 0));
       }
       const billByProject = new Map<string, number>();
-      for (const b of billRows as any[]) {
+      for (const b of billRows) {
         billByProject.set(b.projectId, (billByProject.get(b.projectId) || 0) + (Number(b.paidAmount) || 0));
       }
 
-      const margins: number[] = [];
+      // Weighted aggregate margin across active projects with both invoices
+      // and bills in the period: (SUM(invoices) - SUM(bills)) / SUM(invoices).
+      let qualifyingInvCents = 0;
+      let qualifyingBillCents = 0;
       for (const [pid, invCents] of invByProject) {
         const billCents = billByProject.get(pid);
         if (!billCents || invCents <= 0) continue;
-        margins.push(((invCents - billCents) / invCents) * 100);
+        qualifyingInvCents += invCents;
+        qualifyingBillCents += billCents;
       }
-      if (margins.length === 0) return res.json({ value: null });
-      const avg = margins.reduce((a, b) => a + b, 0) / margins.length;
-      res.json({ value: avg });
+      if (qualifyingInvCents <= 0) return res.json({ value: null });
+      const margin = ((qualifyingInvCents - qualifyingBillCents) / qualifyingInvCents) * 100;
+      res.json({ value: margin });
     } catch (err) {
       console.error("[/api/kpis/avg-margin] error:", err);
       res.status(500).json({ error: "Failed to compute KPI" });
