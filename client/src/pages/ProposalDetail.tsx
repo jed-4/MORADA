@@ -3,7 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatViewedTooltip } from "@/components/proposals/proposalDisplay";
 import {
   Dialog,
   DialogContent,
@@ -93,8 +95,15 @@ export default function ProposalDetail() {
   // Get the project for this proposal
   const project = proposal ? projects.find(p => p.id === proposal.projectId) : undefined;
 
-  // Fetch company settings (optional - for branding)
-  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string; primaryColor?: string; proposalPrimaryColor?: string } | null>({
+  // Fetch company settings (optional - for branding & T&Cs default)
+  const { data: companySettings } = useQuery<{
+    logoUrl?: string;
+    companyName?: string;
+    primaryColor?: string;
+    proposalPrimaryColor?: string;
+    termsAndConditions?: string | null;
+    termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor?: string[] }>;
+  } | null>({
     queryKey: ["/api/company-settings"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
@@ -109,12 +118,6 @@ export default function ProposalDetail() {
     enabled: isNewProposal,
   });
 
-  // Fetch company terms templates for T&Cs auto-fill
-  const { data: termsTemplates = [] } = useQuery<Array<{ id: string; name: string; content: string; isDefault?: boolean }>>({
-    queryKey: ["/api/terms-templates"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    retry: false,
-  });
 
   // Stable default values for new proposals
   const newProposalDefaults = useMemo(() => ({
@@ -149,9 +152,20 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Create all default sections after creating the proposal
         if (result.id) {
-          // Auto-fill T&Cs with default terms template (if available)
-          const defaultTermsTpl = termsTemplates.find(t => t.isDefault) || termsTemplates[0];
-          const defaultTermsContent = defaultTermsTpl?.content || '';
+          // Auto-fill T&Cs from company default: prefer a termsTemplates entry
+          // marked defaultFor 'proposal', then any termsTemplates entry, then
+          // the company-wide termsAndConditions text.
+          const tpls = companySettings?.termsTemplates ?? [];
+          const proposalDefaultTpl =
+            tpls.find((t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal')) ??
+            tpls[0];
+          const defaultTermsContent =
+            proposalDefaultTpl?.content || companySettings?.termsAndConditions || '';
+
+          // Default closing body — substitutes [Company Name] from company settings.
+          const companyName = companySettings?.companyName || '[Company Name]';
+          const defaultClosingHtml =
+            `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`;
 
           const defaultSections: Array<{ sectionType: string; name: string; order: number; content?: any }> = [
             { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
@@ -160,7 +174,7 @@ export default function ProposalDetail() {
             { sectionType: 'summary', name: 'Summary', order: 3 },
             { sectionType: 'allowances', name: 'Allowances', order: 4 },
             { sectionType: 'payment_schedule', name: 'Payment Schedule', order: 5 },
-            { sectionType: 'closing_letter', name: 'Closing Letter', order: 6 },
+            { sectionType: 'closing', name: 'Closing', order: 6, content: { closingText: defaultClosingHtml } },
             { sectionType: 'attachments', name: 'Attachments', order: 7 },
             { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 8, content: { termsText: defaultTermsContent } },
             { sectionType: 'signature', name: 'Signature', order: 9 },
@@ -304,10 +318,28 @@ export default function ProposalDetail() {
       return;
     }
 
+    // Seed sensible defaults so freshly-added closing / T&Cs sections
+    // aren't empty — mirrors the new-proposal default seeding.
+    let content: Record<string, unknown> | undefined;
+    if (newSectionType === 'closing') {
+      const companyName = companySettings?.companyName || '[Company Name]';
+      content = {
+        closingText: `<p>Thank you for considering ${companyName}. We look forward to working with you.</p>`,
+      };
+    } else if (newSectionType === 'terms_conditions') {
+      const tpls = companySettings?.termsTemplates ?? [];
+      const tpl =
+        tpls.find((t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal')) ??
+        tpls[0];
+      const text = tpl?.content || companySettings?.termsAndConditions || '';
+      if (text) content = { termsText: text };
+    }
+
     addSectionMutation.mutate({
       name: newSectionName,
       sectionType: newSectionType,
       description: '',
+      ...(content ? { content } : {}),
     });
   };
 
@@ -367,10 +399,25 @@ export default function ProposalDetail() {
                     {proposal.status.replace('_', ' ')}
                   </span>
                 )}
-                {proposal && ((proposal as any).viewCount || 0) > 0 && (
-                  <span className="inline-flex items-center px-2 h-6 rounded-md text-xs font-medium border bg-muted" data-testid="chip-proposal-views">
-                    Seen {(proposal as any).viewCount}×
-                  </span>
+                {proposal && (proposal.viewCount ?? 0) > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex items-center gap-1 px-2 h-6 rounded-md text-xs font-medium border bg-muted"
+                        data-testid="chip-proposal-views"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Seen {proposal.viewCount}×
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {formatViewedTooltip(
+                        proposal.viewCount ?? 0,
+                        proposal.lastViewedAt,
+                        proposal.viewerDevice,
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
               <p className="text-sm text-muted-foreground">

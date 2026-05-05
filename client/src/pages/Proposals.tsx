@@ -18,7 +18,14 @@ import {
   Archive,
   ArchiveRestore,
   Columns3,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -47,6 +54,7 @@ import {
 import { type Proposal, type Project, type FieldCategoryWithOptions } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
+import { revisionLabel, formatViewedTooltip } from "@/components/proposals/proposalDisplay";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -284,6 +292,30 @@ export default function Proposals() {
       });
     }
 
+    // Version column appears only when the *currently visible* set of
+    // proposals contains a revision (version > 1). Conditionally including
+    // the column in the array (rather than relying on meta.defaultHidden,
+    // which DataTable only seeds once) makes show/hide reactive to the
+    // active tab / filter / search.
+    const hasRevisions = filteredProposals.some((p) => (p.version ?? 1) > 1);
+    if (hasRevisions) {
+      cols.push({
+        id: "version",
+        header: "Version",
+        accessorFn: (p) => p.version ?? 1,
+        cell: ({ row }) => {
+          const v = row.original.version ?? 1;
+          return (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-version-${row.original.id}`}>
+              {revisionLabel(v)}
+            </Badge>
+          );
+        },
+        size: 90,
+        meta: { defaultWidth: 90, headerLabel: "Version" } satisfies DataTableColumnMeta,
+      });
+    }
+
     cols.push(
       {
         id: "notes",
@@ -414,37 +446,44 @@ export default function Proposals() {
         meta: { defaultWidth: 160, headerLabel: "Status" } satisfies DataTableColumnMeta,
       },
       {
-        id: "version",
-        header: "Version",
-        accessorFn: (p) => p.version ?? 1,
-        cell: ({ row }) => {
-          const v = row.original.version ?? 1;
-          return (
-            <Badge variant="outline" className="text-xs" data-testid={`badge-version-${row.original.id}`}>
-              v{v}
-            </Badge>
-          );
-        },
-        size: 80,
-        meta: {
-          defaultWidth: 80,
-          headerLabel: "Version",
-          defaultHidden: !proposals.some((p) => (p.version ?? 1) > 1),
-        } satisfies DataTableColumnMeta,
-      },
-      {
         id: "viewCount",
         header: "Seen",
         accessorFn: (p) => p.viewCount ?? 0,
+        enableSorting: false,
         cell: ({ row }) => {
-          const count = row.original.viewCount ?? 0;
-          const lastViewed = row.original.lastViewedAt;
+          const proposal = row.original;
+          const count = proposal.viewCount ?? 0;
+          const lastViewed = proposal.lastViewedAt;
+          const device = proposal.viewerDevice;
+          const tooltipText = formatViewedTooltip(count, lastViewed, device);
+          if (count === 0) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-muted-foreground/60"
+                    data-testid={`icon-unviewed-${proposal.id}`}
+                  >
+                    <EyeOff className="w-4 h-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{tooltipText}</TooltipContent>
+              </Tooltip>
+            );
+          }
           return (
-            <span className="text-xs text-muted-foreground" data-testid={`text-view-count-${row.original.id}`}>
-              {count > 0
-                ? `${count}× ${lastViewed ? format(new Date(lastViewed), 'MMM d') : ''}`
-                : '—'}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                  data-testid={`text-view-count-${proposal.id}`}
+                >
+                  <Eye className="w-4 h-4 text-foreground" />
+                  <span>{count}</span>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{tooltipText}</TooltipContent>
+            </Tooltip>
           );
         },
         size: 100,
@@ -465,7 +504,7 @@ export default function Proposals() {
     );
 
     return cols;
-  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, proposals]);
+  }, [projects, proposalStatuses, isProjectContext, updateStatusMutation, toggleArchiveMutation, proposals, filteredProposals]);
 
   const pickerColumns = useMemo(() => {
     return proposalColumns.map((c) => {
