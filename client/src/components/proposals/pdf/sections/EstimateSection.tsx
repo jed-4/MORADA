@@ -31,7 +31,14 @@ export function EstimateSection({
   }
 
   const content = section.content as Record<string, any> || {};
-  const toggles = content.columnToggles || {
+  // The Layout panel writes column visibility as a string[] under
+  // `visibleColumns` (one entry per visible column). The legacy section
+  // editor writes a Record<string, boolean> under `columnToggles`. Bridge
+  // both shapes so the layout controls actually affect rendering.
+  const visibleColumns: string[] | undefined = Array.isArray(content.visibleColumns)
+    ? (content.visibleColumns as string[])
+    : undefined;
+  const fallbackToggles = content.columnToggles || {
     description: true,
     quantity: false,
     unitCostExTax: false,
@@ -42,6 +49,21 @@ export function EstimateSection({
     showSubtotals: true,
     showZeroLines: false,
   };
+  const toggles: Record<string, boolean> = visibleColumns
+    ? {
+        description: visibleColumns.includes('description'),
+        quantity: visibleColumns.includes('quantity'),
+        unitCostExTax: visibleColumns.includes('unitCostExTax'),
+        unitCostIncTax: visibleColumns.includes('unitCostIncTax'),
+        markup: visibleColumns.includes('markup'),
+        amountExTax: visibleColumns.includes('amountExTax'),
+        amountIncTax: visibleColumns.includes('amountIncTax'),
+        // showSubtotals / showZeroLines are not part of the layout column
+        // toggle set; preserve any previously-saved boolean.
+        showSubtotals: fallbackToggles.showSubtotals !== false,
+        showZeroLines: fallbackToggles.showZeroLines === true,
+      }
+    : fallbackToggles;
 
   const { estimate, groups, items } = estimateData;
 

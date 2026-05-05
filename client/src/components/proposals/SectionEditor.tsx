@@ -3,13 +3,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { PROPOSAL_PLACEHOLDER_TOKENS } from "./pdf/placeholders";
 import type { ProposalSection, Estimate, Project, Contact } from "@shared/schema";
+
+// Convert HTML -> plain text for the legacy description column. Mirrors the
+// approach used by SortableSectionItem in ProposalBuilder.
+function htmlToPlainText(html: string): string {
+  if (!html) return "";
+  if (typeof document === "undefined") return html.replace(/<[^>]+>/g, "").trim();
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return (div.textContent || div.innerText || "").trim();
+}
 
 interface SectionEditorProps {
   section: ProposalSection | null;
@@ -41,29 +51,32 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
 
 export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, projectId, project, client }: SectionEditorProps) {
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [descriptionHtml, setDescriptionHtml] = useState("");
   const [content, setContent] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (section) {
       setName(section.name);
-      setDescription(section.description || "");
+      // Prefer the rich-text descriptionHtml when present; fall back to the
+      // plain description for legacy sections.
+      const html = (section as ProposalSection & { descriptionHtml?: string | null }).descriptionHtml;
+      setDescriptionHtml(html || section.description || "");
       setContent(section.content || {});
     } else {
       setName("");
-      setDescription("");
+      setDescriptionHtml("");
       setContent({});
     }
   }, [section]);
 
   const handleSave = () => {
     if (!section) return;
-    
     onSave(section.id, {
       name,
-      description,
+      description: htmlToPlainText(descriptionHtml),
+      descriptionHtml,
       content,
-    });
+    } as Partial<ProposalSection>);
   };
 
   if (!section) return null;
@@ -97,13 +110,11 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, proj
 
           <div className="space-y-2">
             <Label htmlFor="section-description">Description</Label>
-            <Textarea
-              id="section-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+            <RichTextEditor
+              content={descriptionHtml}
+              onChange={(html) => setDescriptionHtml(html)}
               placeholder="Optional description"
-              rows={3}
-              data-testid="textarea-section-description"
+              placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
             />
           </div>
 
@@ -403,13 +414,17 @@ export function EstimateEditor({ content, setContent, projectId }: EstimateEdito
 
       <div className="space-y-2">
         <Label htmlFor="estimate-description">Description</Label>
-        <Textarea
-          id="estimate-description"
-          value={content.estimateDescription || ""}
-          onChange={(e) => setContent({ ...content, estimateDescription: e.target.value })}
+        <RichTextEditor
+          content={content.estimateDescriptionHtml || content.estimateDescription || ""}
+          onChange={(html) =>
+            setContent({
+              ...content,
+              estimateDescriptionHtml: html,
+              estimateDescription: htmlToPlainText(html),
+            })
+          }
           placeholder="Optional description to show above the estimate"
-          rows={3}
-          data-testid="textarea-estimate-description"
+          placeholders={PROPOSAL_PLACEHOLDER_TOKENS}
         />
       </div>
 

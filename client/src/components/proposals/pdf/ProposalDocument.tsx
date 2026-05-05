@@ -56,22 +56,21 @@ export function ProposalDocument({
 }: ProposalDocumentProps) {
   // Compute the estimate total (inc GST, in cents) from any linked estimate
   // section so {{estimate.total_inc_gst}} renders against real data.
+  // EstimateItem.priceIncTax is stored in dollars (doublePrecision in the
+  // schema), so we convert to integer cents for the formatter.
   let estimateTotalIncGstCents: number | undefined;
   for (const s of sections) {
     if (s.sectionType !== 'estimate') continue;
-    const estimateId = (s.content as Record<string, unknown> | null)?.['estimateId'] as string | undefined;
+    const sectionContent = (s.content as Record<string, unknown> | null) ?? {};
+    const estimateId = typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
     const data = estimateId ? estimatesData[estimateId] : undefined;
     if (!data) continue;
-    const items = data.items || [];
-    const incCents = items.reduce((acc, item) => {
-      const cents = (item as any).totalIncTaxCents;
-      if (typeof cents === 'number') return acc + cents;
-      const ex = Number((item as any).totalExTaxCents || 0);
-      const taxRate = Number((item as any).taxRatePct || 0);
-      return acc + Math.round(ex * (1 + taxRate / 100));
+    const incDollars = data.items.reduce((acc: number, item: EstimateItem) => {
+      const value = item.priceIncTax;
+      return acc + (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
     }, 0);
-    if (incCents > 0) {
-      estimateTotalIncGstCents = incCents;
+    if (incDollars > 0) {
+      estimateTotalIncGstCents = Math.round(incDollars * 100);
       break;
     }
   }

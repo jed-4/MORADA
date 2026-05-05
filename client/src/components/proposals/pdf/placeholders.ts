@@ -9,6 +9,15 @@ export interface PlaceholderContext {
   estimateTotalIncGstCents?: number;
 }
 
+// Narrow accessor types for fields that may differ between revisions of the
+// shared schema. Using these instead of `as any` keeps the compiler happy
+// without lying about the underlying types.
+type ProjectAddressFields = Pick<Project, 'location'> & { address?: string | null };
+type ProposalDateFields = Pick<Proposal, 'sentDate' | 'expiryDate' | 'totalAmount'> & {
+  createdAt?: Date | string | null;
+};
+type SectionWithDescriptionHtml = ProposalSection & { descriptionHtml?: string | null };
+
 function todayString(): string {
   return new Date().toLocaleDateString('en-AU', {
     year: 'numeric',
@@ -30,7 +39,8 @@ function formatDate(date: unknown): string {
 
 function projectAddress(project?: Project): string {
   if (!project) return '';
-  return (project as any).location || (project as any).address || '';
+  const p = project as ProjectAddressFields;
+  return p.location || p.address || '';
 }
 
 function formatCurrencyCents(cents?: number): string {
@@ -53,16 +63,17 @@ export const PROPOSAL_PLACEHOLDER_TOKENS: Array<{ token: string; label: string }
 
 export function buildSubstitutionMap(ctx: PlaceholderContext): Record<string, string> {
   const { proposal, project, client, companyName, companyPhone, estimateTotalIncGstCents } = ctx;
+  const p = proposal as ProposalDateFields;
   return {
     'client.name': client?.name || '',
     'client.email': client?.email || '',
     'project.name': project?.name || '',
     'project.address': projectAddress(project),
     'proposal.number': proposal.proposalNumber || '',
-    'proposal.date': formatDate((proposal as any).sentDate) || formatDate((proposal as any).createdAt) || todayString(),
-    'proposal.expiry': formatDate((proposal as any).expiryDate),
-    'proposal.total': formatCurrencyCents((proposal as any).totalAmount),
-    'estimate.total_inc_gst': formatCurrencyCents(estimateTotalIncGstCents ?? (proposal as any).totalAmount),
+    'proposal.date': formatDate(p.sentDate) || formatDate(p.createdAt) || todayString(),
+    'proposal.expiry': formatDate(p.expiryDate),
+    'proposal.total': formatCurrencyCents(p.totalAmount),
+    'estimate.total_inc_gst': formatCurrencyCents(estimateTotalIncGstCents ?? p.totalAmount),
     'builder.company': companyName || '',
     'builder.phone': companyPhone || '',
     'company.name': companyName || '',
@@ -116,7 +127,7 @@ export function substituteSectionContent(
   }
   let nameNext = section.name;
   let descNext = section.description;
-  let descHtmlNext = (section as any).descriptionHtml as string | null | undefined;
+  let descHtmlNext = (section as SectionWithDescriptionHtml).descriptionHtml;
   if (typeof nameNext === 'string' && nameNext.indexOf('{{') !== -1) {
     const replaced = substitutePlaceholders(nameNext, ctx);
     if (replaced !== nameNext) {

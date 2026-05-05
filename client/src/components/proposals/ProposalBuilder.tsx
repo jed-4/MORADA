@@ -805,7 +805,7 @@ export function ProposalBuilder({
           </TabsContent>
 
           <TabsContent value="revisions" className="flex-1 min-h-0 mt-4 overflow-auto">
-            <RevisionHistoryPanel proposal={proposal} />
+            <RevisionHistoryPanel proposal={proposal} projectId={project?.id} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1406,7 +1406,7 @@ function SortableMilestone({ id, milestone, index, onUpdate, onRemove }: Sortabl
 function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   const { toast } = useToast();
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
-  const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
+  const { data: milestones = [], isFetched: milestonesFetched } = useQuery<ProposalPaymentMilestone[]>({
     queryKey: ['/api/proposals', proposalId, 'milestones'],
   });
   const { data: companySettings } = useQuery<{ paymentScheduleTemplates?: Array<{ id: string; name: string; milestones: DraftMilestone[] }> } | null>({
@@ -1415,6 +1415,7 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
 
   const [draft, setDraft] = useState<DraftMilestone[]>([]);
   const [templateName, setTemplateName] = useState('');
+  const hasAutoSeededRef = useRef(false);
 
   useEffect(() => {
     setDraft(
@@ -1489,6 +1490,25 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
   const updateRow = (idx: number, patch: Partial<DraftMilestone>) =>
     setDraft(draft.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   const seedDefault = () => setDraft(DEFAULT_MILESTONE_SEED);
+
+  // Auto-seed default milestones the first time a payment schedule is opened
+  // with no existing milestones. We wait for the milestones query to actually
+  // resolve from the server (isFetched) before seeding, otherwise the default
+  // empty array from useQuery would cause us to overwrite a proposal that
+  // already has a saved schedule.
+  useEffect(() => {
+    if (hasAutoSeededRef.current) return;
+    if (!milestonesFetched) return;
+    if (milestones.length > 0) {
+      hasAutoSeededRef.current = true;
+      return;
+    }
+    if (replaceMutation.isPending) return;
+    hasAutoSeededRef.current = true;
+    setDraft(DEFAULT_MILESTONE_SEED);
+    replaceMutation.mutate(DEFAULT_MILESTONE_SEED);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [milestones, milestonesFetched]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1622,9 +1642,10 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
 // --- Revision History Panel ---
 interface RevisionHistoryPanelProps {
   proposal: Proposal;
+  projectId?: string;
 }
 
-function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
+function RevisionHistoryPanel({ proposal, projectId }: RevisionHistoryPanelProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const parentId = proposal.parentProposalId || proposal.id;
@@ -1709,6 +1730,24 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
         </Button>
       )}
 
+      {projectId && (
+        <div className="space-y-1 border-t pt-3">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <FileText className="w-3 h-3" /> Linked estimate revision
+          </div>
+          <EstimateRevisionSelector
+            proposalId={proposal.id}
+            projectId={projectId}
+            currentEstimateId={proposal.estimateId || null}
+            onPick={() => {
+              // The selector also persists to proposals.estimateId; refresh
+              // proposal cache so downstream consumers see the new link.
+              queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
+            }}
+          />
+        </div>
+      )}
+
       <div className="space-y-2">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <History className="w-3 h-3" /> Revision history
@@ -1718,7 +1757,7 @@ function RevisionHistoryPanel({ proposal }: RevisionHistoryPanelProps) {
         ) : (
           ordered.map((p) => {
             const isCurrent = p.id === proposal.id;
-            const sentDate = (p as any).sentDate as string | null | undefined;
+            const sentDate = p.sentDate;
             const status = (p.status || 'draft') as string;
             const statusVariant: 'default' | 'secondary' | 'destructive' | 'outline' =
               status === 'accepted'
