@@ -8463,8 +8463,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // BuildPro Business Dashboard analytics endpoints (task #237)
   // ============================================================
 
-  // Deprecated: replaced by per-KPI endpoints under /api/kpis/*. Retained as no-op for safety.
-  app.get("/api/business/kpis_legacy_removed", requireAuth, async (req, res) => {
+  // Deprecated: replaced by per-KPI endpoints under /api/kpis/*.
+  // Kept as a backwards-compatibility alias so any older clients (or cached
+  // bundles) that still call /api/business/kpis continue to receive the
+  // legacy aggregate payload until they migrate to the per-KPI endpoints.
+  const legacyKpisHandler: import("express").RequestHandler = async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -8563,7 +8566,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[/api/business/kpis] error:", err);
       res.status(500).json({ error: "Failed to compute KPIs" });
     }
-  });
+  };
+  app.get("/api/business/kpis", requireAuth, legacyKpisHandler);
+  app.get("/api/business/kpis_legacy_removed", requireAuth, legacyKpisHandler);
 
   app.get("/api/business/revenue-trends", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
     try {

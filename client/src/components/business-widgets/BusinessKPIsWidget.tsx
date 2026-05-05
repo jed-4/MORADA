@@ -132,8 +132,13 @@ function KPICell({
       const r = await fetch(url, { credentials: "include" });
       if (!r.ok) {
         if (r.status === 503) {
-          const body = await r.json().catch(() => null);
-          if (body && typeof body === "object" && (body as any).error === "xero_unavailable") {
+          const body: unknown = await r.json().catch(() => null);
+          if (
+            body !== null &&
+            typeof body === "object" &&
+            "error" in body &&
+            (body as { error?: unknown }).error === "xero_unavailable"
+          ) {
             return { error: "xero_unavailable", value: null };
           }
         }
