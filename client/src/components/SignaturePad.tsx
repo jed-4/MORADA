@@ -32,7 +32,10 @@ export function SignaturePad({ onChange, defaultName = '' }: SignaturePadProps) 
       }
     } else {
       if (hasDrawing && canvasRef.current && !canvasRef.current.isEmpty()) {
-        const data = canvasRef.current.toDataURL('image/png');
+        // Trim transparent whitespace before exporting so the saved PNG is
+        // tightly cropped to the actual ink — this is what the task plan
+        // requires and what the eventual PDF render expects.
+        const data = canvasRef.current.getTrimmedCanvas().toDataURL('image/png');
         onChange({ data, method: 'drawn' });
       } else {
         onChange(null);
@@ -50,7 +53,7 @@ export function SignaturePad({ onChange, defaultName = '' }: SignaturePadProps) 
   const handleEnd = () => {
     if (canvasRef.current && !canvasRef.current.isEmpty()) {
       setHasDrawing(true);
-      const data = canvasRef.current.toDataURL('image/png');
+      const data = canvasRef.current.getTrimmedCanvas().toDataURL('image/png');
       onChange({ data, method: 'drawn' });
     }
   };

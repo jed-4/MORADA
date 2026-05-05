@@ -58,7 +58,6 @@ const SECTION_TYPES = [
   { value: 'inclusions_exclusions', label: 'Inclusions & Exclusions' },
   { value: 'payment_schedule', label: 'Payment Schedule' },
   { value: 'closing', label: 'Closing' },
-  { value: 'closing_letter', label: 'Closing Letter' },
   { value: 'attachments', label: 'Attachments' },
   { value: 'terms_conditions', label: 'Terms & Conditions' },
   { value: 'signature', label: 'Signature' },
