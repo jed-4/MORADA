@@ -912,10 +912,6 @@ const ESTIMATE_COLUMNS: Array<{ key: string; label: string }> = [
 function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) {
   const { toast } = useToast();
   const { user } = useAuth();
-  // Permission gate: only admin / owner roles may edit company defaults.
-  // Non-admins see the controls in true read-only state — no edit toggle,
-  // disabled inputs, no save buttons — instead of the previous best-effort
-  // "click and hope PATCH succeeds" UX.
   const roleName = (user as { roleName?: string; role?: string } | null)?.roleName
     ?? (user as { role?: string } | null)?.role
     ?? '';
@@ -935,9 +931,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const companyShowLogo = companySettings?.proposalShowLogo;
   const companyLogoUrl = companySettings?.logoUrl || '';
 
-  // Edit toggle is only meaningful when the user has permission. For users
-  // without permission this stays false and the UI hides save controls and
-  // disables value inputs.
   const [editCompanyDefaults, setEditCompanyDefaults] = useState(false);
   const canEdit = canEditCompanyDefaults && editCompanyDefaults;
 
@@ -958,11 +951,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyColor]);
 
-  // Mirror primaryColor's resync for showLogo so the switch reflects the
-  // company default once /api/company-settings resolves. Proposal-level
-  // override (settings.showLogo) always wins; otherwise prefer
-  // companySettings.proposalShowLogo, falling back to logoUrl presence only
-  // when the company has no explicit policy.
+  // Resync showLogo from company default once settings resolve.
   useEffect(() => {
     if (settings.showLogo !== undefined) return;
     setShowLogo(companyShowLogo ?? !!companyLogoUrl);
@@ -1032,10 +1021,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     if (p.showGst !== undefined) setShowGst(!!p.showGst);
     if (p.pricingMode) setPricingMode(p.pricingMode);
 
-    // Bundle section enable/disable toggles per preset. Each preset names the
-    // section types that should be enabled; everything else is disabled. We
-    // call onSectionUpdate per affected section so the existing autosave
-    // pipeline persists the change.
     const enabledTypes = PRESET_ENABLED_SECTION_TYPES[name as PresetKey];
     if (enabledTypes) {
       for (const s of sections) {
@@ -1050,9 +1035,7 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   // Estimate sections — column visibility per section
   const estimateSections = sections.filter((s) => s.sectionType === 'estimate');
 
-  // Renderer defaults for legacy estimate sections that have neither
-  // `visibleColumns` nor explicit `columnToggles` saved. Mirrors the
-  // canonical 5-column spec so the checkbox UI matches what the PDF shows.
+  // Defaults for legacy estimate sections without saved visibility.
   const DEFAULT_VISIBLE_COLUMN_KEYS = new Set([
     'description', 'quantity', 'unit', 'unitCostIncTax', 'amountIncTax',
   ]);
@@ -1068,9 +1051,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
       const t = togglesRaw as Record<string, boolean>;
       current = ESTIMATE_COLUMNS.filter((c) => t[c.key] === true).map((c) => c.key);
     } else {
-      // Legacy section with no saved visibility config — start from the same
-      // renderer defaults the checkbox UI shows so the first toggle only
-      // changes the one column the user clicked.
       current = ESTIMATE_COLUMNS.filter((c) => DEFAULT_VISIBLE_COLUMN_KEYS.has(c.key)).map((c) => c.key);
     }
     const next = on ? Array.from(new Set([...current, columnKey])) : current.filter((k) => k !== columnKey);
@@ -1302,8 +1282,7 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
   });
-  // Also read the proposal so we can anchor revision lineage to the
-  // proposal-level estimateId when no section-specific pick is set yet.
+  // Anchor revision lineage to proposal-level estimateId when section-local is unset.
   const { data: proposal } = useQuery<Proposal>({
     queryKey: ['/api/proposals', proposalId],
   });
@@ -1741,10 +1720,8 @@ function PaymentScheduleEditor({ proposalId }: PaymentScheduleEditorProps) {
 interface RevisionHistoryPanelProps {
   proposal: Proposal;
   projectId?: string;
-  // Optional: parent supplies the proposal's sections + section-update
-  // callback so the top-level estimate revision selector can also sync
-  // every estimate section's `content.estimateId` (not just rely on the
-  // section-level fallback to `proposals.estimateId`).
+  // When provided, the top-level estimate revision selector syncs every
+  // estimate section's content.estimateId in addition to proposals.estimateId.
   sections?: ProposalSection[];
   onSectionUpdate?: (sectionId: string, updates: Partial<ProposalSection>) => void;
 }
@@ -1844,12 +1821,8 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
             projectId={projectId}
             currentEstimateId={proposal.estimateId || null}
             onPick={(newEstimateId) => {
-              // The selector also persists to proposals.estimateId; refresh
-              // proposal cache so downstream consumers see the new link.
               queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
-              // Authoritative sync: also update every estimate section's
-              // content.estimateId so sections that had an explicit pick
-              // switch to the new revision rather than retaining stale data.
+              // Sync every estimate section's content.estimateId to the new revision.
               if (sections && onSectionUpdate) {
                 for (const s of sections) {
                   if (s.sectionType !== 'estimate') continue;
