@@ -9054,7 +9054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const period = parseKpiPeriod(req.query.period);
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
-      if (!connection) return res.json({ error: "xero_unavailable" });
+      if (!connection) return res.status(503).json({ error: "xero_unavailable" });
 
       const cacheKey = `${connection.id}:revenue:${period}`;
       const cached = xeroKpiCacheGet(cacheKey);
@@ -9069,7 +9069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payload);
     } catch (err: any) {
       if (isXeroUnavailableError(err)) {
-        return res.json({ error: "xero_unavailable" });
+        return res.status(503).json({ error: "xero_unavailable" });
       }
       console.error("[/api/kpis/revenue-xero] error:", err);
       res.status(500).json({ error: "Failed to compute KPI" });
@@ -9083,7 +9083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
-      if (!connection) return res.json({ error: "xero_unavailable" });
+      if (!connection) return res.status(503).json({ error: "xero_unavailable" });
 
       const cacheKey = `${connection.id}:outstanding:all`;
       const cached = xeroKpiCacheGet(cacheKey);
@@ -9095,7 +9095,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payload);
     } catch (err: any) {
       if (isXeroUnavailableError(err)) {
-        return res.json({ error: "xero_unavailable" });
+        return res.status(503).json({ error: "xero_unavailable" });
       }
       console.error("[/api/kpis/outstanding-xero] error:", err);
       res.status(500).json({ error: "Failed to compute KPI" });
@@ -9109,7 +9109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
-      if (!connection) return res.json({ error: "xero_unavailable" });
+      if (!connection) return res.status(503).json({ error: "xero_unavailable" });
 
       const rawAccountIds = typeof req.query.accountIds === "string" ? req.query.accountIds : "";
       const requestedIds = rawAccountIds
@@ -9140,7 +9140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payload);
     } catch (err: any) {
       if (isXeroUnavailableError(err)) {
-        return res.json({ error: "xero_unavailable" });
+        return res.status(503).json({ error: "xero_unavailable" });
       }
       console.error("[/api/kpis/cash-xero] error:", err);
       res.status(500).json({ error: "Failed to compute KPI" });
@@ -25422,6 +25422,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           tokenExpiresAt: expiresAt,
           isActive: true,
         });
+        // Reconnect / tenant change — flush any stale KPI cache for this connection.
+        const clear = (app as any).locals.xeroKpiCacheClearForConnection;
+        if (typeof clear === "function") clear(existing.id);
       } else {
         await storage.createXeroConnection({
           companyId,
