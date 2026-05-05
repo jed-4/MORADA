@@ -20,7 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { format as formatDate } from 'date-fns';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact, Estimate } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
@@ -416,18 +416,26 @@ function ProposalTemplateBar({ proposal, sections }: ProposalTemplateBarProps) {
       }
 
       // All template sections inserted — now remove the originals and renumber.
-      await Promise.all(
-        sections.map((s) =>
-          apiRequest(`/api/proposal-sections/${s.id}`, 'DELETE').catch(() => undefined),
-        ),
+      // We surface any cleanup failures via toast/onError so a partial apply
+      // is never silently accepted.
+      const deleteResults = await Promise.allSettled(
+        sections.map((s) => apiRequest(`/api/proposal-sections/${s.id}`, 'DELETE')),
       );
-      await Promise.all(
+      const renumberResults = await Promise.allSettled(
         createdIds.map((id, i) =>
           apiRequest(`/api/proposal-sections/${id}`, 'PATCH', {
             order: tpl.sections[i]?.order ?? i,
-          }).catch(() => undefined),
+          }),
         ),
       );
+      const cleanupFailures =
+        deleteResults.filter((r) => r.status === 'rejected').length +
+        renumberResults.filter((r) => r.status === 'rejected').length;
+      if (cleanupFailures > 0) {
+        throw new Error(
+          `Template applied but ${cleanupFailures} cleanup operation(s) failed; please refresh and review the section list.`,
+        );
+      }
 
       // Apply layout settings
       if (tpl.layoutSettings) {
@@ -563,6 +571,48 @@ export function ProposalBuilder({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
+  const [pdfEstimatesData, setPdfEstimatesData] = useState<Record<string, {
+    estimate: Estimate;
+    groups: EstimateGroup[];
+    items: EstimateItem[];
+  }>>({});
+
+  // Hydrate estimate data so the download path renders the same content as
+  // the live preview (revision-aware). This runs whenever section estimate
+  // links change so the next download click has fresh data ready.
+  const sectionEstimateIdsKey = sections
+    .filter((s) => s.sectionType === 'estimate')
+    .map((s) => {
+      const c = (s.content as Record<string, unknown> | null) ?? {};
+      return (typeof c.estimateId === 'string' && c.estimateId) || proposal.estimateId || '';
+    })
+    .filter(Boolean)
+    .join(',');
+  useEffect(() => {
+    let cancelled = false;
+    const ids = Array.from(new Set(sectionEstimateIdsKey.split(',').filter(Boolean)));
+    if (ids.length === 0) {
+      setPdfEstimatesData({});
+      return;
+    }
+    (async () => {
+      const map: Record<string, { estimate: Estimate; groups: EstimateGroup[]; items: EstimateItem[] }> = {};
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const res = await fetch(`/api/estimates/${id}/full`);
+            if (res.ok) map[id] = (await res.json()) as { estimate: Estimate; groups: EstimateGroup[]; items: EstimateItem[] };
+          } catch {
+            // Non-fatal — download will skip estimate sections without data.
+          }
+        }),
+      );
+      if (!cancelled) setPdfEstimatesData(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sectionEstimateIdsKey]);
 
   // Fetch payment milestones for PDF rendering
   const { data: milestones = [] } = useQuery<ProposalPaymentMilestone[]>({
@@ -738,6 +788,7 @@ export function ProposalBuilder({
                   companyName={companyName}
                   companyPhone={companyPhone}
                   primaryColor={primaryColor}
+                  estimatesData={pdfEstimatesData}
                   milestones={milestones}
                   acceptance={latestAcceptance}
                 />
