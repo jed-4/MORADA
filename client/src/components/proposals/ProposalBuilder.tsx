@@ -918,7 +918,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   const canEditCompanyDefaults = ['Admin', 'Owner', 'admin', 'owner'].includes(roleName);
   const settings = (proposal.layoutSettings as LayoutSettings) || {};
 
-  // Pull company-wide defaults: brand color + logo policy.
   const { data: companySettings } = useQuery<{
     proposalPrimaryColor?: string;
     proposalShowLogo?: boolean;
@@ -951,7 +950,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyColor]);
 
-  // Resync showLogo from company default once settings resolve.
   useEffect(() => {
     if (settings.showLogo !== undefined) return;
     setShowLogo(companyShowLogo ?? !!companyLogoUrl);
@@ -1026,8 +1024,6 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     setShowGst(nextShowGst);
     setPricingMode(nextPricingMode);
 
-    // Single layout-settings save so preset application is one mutation
-    // (plus per-section enable toggles which go through the autosave pipeline).
     saveLayoutMutation.mutate({
       primaryColor,
       showPageNumbers: nextShowPageNumbers,
@@ -1050,10 +1046,8 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
     }
   };
 
-  // Estimate sections — column visibility per section
   const estimateSections = sections.filter((s) => s.sectionType === 'estimate');
 
-  // Defaults for legacy estimate sections without saved visibility.
   const DEFAULT_VISIBLE_COLUMN_KEYS = new Set([
     'description', 'quantity', 'unit', 'unitCostIncTax', 'amountIncTax',
   ]);
@@ -1303,7 +1297,6 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
   });
-  // Anchor revision lineage to proposal-level estimateId when section-local is unset.
   const { data: proposal } = useQuery<Proposal>({
     queryKey: ['/api/proposals', proposalId],
   });
@@ -1312,10 +1305,12 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const current = projectEstimates.find((e) => e.id === anchorId) || null;
   const parentId = (current?.parentEstimateId as string | null | undefined) || current?.id || null;
 
-  // Sibling revisions = same parent (or itself)
+  // Sibling revisions = same parent (or itself). When no anchor exists,
+  // show nothing rather than every project estimate, so users can't accidentally
+  // link an unrelated estimate's lineage.
   const siblings = parentId
     ? projectEstimates.filter((e) => e.id === parentId || e.parentEstimateId === parentId)
-    : projectEstimates;
+    : [];
   const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
 
   const persistMutation = useMutation({
@@ -1843,7 +1838,6 @@ export function RevisionHistoryPanel({ proposal, projectId, sections, onSectionU
             currentEstimateId={proposal.estimateId || null}
             onPick={(newEstimateId) => {
               queryClient.invalidateQueries({ queryKey: ['/api/proposals', proposal.id] });
-              // Sync every estimate section's content.estimateId to the new revision.
               if (sections && onSectionUpdate) {
                 for (const s of sections) {
                   if (s.sectionType !== 'estimate') continue;
