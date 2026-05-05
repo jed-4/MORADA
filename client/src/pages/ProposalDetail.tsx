@@ -152,9 +152,9 @@ export default function ProposalDetail() {
         // Create all default sections after creating the proposal
         if (result.id) {
           const tpls = companySettings?.termsTemplates ?? [];
-          const proposalDefaultTpl =
-            tpls.find((t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal')) ??
-            tpls[0];
+          const proposalDefaultTpl = tpls.find(
+            (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
+          );
           const defaultTermsContent =
             proposalDefaultTpl?.content || companySettings?.termsAndConditions || '';
 
@@ -321,9 +321,9 @@ export default function ProposalDetail() {
       };
     } else if (newSectionType === 'terms_conditions') {
       const tpls = companySettings?.termsTemplates ?? [];
-      const tpl =
-        tpls.find((t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal')) ??
-        tpls[0];
+      const tpl = tpls.find(
+        (t) => Array.isArray(t.defaultFor) && t.defaultFor.includes('proposal'),
+      );
       const text = tpl?.content || companySettings?.termsAndConditions || '';
       if (text) content = { termsText: text };
     }
