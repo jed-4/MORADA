@@ -20,6 +20,7 @@ import {
   CalendarRange,
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { SiGoogle } from "react-icons/si";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
