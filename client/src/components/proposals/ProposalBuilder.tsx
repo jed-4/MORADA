@@ -1039,27 +1039,32 @@ function LayoutPanel({ proposal, sections, onSectionUpdate }: LayoutPanelProps) 
   // Estimate sections — column visibility per section
   const estimateSections = sections.filter((s) => s.sectionType === 'estimate');
 
+  // Renderer defaults for legacy estimate sections that have neither
+  // `visibleColumns` nor explicit `columnToggles` saved. Mirrors the
+  // canonical 5-column spec so the checkbox UI matches what the PDF shows.
+  const DEFAULT_VISIBLE_COLUMN_KEYS = new Set([
+    'description', 'quantity', 'unit', 'unitCostIncTax', 'amountIncTax',
+  ]);
+
   const updateVisibleColumns = (section: ProposalSection, columnKey: string, on: boolean) => {
     const content = (section.content as Record<string, any>) || {};
-    const current: string[] = Array.isArray(content.visibleColumns)
-      ? content.visibleColumns
-      : ESTIMATE_COLUMNS.filter((c) => {
-          const t = (content.columnToggles || {}) as Record<string, boolean>;
-          return t[c.key] === true;
-        }).map((c) => c.key);
+    let current: string[];
+    if (Array.isArray(content.visibleColumns)) {
+      current = content.visibleColumns;
+    } else if (content.columnToggles && typeof content.columnToggles === 'object') {
+      const t = content.columnToggles as Record<string, boolean>;
+      current = ESTIMATE_COLUMNS.filter((c) => t[c.key] === true).map((c) => c.key);
+    } else {
+      // Legacy section with no saved visibility config — start from the same
+      // renderer defaults the checkbox UI shows so the first toggle only
+      // changes the one column the user clicked.
+      current = ESTIMATE_COLUMNS.filter((c) => DEFAULT_VISIBLE_COLUMN_KEYS.has(c.key)).map((c) => c.key);
+    }
     const next = on ? Array.from(new Set([...current, columnKey])) : current.filter((k) => k !== columnKey);
     onSectionUpdate(section.id, {
       content: { ...content, visibleColumns: next },
     } as Partial<ProposalSection>);
   };
-
-  // Renderer defaults for legacy estimate sections that have neither
-  // `visibleColumns` nor explicit `columnToggles` saved. Mirrors the
-  // canonical 5-column spec so the checkbox UI matches what the PDF
-  // actually shows.
-  const DEFAULT_VISIBLE_COLUMN_KEYS = new Set([
-    'description', 'quantity', 'unit', 'unitCostIncTax', 'amountIncTax',
-  ]);
 
   const isColumnVisible = (section: ProposalSection, columnKey: string): boolean => {
     const content = (section.content as Record<string, any>) || {};
