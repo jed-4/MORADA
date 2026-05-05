@@ -20,7 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { GripVertical, Plus, Download, Eye, Loader2, Trash2, Copy, History, FileText, ArrowRight, Send, CheckCircle, XCircle, FileCheck } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { format as formatDate } from 'date-fns';
-import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, ProposalPaymentMilestone, ProposalAcceptance, ProposalItem, Contact, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
 import { EstimateEditor } from './SectionEditor';
@@ -646,6 +646,13 @@ export function ProposalBuilder({
     enabled: !!proposal.id,
   });
 
+  // Fetch proposal line items so the AllowancesSection can render real
+  // section-linked items rather than a stale legacy content blob.
+  const { data: proposalItems = [] } = useQuery<ProposalItem[]>({
+    queryKey: ['/api/proposals', proposal.id, 'items'],
+    enabled: !!proposal.id,
+  });
+
   // Fetch company settings for the {{builder.phone}} placeholder context.
   const { data: companySettingsForPdf } = useQuery<{
     phone?: string;
@@ -722,6 +729,7 @@ export function ProposalBuilder({
             estimatesData={estimatesDataMap}
             milestones={milestones}
             acceptance={latestAcceptance}
+            proposalItems={proposalItems}
           />
         ).toBlob();
         
@@ -758,7 +766,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, showPreview, milestones, latestAcceptance]);
+  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, showPreview, milestones, latestAcceptance, proposalItems]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -804,6 +812,7 @@ export function ProposalBuilder({
                   estimatesData={pdfEstimatesData}
                   milestones={milestones}
                   acceptance={latestAcceptance}
+                  proposalItems={proposalItems}
                 />
               }
               fileName={`${proposal.proposalNumber}.pdf`}

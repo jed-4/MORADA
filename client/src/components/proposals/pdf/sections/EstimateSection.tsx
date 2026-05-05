@@ -346,7 +346,7 @@ export function EstimateSection({
       <Text style={styles.title}>{section.name || "Estimate"}</Text>
 
       {/* Optional description */}
-      {content.estimateDescription && (
+      {typeof content.estimateDescription === 'string' && content.estimateDescription && (
         <Text style={styles.description}>{content.estimateDescription}</Text>
       )}
 

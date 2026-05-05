@@ -28,7 +28,7 @@ export function ScopeSection({ proposal, section, companyName, primaryColor = '#
         primaryColor={primaryColor}
       />
       <View style={sharedSectionStyle.section}>
-        <Text style={sharedSectionStyle.sectionTitle}>{section.name || defaultTitle}</Text>
+        <Text style={[sharedSectionStyle.sectionTitle, { color: primaryColor }]}>{section.name || defaultTitle}</Text>
         {html ? (
           <RichTextBlocks html={html} />
         ) : (

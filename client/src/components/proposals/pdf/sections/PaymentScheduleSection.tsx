@@ -8,7 +8,11 @@ interface PaymentScheduleSectionProps {
   milestones: ProposalPaymentMilestone[];
   companyName?: string;
   primaryColor?: string;
+  showGst?: boolean;
 }
+
+const formatCurrency = (cents: number) =>
+  `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function PaymentScheduleSection({
   proposal,
@@ -16,6 +20,7 @@ export function PaymentScheduleSection({
   milestones,
   companyName,
   primaryColor = '#3B82F6',
+  showGst = true,
 }: PaymentScheduleSectionProps) {
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.scheduleText as string) || '';
@@ -34,11 +39,25 @@ export function PaymentScheduleSection({
     amt: { flex: 1, textAlign: 'right' },
     desc: { flex: 2 },
     totalRow: { flexDirection: 'row', marginTop: 8, paddingTop: 4, borderTop: `1px solid ${primaryColor}` },
+    note: { marginTop: 10, fontSize: 9, fontStyle: 'italic', color: '#6B7280' },
   });
 
-  const sortedMilestones = [...milestones].sort((a, b) => a.order - b.order);
-  const totalPct = sortedMilestones.reduce((s, m) => s + (Number(m.percentage) || 0), 0);
-  const totalCents = sortedMilestones.reduce((s, m) => s + (Number(m.amountCents) || 0), 0);
+  // Resolve the per-milestone amount: prefer an explicit cents value, then
+  // derive from the proposal total when only a percentage is set so the
+  // schedule still adds up to the contract value.
+  const proposalTotalCents = Number(proposal.totalAmount) || 0;
+  const sortedMilestones = [...milestones]
+    .sort((a, b) => a.order - b.order)
+    .map((m) => {
+      const pct = Number(m.percentage) || 0;
+      const explicit = Number(m.amountCents) || 0;
+      const derived = Math.round(proposalTotalCents * pct / 100);
+      const amountCents = explicit > 0 ? explicit : derived;
+      return { ...m, _pct: pct, _amount: amountCents };
+    });
+
+  const totalPct = sortedMilestones.reduce((s, m) => s + m._pct, 0);
+  const totalCents = sortedMilestones.reduce((s, m) => s + m._amount, 0);
 
   return (
     <Page size="A4" style={sharedPageStyle}>
@@ -49,7 +68,7 @@ export function PaymentScheduleSection({
         primaryColor={primaryColor}
       />
       <View style={sharedSectionStyle.section}>
-        <Text style={sharedSectionStyle.sectionTitle}>{section.name || 'Payment Schedule'}</Text>
+        <Text style={[sharedSectionStyle.sectionTitle, { color: primaryColor }]}>{section.name || 'Payment Schedule'}</Text>
         {html ? <RichTextBlocks html={html} /> : null}
 
         <View style={{ marginTop: 8 }}>
@@ -66,10 +85,10 @@ export function PaymentScheduleSection({
               <View key={m.id} style={styles.row}>
                 <Text style={[sharedSectionStyle.text, styles.name]}>{m.name}</Text>
                 <Text style={[sharedSectionStyle.text, styles.pct]}>
-                  {m.percentage != null ? `${Number(m.percentage).toFixed(2)}%` : '—'}
+                  {m._pct > 0 ? `${m._pct.toFixed(2)}%` : '—'}
                 </Text>
                 <Text style={[sharedSectionStyle.text, styles.amt]}>
-                  {m.amountCents != null ? `$${(Number(m.amountCents) / 100).toFixed(2)}` : '—'}
+                  {m._amount > 0 ? formatCurrency(m._amount) : '—'}
                 </Text>
                 <Text style={[sharedSectionStyle.text, styles.desc]}>{m.description || '—'}</Text>
               </View>
@@ -79,9 +98,12 @@ export function PaymentScheduleSection({
             <View style={styles.totalRow}>
               <Text style={[styles.th, styles.name]}>Total</Text>
               <Text style={[styles.th, styles.pct]}>{totalPct > 0 ? `${totalPct.toFixed(2)}%` : '—'}</Text>
-              <Text style={[styles.th, styles.amt]}>{totalCents > 0 ? `$${(totalCents / 100).toFixed(2)}` : '—'}</Text>
+              <Text style={[styles.th, styles.amt]}>{totalCents > 0 ? formatCurrency(totalCents) : '—'}</Text>
               <Text style={[styles.th, styles.desc]}> </Text>
             </View>
+          )}
+          {sortedMilestones.length > 0 && showGst && (
+            <Text style={styles.note}>Amounts shown inclusive of GST.</Text>
           )}
         </View>
       </View>

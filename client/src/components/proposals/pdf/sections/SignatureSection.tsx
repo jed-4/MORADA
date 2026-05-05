@@ -24,7 +24,8 @@ export function SignatureSection({
     label: { fontSize: 10, marginTop: 4, color: '#6B7280' },
     drawnSig: { height: 60, marginBottom: 4, objectFit: 'contain' },
     typedSig: { fontSize: 22, fontFamily: 'Helvetica-Oblique', marginBottom: 4, color: '#1F2937' },
-    meta: { marginTop: 16, fontSize: 10, color: '#374151' },
+    acceptedLine: { marginTop: 12, fontSize: 12, fontWeight: 'bold', color: '#1F2937' },
+    meta: { marginTop: 8, fontSize: 10, color: '#374151' },
     metaLine: { marginBottom: 2 },
   });
 
@@ -69,10 +70,17 @@ export function SignatureSection({
         </View>
 
         {isAccepted && (
-          <View style={styles.meta}>
-            {acceptance?.signedByName && (
-              <Text style={styles.metaLine}>Name: {acceptance.signedByName}</Text>
+          <>
+            {(acceptance?.signedByName || acceptance?.signedAt) && (
+              <Text style={styles.acceptedLine}>
+                {`Accepted by ${acceptance?.signedByName || 'client'}${
+                  acceptance?.signedAt
+                    ? ` on ${new Date(acceptance.signedAt).toLocaleDateString()}`
+                    : ''
+                }`}
+              </Text>
             )}
+            <View style={styles.meta}>
             {acceptance?.signedByEmail && (
               <Text style={styles.metaLine}>Email: {acceptance.signedByEmail}</Text>
             )}
@@ -82,7 +90,8 @@ export function SignatureSection({
             {acceptance?.ipAddress && (
               <Text style={styles.metaLine}>IP: {acceptance.ipAddress}</Text>
             )}
-          </View>
+            </View>
+          </>
         )}
       </View>
       <PageFooter companyName={companyName} primaryColor={primaryColor} />

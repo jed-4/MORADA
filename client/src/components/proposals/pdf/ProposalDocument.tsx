@@ -9,6 +9,7 @@ import type {
   EstimateItem,
   ProposalPaymentMilestone,
   ProposalAcceptance,
+  ProposalItem,
 } from '@shared/schema';
 import { substituteSectionContent, type PlaceholderContext } from './placeholders';
 import { CoverPageSection } from './sections/CoverPageSection';
@@ -39,6 +40,7 @@ interface ProposalDocumentProps {
   }>;
   milestones?: ProposalPaymentMilestone[];
   acceptance?: ProposalAcceptance | null;
+  proposalItems?: ProposalItem[];
 }
 
 export function ProposalDocument({
@@ -53,6 +55,7 @@ export function ProposalDocument({
   estimatesData = {},
   milestones = [],
   acceptance = null,
+  proposalItems = [],
 }: ProposalDocumentProps) {
   // Pull layout-level rendering preferences off the proposal so the live PDF
   // preview reflects pricing mode / GST / logo toggles set in the Layout tab.
@@ -144,6 +147,7 @@ export function ProposalDocument({
                 section={section}
                 companyName={companyName}
                 primaryColor={primaryColor}
+                showGst={showGst}
               />
             );
           case 'allowances':
@@ -152,6 +156,7 @@ export function ProposalDocument({
                 key={section.id}
                 proposal={proposal}
                 section={section}
+                proposalItems={proposalItems}
                 companyName={companyName}
                 primaryColor={primaryColor}
               />
@@ -165,6 +170,7 @@ export function ProposalDocument({
                 milestones={milestones}
                 companyName={companyName}
                 primaryColor={primaryColor}
+                showGst={showGst}
               />
             );
           case 'inclusions_exclusions':
