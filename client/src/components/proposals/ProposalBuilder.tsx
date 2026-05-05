@@ -1331,12 +1331,13 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
   const parentId = (current?.parentEstimateId as string | null | undefined) || current?.id || null;
 
   // Sibling revisions = same parent (or itself). When no anchor exists,
-  // show nothing rather than every project estimate, so users can't accidentally
-  // link an unrelated estimate's lineage.
+  // fall back to listing the project's root estimates (those without a parent)
+  // so the user can perform an initial lineage selection.
   const siblings = parentId
     ? projectEstimates.filter((e) => e.id === parentId || e.parentEstimateId === parentId)
-    : [];
+    : projectEstimates.filter((e) => !e.parentEstimateId);
   const ordered = [...siblings].sort((a, b) => (a.version || 1) - (b.version || 1));
+  const noAnchor = !parentId;
 
   const persistMutation = useMutation({
     mutationFn: async (estimateId: string) => {
@@ -1357,7 +1358,7 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
 
   return (
     <div className="space-y-1">
-      <Label className="text-xs">Estimate revision</Label>
+      <Label className="text-xs">{noAnchor ? 'Link estimate' : 'Estimate revision'}</Label>
       <Select
         value={anchorId || ''}
         onValueChange={(v) => {
@@ -1367,7 +1368,7 @@ function EstimateRevisionSelector({ proposalId, currentEstimateId, projectId, on
         }}
       >
         <SelectTrigger className="h-8 text-xs" data-testid="select-estimate-revision">
-          <SelectValue placeholder="Choose a revision…" />
+          <SelectValue placeholder={noAnchor ? 'Choose an estimate…' : 'Choose a revision…'} />
         </SelectTrigger>
         <SelectContent>
           {ordered.map((e) => (
