@@ -1,6 +1,5 @@
 import {
   DollarSign,
-  Users,
   Activity,
   Building2,
   Clock,
@@ -15,7 +14,6 @@ import {
 import { WidgetDefinition } from "@/types/widgets";
 import BusinessKPIsWidget from "./BusinessKPIsWidget";
 import BusinessActivityWidget from "./BusinessActivityWidget";
-import BusinessTeamWidget from "./BusinessTeamWidget";
 import BusinessProjectsWidget from "./BusinessProjectsWidget";
 import BusinessFinancialsWidget from "./BusinessFinancialsWidget";
 import BusinessQuickActionsWidget from "./BusinessQuickActionsWidget";
@@ -48,17 +46,6 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "md",
     configurable: true,
     accent: "teal",
-    defaultColumns: 4,
-  },
-  businessTeam: {
-    type: "businessTeam",
-    name: "Team Overview",
-    description: "Team members, availability, and workload",
-    icon: Users,
-    component: BusinessTeamWidget,
-    defaultSize: "md",
-    configurable: true,
-    accent: "green",
     defaultColumns: 4,
   },
   businessProjects: {

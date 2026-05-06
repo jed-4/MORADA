@@ -21668,9 +21668,8 @@ export class DbStorage implements IStorage {
         { id: "3", type: "businessActivity", title: "Recent Activity", size: "md", dimensions: { columns: 3 } },
         { id: "4", type: "businessAlerts", title: "Alerts & Reminders", size: "md", dimensions: { columns: 3 } },
         { id: "5", type: "businessProjects", title: "Active Projects", size: "lg", dimensions: { columns: 4 } },
-        { id: "6", type: "businessTeam", title: "Team Overview", size: "md", dimensions: { columns: 4 } },
-        { id: "7", type: "businessFinancials", title: "Financial Summary", size: "md", dimensions: { columns: 4 } },
-        { id: "8", type: "businessTimesheets", title: "Timesheets", size: "md", dimensions: { columns: 4 } },
+        { id: "6", type: "businessFinancials", title: "Financial Summary", size: "md", dimensions: { columns: 4 } },
+        { id: "7", type: "businessTimesheets", title: "Timesheets", size: "md", dimensions: { columns: 4 } },
       ];
       
       const [created] = await db.insert(schema.businessDashboardViews)
