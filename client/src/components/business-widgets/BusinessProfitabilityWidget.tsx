@@ -1,111 +1,118 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  BarChart,
+  Bar,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  LabelList,
+} from "recharts";
 import type { WidgetProps } from "@/types/widgets";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
-import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
-import { WidgetError } from "@/components/ui/WidgetError";
+import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
+import { useFinancialPermission } from "@/hooks/use-permission";
 
-interface ProfitabilityData {
-  projects: Array<{
-    projectId: string;
-    projectName: string;
-    revisedAmount: number;
-    actualAmount: number;
-    profitAmount: number;
-    varianceAmount: number;
-    marginPercent: number;
-  }>;
+interface ProjectMargin {
+  id: string;
+  name: string;
+  revenue: number;
+  costs: number;
+  margin: number;
 }
 
-function formatCurrency(value: number): string {
-  if (Number.isNaN(value)) return "$0";
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
+interface ProfitabilityResponse {
+  projects: ProjectMargin[];
+}
+
+function marginColour(margin: number): string {
+  if (margin >= 20) return "hsl(var(--bp-green))";
+  if (margin >= 10) return "hsl(var(--bp-amber))";
+  return "hsl(var(--bp-coral))";
+}
+
+function CustomTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload as ProjectMargin;
+  return (
+    <div className="bg-bp-card border border-bp-border rounded-md shadow-sm p-2 text-[11px]">
+      <p className="font-semibold text-bp-card-foreground">{row.name}</p>
+      <p className="text-bp-muted">Margin: <span className="font-semibold text-bp-card-foreground">{row.margin.toFixed(1)}%</span></p>
+      <p className="text-bp-muted">Revenue: <span className="text-bp-card-foreground">${row.revenue.toLocaleString()}</span></p>
+      <p className="text-bp-muted">Costs: <span className="text-bp-card-foreground">${row.costs.toLocaleString()}</span></p>
+    </div>
+  );
 }
 
 export default function BusinessProfitabilityWidget({}: WidgetProps) {
-  const { data, isLoading, isError, refetch } = useQuery<ProfitabilityData>({
+  const canViewFinancials = useFinancialPermission();
+  const { data, isLoading, isError, refetch } = useQuery<ProfitabilityResponse>({
     queryKey: ["/api/business/project-profitability"],
+    enabled: canViewFinancials,
   });
 
-  if (isLoading) return <WidgetSkeleton rows={4} />;
-  if (isError)
-    return <WidgetError onRetry={() => refetch()} message="Couldn't load profitability." />;
-  if (!data?.projects?.length) return <WidgetEmpty title="No project budget data yet" />;
+  if (!canViewFinancials) {
+    return <WidgetEmpty message="You don't have permission to view financial data." />;
+  }
+  if (isLoading) return <WidgetSkeleton />;
+  if (isError) return <WidgetError onRetry={() => refetch()} message="Couldn't load profitability." />;
 
-  const projects = data.projects;
-  const avgMargin = projects.reduce((s, p) => s + p.marginPercent, 0) / projects.length;
-  const totalRevenue = projects.reduce((s, p) => s + p.revisedAmount, 0);
-  const totalCosts = projects.reduce((s, p) => s + p.actualAmount, 0);
+  const projects = data?.projects ?? [];
+  if (projects.length === 0) {
+    return <WidgetEmpty message="No project profitability data yet — invoices and bills needed" />;
+  }
+
+  const chartHeight = projects.length * 36 + 16;
 
   return (
-    <div className="space-y-3" data-testid="widget-project-profitability">
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-md border border-bp-border p-2">
-          <p className="text-lg font-bold">{formatCurrency(totalRevenue)}</p>
-          <p className="text-xs text-bp-muted">Budget</p>
-        </div>
-        <div className="rounded-md border border-bp-border p-2">
-          <p className="text-lg font-bold">{formatCurrency(totalCosts)}</p>
-          <p className="text-xs text-bp-muted">Actual</p>
-        </div>
-        <div className="rounded-md border border-bp-border p-2">
-          <p
-            className={`text-lg font-bold ${
-              avgMargin >= 20 ? "text-status-success" :
-              avgMargin >= 10 ? "text-status-warning" :
-              "text-status-danger"
-            }`}
+    <div className="flex flex-col h-full" data-testid="widget-project-profitability">
+      <div className="px-5 py-3" style={{ height: chartHeight }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            layout="vertical"
+            data={projects}
+            margin={{ left: 0, right: 40, top: 4, bottom: 4 }}
           >
-            {avgMargin.toFixed(1)}%
-          </p>
-          <p className="text-xs text-bp-muted">Avg Margin</p>
-        </div>
+            <XAxis type="number" domain={[0, 100]} hide />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={140}
+              tick={{ fontSize: 11, fill: "hsl(var(--bp-card-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ fill: "hsl(var(--bp-subtle))" }}
+            />
+            <Bar dataKey="margin" radius={[0, 4, 4, 0]} minPointSize={4}>
+              {projects.map((p) => (
+                <Cell key={p.id} fill={marginColour(p.margin)} />
+              ))}
+              <LabelList
+                dataKey="margin"
+                position="right"
+                formatter={(v: any) => `${Number(v).toFixed(1)}%`}
+                style={{ fontSize: 10, fontWeight: 500, fill: "hsl(var(--bp-card-foreground))" }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
-      <ScrollArea className="h-[200px]">
-        <div className="space-y-2 pr-2">
-          <p className="text-xs font-medium text-bp-muted">Top Projects by Margin</p>
-          {projects.map((p) => {
-            const costPercent = p.revisedAmount > 0 ? (p.actualAmount / p.revisedAmount) * 100 : 0;
-            return (
-              <div
-                key={p.projectId}
-                className="rounded-md border border-bp-border p-2"
-                data-testid={`profitability-${p.projectId}`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-sm font-medium truncate">{p.projectName}</span>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {p.marginPercent >= 20 ? <TrendingUp className="h-3 w-3 text-status-success" /> :
-                     p.marginPercent >= 10 ? <Minus className="h-3 w-3 text-status-warning" /> :
-                     <TrendingDown className="h-3 w-3 text-status-danger" />}
-                    <span
-                      className={`text-xs font-medium ${
-                        p.marginPercent >= 20 ? "text-status-success" :
-                        p.marginPercent >= 10 ? "text-status-warning" :
-                        "text-status-danger"
-                      }`}
-                    >
-                      {p.marginPercent.toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-                <Progress value={Math.min(100, costPercent)} className="h-1.5" />
-                <div className="flex items-center justify-between mt-1 text-[10px] text-bp-muted">
-                  <span>Cost: {formatCurrency(p.actualAmount)}</span>
-                  <span>Budget: {formatCurrency(p.revisedAmount)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </ScrollArea>
+      {/* Legend */}
+      <div className="text-[10px] text-bp-muted flex gap-4 px-5 pb-3">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-bp-green" /> ≥20% Healthy
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-bp-amber" /> 10–20% Watch
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-bp-coral" /> &lt;10% Concern
+        </span>
+      </div>
     </div>
   );
 }

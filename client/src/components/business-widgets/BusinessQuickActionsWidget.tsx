@@ -1,56 +1,56 @@
 import { useLocation } from "wouter";
+import {
+  FolderPlus,
+  GitBranch,
+  HelpCircle,
+  Upload,
+  UserPlus,
+  FileText,
+  type LucideIcon,
+} from "lucide-react";
 import type { WidgetProps } from "@/types/widgets";
-import { Clock, Calendar, FileText, Users, Building2 } from "lucide-react";
 
-export default function BusinessQuickActionsWidget({ widget }: WidgetProps) {
+interface QuickAction {
+  label: string;
+  icon: LucideIcon;
+  path: string;
+}
+
+const ACTIONS: QuickAction[] = [
+  { label: "New Project", icon: FolderPlus, path: "/projects" },
+  { label: "New Variation", icon: GitBranch, path: "/variations" },
+  { label: "New RFI", icon: HelpCircle, path: "/rfis" },
+  { label: "Upload Document", icon: Upload, path: "/docs" },
+  { label: "Add Contact", icon: UserPlus, path: "/contacts" },
+  { label: "New Quote", icon: FileText, path: "/proposals" },
+];
+
+export default function BusinessQuickActionsWidget({}: WidgetProps) {
   const [, navigate] = useLocation();
 
-  const actions = [
-    {
-      icon: Clock,
-      label: "Log Time",
-      path: "/business/timesheets",
-      color: "text-blue-500",
-    },
-    {
-      icon: Calendar,
-      label: "Request Leave",
-      path: "/business/leave",
-      color: "text-purple-500",
-    },
-    {
-      icon: FileText,
-      label: "View Reports",
-      path: "/business/reports",
-      color: "text-orange-500",
-    },
-    {
-      icon: Users,
-      label: "Team",
-      path: "/business/team",
-      color: "text-cyan-500",
-    },
-    {
-      icon: Building2,
-      label: "Projects",
-      path: "/projects",
-      color: "text-amber-500",
-    },
-  ];
-
   return (
-    <div className="grid grid-cols-2 gap-2" data-testid="business-quick-actions-widget">
-      {actions.map((action, index) => (
-        <div
-          key={index}
-          className="flex flex-col items-center justify-center p-3 rounded-md border hover-elevate cursor-pointer"
-          onClick={() => navigate(action.path)}
-          data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, '-')}`}
-        >
-          <action.icon className={`h-5 w-5 ${action.color} mb-1.5`} />
-          <span className="text-xs text-center">{action.label}</span>
-        </div>
-      ))}
+    <div
+      className="grid grid-cols-3 gap-3 p-5"
+      data-testid="business-quick-actions-widget"
+    >
+      {ACTIONS.map((action) => {
+        const Icon = action.icon;
+        const testKey = action.label.toLowerCase().replace(/\s+/g, "-");
+        return (
+          <button
+            key={action.label}
+            type="button"
+            onClick={() => navigate(action.path)}
+            className="bg-bp-subtle hover:bg-bp-purple/10 border border-bp-border rounded-md p-4 flex flex-col items-center gap-2 text-center cursor-pointer transition-colors"
+            data-testid={`button-quick-action-${testKey}`}
+          >
+            <Icon className="w-5 h-5 text-bp-purple" />
+            <span className="text-[12px] font-medium text-bp-card-foreground leading-tight">
+              {action.label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

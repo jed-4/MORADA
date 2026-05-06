@@ -9446,39 +9446,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { projects: projectsTbl, budgets: budgetsTbl } = await import("@shared/schema");
-      const [projectRows, budgetRows] = await Promise.all([
-        db.select().from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
-        db.select().from(budgetsTbl),
+      const { projects: projectsTbl, clientInvoices: invoicesTbl, bills: billsTbl } = await import("@shared/schema");
+      const [projectRows, invoiceRows, billRows] = await Promise.all([
+        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(invoicesTbl),
+        db.select().from(billsTbl),
       ]);
-      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p]));
 
-      const items = budgetRows
-        .filter((b: any) => projectsMap.has(b.projectId))
-        .map((b: any) => {
-          const project = projectsMap.get(b.projectId)!;
-          const revised = Number(b.revisedAmount) || 0;
-          const actual = Number(b.actualAmount) || 0;
-          const profit = Number(b.profitAmount) || 0;
-          const marginPercent = revised > 0 ? (profit / revised) * 100 : 0;
-          const variance = revised - (Number(b.forecastAmount) || 0);
-          return {
-            projectId: b.projectId,
-            projectName: (project as any).name,
-            revisedAmount: revised / 100,
-            actualAmount: actual / 100,
-            profitAmount: profit / 100,
-            varianceAmount: variance / 100,
-            marginPercent,
-          };
-        })
-        .sort((a, b) => b.marginPercent - a.marginPercent)
-        .slice(0, 10);
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+
+      const totals = new Map<string, { revenue: number; costs: number }>();
+      for (const inv of invoiceRows) {
+        if (!projectsMap.has(inv.projectId)) continue;
+        if (inv.status !== "sent" && inv.status !== "paid" && inv.status !== "partial" && inv.status !== "overdue") continue;
+        const t = totals.get(inv.projectId) || { revenue: 0, costs: 0 };
+        t.revenue += (Number(inv.totalAmount) || 0) / 100;
+        totals.set(inv.projectId, t);
+      }
+      for (const bill of billRows) {
+        if (!projectsMap.has(bill.projectId)) continue;
+        if (bill.status !== "paid") continue;
+        const t = totals.get(bill.projectId) || { revenue: 0, costs: 0 };
+        t.costs += (Number(bill.total) || 0) / 100;
+        totals.set(bill.projectId, t);
+      }
+
+      const items = Array.from(totals.entries())
+        .filter(([, t]) => t.revenue > 0)
+        .map(([projectId, t]) => ({
+          id: projectId,
+          name: projectsMap.get(projectId) || "Unknown",
+          revenue: Math.round(t.revenue * 100) / 100,
+          costs: Math.round(t.costs * 100) / 100,
+          margin: Math.round(((t.revenue - t.costs) / t.revenue) * 1000) / 10,
+        }))
+        .sort((a, b) => b.margin - a.margin)
+        .slice(0, 8);
 
       res.json({ projects: items });
     } catch (err) {
       console.error("[/api/business/project-profitability] error:", err);
       res.status(500).json({ error: "Failed to compute project profitability" });
+    }
+  });
+
+  app.get("/api/business/activity", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const limit = Math.min(parseInt(String(req.query.limit || "10")) || 10, 50);
+
+      const { projects: projectsTbl, activities: activitiesTbl, users: usersTbl } = await import("@shared/schema");
+      const [projectRows, activityRows, userRows] = await Promise.all([
+        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(activitiesTbl),
+        db.select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email }).from(usersTbl),
+      ]);
+
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+      const usersMap = new Map(userRows.map((u: any) => [u.id, u]));
+
+      const initials = (name: string): string => {
+        const parts = name.trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return "?";
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      };
+
+      const filtered = activityRows
+        .filter((a: any) =>
+          a.companyId === companyId ||
+          (a.projectId && projectsMap.has(a.projectId)),
+        )
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, limit)
+        .map((a: any) => {
+          const u = a.userId ? usersMap.get(a.userId) : null;
+          const actorName = a.userName
+            || (u ? `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || (u as any).email : null)
+            || "System";
+          return {
+            id: a.id,
+            type: a.activityType,
+            description: a.description,
+            projectName: a.projectId ? (projectsMap.get(a.projectId) || null) : null,
+            actorName,
+            actorInitials: initials(actorName),
+            createdAt: a.createdAt,
+          };
+        });
+
+      res.json({ activities: filtered });
+    } catch (err) {
+      console.error("[/api/business/activity] error:", err);
+      res.status(500).json({ error: "Failed to load activity" });
+    }
+  });
+
+  app.get("/api/business/variations-pending", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projects: projectsTbl, variations: variationsTbl, users: usersTbl } = await import("@shared/schema");
+      const [projectRows, variationRows, userRows] = await Promise.all([
+        db.select({ id: projectsTbl.id, name: projectsTbl.name }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
+        db.select().from(variationsTbl),
+        db.select({ id: usersTbl.id, firstName: usersTbl.firstName, lastName: usersTbl.lastName, email: usersTbl.email }).from(usersTbl),
+      ]);
+
+      const projectsMap = new Map(projectRows.map((p: any) => [p.id, p.name as string]));
+      const usersMap = new Map(userRows.map((u: any) => [u.id, u]));
+      const now = Date.now();
+
+      const pending = variationRows
+        .filter((v: any) =>
+          (v.status === "pending" || v.status === "action") &&
+          projectsMap.has(v.projectId),
+        )
+        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      const variations = pending.map((v: any) => {
+        const u = (v as any).approvedBy ? usersMap.get((v as any).approvedBy) : null;
+        const submittedBy = u
+          ? `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || (u as any).email
+          : "—";
+        return {
+          id: v.id,
+          ref: v.variationNumber,
+          title: v.name,
+          projectName: projectsMap.get(v.projectId) || "Unknown project",
+          amount: (Number(v.totalAmount) || 0) / 100,
+          daysWaiting: Math.max(0, Math.floor((now - new Date(v.createdAt).getTime()) / (1000 * 60 * 60 * 24))),
+          submittedBy,
+        };
+      });
+
+      const totalValue = variations.reduce((s, v) => s + v.amount, 0);
+
+      res.json({
+        variations,
+        totalValue: Math.round(totalValue * 100) / 100,
+        count: variations.length,
+      });
+    } catch (err) {
+      console.error("[/api/business/variations-pending] error:", err);
+      res.status(500).json({ error: "Failed to load variations" });
     }
   });
 
