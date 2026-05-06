@@ -1399,7 +1399,7 @@ export const selectionOptions = pgTable("selection_options", {
   unitCost: integer("unit_cost"), // Cost in cents
   unitTax: integer("unit_tax"), // Tax in cents
   gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether unit cost includes GST
-  markupPercent: integer("markup_percent"), // Markup percentage
+  markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
   totalCost: integer("total_cost"), // Final cost in cents
   quantity: integer("quantity").notNull().default(1),
   unitType: text("unit_type").notNull().default("ea"), // "m2", "linear_m", "ea", etc.
@@ -2142,7 +2142,7 @@ export const clientInvoices = pgTable("client_invoices", {
   invoiceDate: timestamp("invoice_date").notNull(),
   dueDate: timestamp("due_date"),
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"),
-  markupPercent: integer("markup_percent"),
+  markupPercent: doublePrecision("markup_percent"), // Markup percentage (e.g. 7.5)
   introductionText: text("introduction_text"),
   closingText: text("closing_text"),
   termsAndConditions: text("terms_and_conditions"),
