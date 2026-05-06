@@ -105,7 +105,7 @@ function BusinessKpisPeriodTabs({
     { value: "year", label: "Y", aria: "Year" },
   ];
   return (
-    <div className="flex items-center gap-4" data-testid="kpi-period-tabs">
+    <div className="flex items-center gap-1" data-testid="kpi-period-tabs">
       {options.map((o) => {
         const active = period === o.value;
         return (

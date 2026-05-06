@@ -125,7 +125,7 @@ export default function BusinessWidgetContainer({
 
       {onResizeEnd && setIsResizing && (
         <div
-          className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize hover:bg-primary/10 z-10"
+          className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize hover:bg-primary/10 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={(e) => {
             e.preventDefault();
             setIsResizing(true);

@@ -599,38 +599,38 @@ export default function BusinessSchedule() {
 
   const panelWidth = 220;
 
-  const ViewModeTabs = ({ active }: { active: "schedule" | "workload" | "schedules" | "week" }) => (
-    <div className="flex items-center border rounded-md overflow-hidden">
-      <button
-        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'schedule' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-        onClick={() => active !== 'schedule' && setViewMode('schedule')}
-      >
-        <GanttChart className="w-3 h-3" />
-        Projects
-      </button>
-      <button
-        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-        onClick={() => active !== 'week' && setViewMode('week')}
-      >
-        <CalendarDays className="w-3 h-3" />
-        Week
-      </button>
-      <button
-        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'workload' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-        onClick={() => active !== 'workload' && setViewMode('workload')}
-      >
-        <Users className="w-3 h-3" />
-        Workload
-      </button>
-      <button
-        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'schedules' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-        onClick={() => active !== 'schedules' && setViewMode('schedules')}
-      >
-        <Layers className="w-3 h-3" />
-        Schedules
-      </button>
-    </div>
-  );
+  const ViewModeTabs = ({ active }: { active: "schedule" | "workload" | "schedules" | "week" }) => {
+    const tabs: { id: "week" | "schedules" | "schedule" | "workload"; label: string }[] = [
+      { id: "week", label: "Week" },
+      { id: "schedules", label: "Schedules" },
+      { id: "schedule", label: "Projects" },
+      { id: "workload", label: "Workload" },
+    ];
+    return (
+      <div className="flex items-center gap-1 -mb-1" data-testid="business-schedule-tabs">
+        {tabs.map((t) => {
+          const isActive = active === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => !isActive && setViewMode(t.id)}
+              className={cn(
+                "px-4 py-2 text-sm font-medium transition-colors relative",
+                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+              data-testid={`tab-${t.id}`}
+            >
+              {t.label}
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   if (viewMode === "workload") {
     return (

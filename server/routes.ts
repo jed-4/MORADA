@@ -25162,23 +25162,42 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         scheduleRows = await db.select().from(schedules)
           .where(sql`${schedules.projectId} IN (${sql.join(companyProjects.map((p: any) => sql`${p.id}`), sql`, `)})`);
       }
-      const scheduleMap = new Map(scheduleRows.map(s => [s.projectId, s]));
-
-      const scheduleIds = scheduleRows.map(s => s.id);
+      // A project may have multiple schedules (e.g. "Project Schedule" + "Preconstruction
+      // Schedule"). Compute item bounds first, then pick the best schedule per project so
+      // the one with actual items wins — otherwise the project would be miscategorised as
+      // "offline" and hidden by default.
+      const allScheduleIds = scheduleRows.map(s => s.id);
       let itemBoundsMap = new Map<string, { minStart: Date; maxEnd: Date }>();
-      if (scheduleIds.length > 0) {
+      if (allScheduleIds.length > 0) {
         const boundsResult = await db.select({
           scheduleId: scheduleItems.scheduleId,
           minStart: min(scheduleItems.startDate),
           maxEnd: max(scheduleItems.endDate),
         }).from(scheduleItems)
-          .where(sql`${scheduleItems.scheduleId} IN (${sql.join(scheduleIds.map(id => sql`${id}`), sql`, `)})`)
+          .where(sql`${scheduleItems.scheduleId} IN (${sql.join(allScheduleIds.map(id => sql`${id}`), sql`, `)})`)
           .groupBy(scheduleItems.scheduleId);
 
         for (const row of boundsResult) {
           if (row.minStart && row.maxEnd) {
             itemBoundsMap.set(row.scheduleId, { minStart: row.minStart, maxEnd: row.maxEnd });
           }
+        }
+      }
+
+      const scheduleMap = new Map<string, any>();
+      for (const s of scheduleRows) {
+        const existing = scheduleMap.get(s.projectId);
+        if (!existing) {
+          scheduleMap.set(s.projectId, s);
+          continue;
+        }
+        const existingHasItems = itemBoundsMap.has(existing.id);
+        const candidateHasItems = itemBoundsMap.has(s.id);
+        // Prefer schedule with items; then prefer online; then keep existing.
+        if (candidateHasItems && !existingHasItems) {
+          scheduleMap.set(s.projectId, s);
+        } else if (candidateHasItems === existingHasItems && s.isOnline && !existing.isOnline) {
+          scheduleMap.set(s.projectId, s);
         }
       }
 
