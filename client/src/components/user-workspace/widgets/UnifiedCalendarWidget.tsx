@@ -812,7 +812,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
               <SiGoogle className={`h-3 w-3 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
               <span
                 className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background ${
-                  isGoogleConnected ? 'bg-green-500' : 'bg-muted-foreground/40'
+                  isGoogleConnected ? 'bg-bp-green' : 'bg-muted-foreground/40'
                 }`}
               />
             </button>
@@ -960,10 +960,10 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
 
             {showCurrentTime && (
               <div
-                className="absolute left-10 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
+                className="absolute left-10 right-0 border-t-2 border-bp-coral z-20 pointer-events-none"
                 style={{ top: `${(currentTimeMinutes / 60) * DAY_HOUR_HEIGHT}px` }}
               >
-                <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
+                <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-bp-coral" />
               </div>
             )}
 
@@ -1086,10 +1086,10 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
 
                     {isCurrentDay && currentTimeMinutes >= 360 && currentTimeMinutes < 1380 && (
                       <div
-                        className="absolute left-0 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
+                        className="absolute left-0 right-0 border-t-2 border-bp-coral z-20 pointer-events-none"
                         style={{ top: `${currentTimeTop}px` }}
                       >
-                        <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-red-500" />
+                        <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-bp-coral" />
                       </div>
                     )}
 

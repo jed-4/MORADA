@@ -45,6 +45,10 @@ export interface EstimateItemPrice {
   taxAmount: number;
   /** lineExTax + taxAmount, rounded to 2dp. */
   lineIncTax: number;
+  /** unitCostExTax * (1 + taxRate/100), rounded to 2dp. UI-only convenience. */
+  unitCostIncTax: number;
+  /** builderCost * (1 + taxRate/100), rounded to 2dp. UI-only convenience. */
+  builderCostIncTax: number;
 }
 
 export function computeEstimateItemPrice(input: EstimateItemPriceInput): EstimateItemPrice {
@@ -65,6 +69,8 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
   const lineExTax = round2(builderCost + lineMarkupAmount);
   const taxAmount = round2(lineExTax * (taxRate / 100));
   const lineIncTax = round2(lineExTax + taxAmount);
+  const unitCostIncTax = round2(unitCost * (1 + taxRate / 100));
+  const builderCostIncTax = round2(builderCost * (1 + taxRate / 100));
 
   return {
     builderCost,
@@ -73,6 +79,8 @@ export function computeEstimateItemPrice(input: EstimateItemPriceInput): Estimat
     lineExTax,
     taxAmount,
     lineIncTax,
+    unitCostIncTax,
+    builderCostIncTax,
   };
 }
 

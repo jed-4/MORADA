@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, AlertCircle } from "lucide-react";
+import { Calendar, AlertCircle, Folder } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import { type Task, type Project, type Milestone } from "@shared/schema";
 import { useLocation } from "wouter";
@@ -35,7 +36,7 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
     setConfigDaysAhead(widget.config?.daysAhead || 14);
   }, [widget.title, widget.config]);
 
-  const { data: tasks = [] } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
       if (!userId) return [];
@@ -48,7 +49,7 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
     enabled: !!userId,
   });
 
-  const { data: milestones = [] } = useQuery<Milestone[]>({
+  const { data: milestones = [], isLoading: milestonesLoading } = useQuery<Milestone[]>({
     queryKey: ["/api/milestones"],
     queryFn: async () => {
       const response = await fetch('/api/milestones', { credentials: 'include' });
@@ -109,11 +110,30 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
   deadlines.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   const displayDeadlines = deadlines.slice(0, maxItems);
 
+  const isLoading = tasksLoading || milestonesLoading;
+
+  const groupedDeadlines = useMemo(() => {
+    const map = new Map<string, { projectName: string; color?: string; items: DeadlineItem[] }>();
+    displayDeadlines.forEach(d => {
+      const key = d.projectId || 'no-project';
+      const project = d.projectId ? projectMap.get(d.projectId) : null;
+      if (!map.has(key)) {
+        map.set(key, {
+          projectName: d.projectName || 'No Project',
+          color: project?.color || undefined,
+          items: [],
+        });
+      }
+      map.get(key)!.items.push(d);
+    });
+    return Array.from(map.entries()).map(([key, value]) => ({ key, ...value }));
+  }, [displayDeadlines, projectMap]);
+
   const getDaysLabel = (daysUntil: number) => {
-    if (daysUntil < 0) return { label: `${Math.abs(daysUntil)}d overdue`, color: 'text-status-danger bg-red-50 dark:bg-red-900/20' };
-    if (daysUntil === 0) return { label: 'Today', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
-    if (daysUntil === 1) return { label: 'Tomorrow', color: 'text-status-info bg-blue-50 dark:bg-blue-900/20' };
-    return { label: `${daysUntil}d`, color: 'text-muted-foreground bg-muted/50' };
+    if (daysUntil < 0) return { label: `${Math.abs(daysUntil)}d overdue`, color: 'text-bp-coral bg-bp-coral/10' };
+    if (daysUntil === 0) return { label: 'Today', color: 'text-bp-amber bg-bp-amber/10' };
+    if (daysUntil === 1) return { label: 'Tomorrow', color: 'text-bp-teal bg-bp-teal/10' };
+    return { label: `${daysUntil}d`, color: 'text-bp-muted bg-bp-subtle' };
   };
 
   if (isConfiguring) {
@@ -188,50 +208,66 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
+        <div className="text-[11px] text-bp-muted">
           {deadlines.length} upcoming
         </div>
       </div>
       
-      <div className="space-y-1">
-        {displayDeadlines.length === 0 ? (
+      <div className="space-y-2">
+        {isLoading ? (
+          <WidgetSkeleton rows={3} />
+        ) : displayDeadlines.length === 0 ? (
           <WidgetEmpty icon={Calendar} message="No upcoming deadlines" />
         ) : (
-          displayDeadlines.map((item) => {
-            const daysInfo = getDaysLabel(item.daysUntil);
-            return (
-              <div 
-                key={`${item.type}-${item.id}`}
-                className="p-2 border rounded-md hover-elevate cursor-pointer"
-                onClick={() => setLocation(item.type === 'task' ? `/tasks/${item.id}` : `/milestones/${item.id}`)}
-                data-testid={`deadline-${item.type}-${item.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  {item.daysUntil < 0 ? (
-                    <AlertCircle className="h-3 w-3 text-status-danger mt-0.5 flex-shrink-0" />
-                  ) : (
-                    <Calendar className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate leading-tight">{item.title}</p>
-                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                      {item.projectName && (
-                        <span className="text-data text-muted-foreground truncate max-w-[80px]">
-                          {item.projectName}
-                        </span>
-                      )}
-                      <Badge className={`${daysInfo.color} text-data px-1 py-0 h-4`}>
-                        {daysInfo.label}
-                      </Badge>
-                      <Badge variant="outline" className="text-data px-1 py-0 h-4">
-                        {item.type}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
+          groupedDeadlines.map((group) => (
+            <div key={group.key} className="space-y-1">
+              <div className="flex items-center gap-1.5 px-1">
+                {group.color ? (
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                ) : (
+                  <Folder className="h-3 w-3 text-bp-muted flex-shrink-0" />
+                )}
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-bp-muted truncate">
+                  {group.projectName}
+                </span>
+                <span className="text-[10px] tabular-nums text-bp-muted opacity-70">
+                  {group.items.length}
+                </span>
               </div>
-            );
-          })
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const daysInfo = getDaysLabel(item.daysUntil);
+                  return (
+                    <div 
+                      key={`${item.type}-${item.id}`}
+                      className="p-2 border border-bp-border rounded-md hover-elevate cursor-pointer"
+                      onClick={() => setLocation(item.type === 'task' ? `/tasks/${item.id}` : `/milestones/${item.id}`)}
+                      data-testid={`deadline-${item.type}-${item.id}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {item.daysUntil < 0 ? (
+                          <AlertCircle className="h-3 w-3 text-bp-coral mt-0.5 flex-shrink-0" />
+                        ) : (
+                          <Calendar className="h-3 w-3 text-bp-muted mt-0.5 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate leading-tight">{item.title}</p>
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            <Badge className={`${daysInfo.color} text-data px-1 py-0 h-4 border-transparent`}>
+                              {daysInfo.label}
+                            </Badge>
+                            <Badge variant="outline" className="text-data px-1 py-0 h-4">
+                              {item.type}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>

@@ -396,7 +396,7 @@ export default function ActionableItemsWidget({
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {item.dueDate ? (
-                        <span className={`text-data flex items-center gap-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                        <span className={`text-data flex items-center gap-1 ${isOverdue ? 'text-bp-coral font-medium' : 'text-muted-foreground'}`}>
                           <Calendar className="h-2.5 w-2.5" />
                           {formatDueDate(item.dueDate)}
                         </span>

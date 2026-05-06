@@ -2989,12 +2989,10 @@ export default function EstimateDetail() {
   };
 
   // Helper function to calculate two-tier pricing values.
-  // All math goes through the shared single-source-of-truth function in
-  // shared/pricing.ts — this is just an adapter that also exposes a couple
-  // of UI-only fields (unit cost inc tax, builder cost inc tax).
+  // All math is delegated to computeEstimateItemPrice in shared/pricing.ts —
+  // this is a thin adapter that just renames fields for the UI.
   const calculatePricingValues = (item: EstimateItem) => {
     const taxRate = estimate?.taxRate ?? 10;
-    const round2 = (n: number) => Math.round(n * 100) / 100;
 
     const priced = computeEstimateItemPrice({
       unitCostExTax: item.unitCostExTax,
@@ -3004,13 +3002,10 @@ export default function EstimateDetail() {
       taxRate,
     });
 
-    const unitCostIncTax = round2(item.unitCostExTax * (1 + taxRate / 100));
-    const builderCostIncTax = round2(priced.builderCost * (1 + taxRate / 100));
-
     return {
-      unitCostIncTax,
+      unitCostIncTax: priced.unitCostIncTax,
       builderCost: priced.builderCost,
-      builderCostIncTax,
+      builderCostIncTax: priced.builderCostIncTax,
       markupPercent: priced.effectiveMarkupPercent,
       clientPriceExTax: priced.lineExTax,
       clientTax: priced.taxAmount,

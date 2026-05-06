@@ -416,7 +416,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       case "overdue":
         items = overdueTasks;
         emptyMessage = "No overdue tasks";
-        itemColor = "text-status-danger dark:text-red-400";
+        itemColor = "text-bp-coral";
         break;
       case "today":
         items = todaysTasks;
@@ -426,12 +426,12 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       case "schedule":
         items = scheduleItems;
         emptyMessage = "No schedule items today";
-        itemColor = "text-status-info dark:text-blue-400";
+        itemColor = "text-bp-teal";
         break;
       case "focus":
         items = todayFocusBlocks;
         emptyMessage = "No focus blocks today";
-        itemColor = "text-violet-600 dark:text-violet-400";
+        itemColor = "text-bp-purple";
         break;
     }
 
@@ -443,35 +443,35 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         open={!isCollapsed}
         onOpenChange={() => toggleCollapsed(sectionConfig.id)}
       >
-        <CollapsibleTrigger className={`flex items-center gap-2 w-full py-1.5 px-2 border-l-3 cursor-pointer transition-colors ${
+        <CollapsibleTrigger className={`flex items-center gap-2 w-full py-1.5 px-2 border-l-2 cursor-pointer transition-colors ${
           sectionConfig.id === 'overdue' 
-            ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' 
+            ? 'border-l-bp-coral bg-bp-coral/10' 
             : sectionConfig.id === 'schedule'
-            ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+            ? 'border-l-bp-teal bg-bp-teal/10'
             : sectionConfig.id === 'focus'
-            ? 'border-l-violet-500 bg-violet-50/50 dark:bg-violet-950/20'
-            : 'border-l-primary bg-primary/5'
+            ? 'border-l-bp-purple bg-bp-purple/10'
+            : 'border-l-bp-purple bg-bp-purple/5'
         }`}>
           {isCollapsed ? (
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            <ChevronRight className="h-3 w-3 text-bp-muted" />
           ) : (
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            <ChevronDown className="h-3 w-3 text-bp-muted" />
           )}
-          <span className={`text-table font-semibold uppercase tracking-wide flex-1 text-left ${
+          <span className={`text-[10px] font-semibold uppercase tracking-wide flex-1 text-left ${
             sectionConfig.id === 'overdue' && count > 0 
-              ? 'text-status-danger dark:text-red-400' 
+              ? 'text-bp-coral' 
               : sectionConfig.id === 'schedule'
-              ? 'text-status-info dark:text-blue-400'
+              ? 'text-bp-teal'
               : sectionConfig.id === 'focus'
-              ? 'text-violet-700 dark:text-violet-400'
+              ? 'text-bp-purple'
               : 'text-foreground/80'
           }`}>
             {sectionDef.label}
           </span>
-          <span className={`text-data font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
+          <span className={`text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
             sectionConfig.id === 'overdue' && count > 0 
-              ? 'bg-red-500 text-white' 
-              : 'bg-muted text-muted-foreground'
+              ? 'bg-bp-coral text-white' 
+              : 'bg-bp-subtle text-bp-muted'
           }`}>
             {count}
           </span>
@@ -488,7 +488,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
                   data-testid={`myday-schedule-${item.id}`}
                 >
-                  <CalendarDays className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                  <CalendarDays className="h-3.5 w-3.5 text-bp-teal flex-shrink-0" />
                   <TaskTooltip content={item.title}>
                     <span className="text-xs truncate flex-1 cursor-default">{item.title}</span>
                   </TaskTooltip>
@@ -506,7 +506,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   <div 
                     key={task.id}
                     className={`flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4 ${
-                      sectionConfig.id === 'overdue' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : ''
+                      sectionConfig.id === 'overdue' ? 'bg-bp-coral/10 border-bp-coral/30' : 'border-bp-border'
                     }`}
                     onClick={() => setSelectedTaskId(task.id)}
                     data-testid={`myday-task-${task.id}`}
@@ -518,7 +518,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                       }}
                       className="flex-shrink-0"
                     >
-                      <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
+                      <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-bp-coral' : 'text-bp-muted'}`} />
                     </button>
                     <TaskTooltip content={task.title}>
                       <span className="text-xs truncate flex-1 cursor-default">{task.title}</span>
@@ -596,7 +596,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
             </Button>
           )}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <CloudSun className="h-3.5 w-3.5 text-amber-500" />
+            <CloudSun className="h-3.5 w-3.5 text-bp-amber" />
             <span>--°C</span>
           </div>
         </div>

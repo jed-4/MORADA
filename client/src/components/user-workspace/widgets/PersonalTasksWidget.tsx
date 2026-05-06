@@ -67,6 +67,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupsInitialized, setGroupsInitialized] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'overdue' | 'upcoming' | null>(null);
 
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -124,7 +125,8 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       result = result.filter(t => t.projectId === projectFilter);
     }
 
-    switch (showFilter) {
+    const effectiveFilter = activeFilter ?? showFilter;
+    switch (effectiveFilter) {
       case 'overdue':
         result = result.filter(t => t.dueDate && isBefore(new Date(t.dueDate), today));
         break;
@@ -144,7 +146,29 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
 
     return result.slice(0, maxTasks);
-  }, [tasks, showFilter, showCompleted, projectFilter, maxTasks, today]);
+  }, [tasks, showFilter, activeFilter, showCompleted, projectFilter, maxTasks, today]);
+
+  const filterCounts = useMemo(() => {
+    let base = tasks;
+    if (!showCompleted) {
+      base = base.filter(t => t.status !== 'done' && t.status !== 'complete');
+    }
+    if (projectFilter === 'business') {
+      base = base.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+    } else if (projectFilter !== 'all') {
+      base = base.filter(t => t.projectId === projectFilter);
+    }
+    return {
+      all: base.length,
+      today: base.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length,
+      overdue: base.filter(t => t.dueDate && isBefore(new Date(t.dueDate), today)).length,
+      upcoming: base.filter(t => {
+        if (!t.dueDate) return false;
+        const d = new Date(t.dueDate);
+        return isWithinInterval(d, { start: today, end: addDays(today, 7) });
+      }).length,
+    };
+  }, [tasks, showCompleted, projectFilter, today]);
 
   const groupedTasks = useMemo(() => {
     if (groupBy === 'none') {
@@ -232,23 +256,23 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     const dueDate = new Date(task.dueDate);
     
     if (isBefore(dueDate, today)) {
-      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-status-danger dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
+      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-coral bg-bp-coral/10' };
     }
     if (isToday(dueDate)) {
-      return { label: 'Today', color: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' };
+      return { label: 'Today', color: 'text-bp-amber bg-bp-amber/10' };
     }
     if (isTomorrow(dueDate)) {
-      return { label: 'Tomorrow', color: 'text-status-info dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' };
+      return { label: 'Tomorrow', color: 'text-bp-teal bg-bp-teal/10' };
     }
-    return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-muted-foreground bg-muted' };
+    return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-bp-muted bg-bp-subtle' };
   };
 
   const getPriorityColor = (priority: string | null | undefined) => {
     switch (priority) {
-      case 'urgent': return 'border-l-red-500';
-      case 'high': return 'border-l-orange-500';
-      case 'medium': return 'border-l-yellow-500';
-      case 'low': return 'border-l-green-500';
+      case 'urgent': return 'border-l-bp-coral';
+      case 'high': return 'border-l-bp-amber';
+      case 'medium': return 'border-l-bp-amber/60';
+      case 'low': return 'border-l-bp-green';
       default: return 'border-l-transparent';
     }
   };
@@ -402,9 +426,44 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     }
   };
 
+  const filterTabs: Array<{ key: 'all' | 'today' | 'overdue' | 'upcoming'; label: string }> = [
+    { key: 'all', label: 'All' },
+    { key: 'today', label: 'Today' },
+    { key: 'overdue', label: 'Overdue' },
+    { key: 'upcoming', label: 'Upcoming' },
+  ];
+  const effectiveActiveFilter = activeFilter ?? (
+    showFilter === 'today' || showFilter === 'overdue' || showFilter === 'upcoming' || showFilter === 'all'
+      ? showFilter
+      : 'all'
+  );
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-end gap-1 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-0.5 flex-wrap" data-testid="personal-tasks-filter-tabs">
+          {filterTabs.map((tab) => {
+            const isActive = effectiveActiveFilter === tab.key;
+            const count = filterCounts[tab.key];
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveFilter(tab.key)}
+                data-testid={`tab-filter-${tab.key}`}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium hover-elevate ${
+                  isActive
+                    ? 'bg-bp-purple/15 text-bp-purple'
+                    : 'text-bp-muted'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="text-[10px] tabular-nums opacity-70">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-1">
         {groupBy !== 'none' && groupedTasks.length > 1 && (
           <Button 
             size="icon" 
@@ -430,6 +489,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         >
           <Plus className="h-3 w-3" />
         </Button>
+        </div>
       </div>
       
       <TaskEditModal
@@ -479,7 +539,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       className="flex-shrink-0"
                     >
                       {isCompleted ? (
-                        <CheckSquare className="h-3.5 w-3.5 text-green-500" />
+                        <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
                       ) : (
                         <Circle className="h-3.5 w-3.5 text-muted-foreground" />
                       )}
@@ -507,7 +567,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       )}
                       {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
                         <span 
-                          className="text-label px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
+                          className="text-label px-1.5 py-0.5 rounded bg-bp-purple/15 text-bp-purple w-20 text-center truncate"
                           title={businessLabel}
                         >
                           {businessLabel}
@@ -563,7 +623,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           className="flex-shrink-0"
                         >
                           {isCompleted ? (
-                            <CheckSquare className="h-3.5 w-3.5 text-green-500" />
+                            <CheckSquare className="h-3.5 w-3.5 text-bp-green" />
                           ) : (
                             <Circle className="h-3.5 w-3.5 text-muted-foreground" />
                           )}
