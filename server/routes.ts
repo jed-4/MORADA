@@ -4714,8 +4714,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const round3 = (n: number) => Math.round(n * 1000) / 1000;
       const round2 = (n: number) => Math.round(n * 100) / 100;
-      const builderCostExTax = round3((unitCostExTax || 0) * (quantity || 1));
-      const effectiveMarkupPercent = markupPercent ?? 0;
+      // Match the import path (POST /api/estimates/:id/items/import): when the
+      // item has no per-item markup, fall back to the estimate's project-level
+      // markup. Previously we used `markupPercent ?? 0`, which silently stripped
+      // the project markup from `priceIncTax` on every patch — so editing
+      // cost code / status / proposal visibility / allowance changed the price.
+      const builderCostExTax = round3((unitCostExTax || 0) * (quantity ?? 0));
+      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
       const markupAmount = round3(builderCostExTax * effectiveMarkupPercent / 100);
       const clientPriceExTax = round3(builderCostExTax + markupAmount);
       const taxRate = estimate.taxRate ?? 10;

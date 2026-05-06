@@ -9191,25 +9191,14 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot update item in locked estimate. Unlock the estimate first.");
       }
 
-      // Prepare update data with tax recalculation if needed
+      // Prepare update data. We trust priceIncTax/taxAmount when the caller
+      // (typically the PATCH /api/estimate-items/:id route) has already
+      // computed them — the route's recompute is the single source of truth
+      // and correctly applies project-level markup. The previous in-storage
+      // recompute here ignored quantity and markup entirely and overwrote
+      // the route's correct values, corrupting prices on every edit that
+      // touched unitCostExTax or quantity.
       const updateData: any = { ...item };
-      
-      if (item.unitCostExTax !== undefined || item.quantity !== undefined) {
-        const taxRate = estimate?.taxRate || 10;
-        const unitCostExTax = item.unitCostExTax !== undefined ? item.unitCostExTax : existingItem.unitCostExTax;
-        const quantity = item.quantity !== undefined ? item.quantity : existingItem.quantity;
-        
-        // Recalculate all amounts based on line total (all values in cents)
-        const amountExTax = Math.round(unitCostExTax * quantity / 100); // Convert from quantity with 2 decimals
-        const taxAmount = Math.round(amountExTax * taxRate / 100);
-        const amountIncTax = amountExTax + taxAmount;
-        const priceIncTax = unitCostExTax + Math.round(unitCostExTax * taxRate / 100);
-        
-        updateData.taxAmount = taxAmount;
-        updateData.priceIncTax = priceIncTax;
-        updateData.amountExTax = amountExTax;
-        updateData.amountIncTax = amountIncTax;
-      }
 
       updateData.updatedAt = new Date();
 
