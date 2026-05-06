@@ -285,82 +285,14 @@ export default function Header() {
           <Building2 className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
 
-        {/* Business Name Button with Dropdown */}
-        <div className="flex items-center">
-          <button 
-            onClick={() => navigate('/business')} 
-            className="h-7 px-3 rounded-l-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
-            data-testid="business-name-link"
-          >
-            {companyDisplayName}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-7 px-1 rounded-r-md bg-muted/60 hover-elevate active-elevate-2 flex items-center justify-center border-l border-border/40"
-                data-testid="button-business-dropdown"
-              >
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-xs">Business</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate('/business')} className="text-xs">
-                <Home className="h-3.5 w-3.5 mr-2" />
-                Overview
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/projects')} className="text-xs">
-                <FolderOpen className="h-3.5 w-3.5 mr-2" />
-                Projects
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/tasks')} className="text-xs">
-                <CheckSquare className="h-3.5 w-3.5 mr-2" />
-                Tasks
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/calendar')} className="text-xs">
-                <Calendar className="h-3.5 w-3.5 mr-2" />
-                Calendar
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/schedule')} className="text-xs">
-                <GanttChart className="h-3.5 w-3.5 mr-2" />
-                Schedule
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/files')} className="text-xs">
-                <HardDrive className="h-3.5 w-3.5 mr-2" />
-                Files
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/timesheets')} className="text-xs">
-                <Timer className="h-3.5 w-3.5 mr-2" />
-                Timesheets
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/messages')} className="text-xs">
-                <MessageSquare className="h-3.5 w-3.5 mr-2" />
-                Messages
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/minutes')} className="text-xs">
-                <ClipboardList className="h-3.5 w-3.5 mr-2" />
-                Minutes
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/notes')} className="text-xs">
-                <FileText className="h-3.5 w-3.5 mr-2" />
-                Notes
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/bills')} className="text-xs">
-                <Receipt className="h-3.5 w-3.5 mr-2" />
-                Bills
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business/leave')} className="text-xs">
-                <Calendar className="h-3.5 w-3.5 mr-2" />
-                Leave
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/business-team')} className="text-xs">
-                <Users className="h-3.5 w-3.5 mr-2" />
-                Team
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {/* Business Name Button (link only — section dropdown removed; sections live in the sidebar) */}
+        <button
+          onClick={() => navigate('/business')}
+          className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
+          data-testid="business-name-link"
+        >
+          {companyDisplayName}
+        </button>
 
         {/* Projects Dropdown with Phase Selector */}
         <DropdownMenu open={isProjectDropdownOpen} onOpenChange={setIsProjectDropdownOpen}>
