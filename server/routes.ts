@@ -9187,11 +9187,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Period helper: month/quarter/ytd/year → date range
+  function getBusinessPeriodRange(period: string): { from: Date; to: Date } {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    let from: Date;
+    let to: Date = today;
+    switch (period) {
+      case "month":
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case "quarter":
+        from = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+        break;
+      case "year":
+        from = new Date(now.getFullYear(), 0, 1);
+        to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        break;
+      case "ytd":
+      default:
+        from = new Date(now.getFullYear(), 0, 1);
+        break;
+    }
+    return { from, to };
+  }
+
+  // 15-minute in-process cache for /api/business/pnl (per company + period)
+  const businessPnLCache = new Map<string, { value: any; expires: number }>();
+  const BUSINESS_PNL_TTL_MS = 15 * 60_000;
+
   app.get("/api/business/financial-summary", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const period = String(req.query.period || "ytd");
+      const { from: periodFrom, to: periodTo } = getBusinessPeriodRange(period);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
       const canViewBills = await storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false);
 
@@ -9202,53 +9236,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
         canViewBills ? db.select().from(billsTbl) : Promise.resolve([] as any[]),
       ]);
       const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
-      const ytdStart = new Date(new Date().getFullYear(), 0, 1).getTime();
-
       const companyInvoices = invoiceRows.filter((i: any) => companyProjectIds.has(i.projectId));
       const companyBills = billRows.filter((b: any) => companyProjectIds.has(b.projectId));
 
-      const revenueYtd = companyInvoices
-        .filter((i: any) => new Date(i.invoiceDate).getTime() >= ytdStart && (i.status === "paid" || i.status === "partial"))
+      const inPeriod = (d: any): boolean => {
+        if (!d) return false;
+        const t = new Date(d).getTime();
+        return t >= periodFrom.getTime() && t <= periodTo.getTime();
+      };
+
+      // Row 1 - Income
+      // Revenue: invoices in period that are sent/paid/partial/overdue (excludes draft + void)
+      const revenue = companyInvoices
+        .filter((i: any) =>
+          inPeriod(i.invoiceDate) &&
+          (i.status === "sent" || i.status === "paid" || i.status === "partial" || i.status === "overdue"),
+        )
+        .reduce((s: number, i: any) => s + (Number(i.totalAmount) || 0), 0) / 100;
+
+      // Collected: payments received (paid + partial) — uses paidAmount
+      const collected = companyInvoices
+        .filter((i: any) => inPeriod(i.invoiceDate) && (i.status === "paid" || i.status === "partial"))
         .reduce((s: number, i: any) => s + (Number(i.paidAmount) || 0), 0) / 100;
 
-      const outstanding = companyInvoices
-        .filter((i: any) => i.status === "sent" || i.status === "partial" || i.status === "overdue")
-        .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
+      // WIP: no reliable WIP source in current schema — return null so widget shows "Not configured"
+      const wip: number | null = null;
 
+      // Row 2 - Costs
       const billsPaid = canViewBills
         ? companyBills
-            .filter((b: any) => b.status === "paid")
+            .filter((b: any) => inPeriod(b.billDate) && b.status === "paid")
             .reduce((s: number, b: any) => s + (Number(b.paidAmount) || 0), 0) / 100
         : null;
 
-      const netPosition = canViewBills && billsPaid !== null ? revenueYtd - billsPaid : null;
+      // Outstanding (snapshot, period-agnostic): all invoices not paid/void/draft
+      const outstandingInvoices = companyInvoices.filter((i: any) =>
+        i.status !== "paid" && i.status !== "void" && i.status !== "draft",
+      );
+      const outstanding = outstandingInvoices
+        .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
 
-      const invoiceTxns = companyInvoices.map((i: any) => ({
-        id: `invoice-${i.id}`,
-        type: "invoice" as const,
-        name: i.name,
-        amount: (Number(i.totalAmount) || 0) / 100,
-        date: i.invoiceDate,
-        status: i.status,
-      }));
-      const billTxns = canViewBills
-        ? companyBills.map((b: any) => ({
-            id: `bill-${b.id}`,
-            type: "bill" as const,
-            name: b.billNumber,
-            amount: -(Number(b.total) || 0) / 100,
-            date: b.billDate,
-            status: b.status,
-          }))
-        : [];
-      const recentTransactions = [...invoiceTxns, ...billTxns]
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 10);
+      // Overdue (snapshot): outstanding past due date
+      const overdue = outstandingInvoices
+        .filter((i: any) => i.dueDate && new Date(i.dueDate).getTime() < today.getTime())
+        .reduce((s: number, i: any) => s + (Number(i.balanceAmount) || 0), 0) / 100;
 
-      res.json({ revenueYtd, outstanding, billsPaid, netPosition, recentTransactions, canViewBills });
+      // Row 3 - Summary
+      const netPosition = canViewBills && billsPaid !== null ? revenue - billsPaid : null;
+      const grossMargin =
+        canViewBills && billsPaid !== null && revenue > 0
+          ? ((revenue - billsPaid) / revenue) * 100
+          : null;
+
+      // Xero balance (best-effort, doesn't fail the whole response)
+      let xeroBalance: number | null = null;
+      let xeroAccountCount = 0;
+      let xeroError: string | null = null;
+      try {
+        const connection = await storage.getXeroConnectionByCompanyId(companyId);
+        if (!connection) {
+          xeroError = "not_connected";
+        } else {
+          const rawIds = typeof req.query.xeroAccountIds === "string" ? req.query.xeroAccountIds : "";
+          const accountIds = rawIds.split(",").map((s: string) => s.trim()).filter(Boolean);
+          const allAccounts = await xeroService.getBankAccountBalances(connection.id);
+          const filtered = accountIds.length > 0
+            ? allAccounts.filter((a) => accountIds.includes(a.accountId))
+            : allAccounts;
+          xeroBalance = filtered.reduce((s, a) => s + (Number(a.xeroBalance) || 0), 0);
+          xeroAccountCount = filtered.length;
+        }
+      } catch (err: any) {
+        console.warn("[/api/business/financial-summary] Xero balance unavailable:", err?.message || err);
+        xeroError = "unavailable";
+      }
+
+      res.json({
+        period,
+        revenue,
+        collected,
+        wip,
+        billsPaid,
+        outstanding,
+        overdue,
+        netPosition,
+        grossMargin,
+        xeroBalance,
+        xeroAccountCount,
+        xeroError,
+        canViewBills,
+      });
     } catch (err) {
       console.error("[/api/business/financial-summary] error:", err);
       res.status(500).json({ error: "Failed to compute financial summary" });
+    }
+  });
+
+  // Profit & Loss widget — sources structured P&L from Xero with period filtering
+  app.get("/api/business/pnl", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const period = String(req.query.period || "ytd");
+      const { from, to } = getBusinessPeriodRange(period);
+      const fromIso = from.toISOString().slice(0, 10);
+      const toIso = to.toISOString().slice(0, 10);
+
+      const cacheKey = `${companyId}:pnl:${period}:${fromIso}:${toIso}`;
+      const cached = businessPnLCache.get(cacheKey);
+      if (cached && cached.expires > Date.now()) {
+        return res.json(cached.value);
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(503).json({ error: "xero_unavailable" });
+
+      let report;
+      try {
+        report = await xeroService.getProfitAndLossReport(connection.id, fromIso, toIso);
+      } catch (err: any) {
+        console.error("[/api/business/pnl] Xero error:", err?.message || err);
+        return res.status(503).json({ error: "xero_unavailable" });
+      }
+
+      // Sum monthly buckets (keyed YYYY-MM) within the requested window
+      const fromYM = fromIso.slice(0, 7);
+      const toYM = toIso.slice(0, 7);
+      const inRange = (ym: string) => ym >= fromYM && ym <= toYM;
+      const sumByMonths = (obj: Record<string, number> | undefined): number =>
+        Object.entries(obj || {}).reduce((s, [ym, v]) => (inRange(ym) ? s + (Number(v) || 0) : s), 0);
+
+      const revenue = sumByMonths(report.incomeTotals);
+      const cogs = sumByMonths(report.directCostTotals);
+      const overheads = Object.values(report.byAccount || {}).reduce(
+        (s: number, acc: any) => s + sumByMonths(acc?.amounts),
+        0,
+      );
+      const grossProfit = revenue - cogs;
+      const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : null;
+      const netProfit = grossProfit - overheads;
+      const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : null;
+
+      const payload = {
+        period,
+        from: fromIso,
+        to: toIso,
+        revenue,
+        cogs,
+        grossProfit,
+        grossMargin,
+        overheads,
+        netProfit,
+        netMargin,
+        // GST not surfaced as a line item by Xero P&L report — widget multiplies by 1.1 when toggled
+        gstCollected: null as number | null,
+      };
+
+      businessPnLCache.set(cacheKey, { value: payload, expires: Date.now() + BUSINESS_PNL_TTL_MS });
+      res.json(payload);
+    } catch (err) {
+      console.error("[/api/business/pnl] error:", err);
+      res.status(500).json({ error: "Failed to compute P&L" });
     }
   });
 

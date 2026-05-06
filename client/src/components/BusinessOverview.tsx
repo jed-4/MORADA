@@ -54,6 +54,14 @@ import {
   getAvailableBusinessWidgets 
 } from "./business-widgets/BusinessWidgetRegistry";
 import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
+import {
+  BusinessFinancialsPeriodBadge,
+  BusinessFinancialsMenuItems,
+} from "./business-widgets/BusinessFinancialsWidget";
+import {
+  BusinessPnLHeaderExtra,
+  BusinessPnLMenuItems,
+} from "./business-widgets/BusinessPnLWidget";
 import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
 import { useFinancialPermission, usePermission } from "@/hooks/use-permission";
@@ -284,6 +292,10 @@ function SortableWidget({
         headerExtra={
           widget.type === "businessKPIs" ? (
             <BusinessKpisPeriodTabs widget={widget} onUpdate={onUpdate} />
+          ) : widget.type === "businessFinancials" ? (
+            <BusinessFinancialsPeriodBadge widget={widget} />
+          ) : widget.type === "businessPnL" ? (
+            <BusinessPnLHeaderExtra widget={widget} onUpdate={onUpdate} />
           ) : undefined
         }
         extraMenuItems={
@@ -293,6 +305,10 @@ function SortableWidget({
               onUpdate={onUpdate}
               onOpenEdit={() => onConfigure(widget.id)}
             />
+          ) : widget.type === "businessFinancials" ? (
+            <BusinessFinancialsMenuItems widget={widget} onUpdate={onUpdate} />
+          ) : widget.type === "businessPnL" ? (
+            <BusinessPnLMenuItems widget={widget} onUpdate={onUpdate} />
           ) : undefined
         }
       >

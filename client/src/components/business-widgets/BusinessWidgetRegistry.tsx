@@ -23,6 +23,7 @@ import BusinessRevenueWidget from "./BusinessRevenueWidget";
 import BusinessProfitabilityWidget from "./BusinessProfitabilityWidget";
 import BusinessUtilizationWidget from "./BusinessUtilizationWidget";
 import BusinessVariationsPendingWidget from "./BusinessVariationsPendingWidget";
+import BusinessPnLWidget from "./BusinessPnLWidget";
 
 export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
   businessKPIs: {
@@ -144,6 +145,20 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "green",
     defaultColumns: 4,
+  },
+  businessPnL: {
+    type: "businessPnL",
+    name: "Profit & Loss",
+    description: "Live P&L from Xero with GST toggle and period selector",
+    icon: LineChart,
+    component: BusinessPnLWidget,
+    defaultSize: "lg",
+    configurable: false,
+    accent: "financial",
+    financialGated: true,
+    requiredPermission: { key: "financial.invoices", action: "view" },
+    defaultColumns: 4,
+    defaultRowSpan: 3,
   },
   businessVariationsPending: {
     type: "businessVariationsPending",
