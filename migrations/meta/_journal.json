@@ -78,6 +78,13 @@
       "when": 1777862400000,
       "tag": "0011_proposals_share_token",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778032295077,
+      "tag": "0013_furry_legion",
+      "breakpoints": true
     }
   ]
 }

@@ -3626,6 +3626,15 @@ export const scopeStages = pgTable("scope_stages", {
   // File attachments linked to this stage
   attachments: jsonb("attachments").default([]), // Array of {id, name, url, objectPath, size, uploadedBy, uploadedAt}
 
+  // Generated column: lower(btrim(name)). Exists so the unique index below
+  // is purely column-based (no expression) — drizzle-kit's pg introspection
+  // chokes on expression-only index columns and breaks `db:push`.
+  // Never write to this column directly; postgres maintains it.
+  normalizedName: text("normalized_name").generatedAlwaysAs(
+    sql`lower(btrim(name))`,
+    { mode: "stored" },
+  ),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
@@ -3634,7 +3643,7 @@ export const scopeStages = pgTable("scope_stages", {
   // from coexisting on the same project.
   uniqueIndex("scope_stages_project_normalized_name_unique").on(
     table.projectId,
-    sql`lower(btrim(${table.name}))`,
+    table.normalizedName,
   ),
 ]);
 
