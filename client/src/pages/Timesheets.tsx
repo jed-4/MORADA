@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Plus, Clock, Search, Calendar as CalendarIcon, X, CalendarRange, Download, Upload, ChevronDown, Settings2, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, CircleCheck, Trash2, HardHat, MoreHorizontal, Pencil, Copy, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
@@ -655,12 +662,24 @@ export default function Timesheets() {
         id: "project",
         accessorFn: (t) => getProjectName(t.projectId),
         header: "Project",
-        meta: { headerLabel: "Project", defaultWidth: 120, defaultHidden: true },
-        cell: ({ row }) => (
-          <span className="text-table truncate text-muted-foreground">
-            {getProjectName(row.original.projectId)}
-          </span>
-        ),
+        meta: { headerLabel: "Project", defaultWidth: 140, defaultHidden: true },
+        cell: ({ row }) => {
+          const projColor = getProjectColor(row.original.projectId);
+          const name = getProjectName(row.original.projectId);
+          return (
+            <span
+              className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-table truncate max-w-full text-foreground"
+              style={
+                projColor
+                  ? { backgroundColor: hexToRgba(projColor, 0.15), borderLeft: `2px solid ${projColor}` }
+                  : { backgroundColor: "hsl(var(--muted))", borderLeft: "2px solid hsl(var(--border))" }
+              }
+              title={name}
+            >
+              <span className="truncate">{name}</span>
+            </span>
+          );
+        },
       },
       {
         id: "costCode",
@@ -950,6 +969,20 @@ export default function Timesheets() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Breadcrumbs — only shown on the All Items / global Timesheets page (no projectId) */}
+      {!projectId && (
+        <Breadcrumb className="px-1 pb-2 flex-shrink-0">
+          <BreadcrumbList className="text-xs">
+            <BreadcrumbItem>
+              <span className="text-muted-foreground">All Items</span>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Timesheets</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      )}
       {/* Header Panel — single condensed row */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         <div className="h-8 flex items-center gap-2 px-3">
