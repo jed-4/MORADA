@@ -115,10 +115,10 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     component: BusinessRevenueWidget,
     defaultSize: "lg",
     configurable: true,
-    accent: "financial",
+    accent: "schedule",
     financialGated: true,
     requiredPermission: { key: "financial.invoices", action: "view" },
-    defaultColumns: 6,
+    defaultColumns: 5,
     defaultRowSpan: 2,
   },
   businessProfitability: {

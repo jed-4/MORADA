@@ -62,6 +62,7 @@ import {
   BusinessPnLHeaderExtra,
   BusinessPnLMenuItems,
 } from "./business-widgets/BusinessPnLWidget";
+import { BusinessRevenuePeriodTabs } from "./business-widgets/BusinessRevenueWidget";
 import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
 import { useFinancialPermission, usePermission } from "@/hooks/use-permission";
@@ -296,6 +297,8 @@ function SortableWidget({
             <BusinessFinancialsPeriodBadge widget={widget} />
           ) : widget.type === "businessPnL" ? (
             <BusinessPnLHeaderExtra widget={widget} onUpdate={onUpdate} />
+          ) : widget.type === "businessRevenue" ? (
+            <BusinessRevenuePeriodTabs widget={widget} onUpdate={onUpdate} />
           ) : undefined
         }
         extraMenuItems={

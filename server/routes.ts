@@ -9147,6 +9147,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
+      const range = String(req.query.range || "6m");
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      // Build month buckets [{label,key,start,end}] for the requested range
+      type Bucket = { label: string; key: string; start: Date; end: Date; invoiced: number; collected: number };
+      const buckets: Bucket[] = [];
+      const pushBucket = (d: Date) => {
+        const start = new Date(d.getFullYear(), d.getMonth(), 1);
+        const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        buckets.push({
+          label: start.toLocaleDateString("en", { month: "short" }),
+          key: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`,
+          start,
+          end,
+          invoiced: 0,
+          collected: 0,
+        });
+      };
+
+      if (range === "ytd") {
+        // Australian financial year starts July 1
+        const fyStartYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+        let cursor = new Date(fyStartYear, 6, 1);
+        while (cursor <= currentMonthStart) {
+          pushBucket(cursor);
+          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+        }
+      } else {
+        // 6m or 12m: last N complete months + current month (N+1 buckets total)
+        const span = range === "12m" ? 12 : 6;
+        for (let i = span; i >= 0; i--) {
+          pushBucket(new Date(now.getFullYear(), now.getMonth() - i, 1));
+        }
+      }
+
       const { projects: projectsTbl, clientInvoices: invoicesTbl } = await import("@shared/schema");
       const [projectRows, invoiceRows] = await Promise.all([
         db.select({ id: projectsTbl.id }).from(projectsTbl).where(eq(projectsTbl.companyId, companyId)),
@@ -9154,33 +9190,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       const companyProjectIds = new Set(projectRows.map((p: any) => p.id));
 
-      const months: { label: string; key: string; revenue: number; outstanding: number }[] = [];
-      const now = new Date();
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        months.push({
-          label: d.toLocaleDateString("en", { month: "short" }),
-          key: `${d.getFullYear()}-${d.getMonth()}`,
-          revenue: 0,
-          outstanding: 0,
-        });
-      }
+      const rangeStart = buckets[0]?.start.getTime() ?? 0;
+      const rangeEnd = buckets[buckets.length - 1]?.end.getTime() ?? Date.now();
+
+      let totalInvoiced = 0;
+      let totalCollected = 0;
 
       for (const inv of invoiceRows) {
         if (!companyProjectIds.has(inv.projectId)) continue;
         const d = new Date(inv.invoiceDate);
-        const key = `${d.getFullYear()}-${d.getMonth()}`;
-        const bucket = months.find((m) => m.key === key);
+        const t = d.getTime();
+        if (t < rangeStart || t >= rangeEnd) continue;
+        // Skip drafts / voids — they don't represent real invoiced revenue
+        if (inv.status === "draft" || inv.status === "void") continue;
+        const bucket = buckets.find((b) => t >= b.start.getTime() && t < b.end.getTime());
         if (!bucket) continue;
-        if (inv.status === "paid" || inv.status === "partial") {
-          bucket.revenue += (Number(inv.paidAmount) || 0) / 100;
-        }
-        if (inv.status === "sent" || inv.status === "partial" || inv.status === "overdue") {
-          bucket.outstanding += (Number(inv.balanceAmount) || 0) / 100;
-        }
+        const total = (Number(inv.totalAmount) || 0) / 100;
+        const paid = inv.status === "paid"
+          ? total
+          : (Number(inv.paidAmount) || 0) / 100;
+        bucket.invoiced += total;
+        bucket.collected += paid;
+        totalInvoiced += total;
+        totalCollected += paid;
       }
 
-      res.json({ months });
+      res.json({
+        data: buckets.map((b) => ({ month: b.label, invoiced: b.invoiced, collected: b.collected })),
+        totals: { invoiced: totalInvoiced, collected: totalCollected },
+      });
     } catch (err) {
       console.error("[/api/business/revenue-trends] error:", err);
       res.status(500).json({ error: "Failed to compute revenue trends" });
