@@ -55,9 +55,17 @@ export default function BusinessWidgetContainer({
   extraMenuItems,
 }: BusinessWidgetContainerProps) {
   const hasMenu = !!onConfigure || !!onRemove || !!extraMenuItems;
+  const headerLeft = dragHandleProps ? (
+    <div
+      {...dragHandleProps}
+      className="cursor-grab rounded p-0.5 flex-shrink-0 text-bp-muted hover-elevate opacity-0 group-hover:opacity-100 transition-opacity -ml-1"
+      data-testid="widget-drag-handle"
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </div>
+  ) : null;
   const headerRight = (
     <>
-      {icon && <div className="flex-shrink-0 text-bp-muted">{icon}</div>}
       {headerExtra}
       {hasMenu && (
         <DropdownMenu>
@@ -91,15 +99,6 @@ export default function BusinessWidgetContainer({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {dragHandleProps && (
-        <div
-          {...dragHandleProps}
-          className="cursor-grab rounded p-0.5 flex-shrink-0 text-bp-muted hover-elevate opacity-0 group-hover:opacity-100 transition-opacity"
-          data-testid="widget-drag-handle"
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </div>
-      )}
     </>
   );
 
@@ -117,6 +116,7 @@ export default function BusinessWidgetContainer({
         accent={accent}
         locked={locked}
         lockedMessage={lockedMessage}
+        headerLeft={headerLeft}
         headerRight={headerRight}
         className="h-full"
       >

@@ -99,10 +99,10 @@ function BusinessKpisPeriodTabs({
   const setPeriod = (p: KPIPeriod) => {
     onUpdate({ ...widget, config: { ...(widget.config || {}), period: p } });
   };
-  const options: { value: KPIPeriod; label: string }[] = [
-    { value: "month", label: "Month" },
-    { value: "quarter", label: "Quarter" },
-    { value: "year", label: "Year" },
+  const options: { value: KPIPeriod; label: string; aria: string }[] = [
+    { value: "month", label: "M", aria: "Month" },
+    { value: "quarter", label: "Q", aria: "Quarter" },
+    { value: "year", label: "Y", aria: "Year" },
   ];
   return (
     <div className="flex items-center gap-4" data-testid="kpi-period-tabs">
@@ -113,8 +113,10 @@ function BusinessKpisPeriodTabs({
             key={o.value}
             type="button"
             onClick={() => setPeriod(o.value)}
+            aria-label={o.aria}
+            title={o.aria}
             className={cn(
-              "text-[12px] transition-colors pb-0.5",
+              "text-[12px] transition-colors pb-0.5 w-5 text-center",
               active
                 ? "text-bp-purple font-medium border-b-2 border-bp-purple"
                 : "text-bp-muted hover:text-bp-card-foreground",

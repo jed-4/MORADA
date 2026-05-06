@@ -31,6 +31,7 @@ export interface WidgetCardProps {
   title: string;
   subtitle?: string;
   accent?: WidgetAccent;
+  headerLeft?: ReactNode;
   headerRight?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -43,6 +44,7 @@ export function WidgetCard({
   title,
   subtitle,
   accent = "purple",
+  headerLeft,
   headerRight,
   children,
   className,
@@ -59,7 +61,10 @@ export function WidgetCard({
       )}
     >
       <div className={cn("h-1 w-full", ACCENT_BG[accent])} />
-      <div className="flex items-start justify-between gap-2 px-4 pt-3 pb-2">
+      <div className="flex items-start gap-2 px-4 pt-3 pb-2">
+        {headerLeft ? (
+          <div className="flex shrink-0 items-center">{headerLeft}</div>
+        ) : null}
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold leading-tight">
             {title}
@@ -81,7 +86,7 @@ export function WidgetCard({
           {headerRight}
         </div>
       </div>
-      <div className={cn("relative flex-1 px-4 pb-4", contentClassName)}>
+      <div className={cn("relative flex-1 min-h-0 overflow-y-auto px-4 pb-4", contentClassName)}>
         {children}
         {locked ? (
           <div
