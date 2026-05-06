@@ -113,6 +113,7 @@ import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurr
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not, ne } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import { computeEstimateItemPrice, computeEstimateSummary } from "@shared/pricing";
 
 // --- Timezone helpers (used by clockIn/clockOut and backfill) ---
 export function formatHHmmInTz(d: Date, tz: string): string {
@@ -3914,17 +3915,15 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
     }
     
-    // Calculate tax amount and price inc tax including quantity and markup
-    const unitCostExTax = insertItem.unitCostExTax || 0;
-    const quantity = insertItem.quantity ?? 0;
-    const markupPercent = insertItem.markupPercent || 0;
-    const taxRate = estimate?.taxRate || 10; // Default 10% GST
-    const builderCostExTax = unitCostExTax * quantity;
-    const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
-    const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-    const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-    const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
-    
+    // Single source of truth: shared/pricing.ts
+    const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      unitCostExTax: insertItem.unitCostExTax,
+      quantity: insertItem.quantity,
+      markupPercent: insertItem.markupPercent,
+      projectMarkupPercent: estimate?.projectMarkupPercent,
+      taxRate: estimate?.taxRate,
+    });
+
     try {
       const estimateItem = {
         ...insertItem,
@@ -3982,19 +3981,16 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot create items in locked estimate. Unlock the estimate first.");
     }
 
-    const taxRate = estimate?.taxRate || 10; // Default 10% GST
-    
-    // Prepare all items with calculated tax, quantity, and markup
+    // Prepare all items with calculated tax via the shared function
     const preparedItems = insertItems.map(insertItem => {
-      const unitCostExTax = insertItem.unitCostExTax || 0;
-      const quantity = insertItem.quantity ?? 0;
-      const markupPercent = insertItem.markupPercent || 0;
-      const builderCostExTax = unitCostExTax * quantity;
-      const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
-      const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-      const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-      const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
-      
+      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        unitCostExTax: insertItem.unitCostExTax,
+        quantity: insertItem.quantity,
+        markupPercent: insertItem.markupPercent,
+        projectMarkupPercent: estimate?.projectMarkupPercent,
+        taxRate: estimate?.taxRate,
+      });
+
       return {
         ...insertItem,
         taxAmount,
@@ -4059,14 +4055,19 @@ export class MemStorage implements IStorage {
       ...updateItem,
       updatedAt: new Date(),
     };
-    
-    // Recalculate tax if price changed
-    if (updateItem.unitCostExTax !== undefined) {
-      const taxRate = estimate?.taxRate || 10;
-      updatedItem.taxAmount = Math.round(updatedItem.unitCostExTax * taxRate / 100);
-      updatedItem.priceIncTax = updatedItem.unitCostExTax + updatedItem.taxAmount;
-    }
-    
+
+    // Always recompute via the single source of truth — guarantees no drift
+    // regardless of which fields were patched.
+    const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+      unitCostExTax: updatedItem.unitCostExTax,
+      quantity: updatedItem.quantity,
+      markupPercent: updatedItem.markupPercent,
+      projectMarkupPercent: estimate?.projectMarkupPercent,
+      taxRate: estimate?.taxRate,
+    });
+    updatedItem.taxAmount = taxAmount;
+    updatedItem.priceIncTax = lineIncTax;
+
     this.estimateItems.set(id, updatedItem);
     return updatedItem;
   }
@@ -4309,11 +4310,20 @@ export class MemStorage implements IStorage {
       .filter(item => item.groupId === groupId);
     
     for (const item of items) {
+      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        unitCostExTax: item.unitCostExTax,
+        quantity: item.quantity,
+        markupPercent: item.markupPercent,
+        projectMarkupPercent: targetEstimate.projectMarkupPercent,
+        taxRate: targetEstimate.taxRate,
+      });
       const newItem: EstimateItem = {
         ...item,
         id: crypto.randomUUID(),
         estimateId: targetEstimateId,
         groupId: newGroup.id,
+        taxAmount,
+        priceIncTax,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -4377,12 +4387,22 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
     }
 
+    const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+      unitCostExTax: item.unitCostExTax,
+      quantity: item.quantity,
+      markupPercent: item.markupPercent,
+      projectMarkupPercent: targetEstimate.projectMarkupPercent,
+      taxRate: targetEstimate.taxRate,
+    });
+
     // Create copy in target estimate (without group assignment)
     const newItem: EstimateItem = {
       ...item,
       id: crypto.randomUUID(),
       estimateId: targetEstimateId,
       groupId: null, // Don't assign to a group in target estimate
+      taxAmount,
+      priceIncTax,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -4743,53 +4763,10 @@ export class MemStorage implements IStorage {
   }> {
     const items = await this.getEstimateItems(estimateId);
     const estimate = await this.getEstimate(estimateId);
-    const projectMarkupPercent = estimate?.projectMarkupPercent ?? 0;
-
-    let builderCostTotal = 0;
-    let lineItemMarkupTotal = 0;
-    let clientTaxOnItems = 0;
-    let clientAmountIncTaxTotal = 0;
-
-    items.forEach(item => {
-      const qty = item.quantity ?? 0;
-      const unitCost = item.unitCostExTax ?? 0;
-      const markupPct = item.markupPercent ?? 0;
-      const lineExTax = (item.priceIncTax ?? 0) - (item.taxAmount ?? 0);
-      const computedCost = unitCost * qty;
-      // Per-line markup applies only when qty * unit cost > 0; fixed-price (qty=0) lines
-      // count entirely as builder cost and contribute no line-item markup.
-      const lineCost = computedCost > 0 ? computedCost : lineExTax;
-      const lineMarkup = computedCost > 0 ? computedCost * (markupPct / 100) : 0;
-      builderCostTotal += lineCost;
-      lineItemMarkupTotal += lineMarkup;
-      clientTaxOnItems += item.taxAmount ?? 0;
-      clientAmountIncTaxTotal += item.priceIncTax ?? 0;
+    return computeEstimateSummary(items, {
+      projectMarkupPercent: estimate?.projectMarkupPercent,
+      taxRate: estimate?.taxRate,
     });
-
-    // Subtotal ex-tax = sum of all item amounts ex-tax (builder cost + per-item markups)
-    const subtotalExTax = Math.round((clientAmountIncTaxTotal - clientTaxOnItems) * 100) / 100;
-    const lineItemMarkupAmount = Math.round(lineItemMarkupTotal * 100) / 100;
-
-    // Global markup applied to the subtotal (second layer on top of item markups)
-    const globalMarkupAmount = Math.round(subtotalExTax * (projectMarkupPercent / 100) * 100) / 100;
-    const totalExTax = Math.round((subtotalExTax + globalMarkupAmount) * 100) / 100;
-    const gstAmount = Math.round(totalExTax * 0.10 * 100) / 100;
-    const total = Math.round((totalExTax + gstAmount) * 100) / 100;
-
-    return {
-      subtotal: Math.round(builderCostTotal * 100) / 100,
-      builderCostTotal: Math.round(builderCostTotal * 100) / 100,
-      lineItemMarkupAmount,
-      subtotalExTax,
-      globalMarkupPercent: projectMarkupPercent,
-      globalMarkupAmount,
-      totalExTax,
-      taxAmount: gstAmount,
-      total,
-      itemCount: items.length,
-      markupAmount: lineItemMarkupAmount,
-      subtotalWithMarkup: subtotalExTax,
-    };
   }
 
   // Company CRUD
@@ -9105,16 +9082,14 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
       }
       
-      const unitCostExTax = insertItem.unitCostExTax || 0;
-      const quantity = insertItem.quantity ?? 0;
-      const markupPercent = insertItem.markupPercent || 0;
-      const taxRate = estimate?.taxRate || 10;
-      const builderCostExTax = unitCostExTax * quantity;
-      const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
-      const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-      const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-      const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
-      
+      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        unitCostExTax: insertItem.unitCostExTax,
+        quantity: insertItem.quantity,
+        markupPercent: insertItem.markupPercent,
+        projectMarkupPercent: estimate?.projectMarkupPercent,
+        taxRate: estimate?.taxRate,
+      });
+
       const estimateItem = {
         ...insertItem,
         taxAmount,
@@ -9123,7 +9098,7 @@ export class DbStorage implements IStorage {
         status: insertItem.status || "pending",
         order: insertItem.order || 0,
       };
-      
+
       const result = await db.insert(schema.estimateItems).values(estimateItem).returning();
       return result[0];
     } catch (error) {
@@ -9144,18 +9119,15 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot create items in locked estimate. Unlock the estimate first.");
       }
 
-      const taxRate = estimate?.taxRate || 10;
-      
       const preparedItems = insertItems.map(insertItem => {
-        const unitCostExTax = insertItem.unitCostExTax || 0;
-        const quantity = insertItem.quantity ?? 0;
-        const markupPercent = insertItem.markupPercent || 0;
-        const builderCostExTax = unitCostExTax * quantity;
-        const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
-        const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-        const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-        const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
-        
+        const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+          unitCostExTax: insertItem.unitCostExTax,
+          quantity: insertItem.quantity,
+          markupPercent: insertItem.markupPercent,
+          projectMarkupPercent: estimate?.projectMarkupPercent,
+          taxRate: estimate?.taxRate,
+        });
+
         return {
           ...insertItem,
           taxAmount,
@@ -9582,15 +9554,27 @@ export class DbStorage implements IStorage {
         .where(eq(schema.estimateItems.groupId, groupId));
       
       for (const item of items) {
+        // Recompute price against the TARGET estimate's project markup + tax
+        // rate so cloned items don't carry stale cached cache values.
+        const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+          unitCostExTax: item.unitCostExTax,
+          quantity: item.quantity,
+          markupPercent: item.markupPercent,
+          projectMarkupPercent: targetEstimate.projectMarkupPercent,
+          taxRate: targetEstimate.taxRate,
+        });
+
         const newItemData = {
           ...item,
           id: undefined,
           estimateId: targetEstimateId,
           groupId: newGroup.id,
+          taxAmount,
+          priceIncTax,
           createdAt: undefined,
           updatedAt: undefined,
         };
-        
+
         await db
           .insert(schema.estimateItems)
           .values(newItemData);
@@ -10355,12 +10339,24 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
       }
 
+      // Recompute price against the TARGET estimate's project markup + tax
+      // rate so cloned items don't carry stale cached values.
+      const { taxAmount, lineIncTax: priceIncTax } = computeEstimateItemPrice({
+        unitCostExTax: item[0].unitCostExTax,
+        quantity: item[0].quantity,
+        markupPercent: item[0].markupPercent,
+        projectMarkupPercent: targetEstimate.projectMarkupPercent,
+        taxRate: targetEstimate.taxRate,
+      });
+
       // Create copy in target estimate (without group assignment)
       const newItemData = {
         ...item[0],
         id: undefined,
         estimateId: targetEstimateId,
         groupId: null, // Don't assign to a group in target estimate
+        taxAmount,
+        priceIncTax,
         createdAt: undefined,
         updatedAt: undefined,
       };
@@ -11046,53 +11042,10 @@ export class DbStorage implements IStorage {
     try {
       const items = await this.getEstimateItems(estimateId);
       const estimate = await this.getEstimate(estimateId);
-      const projectMarkupPercent = estimate?.projectMarkupPercent ?? 0;
-
-      let builderCostTotal = 0;
-      let lineItemMarkupTotal = 0;
-      let clientTaxOnItems = 0;
-      let clientAmountIncTaxTotal = 0;
-
-      items.forEach(item => {
-        const qty = item.quantity ?? 0;
-        const unitCost = item.unitCostExTax ?? 0;
-        const markupPct = item.markupPercent ?? 0;
-        const lineExTax = (item.priceIncTax ?? 0) - (item.taxAmount ?? 0);
-        const computedCost = unitCost * qty;
-        // Per-line markup applies only when qty * unit cost > 0; fixed-price (qty=0)
-        // lines count entirely as builder cost and contribute no line-item markup.
-        const lineCost = computedCost > 0 ? computedCost : lineExTax;
-        const lineMarkup = computedCost > 0 ? computedCost * (markupPct / 100) : 0;
-        builderCostTotal += lineCost;
-        lineItemMarkupTotal += lineMarkup;
-        clientTaxOnItems += item.taxAmount ?? 0;
-        clientAmountIncTaxTotal += item.priceIncTax ?? 0;
+      return computeEstimateSummary(items, {
+        projectMarkupPercent: estimate?.projectMarkupPercent,
+        taxRate: estimate?.taxRate,
       });
-
-      // Subtotal ex-tax = sum of all item amounts ex-tax (builder cost + per-item markups)
-      const subtotalExTax = Math.round((clientAmountIncTaxTotal - clientTaxOnItems) * 100) / 100;
-      const lineItemMarkupAmount = Math.round(lineItemMarkupTotal * 100) / 100;
-
-      // Global markup applied to the subtotal (second layer on top of item markups)
-      const globalMarkupAmount = Math.round(subtotalExTax * (projectMarkupPercent / 100) * 100) / 100;
-      const totalExTax = Math.round((subtotalExTax + globalMarkupAmount) * 100) / 100;
-      const gstAmount = Math.round(totalExTax * 0.10 * 100) / 100;
-      const total = Math.round((totalExTax + gstAmount) * 100) / 100;
-
-      return {
-        subtotal: Math.round(builderCostTotal * 100) / 100,
-        builderCostTotal: Math.round(builderCostTotal * 100) / 100,
-        lineItemMarkupAmount,
-        subtotalExTax,
-        globalMarkupPercent: projectMarkupPercent,
-        globalMarkupAmount,
-        totalExTax,
-        taxAmount: gstAmount,
-        total,
-        itemCount: items.length,
-        markupAmount: lineItemMarkupAmount,
-        subtotalWithMarkup: subtotalExTax,
-      };
     } catch (error) {
       console.error("Database error in getEstimateSummary:", error);
       return { subtotal: 0, builderCostTotal: 0, lineItemMarkupAmount: 0, subtotalExTax: 0, globalMarkupPercent: 0, globalMarkupAmount: 0, totalExTax: 0, taxAmount: 0, total: 0, itemCount: 0, markupAmount: 0, subtotalWithMarkup: 0 };

@@ -854,8 +854,8 @@ export const estimates = pgTable("estimates", {
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("draft"), // "draft" | "working" | "locked" | "approved"
   isLocked: boolean("is_locked").notNull().default(false),
-  projectMarkupPercent: integer("project_markup_percent").default(0), // Percentage as integer (10 = 10%)
-  taxRate: integer("tax_rate").default(10), // GST/Tax percentage (10 = 10%)
+  projectMarkupPercent: doublePrecision("project_markup_percent").default(0), // Percentage (10 = 10%, 7.5 = 7.5%)
+  taxRate: integer("tax_rate").default(10), // GST percentage (10 = 10%). Integer is fine — Australian GST is fixed at 10%.
   notes: text("notes"),
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"),
@@ -892,9 +892,12 @@ export const estimateItems = pgTable("estimate_items", {
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
-  markupPercent: integer("markup_percent"), // Optional item-specific markup percentage (10 = 10%). Falls back to project markup if null
-  taxAmount: doublePrecision("tax_amount").notNull().default(0), // Calculated tax amount in dollars
-  priceIncTax: doublePrecision("price_inc_tax").notNull().default(0), // Total price inc tax in dollars
+  markupPercent: doublePrecision("markup_percent"), // Optional item-specific markup % (e.g. 10, 7.5). Falls back to project markup if null
+  // taxAmount and priceIncTax are a denormalised cache of the line price.
+  // They are populated ONLY by computeEstimateItemPrice in shared/pricing.ts.
+  // Never compute or write these inline — always go through that function.
+  taxAmount: doublePrecision("tax_amount").notNull().default(0), // Cached: line tax amount in dollars (2dp)
+  priceIncTax: doublePrecision("price_inc_tax").notNull().default(0), // Cached: line total inc tax in dollars (2dp)
   description: text("description"),
   notes: text("notes"),
   attachmentUrl: text("attachment_url"), // File attachment path/URL

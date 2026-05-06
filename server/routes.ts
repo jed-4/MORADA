@@ -162,6 +162,7 @@ import {
   fuzzyMatchTimesheetUser,
   readTimesheetBreakFromRow,
 } from "@shared/import";
+import { computeEstimateItemPrice } from "@shared/pricing";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
@@ -4172,17 +4173,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const unitCostExTax = req.body.unitCostExTax || 0;
-      const quantity = req.body.quantity || 1;
+      const quantity = req.body.quantity ?? 0;
       const markupPercent = req.body.markupPercent ?? null;
-      
-      const builderCostExTax = Math.round(unitCostExTax * quantity * 100) / 100;
-      const effectiveMarkupPercent = markupPercent ?? 0;
-      const markupAmount = Math.round(builderCostExTax * (effectiveMarkupPercent / 100) * 100) / 100;
-      const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-      const taxRate = estimate.taxRate ?? 10;
-      const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-      const clientPriceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
-      
+
+      const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+        unitCostExTax,
+        quantity,
+        markupPercent,
+        projectMarkupPercent: estimate.projectMarkupPercent,
+        taxRate: estimate.taxRate,
+      });
+
       const itemData = {
         ...req.body,
         estimateId,
@@ -4190,7 +4191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         quantity,
         markupPercent,
         taxAmount,
-        priceIncTax: clientPriceIncTax,
+        priceIncTax: lineIncTax,
       };
       
       const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -4329,17 +4330,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const unitCostExTax = item.unitCostExTax || 0;
         const quantity = item.quantity ?? 0;
         const markupPercent = item.markupPercent ?? null;
-        
-        const round3i = (n: number) => Math.round(n * 1000) / 1000;
-        const round2i = (n: number) => Math.round(n * 100) / 100;
-        const builderCostExTax = round3i(unitCostExTax * quantity);
-        const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
-        const markupAmount = round3i(builderCostExTax * effectiveMarkupPercent / 100);
-        const clientPriceExTax = round3i(builderCostExTax + markupAmount);
-        const taxRate = estimate.taxRate ?? 10;
-        const taxAmount = round2i(clientPriceExTax * taxRate / 100);
-        const clientPriceIncTax = round2i(clientPriceExTax + taxAmount);
-        
+
+        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+          unitCostExTax,
+          quantity,
+          markupPercent,
+          projectMarkupPercent: estimate.projectMarkupPercent,
+          taxRate: estimate.taxRate,
+        });
+
         const itemData = {
           estimateId,
           name: item.name,
@@ -4356,7 +4355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           unitCostExTax,
           markupPercent,
           taxAmount,
-          priceIncTax: clientPriceIncTax,
+          priceIncTax: lineIncTax,
           description: item.description || undefined,
           notes: item.notes || undefined,
           attachmentUrl: undefined,
@@ -4527,14 +4526,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const unitCostExTax = item.unitCostExTax || 0;
           const quantity = item.quantity ?? 0;
-          const markupPercent = item.markupPercent ?? 0;
+          const markupPercent = item.markupPercent ?? null;
 
-          const builderCostExTax = Math.round(unitCostExTax * quantity * 100) / 100;
-          const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
-          const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
-          const taxRate = estimate.taxRate ?? 10;
-          const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
-          const clientPriceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
+          const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+            unitCostExTax,
+            quantity,
+            markupPercent,
+            projectMarkupPercent: estimate.projectMarkupPercent,
+            taxRate: estimate.taxRate,
+          });
 
           const itemData = {
             estimateId: estimate.id,
@@ -4547,7 +4547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             unitCostExTax,
             markupPercent,
             taxAmount,
-            priceIncTax: clientPriceIncTax,
+            priceIncTax: lineIncTax,
             allowance: item.allowance || "None",
             notes: item.notes || "",
             costCode: item.costCode || null,
@@ -4595,21 +4595,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const items = await storage.getEstimateItems(estimateId);
+      const estimate = await storage.getEstimate(estimateId);
       let updated = 0;
 
       for (const itemId of itemIds) {
         const item = items.find(i => i.id === itemId);
         if (!item) continue;
 
-        const builderCostRaw = item.unitCostExTax * item.quantity;
-        const amountExTax = Math.round(builderCostRaw * (1 + markupPercent / 100) * 100) / 100;
-        const gstAmount = Math.round(amountExTax * 0.10 * 100) / 100;
-        const priceIncTax = Math.round((amountExTax + gstAmount) * 100) / 100;
+        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+          unitCostExTax: item.unitCostExTax,
+          quantity: item.quantity,
+          markupPercent,
+          projectMarkupPercent: estimate?.projectMarkupPercent,
+          taxRate: estimate?.taxRate,
+        });
 
         await storage.updateEstimateItem(itemId, {
           markupPercent,
-          taxAmount: gstAmount,
-          priceIncTax,
+          taxAmount,
+          priceIncTax: lineIncTax,
         });
         updated++;
       }
@@ -4699,45 +4703,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const updateData: any = { ...req.body };
-      
-      const unitCostExTax = updateData.unitCostExTax !== undefined 
+
+      const unitCostExTax = updateData.unitCostExTax !== undefined
         ? updateData.unitCostExTax
         : existingItem.unitCostExTax;
-      
       const quantity = updateData.quantity !== undefined
         ? updateData.quantity
         : existingItem.quantity;
-      
       const markupPercent = updateData.markupPercent !== undefined
         ? updateData.markupPercent
         : existingItem.markupPercent;
-      
-      const round3 = (n: number) => Math.round(n * 1000) / 1000;
-      const round2 = (n: number) => Math.round(n * 100) / 100;
-      // Match the import path (POST /api/estimates/:id/items/import): when the
-      // item has no per-item markup, fall back to the estimate's project-level
-      // markup. Previously we used `markupPercent ?? 0`, which silently stripped
-      // the project markup from `priceIncTax` on every patch — so editing
-      // cost code / status / proposal visibility / allowance changed the price.
-      const builderCostExTax = round3((unitCostExTax || 0) * (quantity ?? 0));
-      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
-      const markupAmount = round3(builderCostExTax * effectiveMarkupPercent / 100);
-      const clientPriceExTax = round3(builderCostExTax + markupAmount);
-      const taxRate = estimate.taxRate ?? 10;
-      const taxAmount = round2(clientPriceExTax * taxRate / 100);
-      const clientPriceIncTax = round2(clientPriceExTax + taxAmount);
-      
-      if (updateData.unitCostExTax !== undefined) {
-        updateData.unitCostExTax = unitCostExTax;
-      }
-      if (updateData.quantity !== undefined) {
-        updateData.quantity = quantity;
-      }
-      if (updateData.markupPercent !== undefined) {
-        updateData.markupPercent = markupPercent;
-      }
+
+      // Single source of truth: shared/pricing.ts. This handles the
+      // project-markup fallback so partial patches (status, costCode,
+      // allowance, proposalVisible) never drift the price.
+      const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+        unitCostExTax,
+        quantity,
+        markupPercent,
+        projectMarkupPercent: estimate.projectMarkupPercent,
+        taxRate: estimate.taxRate,
+      });
+
       updateData.taxAmount = taxAmount;
-      updateData.priceIncTax = clientPriceIncTax;
+      updateData.priceIncTax = lineIncTax;
       
       const updateSchema = insertEstimateItemSchema.partial();
       const validationResult = updateSchema.safeParse(updateData);

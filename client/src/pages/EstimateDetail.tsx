@@ -59,6 +59,7 @@ import {
   ExternalLink
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
+import { computeEstimateItemPrice } from "@shared/pricing";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -2986,37 +2987,33 @@ export default function EstimateDetail() {
     }).format(amount);
   };
 
-  // Helper function to calculate two-tier pricing values
+  // Helper function to calculate two-tier pricing values.
+  // All math goes through the shared single-source-of-truth function in
+  // shared/pricing.ts — this is just an adapter that also exposes a couple
+  // of UI-only fields (unit cost inc tax, builder cost inc tax).
   const calculatePricingValues = (item: EstimateItem) => {
-    const round3 = (n: number) => Math.round(n * 1000) / 1000;
     const taxRate = estimate?.taxRate ?? 10;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
 
-    // Unit cost with tax
-    const unitCostTax = round3(item.unitCostExTax * taxRate / 100);
-    const unitCostIncTax = round3(item.unitCostExTax + unitCostTax);
+    const priced = computeEstimateItemPrice({
+      unitCostExTax: item.unitCostExTax,
+      quantity: item.quantity,
+      markupPercent: item.markupPercent,
+      projectMarkupPercent: estimate?.projectMarkupPercent,
+      taxRate,
+    });
 
-    // Builder's cost (what builder pays)
-    const builderCost = round3(item.unitCostExTax * item.quantity);
-
-    // Builder's cost with tax
-    const builderCostTax = round3(builderCost * taxRate / 100);
-    const builderCostIncTax = round3(builderCost + builderCostTax);
-
-    // Markup — always calculate fresh from the effective markup percent
-    const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
-    const markupAmount = round3(builderCost * markupPercent / 100);
-    const clientPriceExTax = round3(builderCost + markupAmount);
-    const clientTax = round3(clientPriceExTax * taxRate / 100);
-    const clientPriceIncTax = round3(clientPriceExTax + clientTax);
+    const unitCostIncTax = round2(item.unitCostExTax * (1 + taxRate / 100));
+    const builderCostIncTax = round2(priced.builderCost * (1 + taxRate / 100));
 
     return {
-      unitCostIncTax, // in dollars
-      builderCost, // in dollars
-      builderCostIncTax, // in dollars
-      markupPercent, // percentage (10 = 10%)
-      clientPriceExTax, // in dollars
-      clientTax, // in dollars
-      clientPriceIncTax // in dollars
+      unitCostIncTax,
+      builderCost: priced.builderCost,
+      builderCostIncTax,
+      markupPercent: priced.effectiveMarkupPercent,
+      clientPriceExTax: priced.lineExTax,
+      clientTax: priced.taxAmount,
+      clientPriceIncTax: priced.lineIncTax,
     };
   };
 
