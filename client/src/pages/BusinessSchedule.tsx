@@ -246,17 +246,17 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
                         height: WEEK_ITEM_H,
                         backgroundColor: fill,
                         opacity: isCompany ? 1 : 0.85,
-                        paddingLeft: isCompany ? 4 : 6,
+                        paddingLeft: isCompany ? 0 : 6,
                         paddingRight: 6,
                       }}
                       data-testid={`week-item-${item.id}`}
                     >
                       {isCompany && (
                         <span
-                          className="rounded-[3px] shrink-0"
+                          className="rounded-sm shrink-0"
                           style={{
-                            width: 14,
-                            height: 14,
+                            width: WEEK_ITEM_H,
+                            height: WEEK_ITEM_H,
                             backgroundColor: darkenHex(fill, 0.4),
                           }}
                           aria-hidden="true"
