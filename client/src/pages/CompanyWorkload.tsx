@@ -751,8 +751,8 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 <div
                   style={{ height: rowHeight }}
                   className={cn(
-                    "flex items-start px-2 gap-1.5 border-b pt-2",
-                    isCompanyRow ? "border-border/60 bg-muted/30" : "border-border/30"
+                    "flex items-start px-2 gap-1.5 border-b-2 pt-2",
+                    isCompanyRow ? "border-border bg-muted/30" : "border-border/70"
                   )}
                 >
                   {hasMultipleItems ? (
@@ -930,7 +930,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                 return (
                   <div key={row.id}>
                   <div
-                    className={cn("relative border-b", isCompanyRow ? "border-border/40 bg-muted/10" : "border-border/10")}
+                    className={cn("relative border-b-2", isCompanyRow ? "border-border bg-muted/10" : "border-border/70")}
                     style={{ height: rowHeight }}
                   >
                     {days.map((day, dayIdx) => {
