@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronRight as ChevronRightIcon, Users, BarChart3, GanttChart, Filter, Calendar, ExternalLink, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
