@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical, EyeOff } from "lucide-react";
@@ -136,7 +137,7 @@ const WEEK_ITEM_H = 22;
 const WEEK_ITEM_GAP = 3;
 const WEEK_ROW_PAD = 6;
 
-function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor, onNavigate, dragHandleProps }: {
+function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor, onNavigate, dragHandleProps, items: providedItems }: {
   project: BusinessProject;
   weekDays: Date[];
   todayStr: string;
@@ -144,10 +145,17 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
   companyColor: string;
   onNavigate: (id: string) => void;
   dragHandleProps?: { attributes: any; listeners: any };
+  items?: WeekScheduleItem[];
 }) {
-  const { data: items = [] } = useQuery<WeekScheduleItem[]>({
+  // When the parent already fetched items (Week view does this in bulk via
+  // useQueries to know which rows to render), reuse them instead of firing a
+  // duplicate query. React Query would dedupe by key anyway, but this is
+  // clearer.
+  const { data: fetchedItems = [] } = useQuery<WeekScheduleItem[]>({
     queryKey: ['/api/business-schedule/projects', project.id, 'schedule-items'],
+    enabled: providedItems === undefined,
   });
+  const items = providedItems ?? fetchedItems;
 
   // Show all items except group/summary headers (which have no meaningful date span of their own)
   const baseItems = items.filter(item => item.type !== 'group');
@@ -463,7 +471,7 @@ export default function BusinessSchedule() {
     try {
       await Promise.all(
         hidden.map(p =>
-          apiRequest("PATCH", `/api/business-schedule/projects/${p.id}`, { isVisible: true })
+          apiRequest(`/api/business-schedule/projects/${p.id}`, "PATCH", { isVisible: true })
         )
       );
     } catch (err) {
@@ -503,6 +511,64 @@ export default function BusinessSchedule() {
       return ai - bi;
     });
   }, [visibleProjects, localOrder]);
+
+  // Bulk-fetch schedule items for every visible project so the Week view can
+  // hide rows that have no items in the current week. Only enabled in Week
+  // view to avoid extra requests on the other tabs.
+  const weekItemsQueries = useQueries({
+    queries: orderedVisibleProjects.map(p => ({
+      queryKey: ['/api/business-schedule/projects', p.id, 'schedule-items'],
+      enabled: viewMode === 'week',
+    })),
+  });
+  const weekItemsByProject = useMemo(() => {
+    const m = new Map<string, WeekScheduleItem[]>();
+    orderedVisibleProjects.forEach((p, i) => {
+      const data = weekItemsQueries[i]?.data as WeekScheduleItem[] | undefined;
+      if (data) m.set(p.id, data);
+    });
+    return m;
+  }, [orderedVisibleProjects, weekItemsQueries]);
+
+  // Filter-button state: how many filters are non-default? Used for the badge
+  // count next to the new single Filter button in the Week toolbar.
+  const hiddenProjectsCount = useMemo(
+    () => projects.filter(p => !p.isVisible).length,
+    [projects],
+  );
+  const activeFilterCount =
+    (weekCompanyOnly ? 1 : 0) +
+    (showOnline ? 0 : 1) +
+    (showProspective ? 0 : 1) +
+    (showOffline ? 1 : 0) +
+    hiddenProjectsCount;
+
+  // Reset to the Week-view canonical defaults (matches activeFilterCount === 0).
+  // We can't reuse showAllProjects() here because it flips Offline ON, which
+  // the new filter UX treats as a non-default state — that would leave the
+  // badge stuck at 1 right after pressing Reset. Instead we explicitly set
+  // each control and then unhide projects on the server.
+  const resetWeekFilters = useCallback(async () => {
+    setWeekCompanyOnly(false);
+    setShowOnline(true);
+    setShowOffline(false);
+    setShowProspective(true);
+    setScheduleTypeFilter('all');
+    const hidden = projects.filter(p => !p.isVisible);
+    if (hidden.length === 0) return;
+    try {
+      await Promise.all(
+        hidden.map(p =>
+          apiRequest(`/api/business-schedule/projects/${p.id}`, "PATCH", { isVisible: true })
+        )
+      );
+    } catch (err) {
+      console.error("Failed to reset filters / unhide projects", err);
+      toast({ title: "Some projects could not be shown", variant: "destructive" });
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
+    }
+  }, [projects, toast]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -662,13 +728,25 @@ export default function BusinessSchedule() {
     today.setHours(0, 0, 0, 0);
     const todayStr = format(today, 'yyyy-MM-dd');
 
-    const activeProjectsThisWeek = orderedVisibleProjects.filter(p => {
-      const dates = getProjectDates(p);
-      if (!dates.start || !dates.end) return false;
-      const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
-      const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
-      return s <= weekEnd && e >= weekStart;
+    // Hide projects with no leaf items overlapping this week. Group/summary
+    // headers don't count. With Company-only on, only company items count.
+    // While items are still loading for a project, keep it visible so rows
+    // don't pop in/out — once data arrives the filter applies cleanly.
+    const projectsWithItemsThisWeek = orderedVisibleProjects.filter(p => {
+      const items = weekItemsByProject.get(p.id);
+      if (!items) return true;
+      const candidates = (weekCompanyOnly ? items.filter(isCompanyItem) : items)
+        .filter(i => i.type !== 'group');
+      return candidates.some(item => {
+        if (!item.startDate || !item.endDate) return false;
+        const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
+        const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
+        return s <= weekEnd && e >= weekStart;
+      });
     });
+
+    const activeProjectsThisWeek = projectsWithItemsThisWeek;
+    const hiddenForEmptyWeek = orderedVisibleProjects.length - projectsWithItemsThisWeek.length;
 
     return (
       <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
@@ -686,73 +764,129 @@ export default function BusinessSchedule() {
                 onClick={() => setWeekSwimlaneGroup('assignee')}
               >By Assignee</button>
             </div>
-            <button
-              data-testid="toggle-week-company-only"
-              aria-pressed={weekCompanyOnly}
-              className={cn(
-                "h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate",
-                weekCompanyOnly ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground"
-              )}
-              onClick={() => setWeekCompanyOnly(v => !v)}
-            >
-              <span className={cn("inline-block w-2.5 h-2.5 rounded-sm", weekCompanyOnly ? "bg-primary" : "bg-muted")} />
-              Company only
-            </button>
-
-            {/* Category visibility toggles — same as Projects view so users
-                in Week view can see/adjust why projects might be hidden. */}
-            <button
-              data-testid="toggle-week-online"
-              aria-pressed={showOnline}
-              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-status-info dark:text-blue-300 bg-status-info-bg' : 'border-border text-muted-foreground'}`}
-              onClick={() => setShowOnline(v => !v)}
-            >
-              <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
-              Online
-            </button>
-            <button
-              data-testid="toggle-week-offline"
-              aria-pressed={showOffline}
-              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOffline ? 'border-amber-600 text-amber-700 dark:text-amber-300 bg-amber-500/10' : 'border-border text-muted-foreground'}`}
-              onClick={() => setShowOffline(v => !v)}
-            >
-              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed ${showOffline ? 'border-amber-600' : 'border-muted-foreground/40'}`} />
-              Offline
-            </button>
-            <button
-              data-testid="toggle-week-prospective"
-              aria-pressed={showProspective}
-              className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-border-strong text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
-              onClick={() => setShowProspective(v => !v)}
-            >
-              <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-border-strong' : 'border-muted-foreground/40'}`} />
-              Prospective
-            </button>
-
-            {/* Project visibility filter (per-project show/hide). */}
+            {/* Single Filter button — collapses Company-only, the three
+                category toggles, and the per-project visibility list. */}
             <Popover open={showFilter} onOpenChange={setShowFilter}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" data-testid="button-week-filter-projects">
-                  <Filter className="w-4 h-4" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs gap-1.5"
+                  data-testid="button-week-filter"
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <Badge
+                      variant="secondary"
+                      className="h-4 min-w-4 px-1 text-[10px] tabular-nums"
+                      data-testid="badge-week-filter-count"
+                    >
+                      {activeFilterCount}
+                    </Badge>
+                  )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-72 max-h-80 overflow-y-auto">
-                <div className="text-xs font-medium mb-2">Show Projects</div>
-                {projects.map(p => (
-                  <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
-                    <Checkbox
-                      checked={p.isVisible}
-                      onCheckedChange={(checked) => {
-                        updateProjectMutation.mutate({ projectId: p.id, isVisible: !!checked });
-                      }}
-                    />
-                    <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
-                    <span className="text-xs truncate">{p.name}</span>
-                    <Badge variant="outline" className="ml-auto text-label h-4 px-1 capitalize shrink-0">
-                      {p.category}
-                    </Badge>
-                  </label>
-                ))}
+              <PopoverContent align="start" className="w-80 p-0">
+                <div className="max-h-[28rem] overflow-y-auto">
+                  {/* Item filters */}
+                  <div className="px-3 py-3 border-b border-border">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      Item filters
+                    </div>
+                    <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                      <span className="text-xs">Company only</span>
+                      <Switch
+                        checked={weekCompanyOnly}
+                        onCheckedChange={setWeekCompanyOnly}
+                        data-testid="switch-week-company-only"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Project categories */}
+                  <div className="px-3 py-3 border-b border-border">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      Project categories
+                    </div>
+                    <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                      <span className="flex items-center gap-2 text-xs">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+                        Online
+                      </span>
+                      <Switch
+                        checked={showOnline}
+                        onCheckedChange={setShowOnline}
+                        data-testid="switch-week-online"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                      <span className="flex items-center gap-2 text-xs">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber-600" />
+                        Offline
+                      </span>
+                      <Switch
+                        checked={showOffline}
+                        onCheckedChange={setShowOffline}
+                        data-testid="switch-week-offline"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                      <span className="flex items-center gap-2 text-xs">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted border-border-strong" />
+                        Prospective
+                      </span>
+                      <Switch
+                        checked={showProspective}
+                        onCheckedChange={setShowProspective}
+                        data-testid="switch-week-prospective"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Per-project visibility */}
+                  <div className="px-3 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      Show projects
+                    </div>
+                    {projects.length === 0 ? (
+                      <div className="text-xs text-muted-foreground py-1">No projects.</div>
+                    ) : (
+                      projects.map(p => (
+                        <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                          <Checkbox
+                            checked={p.isVisible}
+                            onCheckedChange={(checked) => {
+                              updateProjectMutation.mutate({ projectId: p.id, isVisible: !!checked });
+                            }}
+                            data-testid={`checkbox-week-project-${p.id}`}
+                          />
+                          <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
+                          <span className="text-xs truncate flex-1">{p.name}</span>
+                          <Badge variant="outline" className="text-label h-4 px-1 capitalize shrink-0">
+                            {p.category}
+                          </Badge>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+                {/* Reset footer */}
+                <div className="border-t border-border px-3 py-2 flex items-center justify-between">
+                  <span className="text-[11px] text-muted-foreground">
+                    {activeFilterCount === 0 ? 'No filters active' : `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active`}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={resetWeekFilters}
+                    disabled={activeFilterCount === 0}
+                    data-testid="button-week-filter-reset"
+                  >
+                    Reset
+                  </Button>
+                </div>
               </PopoverContent>
             </Popover>
 
@@ -827,10 +961,12 @@ export default function BusinessSchedule() {
                 );
               })}
             </div>
-            {/* Project rows — each row fetches its own items. Reorder shares sortOrder with the main Projects view. */}
+            {/* Project rows — items already fetched in bulk above and passed
+                down so each row doesn't refetch. Reorder shares sortOrder
+                with the main Projects view. */}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={orderedVisibleProjects.map(p => p.id)} strategy={verticalListSortingStrategy}>
-                {orderedVisibleProjects.map(project => (
+              <SortableContext items={projectsWithItemsThisWeek.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                {projectsWithItemsThisWeek.map(project => (
                   <SortableProjectWeekRow
                     key={project.id}
                     id={project.id}
@@ -840,13 +976,32 @@ export default function BusinessSchedule() {
                     companyOnly={weekCompanyOnly}
                     companyColor=""
                     onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
+                    items={weekItemsByProject.get(project.id)}
                   />
                 ))}
               </SortableContext>
             </DndContext>
-            {orderedVisibleProjects.length === 0 && (
+            {orderedVisibleProjects.length === 0 ? (
               <div className="p-4 text-xs text-muted-foreground text-center">No projects visible.</div>
-            )}
+            ) : projectsWithItemsThisWeek.length === 0 ? (
+              <div className="p-6 text-xs text-muted-foreground text-center space-y-2">
+                <div>No projects have schedule items this week.</div>
+                {hiddenForEmptyWeek > 0 && (
+                  <div className="text-[11px]">
+                    {hiddenForEmptyWeek} project{hiddenForEmptyWeek === 1 ? '' : 's'} hidden because nothing is scheduled in this range.
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setShowFilter(true)}
+                  data-testid="button-week-empty-open-filter"
+                >
+                  Open filter
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
