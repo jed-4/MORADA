@@ -389,6 +389,11 @@ export default function MasterScheduleGantt({ className }: { className?: string 
     [projects, showOffline]
   );
   const hiddenCount = projects.length - allVisibleProjects.length;
+  // Filter button shows an active state only when something is actually being
+  // filtered out — i.e. one or more projects hidden via the per-project list.
+  // The "Show offline" toggle defaults to off (offline hidden by default), so
+  // toggling it on is "showing more", not filtering.
+  const isFiltered = hiddenCount > 0;
 
   const visibleProjects = useMemo(() => {
     return allVisibleProjects.filter((p) => {
@@ -497,17 +502,34 @@ export default function MasterScheduleGantt({ className }: { className?: string 
         <div className="flex items-center gap-2">
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative" aria-label="Filter">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Filter"
+                className={isFiltered ? "toggle-elevate toggle-elevated" : ""}
+              >
                 <Filter className="w-4 h-4" />
-                {hiddenCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-label rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
-                    {hiddenCount}
-                  </span>
-                )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 max-h-80 overflow-y-auto">
-              <div className="text-xs font-medium mb-2">Show Projects</div>
+            <PopoverContent align="start" className="w-64 max-h-96 overflow-y-auto">
+              <div className="mb-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Item filters
+                </div>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
+                    Show offline
+                  </span>
+                  <Checkbox
+                    checked={showOffline}
+                    onCheckedChange={(checked) => setShowOffline(!!checked)}
+                  />
+                </label>
+              </div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Show projects
+              </div>
               {projects.map((p) => (
                 <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
                   <Checkbox
@@ -534,14 +556,6 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               </button>
             ))}
           </div>
-
-          <button
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
-            onClick={() => setShowOffline(v => !v)}
-          >
-            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
-            Offline
-          </button>
         </div>
 
         <div className="flex items-center gap-1">
