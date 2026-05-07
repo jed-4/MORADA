@@ -137,6 +137,19 @@ const WEEK_ITEM_H = 22;
 const WEEK_ITEM_GAP = 3;
 const WEEK_ROW_PAD = 6;
 
+// Darken a hex color by mixing it toward black. Used for the company-item
+// indicator chip so it reads as "same colour, just stronger".
+function darkenHex(hex: string, amount = 0.35): string {
+  const m = hex.replace('#', '');
+  const full = m.length === 3 ? m.split('').map(c => c + c).join('') : m;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  const mix = (c: number) => Math.max(0, Math.min(255, Math.round(c * (1 - amount))));
+  const toHex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
 function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor, onNavigate, dragHandleProps, items: providedItems }: {
   project: BusinessProject;
   weekDays: Date[];
@@ -228,17 +241,27 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
                     <div
-                      className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative"
+                      className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative gap-1.5"
                       style={{
                         height: WEEK_ITEM_H,
                         backgroundColor: fill,
                         opacity: isCompany ? 1 : 0.85,
-                        boxShadow: isCompany ? 'inset 3px 0 0 rgba(0,0,0,0.35)' : undefined,
-                        paddingLeft: isCompany ? 8 : 6,
+                        paddingLeft: isCompany ? 4 : 6,
                         paddingRight: 6,
                       }}
                       data-testid={`week-item-${item.id}`}
                     >
+                      {isCompany && (
+                        <span
+                          className="rounded-[3px] shrink-0"
+                          style={{
+                            width: 14,
+                            height: 14,
+                            backgroundColor: darkenHex(fill, 0.4),
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
                       <span className="text-table text-white font-medium truncate leading-none">{item.name}</span>
                     </div>
                   </TooltipTrigger>
