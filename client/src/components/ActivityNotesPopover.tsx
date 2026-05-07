@@ -119,16 +119,57 @@ export function ActivityNotesPopover({
     : totalCount;
   const hasNotes = effectiveCount > 0;
 
+  // Track unread state in localStorage per schedule item. Anything with more
+  // notes than the user has previously seen is treated as "new". Opening the
+  // popover marks them as read.
+  const seenStorageKey = `activity-notes:seen:${scheduleItemId}`;
+  const [seenCount, setSeenCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const stored = window.localStorage.getItem(seenStorageKey);
+    return stored ? parseInt(stored, 10) || 0 : 0;
+  });
+  const hasUnread = hasNotes && effectiveCount > seenCount;
+
+  // Reload seen count when the schedule item (and therefore the storage key) changes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(seenStorageKey);
+    setSeenCount(stored ? parseInt(stored, 10) || 0 : 0);
+  }, [seenStorageKey]);
+
+  // Keep multiple tabs in sync.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: StorageEvent) => {
+      if (e.key !== seenStorageKey) return;
+      setSeenCount(e.newValue ? parseInt(e.newValue, 10) || 0 : 0);
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, [seenStorageKey]);
+
+  useEffect(() => {
+    if (isOpen && effectiveCount > seenCount) {
+      window.localStorage.setItem(seenStorageKey, String(effectiveCount));
+      setSeenCount(effectiveCount);
+    }
+  }, [isOpen, effectiveCount, seenCount, seenStorageKey]);
+
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className={`h-6 w-6 ${hasNotes ? "" : "text-muted-foreground"}`}
+          className={`h-6 w-6 ${hasUnread ? "text-primary" : hasNotes ? "text-primary" : "text-muted-foreground/50"}`}
           data-testid="button-activity-notes"
+          aria-label={hasUnread ? "Activity notes (unread)" : hasNotes ? "Activity notes" : "Add activity note"}
         >
-          <MessageSquare className={`h-4 w-4 ${hasNotes ? "fill-primary text-primary" : ""}`} />
+          <MessageSquare
+            className={`h-4 w-4 ${
+              hasUnread ? "fill-primary text-primary" : hasNotes ? "text-primary" : ""
+            }`}
+          />
         </Button>
       </PopoverTrigger>
       <PopoverContent 

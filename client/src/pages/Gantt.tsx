@@ -2906,8 +2906,8 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         <div
                           key={`${week.weekLabel}-${dayIdx}`}
                           className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
-                            day.isWeekend ? 'bg-muted/30' : ''
-                          } ${isToday ? 'text-primary font-semibold' : 'text-foreground'}`}
+                            isToday ? 'bg-primary/20 text-primary font-semibold' : day.isWeekend ? 'bg-muted/30 text-foreground' : 'text-foreground'
+                          }`}
                           style={{ width: `${day.widthPx}px` }}
                         >
                           {day.label}
@@ -2937,19 +2937,20 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
 
             {/* Timeline Bars - minHeight ensures scroll area matches left panel (pb-20 = 80px matches left panel padding) */}
             <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT + 80}px` }}>
-              {/* Weekend column backgrounds */}
+              {/* Weekend + today column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 left-0 right-0 pointer-events-none z-0" style={{ height: `${orderedItems.length * ROW_HEIGHT}px` }}>
                   {groupedTimelineHeaders.flatMap(week =>
                     week.days.map((day, dayIdx) => {
-                      if (!day.isWeekend) return null;
+                      const isTodayCol = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                      if (!day.isWeekend && !isTodayCol) return null;
                       const previousDays = groupedTimelineHeaders
                         .slice(0, groupedTimelineHeaders.indexOf(week))
                         .reduce((sum, w) => sum + w.days.length, 0) + dayIdx;
                       return (
                         <div
-                          key={`weekend-${week.weekLabel}-${dayIdx}`}
-                          className="absolute top-0 bg-muted/30"
+                          key={`col-bg-${week.weekLabel}-${dayIdx}`}
+                          className={`absolute top-0 ${isTodayCol ? 'bg-primary/15' : 'bg-muted/30'}`}
                           style={{
                             left: `${previousDays * pixelsPerDay}px`,
                             width: `${pixelsPerDay}px`,
