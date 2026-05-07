@@ -10,9 +10,11 @@ import {
   PieChart,
   Gauge,
   GitBranch,
+  Wallet,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import BusinessKPIsWidget from "./BusinessKPIsWidget";
+import BusinessCashFlowWidget from "./BusinessCashFlowWidget";
 import BusinessActivityWidget from "./BusinessActivityWidget";
 import BusinessProjectsWidget from "./BusinessProjectsWidget";
 import BusinessFinancialsWidget from "./BusinessFinancialsWidget";
@@ -161,6 +163,20 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     requiredPermission: { key: "financial.invoices", action: "view" },
     defaultColumns: 4,
     defaultRowSpan: 3,
+  },
+  businessCashFlow: {
+    type: "businessCashFlow",
+    name: "Cash Flow",
+    description: "Company-wide money in vs money out trend over the last 6 months",
+    icon: Wallet,
+    component: BusinessCashFlowWidget,
+    defaultSize: "lg",
+    configurable: false,
+    accent: "green",
+    financialGated: true,
+    requiredPermission: { key: "financial.invoices", action: "view" },
+    defaultColumns: 5,
+    defaultRowSpan: 2,
   },
   businessVariationsPending: {
     type: "businessVariationsPending",

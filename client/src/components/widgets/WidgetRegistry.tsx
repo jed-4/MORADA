@@ -9,7 +9,18 @@ import {
   FileEdit,
   Zap,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Hammer,
+  Inbox,
+  Newspaper,
+  Wallet,
+  TrendingUp,
+  HardHat,
+  GanttChart,
+  FolderOpen,
+  StickyNote,
+  Gauge,
+  MailCheck,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
@@ -24,6 +35,17 @@ import InvoicesSummaryWidget from "./InvoicesSummaryWidget";
 import QuickActionsWidget from "./QuickActionsWidget";
 import AlertsWidget from "./AlertsWidget";
 import AISummaryWidget from "./AISummaryWidget";
+import SubcontractorsWidget from "./SubcontractorsWidget";
+import OpenItemsWidget from "./OpenItemsWidget";
+import RecentActivityFeedWidget from "./RecentActivityFeedWidget";
+import ProjectBudgetVsActualWidget from "./ProjectBudgetVsActualWidget";
+import ProjectCashFlowWidget from "./ProjectCashFlowWidget";
+import ClientActivityWidget from "./ClientActivityWidget";
+import WhoIsOnSiteWidget from "./WhoIsOnSiteWidget";
+import ProgrammeScheduleWidget from "./ProgrammeScheduleWidget";
+import ProjectDocumentsWidget from "./ProjectDocumentsWidget";
+import QuickNotesWidget from "./QuickNotesWidget";
+import ProjectHealthScoreWidget from "./ProjectHealthScoreWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -133,6 +155,142 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     component: AISummaryWidget,
     defaultSize: "md",
     configurable: false,
+  },
+  subcontractors: {
+    type: "subcontractors",
+    name: "Subcontractors",
+    description: "Trade contacts assigned to this project with click-to-call",
+    icon: Hammer,
+    component: SubcontractorsWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "teal",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  openItems: {
+    type: "openItems",
+    name: "Open Items",
+    description: "Counts of open tasks, defects, pending variations, and RFIs",
+    icon: Inbox,
+    component: OpenItemsWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "amber",
+    defaultColumns: 3,
+    defaultRowSpan: 2,
+  },
+  recentActivityFeed: {
+    type: "recentActivityFeed",
+    name: "Recent Activity Feed",
+    description: "Latest activity across the project at a glance",
+    icon: Newspaper,
+    component: RecentActivityFeedWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  budgetVsActual: {
+    type: "budgetVsActual",
+    name: "Budget vs Actual",
+    description: "Project budget, actual spend, forecast and variance",
+    icon: BarChart3,
+    component: ProjectBudgetVsActualWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "financial",
+    financialGated: true,
+    requiredPermission: { key: "financial.budget", action: "view" },
+    defaultColumns: 3,
+    defaultRowSpan: 2,
+  },
+  projectCashFlow: {
+    type: "projectCashFlow",
+    name: "Project Cash Flow",
+    description: "Money in vs money out for this project with weekly confirmation",
+    icon: Wallet,
+    component: ProjectCashFlowWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "green",
+    financialGated: true,
+    requiredPermission: { key: "financial.invoices", action: "view" },
+    defaultColumns: 3,
+    defaultRowSpan: 2,
+  },
+  clientActivity: {
+    type: "clientActivity",
+    name: "Client Activity",
+    description: "Client-portal events: invoices, proposals, variations sent and accepted",
+    icon: MailCheck,
+    component: ClientActivityWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  whoOnSite: {
+    type: "whoOnSite",
+    name: "Who's On Site",
+    description: "People clocked in today with totals and live indicator",
+    icon: HardHat,
+    component: WhoIsOnSiteWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "teal",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  programme: {
+    type: "programme",
+    name: "Programme (next 7 days)",
+    description: "Upcoming schedule items and milestones for the next 7 days",
+    icon: GanttChart,
+    component: ProgrammeScheduleWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "schedule",
+    defaultColumns: 4,
+    defaultRowSpan: 3,
+  },
+  documents: {
+    type: "documents",
+    name: "Project Documents",
+    description: "Files in the linked Google Drive folder for this project",
+    icon: FolderOpen,
+    component: ProjectDocumentsWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
+  },
+  quickNotes: {
+    type: "quickNotes",
+    name: "Quick Notes",
+    description: "Notion-like quick blocks: heading, text, bullet, and to-do",
+    icon: StickyNote,
+    component: QuickNotesWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "amber",
+    defaultColumns: 3,
+    defaultRowSpan: 4,
+  },
+  healthScore: {
+    type: "healthScore",
+    name: "Project Health Score",
+    description: "Composite 0-100 score from budget, schedule and quality with month-over-month trend",
+    icon: Gauge,
+    component: ProjectHealthScoreWidget,
+    defaultSize: "md",
+    configurable: false,
+    accent: "green",
+    defaultColumns: 3,
+    defaultRowSpan: 2,
   },
 };
 
