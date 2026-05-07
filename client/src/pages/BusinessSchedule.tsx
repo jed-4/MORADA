@@ -1126,8 +1126,18 @@ export default function BusinessSchedule() {
             </div>
           </PopoverContent>
         </Popover>
-        {/* Legend — inline in the toolbar between Filter and zoom controls */}
-        <div className="flex items-center gap-4 ml-2 mr-auto">
+        <div className="flex items-center border rounded-md overflow-hidden">
+          <button
+            className={`h-7 px-2.5 text-xs ${zoomLevel === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+            onClick={() => setZoomLevel('week')}
+          >Week</button>
+          <button
+            className={`h-7 px-2.5 text-xs ${zoomLevel === 'month' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+            onClick={() => setZoomLevel('month')}
+          >Month</button>
+        </div>
+        {/* Legend — right-aligned */}
+        <div className="flex items-center gap-4 ml-auto">
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-1.5 cursor-default">
@@ -1161,16 +1171,6 @@ export default function BusinessSchedule() {
               <p className="text-xs">Lead or pre-construction projects not yet confirmed</p>
             </TooltipContent>
           </Tooltip>
-        </div>
-        <div className="flex items-center border rounded-md overflow-hidden">
-          <button
-            className={`h-7 px-2.5 text-xs ${zoomLevel === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-            onClick={() => setZoomLevel('week')}
-          >Week</button>
-          <button
-            className={`h-7 px-2.5 text-xs ${zoomLevel === 'month' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-            onClick={() => setZoomLevel('month')}
-          >Month</button>
         </div>
       </div>
 
