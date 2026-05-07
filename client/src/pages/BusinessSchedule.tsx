@@ -1135,6 +1135,42 @@ export default function BusinessSchedule() {
             </div>
           </PopoverContent>
         </Popover>
+        {/* Legend — inline in the toolbar between Filter and zoom controls */}
+        <div className="flex items-center gap-4 ml-2 mr-auto">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 cursor-default">
+                <div className="w-5 h-3 rounded-sm bg-blue-500" />
+                <span className="text-data text-muted-foreground">Online</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">Schedule is published and visible to external users</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 cursor-default">
+                <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
+                <span className="text-data text-muted-foreground">Offline</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">Schedule is hidden from external users</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 cursor-default">
+                <div className="w-5 h-3 rounded-sm border-2 border-dotted border-border-strong" />
+                <span className="text-data text-muted-foreground">Prospective</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">Lead or pre-construction projects not yet confirmed</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <div className="flex items-center border rounded-md overflow-hidden">
           <button
             className={`h-7 px-2.5 text-xs ${zoomLevel === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
@@ -1145,43 +1181,6 @@ export default function BusinessSchedule() {
             onClick={() => setZoomLevel('month')}
           >Month</button>
         </div>
-      </div>
-
-      {/* Legend */}
-      <div className="h-8 flex items-center px-3 gap-4 border-b border-border/50 flex-shrink-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 cursor-default">
-              <div className="w-5 h-3 rounded-sm bg-blue-500" />
-              <span className="text-data text-muted-foreground">Online</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p className="text-xs">Schedule is published and visible to external users</p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 cursor-default">
-              <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
-              <span className="text-data text-muted-foreground">Offline</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p className="text-xs">Schedule is hidden from external users</p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 cursor-default">
-              <div className="w-5 h-3 rounded-sm border-2 border-dotted border-border-strong" />
-              <span className="text-data text-muted-foreground">Prospective</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p className="text-xs">Lead or pre-construction projects not yet confirmed</p>
-          </TooltipContent>
-        </Tooltip>
       </div>
 
       {/* Main content */}
