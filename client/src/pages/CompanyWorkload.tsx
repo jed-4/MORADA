@@ -753,7 +753,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
           </Button>
         </div>
       </div>
-
       <div className="flex flex-1 overflow-hidden">
         <div
           ref={leftPanelRef}
@@ -920,7 +919,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                         </TooltipContent>
                       </Tooltip>
-                      <div className={cn("text-data font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className="font-medium text-muted-foreground text-[12px]">
                         {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                       </div>
                       <div className={cn("text-data font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
