@@ -279,7 +279,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
     });
   }, []);
 
-  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0) + (hidePreconstructionSchedule ? 1 : 0);
+  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0) + (hidePreconstructionSchedule ? 1 : 0) + (!showBusiness ? 1 : 0) + (!showSuppliers ? 1 : 0);
 
   const { companyRow, contactRows, unassignedRow } = useMemo(() => {
     const contactMap = new Map<string, ContactRow>();
@@ -580,40 +580,37 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               </button>
             </div>
           )}
-          {/* Business / Suppliers / Unassigned toggles */}
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              className={`h-7 px-2.5 text-xs ${showBusiness ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
-              onClick={() => setShowBusiness((v) => !v)}
-            >
-              {businessLabel}
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs border-l ${showSuppliers ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
-              onClick={() => setShowSuppliers((v) => !v)}
-            >
-              Suppliers
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs border-l ${!hideUnassigned ? "bg-primary text-primary-foreground" : "hover-elevate text-muted-foreground"}`}
-              onClick={() => setHideUnassigned((v) => !v)}
-            >
-              Unassigned
-            </button>
-          </div>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="icon" className="h-7 w-7 relative">
-                <Filter className="w-3 h-3" />
-                {activeFilterCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-label rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
-                    {activeFilterCount}
-                  </span>
-                )}
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Filter"
+                className={activeFilterCount > 0 ? "toggle-elevate toggle-elevated" : ""}
+              >
+                <Filter className="w-4 h-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-0">
-              <div className="max-h-80 overflow-y-auto">
+            <PopoverContent align="start" className="w-80 p-0">
+              <div className="max-h-[28rem] overflow-y-auto">
+                {/* Visibility — Business / Suppliers / Unassigned rows */}
+                <div className="px-3 py-3 border-b border-border">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Visibility
+                  </div>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">{businessLabel}</span>
+                    <Switch checked={showBusiness} onCheckedChange={setShowBusiness} />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Suppliers</span>
+                    <Switch checked={showSuppliers} onCheckedChange={setShowSuppliers} />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Unassigned</span>
+                    <Switch checked={!hideUnassigned} onCheckedChange={(v) => setHideUnassigned(!v)} />
+                  </label>
+                </div>
                 {allAssignees.length > 0 && (
                   <div className="p-3 pb-2">
                     <div className="flex items-center justify-between mb-2">
@@ -720,8 +717,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               </div>
             </PopoverContent>
           </Popover>
-        </div>
-        <div className="flex items-center gap-2">
           <div className="flex items-center border rounded-md overflow-hidden">
             {([2, 4, 6] as const).map((w) => (
               <button
@@ -733,20 +728,23 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={goToToday} className="text-xs h-7 px-2">
-              Today
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-            <span className="text-xs text-muted-foreground ml-1">
-              {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
-            </span>
-          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <button
+            className="h-7 px-2 text-xs hover-elevate rounded"
+            onClick={goToToday}
+          >
+            Today
+          </button>
+          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+            {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
+          </span>
+          <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 

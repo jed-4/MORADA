@@ -737,20 +737,11 @@ export default function BusinessSchedule() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="relative"
                 data-testid="button-week-filter"
                 aria-label="Filter"
+                className={activeFilterCount > 0 ? "toggle-elevate toggle-elevated" : ""}
               >
                 <Filter className="w-4 h-4" />
-                {activeFilterCount > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] tabular-nums"
-                    data-testid="badge-week-filter-count"
-                  >
-                    {activeFilterCount}
-                  </Badge>
-                )}
               </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-80 p-0">
