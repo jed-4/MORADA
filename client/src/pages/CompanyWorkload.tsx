@@ -295,14 +295,9 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       if (item.type === "parent" && !item.assignedToId && !item.assignedToName) continue;
 
       if (!item.assignedToId && !item.assignedToName) {
-        // Route to Business row — items with no assignee were saved as company-assigned
-        const bizKey = 'biz:__company__';
-        let bizRow = contactMap.get(bizKey);
-        if (!bizRow) {
-          bizRow = { id: bizKey, name: 'Business', color: '#6b7280', items: [] };
-          contactMap.set(bizKey, bizRow);
-        }
-        bizRow.items.push(item);
+        // Truly unassigned items belong in the Unassigned row, not Business.
+        // Only legacy "company:..." assignedToId values land in the Business row.
+        unassigned.push(item);
         continue;
       }
 
