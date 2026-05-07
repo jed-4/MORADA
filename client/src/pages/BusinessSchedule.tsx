@@ -176,7 +176,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
     <div className="flex flex-shrink-0" style={{ minHeight: rowH }}>
       {/* Sticky left — project name with drag handle */}
       <div
-        className="w-52 flex-shrink-0 border-r border-b border-border/30 flex items-start pt-1.5 px-1 gap-1.5 cursor-pointer hover-elevate group/row"
+        className="w-52 flex-shrink-0 border-r border-b-2 border-border flex items-start pt-1.5 px-1 gap-1.5 cursor-pointer hover-elevate group/row"
         style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--background)', minHeight: rowH }}
         onClick={() => onNavigate(project.id)}
       >
@@ -213,7 +213,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
           <div
             key={colIdx}
             className={cn(
-              "flex-1 min-w-[80px] border-r border-b border-border/20 flex flex-col px-1 gap-[3px]",
+              "flex-1 min-w-[80px] border-r border-b-2 border-r-border/30 border-b-border flex flex-col px-1 gap-[3px]",
               isWknd ? "bg-muted/20" : "",
               isToday ? "bg-primary/5" : ""
             )}
@@ -286,7 +286,7 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
     <div
       ref={setNodeRef}
       style={{ height: ROW_HEIGHT, transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="flex items-center px-1 gap-1 border-b border-border/30 group/row bg-background"
+      className="flex items-center px-1 gap-1 border-b-2 border-border group/row bg-background"
     >
       <button
         {...attributes}
@@ -327,7 +327,7 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">("schedule");
+  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">("week");
   const [weekViewDate, setWeekViewDate] = useState(new Date());
   const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">("project");
   const [weekCompanyOnly, setWeekCompanyOnly] = useState(false);
