@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical, EyeOff } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays, GripVertical } from "lucide-react";
 import { TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -321,54 +321,6 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  );
-}
-
-function HiddenProjectsPill({ breakdown, onShowAll, testIdSuffix }: {
-  breakdown: { total: number; hiddenByVisibility: number; hiddenByOnline: number; hiddenByOffline: number; hiddenByProspective: number; hiddenByScheduleType: number };
-  onShowAll: () => void;
-  testIdSuffix: string;
-}) {
-  if (breakdown.total === 0) return null;
-  const lines: { label: string; count: number }[] = [
-    { label: "manually hidden in the project filter", count: breakdown.hiddenByVisibility },
-    { label: "hidden by Online toggle", count: breakdown.hiddenByOnline },
-    { label: "hidden by Offline toggle (no published online schedule yet)", count: breakdown.hiddenByOffline },
-    { label: "hidden by Prospective toggle", count: breakdown.hiddenByProspective },
-    { label: "hidden by Construction/Pre-con toggle", count: breakdown.hiddenByScheduleType },
-  ].filter(l => l.count > 0);
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          data-testid={`pill-hidden-${testIdSuffix}`}
-          className="h-7 px-2.5 text-xs rounded-md border border-amber-300 text-amber-700 dark:text-amber-300 dark:border-amber-700/60 bg-amber-500/10 flex items-center gap-1.5 hover-elevate"
-          title="Some projects are hidden — click for details"
-        >
-          <EyeOff className="w-3 h-3" />
-          {breakdown.total} hidden
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 text-xs space-y-2">
-        <div className="font-medium">Why am I not seeing a project?</div>
-        <ul className="space-y-1 text-muted-foreground">
-          {lines.map((l, i) => (
-            <li key={i}>
-              <span className="font-medium text-foreground">{l.count}</span> {l.label}
-            </li>
-          ))}
-        </ul>
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-full mt-2"
-          onClick={onShowAll}
-          data-testid={`button-show-all-${testIdSuffix}`}
-        >
-          Show all projects
-        </Button>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -745,52 +697,30 @@ export default function BusinessSchedule() {
       });
     });
 
-    const activeProjectsThisWeek = projectsWithItemsThisWeek;
     const hiddenForEmptyWeek = orderedVisibleProjects.length - projectsWithItemsThisWeek.length;
 
     return (
       <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
-        {/* Toolbar */}
-        <div className="min-h-10 flex items-center justify-between flex-wrap px-3 py-1 border-b border-border flex-shrink-0 gap-2">
-          <div className="flex items-center flex-wrap gap-2">
-            <ViewModeTabs active="week" />
-          </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <button
-              className="h-7 px-2 text-xs hover-elevate rounded"
-              onClick={() => setWeekViewDate(new Date())}
-            >
-              Today
-            </button>
-            <span className="text-xs font-medium px-1 min-w-[160px] text-center">
-              {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
-            </span>
-            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, 7))}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
+        {/* Tabs row */}
+        <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
+          <ViewModeTabs active="week" />
         </div>
-
-        {/* Lower strip — single Filter button (collapses Layout, Item filters,
-            Project categories, and per-project visibility). */}
-        <div className="h-9 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/30 flex-shrink-0">
+        {/* Toolbar — Filter icon (left) + date nav (right) */}
+        <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
               <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2.5 text-xs gap-1.5"
+                variant="ghost"
+                size="icon"
+                className="relative"
                 data-testid="button-week-filter"
+                aria-label="Filter"
               >
-                <Filter className="w-3.5 h-3.5" />
-                Filter
+                <Filter className="w-4 h-4" />
                 {activeFilterCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="h-4 min-w-4 px-1 text-[10px] tabular-nums"
+                    className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] tabular-nums"
                     data-testid="badge-week-filter-count"
                   >
                     {activeFilterCount}
@@ -925,6 +855,23 @@ export default function BusinessSchedule() {
               </div>
             </PopoverContent>
           </Popover>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <button
+              className="h-7 px-2 text-xs hover-elevate rounded"
+              onClick={() => setWeekViewDate(new Date())}
+            >
+              Today
+            </button>
+            <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+              {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+            </span>
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, 7))}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {weekSwimlaneGroup === 'assignee' ? (
@@ -1004,91 +951,174 @@ export default function BusinessSchedule() {
     );
   }
 
+  // Active filter count for the Projects (gantt) view's consolidated Filter
+  // popover. Schedule type, category toggles, and per-project visibility all
+  // contribute. Zoom level is a layout choice, not a filter.
+  const projectsActiveFilterCount = (
+    (scheduleTypeFilter !== 'all' ? 1 : 0) +
+    (!showOnline ? 1 : 0) +
+    (!showOffline ? 1 : 0) +
+    (!showProspective ? 1 : 0) +
+    (projects.some(p => !p.isVisible) ? 1 : 0)
+  );
+  const resetProjectsFilters = () => {
+    setScheduleTypeFilter('all');
+    setShowOnline(true);
+    setShowOffline(true);
+    setShowProspective(true);
+    projects.filter(p => !p.isVisible).forEach(p => {
+      updateProjectMutation.mutate({ projectId: p.id, isVisible: true });
+    });
+  };
+
   return (
     <div className="flex flex-col h-full bg-background" data-testid="business-schedule-page">
-      {/* Toolbar */}
+      {/* Tabs row */}
+      <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
+        <ViewModeTabs active="schedule" />
+      </div>
+      {/* Toolbar — Filter icon (left) + zoom (right). Projects view is a
+          continuous gantt so there's no date range; zoom acts as the
+          equivalent right-hand control. */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
-        <div className="flex items-center gap-2">
-          <ViewModeTabs active="schedule" />
+        <Popover open={showFilter} onOpenChange={setShowFilter}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative"
+              data-testid="button-filter-projects"
+              aria-label="Filter"
+            >
+              <Filter className="w-4 h-4" />
+              {projectsActiveFilterCount > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] tabular-nums"
+                  data-testid="badge-projects-filter-count"
+                >
+                  {projectsActiveFilterCount}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 p-0">
+            <div className="max-h-[28rem] overflow-y-auto">
+              {/* Schedule type */}
+              <div className="px-3 py-3 border-b border-border">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Schedule type
+                </div>
+                <div className="flex items-center border rounded-md overflow-hidden w-full">
+                  <button
+                    className={cn(
+                      "flex-1 h-7 px-2.5 text-xs",
+                      scheduleTypeFilter === 'all' ? "bg-primary text-primary-foreground" : "hover-elevate"
+                    )}
+                    onClick={() => setScheduleTypeFilter('all')}
+                  >All</button>
+                  <button
+                    className={cn(
+                      "flex-1 h-7 px-2.5 text-xs",
+                      scheduleTypeFilter === 'construction' ? "bg-primary text-primary-foreground" : "hover-elevate"
+                    )}
+                    onClick={() => setScheduleTypeFilter('construction')}
+                  >Construction</button>
+                  <button
+                    className={cn(
+                      "flex-1 h-7 px-2.5 text-xs",
+                      scheduleTypeFilter === 'precon' ? "bg-primary text-primary-foreground" : "hover-elevate"
+                    )}
+                    onClick={() => setScheduleTypeFilter('precon')}
+                  >Pre-con</button>
+                </div>
+              </div>
 
-          {/* Con / Precon toggle */}
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'all' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setScheduleTypeFilter('all')}
-            >All</button>
-            <button
-              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'construction' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setScheduleTypeFilter('construction')}
-            >Construction</button>
-            <button
-              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'precon' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setScheduleTypeFilter('precon')}
-            >Pre-con</button>
-          </div>
-
-          {/* Category visibility toggles */}
-          <button
-            data-testid="toggle-online"
-            aria-pressed={showOnline}
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOnline ? 'border-blue-500 text-status-info dark:text-blue-300 bg-status-info-bg' : 'border-border text-muted-foreground'}`}
-            onClick={() => setShowOnline(v => !v)}
-          >
-            <span className={`inline-block w-2.5 h-2.5 rounded-sm ${showOnline ? 'bg-blue-500' : 'bg-muted'}`} />
-            Online
-          </button>
-          <button
-            data-testid="toggle-offline"
-            aria-pressed={showOffline}
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showOffline ? 'border-amber-600 text-amber-700 dark:text-amber-300 bg-amber-500/10' : 'border-border text-muted-foreground'}`}
-            onClick={() => setShowOffline(v => !v)}
-          >
-            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed ${showOffline ? 'border-amber-600' : 'border-muted-foreground/40'}`} />
-            Offline
-          </button>
-          <button
-            data-testid="toggle-prospective"
-            aria-pressed={showProspective}
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 hover-elevate ${showProspective ? 'border-border-strong text-foreground bg-muted/40' : 'border-border text-muted-foreground'}`}
-            onClick={() => setShowProspective(v => !v)}
-          >
-            <span className={`inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted ${showProspective ? 'border-border-strong' : 'border-muted-foreground/40'}`} />
-            Prospective
-          </button>
-
-          {/* Project visibility filter — moved to left */}
-          <Popover open={showFilter} onOpenChange={setShowFilter}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" data-testid="button-filter-projects">
-                <Filter className="w-4 h-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 max-h-80 overflow-y-auto">
-              <div className="text-xs font-medium mb-2">Show Projects</div>
-              {projects.map(p => (
-                <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
-                  <Checkbox
-                    checked={p.isVisible}
-                    onCheckedChange={(checked) => {
-                      updateProjectMutation.mutate({ projectId: p.id, isVisible: !!checked });
-                    }}
+              {/* Project categories */}
+              <div className="px-3 py-3 border-b border-border">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Project categories
+                </div>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+                    Online
+                  </span>
+                  <Switch
+                    checked={showOnline}
+                    onCheckedChange={setShowOnline}
+                    data-testid="switch-projects-online"
                   />
-                  <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
-                  <span className="text-xs truncate">{p.name}</span>
-                  <Badge variant="outline" className="ml-auto text-label h-4 px-1 capitalize shrink-0">
-                    {p.category}
-                  </Badge>
                 </label>
-              ))}
-            </PopoverContent>
-          </Popover>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed border-amber-600" />
+                    Offline
+                  </span>
+                  <Switch
+                    checked={showOffline}
+                    onCheckedChange={setShowOffline}
+                    data-testid="switch-projects-offline"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dotted border-border-strong" />
+                    Prospective
+                  </span>
+                  <Switch
+                    checked={showProspective}
+                    onCheckedChange={setShowProspective}
+                    data-testid="switch-projects-prospective"
+                  />
+                </label>
+              </div>
 
-          <HiddenProjectsPill
-            breakdown={hiddenBreakdown}
-            onShowAll={showAllProjects}
-            testIdSuffix="schedule"
-          />
-        </div>
+              {/* Per-project visibility */}
+              <div className="px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Show projects
+                </div>
+                {projects.length === 0 ? (
+                  <div className="text-xs text-muted-foreground py-1">No projects.</div>
+                ) : (
+                  projects.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                      <Checkbox
+                        checked={p.isVisible}
+                        onCheckedChange={(checked) => {
+                          updateProjectMutation.mutate({ projectId: p.id, isVisible: !!checked });
+                        }}
+                        data-testid={`checkbox-projects-project-${p.id}`}
+                      />
+                      <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
+                      <span className="text-xs truncate flex-1">{p.name}</span>
+                      <Badge variant="outline" className="text-label h-4 px-1 capitalize shrink-0">
+                        {p.category}
+                      </Badge>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+            {/* Reset footer */}
+            <div className="border-t border-border px-3 py-2 flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">
+                {projectsActiveFilterCount === 0 ? 'No filters active' : `${projectsActiveFilterCount} filter${projectsActiveFilterCount === 1 ? '' : 's'} active`}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                onClick={resetProjectsFilters}
+                disabled={projectsActiveFilterCount === 0}
+                data-testid="button-projects-filter-reset"
+              >
+                Reset
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
         <div className="flex items-center gap-1">
           <div className="flex items-center border rounded-md overflow-hidden">
             <button
