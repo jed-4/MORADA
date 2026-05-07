@@ -919,7 +919,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       <div className={cn("text-label leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                       </div>
-                      <div className={cn("text-label leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-table font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {format(day, "d")}
                       </div>
                     </div>

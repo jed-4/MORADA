@@ -923,8 +923,8 @@ export default function BusinessSchedule() {
                     "flex-1 min-w-[80px] border-r border-border/30 h-9 flex flex-col items-center justify-center text-data font-medium",
                     isToday ? "bg-primary/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
                   )}>
-                    <span>{format(day, 'EEE')}</span>
-                    <span className={cn("text-table font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
+                    <span className="text-label">{format(day, 'EEE')}</span>
+                    <span className={cn("text-table font-medium", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
                   </div>
                 );
               })}
@@ -1254,7 +1254,7 @@ export default function BusinessSchedule() {
                     return (
                       <div
                         key={i}
-                        className="absolute top-0 h-full flex items-center justify-center text-label text-muted-foreground border-l border-border/30"
+                        className="absolute top-0 h-full flex items-center justify-center text-table font-medium text-muted-foreground border-l border-border/30"
                         style={{ left, width: pixelsPerDay }}
                       >
                         {format(day, 'EEE')}
@@ -1266,15 +1266,17 @@ export default function BusinessSchedule() {
                 {zoomLevel === 'month' && weeks.map((weekStart, i) => {
                   const left = getPosition(weekStart);
                   const width = pixelsPerDay * 7;
-                  // Thicker left border at the start of each month so the user
-                  // can pick out month boundaries at a glance.
+                  // Thicker left border at the start of each month, and an even
+                  // heavier one at the start of each year, so the user can
+                  // pick out month + year boundaries at a glance.
                   const isMonthStart = weekStart.getDate() <= 7;
+                  const isYearStart = isMonthStart && weekStart.getMonth() === 0;
                   return (
                     <div
                       key={i}
                       className={cn(
-                        "absolute top-0 h-full flex items-center justify-center text-label text-muted-foreground",
-                        isMonthStart ? "border-l-2 border-border" : "border-l border-border/30"
+                        "absolute top-0 h-full flex items-center justify-center text-table font-medium text-muted-foreground",
+                        isYearStart ? "border-l-4 border-border" : isMonthStart ? "border-l-2 border-border" : "border-l border-border/30"
                       )}
                       style={{ left, width }}
                     >
@@ -1299,16 +1301,17 @@ export default function BusinessSchedule() {
             }}
           >
             <div className="relative" style={{ width: totalWidth, minHeight: orderedVisibleProjects.length * ROW_HEIGHT }}>
-              {/* Week grid lines (with thicker dividers at month boundaries in month view) */}
+              {/* Week grid lines (with thicker dividers at month/year boundaries in month view) */}
               {weeks.map((weekStart, i) => {
                 const left = getPosition(weekStart);
                 const isMonthStart = zoomLevel === 'month' && weekStart.getDate() <= 7;
+                const isYearStart = isMonthStart && weekStart.getMonth() === 0;
                 return (
                   <div
                     key={`grid-${i}`}
                     className={cn(
                       "absolute top-0 bottom-0",
-                      isMonthStart ? "border-l-2 border-border" : "border-l border-border/20"
+                      isYearStart ? "border-l-4 border-border" : isMonthStart ? "border-l-2 border-border" : "border-l border-border/20"
                     )}
                     style={{ left }}
                   />
