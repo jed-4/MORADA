@@ -1009,20 +1009,11 @@ export default function BusinessSchedule() {
             <Button
               variant="ghost"
               size="icon"
-              className="relative"
               data-testid="button-filter-projects"
               aria-label="Filter"
+              className={projectsActiveFilterCount > 0 ? "toggle-elevate toggle-elevated" : ""}
             >
               <Filter className="w-4 h-4" />
-              {projectsActiveFilterCount > 0 && (
-                <Badge
-                  variant="secondary"
-                  className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] tabular-nums"
-                  data-testid="badge-projects-filter-count"
-                >
-                  {projectsActiveFilterCount}
-                </Badge>
-              )}
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-80 p-0">
@@ -1142,22 +1133,6 @@ export default function BusinessSchedule() {
             </div>
           </PopoverContent>
         </Popover>
-        <div className="flex items-center gap-1">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setZoomLevel('day')}
-            >Day</button>
-            <button
-              className={`h-7 px-2 text-xs ${zoomLevel === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setZoomLevel('week')}
-            >Week</button>
-            <button
-              className={`h-7 px-2 text-xs ${zoomLevel === 'month' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setZoomLevel('month')}
-            >Month</button>
-          </div>
-        </div>
       </div>
 
       {/* Legend */}

@@ -267,26 +267,39 @@ function ProjectItemsLeft({ projectId, project, windowStart, windowEnd }: {
     return new Date(item.startDate) < windowEnd && new Date(item.endDate) >= windowStart;
   });
 
+  const projectColor = project.color || TYPE_COLORS_HEX.task;
+
   return (
     <>
-      {items.map((item) => (
-        <div
-          key={item.id}
-          style={{ height: ITEM_ROW_HEIGHT }}
-          className="flex items-center px-3 border-b border-border/10 gap-1.5"
-        >
-          <div className="w-3 shrink-0" />
-          <span className="text-data text-muted-foreground truncate pl-2">{item.name}</span>
-          {item.assignedToName && (
-            <span
-              className="text-label ml-auto shrink-0 truncate max-w-[60px]"
-              style={{ color: item.assignedToColor || undefined }}
-            >
-              {item.assignedToName}
-            </span>
-          )}
-        </div>
-      ))}
+      {items.map((item) => {
+        const isCompanyAssigned = !item.assignedToColor && !!item.assignedToName;
+        return (
+          <div
+            key={item.id}
+            style={{ height: ITEM_ROW_HEIGHT }}
+            className="flex items-center pr-3 border-b border-border/10 gap-1.5"
+          >
+            {isCompanyAssigned ? (
+              <span
+                className="shrink-0 self-stretch"
+                style={{ width: 12, backgroundColor: darkenHex(projectColor, 0.4) }}
+                aria-hidden="true"
+              />
+            ) : (
+              <span className="shrink-0" style={{ width: 12 }} />
+            )}
+            <span className="text-data text-muted-foreground truncate pl-2">{item.name}</span>
+            {item.assignedToName && (
+              <span
+                className="text-label ml-auto shrink-0 truncate max-w-[60px]"
+                style={{ color: item.assignedToColor || undefined }}
+              >
+                {item.assignedToName}
+              </span>
+            )}
+          </div>
+        );
+      })}
       {items.length === 0 && (
         <div style={{ height: ITEM_ROW_HEIGHT }} className="flex items-center px-4 border-b border-border/10">
           <span className="text-data text-muted-foreground/50 italic">No items in this window</span>
@@ -765,20 +778,20 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                             width: projectBarWidth,
                             top: 6,
                             bottom: 6,
-                            backgroundColor: hexToRgba(color, 0.28),
-                            border: `2px ${project.category === 'offline' ? 'dashed' : 'solid'} ${color}`,
+                            backgroundColor: color,
+                            border: project.category === 'offline' ? `2px dashed ${darkenHex(color, 0.4)}` : undefined,
                           }}
                         >
                           {showLeftArrow && (
-                            <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold" style={{ color }}>◀</span>
+                            <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold text-white">◀</span>
                           )}
                           {showRightArrow && (
-                            <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold" style={{ color }}>▶</span>
+                            <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs font-bold text-white">▶</span>
                           )}
                           {projectBarWidth > 80 && !showLeftArrow && (
                             <span
-                              className="absolute left-1.5 top-1/2 -translate-y-1/2 text-label font-semibold truncate pointer-events-none"
-                              style={{ color, maxWidth: projectBarWidth - 20 }}
+                              className="absolute left-1.5 top-1/2 -translate-y-1/2 text-label font-semibold truncate pointer-events-none text-white"
+                              style={{ maxWidth: projectBarWidth - 20 }}
                             >
                               {project.name}
                             </span>
