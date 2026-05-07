@@ -544,7 +544,24 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
 
   return (
     <div ref={containerRef} className={`flex flex-col h-full${className ? ` ${className}` : ''}`}>
-      <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
+      <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <button
+            className="h-7 px-2 text-xs hover-elevate rounded"
+            onClick={goToToday}
+          >
+            Today
+          </button>
+          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+            {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
+          </span>
+          <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
         <div className="flex items-center gap-2">
           {onSwitchView && (
             <div className="flex items-center border rounded-md overflow-hidden mr-1">
@@ -711,23 +728,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
               </button>
             ))}
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <button
-            className="h-7 px-2 text-xs hover-elevate rounded"
-            onClick={goToToday}
-          >
-            Today
-          </button>
-          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
-            {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
-          </span>
-          <Button variant="ghost" size="icon" onClick={() => navigateRange(1)}>
-            <ChevronRight className="w-4 h-4" />
-          </Button>
         </div>
       </div>
       <div className="flex flex-1 overflow-hidden">

@@ -730,8 +730,25 @@ export default function BusinessSchedule() {
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
           <ViewModeTabs active="week" />
         </div>
-        {/* Toolbar — Filter icon (left) + date nav (right) */}
-        <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
+        {/* Toolbar — date nav (hard left), filter, then other toggles */}
+        <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <button
+              className="h-7 px-2 text-xs hover-elevate rounded"
+              onClick={() => setWeekViewDate(new Date())}
+            >
+              Today
+            </button>
+            <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+              {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+            </span>
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, 7))}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
               <Button
@@ -871,23 +888,6 @@ export default function BusinessSchedule() {
               </div>
             </PopoverContent>
           </Popover>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <button
-              className="h-7 px-2 text-xs hover-elevate rounded"
-              onClick={() => setWeekViewDate(new Date())}
-            >
-              Today
-            </button>
-            <span className="text-xs font-medium px-1 min-w-[160px] text-center">
-              {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
-            </span>
-            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, 7))}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
         </div>
 
         {weekSwimlaneGroup === 'assignee' ? (
@@ -993,10 +993,10 @@ export default function BusinessSchedule() {
       <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
         <ViewModeTabs active="schedule" />
       </div>
-      {/* Toolbar — Filter icon (left) + zoom (right). Projects view is a
-          continuous gantt so there's no date range; zoom acts as the
-          equivalent right-hand control. */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
+      {/* Toolbar — Filter icon (hard left), zoom toggle next. Projects view
+          is a continuous gantt so there's no date range; zoom acts as the
+          equivalent left-hand control. Legend stays right. */}
+      <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
         <Popover open={showFilter} onOpenChange={setShowFilter}>
           <PopoverTrigger asChild>
             <Button

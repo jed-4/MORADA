@@ -510,8 +510,25 @@ export default function MasterScheduleGantt({ className }: { className?: string 
 
   return (
     <div className={`flex flex-col overflow-hidden${className ? ` ${className}` : ' flex-1 min-h-0'}`}>
-      {/* Toolbar — other tools far left, date controls right (matches Week view) */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
+      {/* Toolbar — date controls hard left, then filter, then other toggles */}
+      <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={goPrev}>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <button
+            className="h-7 px-2 text-xs hover-elevate rounded"
+            onClick={goToToday}
+          >
+            Today
+          </button>
+          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+            {format(windowStart, "d MMM")} – {format(addDays(windowEnd, -1), "d MMM yyyy")}
+          </span>
+          <Button variant="ghost" size="icon" onClick={goNext}>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
         <div className="flex items-center gap-2">
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
@@ -569,24 +586,6 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={goPrev}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <button
-            className="h-7 px-2 text-xs hover-elevate rounded"
-            onClick={goToToday}
-          >
-            Today
-          </button>
-          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
-            {format(windowStart, "d MMM")} – {format(addDays(windowEnd, -1), "d MMM yyyy")}
-          </span>
-          <Button variant="ghost" size="icon" onClick={goNext}>
-            <ChevronRight className="w-4 h-4" />
-          </Button>
         </div>
       </div>
 
