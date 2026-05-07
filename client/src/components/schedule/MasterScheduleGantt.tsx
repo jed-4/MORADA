@@ -133,6 +133,19 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+// Darken a hex color by mixing it toward black. Same helper as BusinessSchedule
+// so the company-item indicator chip reads identically across Week and Schedules.
+function darkenHex(hex: string, amount = 0.4): string {
+  const m = hex.replace('#', '');
+  const full = m.length === 3 ? m.split('').map(c => c + c).join('') : m;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  const mix = (c: number) => Math.max(0, Math.min(255, Math.round(c * (1 - amount))));
+  const toHex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
 function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, getPos, pixelsPerDay }: {
   projectId: string;
   project: MasterProject;
@@ -163,8 +176,11 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
         const hasStart = !!item.startDate;
         const hasEnd = !!item.endDate;
         const isCompanyAssigned = !item.assignedToColor && !!item.assignedToName;
-        const barFill = isCompanyAssigned ? hexToRgba(color, 0.75) : hexToRgba(color, 0.35);
-        const barBorder = isCompanyAssigned ? color : hexToRgba(color, 0.6);
+        // Solid fill for both; dim external slightly. Mirrors Week view treatment
+        // so bars/text stay legible (previous 0.35 alpha was too washed out).
+        const barFill = color;
+        const barOpacity = isCompanyAssigned ? 1 : 0.85;
+        const chipColor = darkenHex(color, 0.4);
 
         let barLeft = 0;
         let barWidth = 0;
@@ -189,25 +205,31 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
           >
             {hasStart && hasEnd ? (
               <div
-                className="absolute rounded-sm overflow-hidden"
+                className="absolute rounded-sm overflow-hidden flex items-center"
                 style={{
                   left: barLeft,
                   width: barWidth,
                   top: 4,
                   bottom: 4,
                   backgroundColor: barFill,
-                  border: `1px solid ${barBorder}`,
+                  opacity: barOpacity,
                 }}
               >
+                {isCompanyAssigned && (
+                  <span
+                    className="shrink-0 h-full"
+                    style={{ width: ITEM_ROW_HEIGHT - 8, backgroundColor: chipColor }}
+                    aria-hidden="true"
+                  />
+                )}
                 {showLeftArrow && (
-                  <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-white/80 font-bold">◀</span>
+                  <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">◀</span>
                 )}
                 {showRightArrow && (
-                  <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-white/80 font-bold">▶</span>
+                  <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">▶</span>
                 )}
                 <span
-                  className="absolute inset-0 flex items-center px-1.5 text-data font-medium whitespace-nowrap overflow-hidden"
-                  style={{ color: barBorder }}
+                  className="flex-1 min-w-0 px-1.5 text-data font-medium whitespace-nowrap overflow-hidden text-ellipsis text-white"
                 >
                   {item.name}
                 </span>
@@ -470,52 +492,13 @@ export default function MasterScheduleGantt({ className }: { className?: string 
 
   return (
     <div className={`flex flex-col overflow-hidden${className ? ` ${className}` : ' flex-1 min-h-0'}`}>
-      {/* Toolbar */}
+      {/* Toolbar — other tools far left, date controls right (matches Week view) */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={goPrev} className="h-7 w-7">
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={goToToday} className="h-7 px-2 text-xs">
-              Today
-            </Button>
-            <Button variant="ghost" size="icon" onClick={goNext} className="h-7 w-7">
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          {/* Offline toggle */}
-          <button
-            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
-            onClick={() => setShowOffline(v => !v)}
-          >
-            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
-            Offline
-          </button>
-
-          <span className="text-xs text-muted-foreground border-l pl-2">
-            {format(windowStart, "d MMM")} – {format(addDays(windowEnd, -1), "d MMM yyyy")}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            {([2, 4, 6] as const).map((w) => (
-              <button
-                key={w}
-                className={`h-7 px-2.5 text-xs ${windowWeeks === w ? "bg-primary text-primary-foreground" : "hover-elevate"}`}
-                onClick={() => setWindowWeeks(w)}
-              >
-                {w}w
-              </button>
-            ))}
-          </div>
-
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 relative">
-                <Filter className="w-3.5 h-3.5" />
+              <Button variant="ghost" size="icon" className="relative" aria-label="Filter">
+                <Filter className="w-4 h-4" />
                 {hiddenCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-label rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
                     {hiddenCount}
@@ -523,7 +506,7 @@ export default function MasterScheduleGantt({ className }: { className?: string 
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 max-h-80 overflow-y-auto">
+            <PopoverContent align="start" className="w-64 max-h-80 overflow-y-auto">
               <div className="text-xs font-medium mb-2">Show Projects</div>
               {projects.map((p) => (
                 <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -539,6 +522,44 @@ export default function MasterScheduleGantt({ className }: { className?: string 
               ))}
             </PopoverContent>
           </Popover>
+
+          <div className="flex items-center border rounded-md overflow-hidden">
+            {([2, 4, 6] as const).map((w) => (
+              <button
+                key={w}
+                className={`h-7 px-2.5 text-xs ${windowWeeks === w ? "bg-primary text-primary-foreground" : "hover-elevate"}`}
+                onClick={() => setWindowWeeks(w)}
+              >
+                {w}w
+              </button>
+            ))}
+          </div>
+
+          <button
+            className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 ${showOffline ? 'bg-primary text-primary-foreground border-primary' : 'hover-elevate border-border'}`}
+            onClick={() => setShowOffline(v => !v)}
+          >
+            <span className="inline-block w-2.5 h-2.5 rounded-sm border-2 border-dashed" style={{ borderColor: 'currentColor', opacity: 0.8 }} />
+            Offline
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={goPrev}>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <button
+            className="h-7 px-2 text-xs hover-elevate rounded"
+            onClick={goToToday}
+          >
+            Today
+          </button>
+          <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+            {format(windowStart, "d MMM")} – {format(addDays(windowEnd, -1), "d MMM yyyy")}
+          </span>
+          <Button variant="ghost" size="icon" onClick={goNext}>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
