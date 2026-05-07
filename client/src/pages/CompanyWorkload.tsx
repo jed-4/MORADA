@@ -311,7 +311,12 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
       // was fixed to null it out). Treat those the same as null so they land in the company row.
       const isLegacyCompanyId = item.assignedToId?.startsWith("company:");
       const effectiveAssignedToId = isLegacyCompanyId ? null : item.assignedToId;
-      const rowKey = effectiveAssignedToId || `biz:${item.assignedToName}`;
+      // Only legacy "company:" items become a biz:* row (so the merge step folds
+      // them into the Business row). Items with no assignedToId but a free-text
+      // assignedToName (e.g. an old supplier name) must stay as their own
+      // supplier row — otherwise they'd incorrectly appear under Business.
+      const rowKey = effectiveAssignedToId
+        || (isLegacyCompanyId ? `biz:${item.assignedToName}` : `name:${item.assignedToName}`);
 
       if (hiddenAssignees.has(rowKey)) continue;
 
@@ -915,10 +920,10 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                           {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                         </TooltipContent>
                       </Tooltip>
-                      <div className={cn("text-label leading-tight", isToday ? "font-bold text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-data font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                       </div>
-                      <div className={cn("text-table font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
+                      <div className={cn("text-data font-medium leading-tight", isToday ? "text-primary" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                         {format(day, "d")}
                       </div>
                     </div>
