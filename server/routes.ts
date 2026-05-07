@@ -5106,6 +5106,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Estimate status transitions ──────────────────────────────────────────
+  // Workflow: Draft → Approved → Contract. Only the Contract estimate feeds
+  // the project budget. Promoting a new estimate to Contract automatically
+  // demotes the previous Contract estimate back to Approved (one Contract
+  // per project at a time). Approve/Contract auto-lock; Revert unlocks.
+  // Allowed transitions enforced server-side. Legacy "working"/"locked"
+  // statuses are treated as "draft" so older estimates can still flow
+  // through the new workflow.
+  const normalizeStatus = (s?: string | null) =>
+    s === "approved" || s === "contract" || s === "archived" ? s : "draft";
+
+  app.post("/api/estimates/:id/approve", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await storage.getEstimate(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Estimate not found" });
+      const current = normalizeStatus(existing.status);
+      if (current !== "draft") {
+        return res.status(409).json({ error: `Cannot approve from status '${current}'. Only Draft estimates can be approved.` });
+      }
+      const updated = await storage.updateEstimateStatus(req.params.id, {
+        status: "approved",
+        isLocked: true,
+        approvedAt: new Date(),
+        approvedById: req.user.id,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[/api/estimates/:id/approve]", error);
+      res.status(500).json({ error: error.message || "Failed to approve estimate" });
+    }
+  });
+
+  app.post("/api/estimates/:id/contract", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await storage.getEstimate(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Estimate not found" });
+      const current = normalizeStatus(existing.status);
+      if (current !== "approved") {
+        return res.status(409).json({ error: `Cannot set as Contract from status '${current}'. Approve the estimate first.` });
+      }
+      const updated = await storage.promoteEstimateToContract(req.params.id, req.user.id);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[/api/estimates/:id/contract]", error);
+      res.status(500).json({ error: error.message || "Failed to set estimate as contract" });
+    }
+  });
+
+  app.post("/api/estimates/:id/revert", requireAuth, async (req: any, res) => {
+    try {
+      const target = (req.body?.target as string) === "approved" ? "approved" : "draft";
+      const existing = await storage.getEstimate(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Estimate not found" });
+      const current = normalizeStatus(existing.status);
+      if (target === "approved" && current !== "contract") {
+        return res.status(409).json({ error: `Cannot revert to Approved from status '${current}'.` });
+      }
+      if (target === "draft" && current === "draft") {
+        return res.status(409).json({ error: "Estimate is already a Draft." });
+      }
+      const patch: any = target === "approved"
+        ? { status: "approved", isLocked: true, contractedAt: null, contractedById: null }
+        : { status: "draft", isLocked: false, approvedAt: null, approvedById: null, contractedAt: null, contractedById: null };
+      const updated = await storage.updateEstimateStatus(req.params.id, patch);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[/api/estimates/:id/revert]", error);
+      res.status(500).json({ error: error.message || "Failed to revert estimate" });
+    }
+  });
+
   // Summary Calculations API Route
   app.get("/api/estimates/:id/summary", async (req, res) => {
     try {

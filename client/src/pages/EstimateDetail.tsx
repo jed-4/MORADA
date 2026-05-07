@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
   DndContext,
@@ -1999,6 +2000,71 @@ export default function EstimateDetail() {
         variant: "destructive",
       });
     },
+  });
+
+  // ── Estimate workflow mutations: Draft → Approved → Contract ────────────
+  // After a successful status change, the toast offers a "Recalculate budget"
+  // action so users can pull the new Contract estimate's totals into the
+  // Budget page without leaving the estimate.
+  const recalcBudgetForCurrentProject = async () => {
+    const projectId = estimate?.projectId;
+    if (!projectId) return;
+    try {
+      await apiRequest(`/api/projects/${projectId}/budget/calculate`, "POST", {});
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget-line-items`] });
+      toast({ title: "Budget recalculated" });
+    } catch (e: any) {
+      toast({ title: "Recalculate failed", description: e?.message || "Try again from the Budget page.", variant: "destructive" });
+    }
+  };
+
+  const offerBudgetRecalc = (title: string) => {
+    toast({
+      title,
+      description: "Update the project budget to reflect this change.",
+      action: (
+        <ToastAction altText="Recalculate budget" onClick={recalcBudgetForCurrentProject}>
+          Recalculate budget
+        </ToastAction>
+      ),
+    });
+  };
+
+  const invalidateEstimateAndProject = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+    if (estimate?.projectId) {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/estimates`] });
+    }
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/estimates/${effectiveEstimateId}/approve`, "POST"),
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      offerBudgetRecalc("Estimate approved");
+    },
+    onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to approve estimate.", variant: "destructive" }),
+  });
+
+  const contractMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/estimates/${effectiveEstimateId}/contract`, "POST"),
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      offerBudgetRecalc("Set as Contract estimate");
+    },
+    onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to set as Contract.", variant: "destructive" }),
+  });
+
+  const revertMutation = useMutation({
+    mutationFn: async (target: "draft" | "approved") =>
+      apiRequest(`/api/estimates/${effectiveEstimateId}/revert`, "POST", { target }),
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      offerBudgetRecalc("Estimate reverted");
+    },
+    onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to revert estimate.", variant: "destructive" }),
   });
 
   // Mutation for toggling estimate lock status
@@ -4752,10 +4818,18 @@ export default function EstimateDetail() {
 
   // Helper function to get status badge
   const getStatusBadge = (estimate: Estimate) => {
+    // Workflow statuses take precedence over the legacy "Locked" pill so users
+    // can always tell at a glance whether an estimate is the Contract one.
+    if (estimate.status === "contract") {
+      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/15 text-primary border-primary/30"><Lock className="w-3 h-3 mr-1" />Contract</Badge>;
+    }
+    if (estimate.status === "approved") {
+      return <Badge variant="secondary" className="h-6 px-2 text-xs"><Lock className="w-3 h-3 mr-1" />Approved</Badge>;
+    }
     if (estimate.isLocked) {
       return <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/10 text-primary border-primary/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
     }
-    
+
     // Use field settings for status
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
     if (statusOption && statusOption.color) {
@@ -4888,6 +4962,58 @@ export default function EstimateDetail() {
               </span>
             )}
             {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
+            {estimate && (
+              <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                {estimate.status === "draft" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending}
+                    data-testid="button-approve-estimate"
+                  >
+                    Approve
+                  </Button>
+                )}
+                {estimate.status === "approved" && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => contractMutation.mutate()}
+                      disabled={contractMutation.isPending}
+                      data-testid="button-set-as-contract"
+                    >
+                      Set as Contract
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => revertMutation.mutate("draft")}
+                      disabled={revertMutation.isPending}
+                      data-testid="button-revert-to-draft"
+                    >
+                      Revert to Draft
+                    </Button>
+                  </>
+                )}
+                {estimate.status === "contract" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => revertMutation.mutate("approved")}
+                    disabled={revertMutation.isPending}
+                    data-testid="button-revert-to-approved"
+                  >
+                    Revert to Approved
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

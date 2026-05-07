@@ -462,6 +462,11 @@ export interface IStorage {
   getEstimateVersions(estimateId: string): Promise<Estimate[]>;
   lockEstimate(estimateId: string): Promise<Estimate | undefined>;
   unlockEstimate(estimateId: string): Promise<Estimate | undefined>;
+  // Status transitions — bypass the isLocked update guard so approve/contract
+  // can be applied to a locked estimate, and so unlock-to-edit doesn't strip
+  // the approved/contract status.
+  updateEstimateStatus(estimateId: string, patch: Partial<Estimate>): Promise<Estimate | undefined>;
+  promoteEstimateToContract(estimateId: string, userId: string): Promise<Estimate | undefined>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -4589,11 +4594,11 @@ export class MemStorage implements IStorage {
       throw new Error("Estimate not found");
     }
 
-    // Lock the current version
+    // Lock the current version (preserve its workflow status — a parent that
+    // was Approved or Contract should keep that status).
     const lockedCurrent = {
       ...currentEstimate,
       isLocked: true,
-      status: "locked" as const,
       updatedAt: new Date(),
     };
     this.estimates.set(estimateId, lockedCurrent);
@@ -4609,7 +4614,11 @@ export class MemStorage implements IStorage {
       id: newId,
       version: currentEstimate.version + 1,
       isLocked: false,
-      status: "working",
+      status: "draft",
+      approvedAt: null,
+      approvedById: null,
+      contractedAt: null,
+      contractedById: null,
       parentEstimateId,
       createdAt: now,
       updatedAt: now,
@@ -4662,87 +4671,98 @@ export class MemStorage implements IStorage {
   }
 
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
-    console.log('lockEstimate: Looking for estimate with id:', estimateId);
-    
+    // Toggle isLocked only — preserves the workflow status (draft/approved/contract).
     try {
-      // Try database first
       const result = await db.update(schema.estimates)
-        .set({ 
-          isLocked: true, 
-          status: "locked", 
-          updatedAt: new Date() 
-        })
+        .set({ isLocked: true, updatedAt: new Date() })
         .where(eq(schema.estimates.id, estimateId))
         .returning();
-      
       if (result.length > 0) {
-        console.log('lockEstimate: Database update successful');
-        // Also update memory cache to keep it in sync
         this.estimates.set(estimateId, result[0]);
         return result[0];
       }
     } catch (error) {
       console.error("Database error in lockEstimate:", error);
     }
-    
-    // Fallback to memory storage
-    console.log('lockEstimate: Falling back to memory storage');
-    console.log('lockEstimate: Available estimate IDs:', Array.from(this.estimates.keys()));
     const estimate = this.estimates.get(estimateId);
-    console.log('lockEstimate: Found estimate:', !!estimate);
-    if (!estimate) {
-      return undefined;
-    }
-
-    const lockedEstimate: Estimate = {
-      ...estimate,
-      isLocked: true,
-      status: "locked",
-      updatedAt: new Date(),
-    };
+    if (!estimate) return undefined;
+    const lockedEstimate: Estimate = { ...estimate, isLocked: true, updatedAt: new Date() };
     this.estimates.set(estimateId, lockedEstimate);
     return lockedEstimate;
   }
 
   async unlockEstimate(estimateId: string): Promise<Estimate | undefined> {
-    console.log('unlockEstimate: Looking for estimate with id:', estimateId);
-    
+    // Toggle isLocked only — preserves the workflow status (draft/approved/contract)
+    // so an Approved estimate can be temporarily unlocked for cost-code edits
+    // without dropping back to draft.
     try {
-      // Try database first
       const result = await db.update(schema.estimates)
-        .set({ 
-          isLocked: false, 
-          status: "working", 
-          updatedAt: new Date() 
-        })
+        .set({ isLocked: false, updatedAt: new Date() })
         .where(eq(schema.estimates.id, estimateId))
         .returning();
-      
       if (result.length > 0) {
-        console.log('unlockEstimate: Database update successful');
-        // Also update memory cache to keep it in sync
         this.estimates.set(estimateId, result[0]);
         return result[0];
       }
     } catch (error) {
       console.error("Database error in unlockEstimate:", error);
     }
-    
-    // Fallback to memory storage
-    console.log('unlockEstimate: Falling back to memory storage');
     const estimate = this.estimates.get(estimateId);
-    if (!estimate) {
-      return undefined;
-    }
-
-    const unlockedEstimate: Estimate = {
-      ...estimate,
-      isLocked: false,
-      status: "working",
-      updatedAt: new Date(),
-    };
+    if (!estimate) return undefined;
+    const unlockedEstimate: Estimate = { ...estimate, isLocked: false, updatedAt: new Date() };
     this.estimates.set(estimateId, unlockedEstimate);
     return unlockedEstimate;
+  }
+
+  async updateEstimateStatus(estimateId: string, patch: Partial<Estimate>): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      if (result.length > 0) {
+        this.estimates.set(estimateId, result[0]);
+        return result[0];
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in updateEstimateStatus:", error);
+      throw error;
+    }
+  }
+
+  async promoteEstimateToContract(estimateId: string, userId: string): Promise<Estimate | undefined> {
+    // Atomic: demote any existing Contract estimate on the same project back to
+    // Approved (kept locked), then promote this estimate to Contract. Enforces
+    // the "one Contract per project" invariant.
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target) return undefined;
+      return await db.transaction(async (tx) => {
+        await tx.update(schema.estimates)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(and(
+            eq(schema.estimates.projectId, target.projectId),
+            eq(schema.estimates.status, "contract"),
+            ne(schema.estimates.id, estimateId),
+          ));
+        const result = await tx.update(schema.estimates)
+          .set({
+            status: "contract",
+            isLocked: true,
+            contractedAt: new Date(),
+            contractedById: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        if (result.length > 0) this.estimates.set(estimateId, result[0]);
+        return result[0];
+      });
+    } catch (error) {
+      console.error("Database error in promoteEstimateToContract:", error);
+      throw error;
+    }
   }
 
   // Summary calculations
@@ -10930,9 +10950,10 @@ export class DbStorage implements IStorage {
     const [currentEstimate] = await db.select().from(schema.estimates).where(eq(schema.estimates.id, estimateId)).limit(1);
     if (!currentEstimate) throw new Error("Estimate not found");
 
-    // Lock the current version
+    // Lock the current version (preserve its workflow status — a parent that
+    // was Approved or Contract should keep that status).
     await db.update(schema.estimates)
-      .set({ isLocked: true, status: "locked", updatedAt: new Date() })
+      .set({ isLocked: true, updatedAt: new Date() })
       .where(eq(schema.estimates.id, estimateId));
 
     // parentEstimateId always points to the original Rev A (root) estimate
@@ -10946,7 +10967,11 @@ export class DbStorage implements IStorage {
       id: newId,
       version: currentEstimate.version + 1,
       isLocked: false,
-      status: "working",
+      status: "draft",
+      approvedAt: null,
+      approvedById: null,
+      contractedAt: null,
+      contractedById: null,
       parentEstimateId,
       createdAt: now,
       updatedAt: now,
@@ -11025,6 +11050,52 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
+
+  async updateEstimateStatus(estimateId: string, patch: Partial<Estimate>): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimateStatus:", error);
+      throw error;
+    }
+  }
+
+  async promoteEstimateToContract(estimateId: string, userId: string): Promise<Estimate | undefined> {
+    // One Contract per project: demote any existing Contract on the same
+    // project back to Approved (kept locked), then promote this one.
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target) return undefined;
+      return await db.transaction(async (tx) => {
+        await tx.update(schema.estimates)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(and(
+            eq(schema.estimates.projectId, target.projectId),
+            eq(schema.estimates.status, "contract"),
+            ne(schema.estimates.id, estimateId),
+          ));
+        const result = await tx.update(schema.estimates)
+          .set({
+            status: "contract",
+            isLocked: true,
+            contractedAt: new Date(),
+            contractedById: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        return result[0];
+      });
+    } catch (error) {
+      console.error("Database error in promoteEstimateToContract:", error);
+      throw error;
+    }
+  }
+
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
     builderCostTotal: number;
@@ -16115,13 +16186,17 @@ export class DbStorage implements IStorage {
         });
       }
 
-      // Calculate baseline from estimates — include items from ALL estimates on
-      // the project, not just estimates[0], otherwise projects with more than
-      // one estimate (or where row order differs between environments) end up
-      // with missing budget figures.
+      // Calculate baseline from the single Contract estimate on the project.
+      // Estimates are only considered budget-feeding once promoted to
+      // status='contract'. There is at most one Contract estimate per project
+      // (enforced by the /contract endpoint, which demotes any prior Contract
+      // back to Approved).
       const estimates = await db.select()
         .from(schema.estimates)
-        .where(eq(schema.estimates.projectId, projectId));
+        .where(and(
+          eq(schema.estimates.projectId, projectId),
+          eq(schema.estimates.status, "contract"),
+        ));
 
       const estimateIds = estimates.map(e => e.id);
       const estimateItems = estimateIds.length > 0 ? await db.select()
@@ -16253,10 +16328,12 @@ export class DbStorage implements IStorage {
       const costCodeMap = new Map<string, CostCode>(costCodes.map(cc => [cc.id, cc]));
       const categoryMap = new Map<string, string>(costCategories.map(cat => [cat.id, `${cat.code} - ${cat.title}`]));
 
-      // Get estimates for this project — pull items from ALL estimates so
-      // projects with multiple estimates aggregate correctly regardless of
-      // database row order.
-      const estimates = await db.select().from(schema.estimates).where(eq(schema.estimates.projectId, projectId));
+      // Pull items from the project's Contract estimate only (see
+      // calculateBudget for the rationale).
+      const estimates = await db.select().from(schema.estimates).where(and(
+        eq(schema.estimates.projectId, projectId),
+        eq(schema.estimates.status, "contract"),
+      ));
       const estimateIds = estimates.map(e => e.id);
       const estimateItems = estimateIds.length > 0 ? await db.select()
         .from(schema.estimateItems)

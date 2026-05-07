@@ -852,7 +852,7 @@ export const estimates = pgTable("estimates", {
   name: text("name").notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   version: integer("version").notNull().default(1),
-  status: text("status").notNull().default("draft"), // "draft" | "working" | "locked" | "approved"
+  status: text("status").notNull().default("draft"), // "draft" | "approved" | "contract" | "archived"
   isLocked: boolean("is_locked").notNull().default(false),
   projectMarkupPercent: doublePrecision("project_markup_percent").default(0), // Percentage (10 = 10%, 7.5 = 7.5%)
   taxRate: integer("tax_rate").default(10), // GST percentage (10 = 10%). Integer is fine — Australian GST is fixed at 10%.
@@ -861,6 +861,10 @@ export const estimates = pgTable("estimates", {
   ownerName: text("owner_name"),
   assigneeIds: text("assignee_ids").array().default([]), // Multiple user IDs who can work on this estimate
   parentEstimateId: varchar("parent_estimate_id").references((): AnyPgColumn => estimates.id), // Links all revisions back to the original (Rev A) estimate
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  contractedAt: timestamp("contracted_at"),
+  contractedById: varchar("contracted_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
