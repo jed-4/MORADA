@@ -17907,10 +17907,10 @@ export class DbStorage implements IStorage {
           // Business tasks: tasks with no project
           whereConditions.push(isNull(schema.notes.projectId));
         } else if (fb.categoryType === 'tag' && fb.categoryId) {
-          // Tag-linked: tasks whose JSON tags array contains the given tag string.
+          // Label-linked: tasks whose JSON labels array contains the given label option id.
           // Cast JSON → JSONB to use the @> containment operator safely.
           whereConditions.push(
-            sql`${schema.notes.tags}::jsonb @> jsonb_build_array(${fb.categoryId}::text)`
+            sql`${schema.notes.labels}::jsonb @> jsonb_build_array(${fb.categoryId}::text)`
           );
         }
 

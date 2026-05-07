@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { generateNotionColors , TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { X, Edit2, Trash2, Clock, CalendarDays, Pin, PinOff, Plus, Search } from "lucide-react";
-import type { FocusBlock, Task } from "@shared/schema";
+import type { FocusBlock, Task, FieldCategoryWithOptions } from "@shared/schema";
 import { FocusBlockCreator } from "./FocusBlockCreator";
 
 interface FocusBlockPanelProps {
@@ -42,6 +42,12 @@ export function FocusBlockPanel({ block, onClose }: FocusBlockPanelProps) {
   const currentBlock = liveBlock || block;
 
   const colors = generateNotionColors(currentBlock.color);
+
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  const labelCategory = fieldCategories.find((c) => c.key === "task.labels");
+  const labelOptions = labelCategory?.options || [];
 
   const { data: blockTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: ["/api/focus-blocks", block.id, "tasks"],
@@ -159,8 +165,18 @@ export function FocusBlockPanel({ block, onClose }: FocusBlockPanelProps) {
               </div>
             )}
             {currentBlock.categoryType === "tag" && currentBlock.categoryId && (
-              <div className="text-xs text-muted-foreground">
-                Tag: {currentBlock.categoryId}
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span>Label:</span>
+                {(() => {
+                  const opt = labelOptions.find((o) => o.id === currentBlock.categoryId);
+                  if (!opt) return <span>{currentBlock.categoryId}</span>;
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: opt.color || "#6b7280" }} />
+                      {opt.name}
+                    </span>
+                  );
+                })()}
               </div>
             )}
           </div>

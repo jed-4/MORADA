@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { FocusBlock, InsertFocusBlock } from "@shared/schema";
+import type { FocusBlock, InsertFocusBlock, FieldCategoryWithOptions } from "@shared/schema";
 
 interface Project {
   id: string;
@@ -64,6 +64,12 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  const labelCategory = fieldCategories.find((c) => c.key === "task.labels");
+  const labelOptions = (labelCategory?.options || []).filter((o) => o.isActive);
 
   useEffect(() => {
     if (editBlock) {
@@ -265,7 +271,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
                 <SelectItem value="general">General (all my unscheduled tasks)</SelectItem>
                 <SelectItem value="project">Specific Project</SelectItem>
                 <SelectItem value="business">Business Tasks</SelectItem>
-                <SelectItem value="tag">By Tag</SelectItem>
+                <SelectItem value="tag">By Label</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -290,13 +296,30 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
 
           {categoryType === "tag" && (
             <div className="space-y-1.5">
-              <Label className="text-xs">Tag</Label>
-              <Input
-                placeholder="Enter tag name"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="h-9"
-              />
+              <Label className="text-xs">Label</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger className="h-9" data-testid="select-focus-block-label">
+                  <SelectValue placeholder={labelOptions.length === 0 ? "No labels configured in Settings" : "Select a label"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {labelOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: opt.color || "#6b7280" }}
+                        />
+                        {opt.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {labelOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Add labels under Settings → Field Settings → Task Labels.
+                </p>
+              )}
             </div>
           )}
         </div>
