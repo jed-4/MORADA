@@ -16115,14 +16115,18 @@ export class DbStorage implements IStorage {
         });
       }
 
-      // Calculate baseline from estimates
+      // Calculate baseline from estimates — include items from ALL estimates on
+      // the project, not just estimates[0], otherwise projects with more than
+      // one estimate (or where row order differs between environments) end up
+      // with missing budget figures.
       const estimates = await db.select()
         .from(schema.estimates)
         .where(eq(schema.estimates.projectId, projectId));
-      
-      const estimateItems = estimates.length > 0 ? await db.select()
+
+      const estimateIds = estimates.map(e => e.id);
+      const estimateItems = estimateIds.length > 0 ? await db.select()
         .from(schema.estimateItems)
-        .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
+        .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
       const baselineAmount = estimateItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
 
@@ -16249,11 +16253,14 @@ export class DbStorage implements IStorage {
       const costCodeMap = new Map<string, CostCode>(costCodes.map(cc => [cc.id, cc]));
       const categoryMap = new Map<string, string>(costCategories.map(cat => [cat.id, `${cat.code} - ${cat.title}`]));
 
-      // Get estimates for this project
+      // Get estimates for this project — pull items from ALL estimates so
+      // projects with multiple estimates aggregate correctly regardless of
+      // database row order.
       const estimates = await db.select().from(schema.estimates).where(eq(schema.estimates.projectId, projectId));
-      const estimateItems = estimates.length > 0 ? await db.select()
+      const estimateIds = estimates.map(e => e.id);
+      const estimateItems = estimateIds.length > 0 ? await db.select()
         .from(schema.estimateItems)
-        .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
+        .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
       // Get bills (exclude vendor credits from "actual" or subtract them)
       const bills = await db.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
