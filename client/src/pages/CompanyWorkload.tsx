@@ -71,9 +71,8 @@ const NAV_STEP_DAYS = 7;
 const MIN_ROW_HEIGHT = 32;
 const OVERLOAD_THRESHOLD = 3;
 const HEADER_TOP_TIER = 18;
-const HEADER_MID_TIER = 18;
 const HEADER_BOTTOM_TIER = 44;
-const HEADER_HEIGHT = HEADER_TOP_TIER + HEADER_MID_TIER + HEADER_BOTTOM_TIER; // 80px
+const HEADER_HEIGHT = HEADER_TOP_TIER + HEADER_BOTTOM_TIER; // 62px
 
 function assignLanes(items: WorkloadItem[]): { layouts: BarLayout[]; laneCount: number } {
   const sorted = [...items].sort((a, b) => {
@@ -412,28 +411,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
   }, [days, getColWidth]);
 
   const totalWidth = dayOffsets.totalWidth;
-
-  // Group consecutive visible days into week segments (week starts on Monday)
-  const weekSegments = useMemo(() => {
-    const segments: { start: Date; startIdx: number; widthPx: number }[] = [];
-    if (days.length === 0) return segments;
-    let segStart = 0;
-    let segStartDate = startOfWeek(days[0], { weekStartsOn: weekStartDay });
-    let widthAcc = getColWidth(days[0]);
-    for (let i = 1; i < days.length; i++) {
-      const wkStart = startOfWeek(days[i], { weekStartsOn: weekStartDay });
-      if (wkStart.getTime() !== segStartDate.getTime()) {
-        segments.push({ start: segStartDate, startIdx: segStart, widthPx: widthAcc });
-        segStart = i;
-        segStartDate = wkStart;
-        widthAcc = getColWidth(days[i]);
-      } else {
-        widthAcc += getColWidth(days[i]);
-      }
-    }
-    segments.push({ start: segStartDate, startIdx: segStart, widthPx: widthAcc });
-    return segments;
-  }, [days, getColWidth, weekStartDay]);
 
   // Group consecutive visible days into month segments
   const monthSegments = useMemo(() => {
@@ -860,21 +837,6 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                   >
                     <span className="text-data font-semibold text-muted-foreground/80 uppercase tracking-wide truncate">
                       {format(seg.start, "MMM yyyy")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Middle tier: week-start labels */}
-              <div className="flex border-b border-border/30 w-full" style={{ height: HEADER_MID_TIER }}>
-                {weekSegments.map((seg, i) => (
-                  <div
-                    key={`w-${i}`}
-                    className="flex items-center px-1.5 border-l border-border/60 first:border-l-0 min-w-0"
-                    style={{ flex: `${seg.widthPx} 1 0` }}
-                  >
-                    <span className="text-data font-medium text-muted-foreground truncate">
-                      {format(seg.start, "d MMM")}
                     </span>
                   </div>
                 ))}
