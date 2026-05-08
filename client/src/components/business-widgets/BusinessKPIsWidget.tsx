@@ -14,7 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GripVertical, Lock, RefreshCw, ChevronDown, AlertCircle } from "lucide-react";
+import { GripVertical, Lock, RefreshCw, ChevronDown, AlertCircle, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
 import {
@@ -300,11 +301,91 @@ function CashConfigPanel({
 
 interface KPIResponse {
   value?: number | null;
-  trend?: Array<{ month: string; variance: number }>;
+  previousValue?: number | null;
+  trend?: Array<{ month: string; variance?: number; value?: number }>;
   totalStatement?: number | null;
   totalXero?: number | null;
   accounts?: CashAccount[];
   error?: string;
+}
+
+function KPITrendIndicator({
+  current,
+  previous,
+  format,
+  positiveIsGood = true,
+}: {
+  current: number | null | undefined;
+  previous: number | null | undefined;
+  format: "number" | "currency" | "percent";
+  positiveIsGood?: boolean;
+}) {
+  if (current == null || previous == null || !Number.isFinite(current) || !Number.isFinite(previous)) {
+    return null;
+  }
+  const delta = current - previous;
+  if (Math.abs(delta) < 0.0001) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-bp-muted" data-testid="kpi-trend-flat">
+        <Minus className="h-2.5 w-2.5" /> 0%
+      </span>
+    );
+  }
+  const up = delta > 0;
+  const good = up === positiveIsGood;
+  let pct: string;
+  if (format === "percent") {
+    pct = `${up ? "+" : ""}${delta.toFixed(1)}pp`;
+  } else if (Math.abs(previous) < 0.0001) {
+    pct = up ? "+∞" : "-∞";
+  } else {
+    const ratio = (delta / Math.abs(previous)) * 100;
+    pct = `${ratio > 0 ? "+" : ""}${ratio.toFixed(1)}%`;
+  }
+  const Icon = up ? ArrowUp : ArrowDown;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 text-[10px] font-medium",
+        good ? "text-bp-green" : "text-bp-coral",
+      )}
+      data-testid={up ? "kpi-trend-up" : "kpi-trend-down"}
+    >
+      <Icon className="h-2.5 w-2.5" /> {pct}
+    </span>
+  );
+}
+
+function KPISparkline({
+  data,
+  positiveIsGood = true,
+}: {
+  data: Array<{ value: number }>;
+  positiveIsGood?: boolean;
+}) {
+  if (!data || data.length < 2) return null;
+  const last = data[data.length - 1].value;
+  const first = data[0].value;
+  const trendingUp = last >= first;
+  const good = trendingUp === positiveIsGood;
+  const color = good ? "hsl(var(--bp-green))" : "hsl(var(--bp-coral))";
+  return (
+    <div className="h-6 w-full mt-1" data-testid="kpi-sparkline">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 1, right: 0, bottom: 1, left: 0 }}>
+          <YAxis hide domain={["dataMin", "dataMax"]} />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={1.5}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 function XeroUnavailableValue({ onRetry }: { onRetry: () => void }) {
@@ -424,6 +505,46 @@ function KPICell({
     return formatKPIValue(v, def.format);
   };
 
+  // Trend / sparkline derivation
+  const positiveIsGood =
+    def.key !== "overdue_tasks" &&
+    def.key !== "outstanding_buildpro" &&
+    def.key !== "outstanding_xero" &&
+    def.key !== "variations_pending" &&
+    def.key !== "budget_variance";
+
+  const trendPoints: Array<{ value: number }> = !gated && !xeroGated && data?.trend
+    ? data.trend
+        .map((t) => {
+          const raw = t.value ?? t.variance;
+          return typeof raw === "number" && Number.isFinite(raw) ? { value: raw } : null;
+        })
+        .filter((p): p is { value: number } => p !== null)
+    : [];
+
+  const currentVal = isCash ? cashValue : data?.value ?? null;
+  const previousVal =
+    data?.previousValue ??
+    (trendPoints.length >= 2 ? trendPoints[trendPoints.length - 2].value : null);
+
+  const showTrendIndicator =
+    !!def.periodFilter &&
+    !gated &&
+    !xeroGated &&
+    !xeroUnavailable &&
+    !isLoading &&
+    !isError &&
+    currentVal != null &&
+    previousVal != null;
+
+  const showSparkline =
+    !!def.showTrend &&
+    !gated &&
+    !xeroGated &&
+    !xeroUnavailable &&
+    !isLoading &&
+    trendPoints.length >= 2;
+
   return (
     <div
       className="relative px-4 py-2.5 flex flex-col gap-1 min-h-[64px]"
@@ -463,12 +584,23 @@ function KPICell({
           </Tooltip>
         )}
       </div>
-      <div
-        className="text-[20px] font-bold leading-tight text-bp-card-foreground"
-        data-testid={`kpi-value-${def.key}`}
-      >
-        {renderValue()}
+      <div className="flex items-baseline justify-between gap-2">
+        <div
+          className="text-[20px] font-bold leading-tight text-bp-card-foreground"
+          data-testid={`kpi-value-${def.key}`}
+        >
+          {renderValue()}
+        </div>
+        {showTrendIndicator && (
+          <KPITrendIndicator
+            current={currentVal}
+            previous={previousVal}
+            format={def.format}
+            positiveIsGood={positiveIsGood}
+          />
+        )}
       </div>
+      {showSparkline && <KPISparkline data={trendPoints} positiveIsGood={positiveIsGood} />}
       {isCash && !xeroUnavailable && !isLoading && cashAccounts.length > 0 && (
         <div className="text-[10px] text-bp-muted mt-auto">
           {cashAccounts.length} {cashAccounts.length === 1 ? "account" : "accounts"} ·{" "}

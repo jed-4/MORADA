@@ -22,6 +22,7 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { WidgetEmpty } from "@/components/ui/WidgetEmpty";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, startOfDay, subDays, isToday, isTomorrow, isBefore, isWithinInterval, addDays, differenceInDays } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
@@ -314,7 +315,11 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
     },
   ];
 
-  if (!isLoadingCapabilities && !aiAvailable) {
+  if (isLoadingCapabilities) {
+    return <WidgetSkeleton rows={3} />;
+  }
+
+  if (!aiAvailable) {
     return (
       <WidgetEmpty
         icon={Sparkles}

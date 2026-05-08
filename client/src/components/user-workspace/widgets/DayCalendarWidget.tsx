@@ -16,6 +16,7 @@ import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -396,11 +397,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {isLoading ? (
-          <div className="p-4 space-y-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="animate-pulse h-12 bg-muted rounded-md" />
-            ))}
-          </div>
+          <WidgetSkeleton rows={4} />
         ) : (
           <div className="relative" style={{ minHeight: `${24 * HOUR_HEIGHT}px`, height: `${24 * HOUR_HEIGHT}px` }}>
             {HOURS.map(hour => (

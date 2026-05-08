@@ -16,6 +16,7 @@ import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -729,9 +730,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         {renderHeader()}
         
         {isLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="animate-pulse text-xs text-muted-foreground">Loading...</div>
-          </div>
+          <WidgetSkeleton rows={4} />
         ) : (
           <>
             {viewMode === "list" && renderListView()}

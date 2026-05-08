@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import type { Estimate, Project, FieldOption, FieldCategory } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 
 interface ActionableEstimatesWidgetProps {
   widget: Widget;
@@ -182,13 +183,7 @@ export default function ActionableEstimatesWidget({
   }
 
   if (isLoading) {
-    return (
-      <div className="p-3 space-y-2">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="animate-pulse h-12 bg-muted rounded-md" />
-        ))}
-      </div>
-    );
+    return <WidgetSkeleton rows={3} />;
   }
 
   if (actionableStatusKeys.size === 0) {

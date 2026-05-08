@@ -31,6 +31,7 @@ import { RichTextEditor } from '@/components/RichTextEditor';
 import { PROPOSAL_PLACEHOLDER_TOKENS } from './pdf/placeholders';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { cn } from '@/lib/utils';
 
 const PROPOSAL_PLACEHOLDERS = PROPOSAL_PLACEHOLDER_TOKENS;
 
@@ -118,18 +119,33 @@ function SortableSectionItem({ section, onSectionUpdate, value, projectId, proje
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
   return (
-    <div ref={setNodeRef} style={style}>
-      <AccordionItem value={value} className="border rounded-md mb-2 bg-background">
+    <div ref={setNodeRef} style={style} className="group/section">
+      <AccordionItem
+        value={value}
+        className={cn(
+          "border border-border rounded-md mb-2 bg-card transition-colors",
+          !localIsEnabled && "opacity-60",
+          "hover:border-primary/40",
+        )}
+      >
         <div className="flex items-center gap-2 px-3">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-4">
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing py-4 opacity-0 group-hover/section:opacity-100 transition-opacity"
+            aria-label="Reorder section"
+            data-testid={`drag-handle-${section.id}`}
+          >
             <GripVertical className="w-4 h-4 text-muted-foreground" />
           </div>
-          <div className="flex-1 min-w-0 py-4">
-            <p className="font-medium text-sm">{section.name}</p>
-            <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
+          <div className="flex-1 min-w-0 py-4 flex flex-col gap-1">
+            <p className="font-medium text-sm truncate">{section.name}</p>
+            <Badge variant="secondary" className="self-start font-normal text-[10px] tracking-wide uppercase">
+              {sectionTypeLabel}
+            </Badge>
           </div>
           <div className="flex items-center gap-3 py-4">
-            <Switch 
+            <Switch
               checked={localIsEnabled}
               onCheckedChange={handleToggleEnabled}
               onClick={(e) => e.stopPropagation()}
@@ -1139,9 +1155,22 @@ export function ProposalBuilder({
               </DndContext>
 
               {sections.length === 0 && (
-                <Card className="p-8 text-center text-muted-foreground">
-                  <p className="mb-2">No sections yet</p>
-                  <p className="text-sm">Click "Add Section" to get started</p>
+                <Card className="p-8 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="rounded-full bg-muted p-3">
+                      <FileText className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-medium text-sm">No sections yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Add a section to start building your proposal.
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={onAddSection} data-testid="button-add-first-section">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Section
+                    </Button>
+                  </div>
                 </Card>
               )}
             </div>

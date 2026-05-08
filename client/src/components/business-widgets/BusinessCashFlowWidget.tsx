@@ -9,10 +9,19 @@ import {
   XAxis,
   YAxis,
   ReferenceLine,
+  ComposedChart,
+  Line,
+  Area,
 } from "recharts";
 import type { WidgetProps } from "@/types/widgets";
+import type { Widget } from "@/types/widgets";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { formatCurrency } from "@/lib/formatters";
+import { useFinancialPermission } from "@/hooks/use-permission";
+import { Lock } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type CashFlowView = "bars" | "scurve";
 
 interface BillRow {
   id: string;
@@ -57,9 +66,64 @@ function monthBuckets(count: number): { key: string; label: string; date: Date }
   return buckets;
 }
 
-function CashFlowTooltip({ active, payload }: any) {
+function readView(widget: Widget): CashFlowView {
+  const v = (widget.config as any)?.view;
+  return v === "scurve" ? "scurve" : "bars";
+}
+
+interface ViewToggleProps {
+  widget: Widget;
+  onUpdate: (updates: Partial<Widget>) => void;
+}
+
+export function BusinessCashFlowViewToggle({ widget, onUpdate }: ViewToggleProps) {
+  const view = readView(widget);
+  const options: { value: CashFlowView; label: string }[] = [
+    { value: "bars", label: "Bars" },
+    { value: "scurve", label: "S-Curve" },
+  ];
+  return (
+    <div className="flex items-center gap-3" data-testid="cashflow-view-toggle">
+      {options.map((opt) => {
+        const active = opt.value === view;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() =>
+              onUpdate({
+                config: { ...(widget.config || {}), view: opt.value },
+              } as Partial<Widget>)
+            }
+            className={cn(
+              "text-[11px] font-medium pb-0.5 transition-colors",
+              active
+                ? "text-bp-green border-b-2 border-bp-green"
+                : "text-bp-muted border-b-2 border-transparent hover:text-bp-card-foreground",
+            )}
+            data-testid={`button-cashflow-view-${opt.value}`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CashFlowTooltip({ active, payload, view }: any) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
+  if (view === "scurve") {
+    return (
+      <div className="bg-bp-card border border-bp-border rounded-md shadow-sm p-2 text-[11px]">
+        <p className="font-semibold mb-1">{row.label}</p>
+        <p className="text-bp-green">Cumulative in: {formatCurrency(row.cumIn)}</p>
+        <p className="text-bp-coral">Cumulative out: {formatCurrency(row.cumOut)}</p>
+        <p className="font-medium mt-1">Cumulative net: {formatCurrency(row.cumNet)}</p>
+      </div>
+    );
+  }
   return (
     <div className="bg-bp-card border border-bp-border rounded-md shadow-sm p-2 text-[11px]">
       <p className="font-semibold mb-1">{row.label}</p>
@@ -70,9 +134,18 @@ function CashFlowTooltip({ active, payload }: any) {
   );
 }
 
-export default function BusinessCashFlowWidget(_: WidgetProps) {
-  const billsQ = useQuery<BillRow[]>({ queryKey: ["/api/bills"] });
-  const invoicesQ = useQuery<InvoiceRow[]>({ queryKey: ["/api/client-invoices"] });
+export default function BusinessCashFlowWidget({ widget }: WidgetProps) {
+  const hasFinancialAccess = useFinancialPermission();
+  const view = readView(widget);
+
+  const billsQ = useQuery<BillRow[]>({
+    queryKey: ["/api/bills"],
+    enabled: hasFinancialAccess,
+  });
+  const invoicesQ = useQuery<InvoiceRow[]>({
+    queryKey: ["/api/client-invoices"],
+    enabled: hasFinancialAccess,
+  });
 
   const chartData = useMemo(() => {
     const buckets = monthBuckets(6);
@@ -83,6 +156,9 @@ export default function BusinessCashFlowWidget(_: WidgetProps) {
       inCents: 0,
       outCents: 0,
       netCents: 0,
+      cumIn: 0,
+      cumOut: 0,
+      cumNet: 0,
     }));
 
     for (const inv of invoicesQ.data || []) {
@@ -101,7 +177,16 @@ export default function BusinessCashFlowWidget(_: WidgetProps) {
       if (i == null) continue;
       rows[i].outCents += toCents(bill.paidAmount);
     }
-    rows.forEach((r) => (r.netCents = r.inCents - r.outCents));
+    let runIn = 0;
+    let runOut = 0;
+    rows.forEach((r) => {
+      r.netCents = r.inCents - r.outCents;
+      runIn += r.inCents;
+      runOut += r.outCents;
+      r.cumIn = runIn;
+      r.cumOut = runOut;
+      r.cumNet = runIn - runOut;
+    });
     return rows;
   }, [billsQ.data, invoicesQ.data]);
 
@@ -110,6 +195,20 @@ export default function BusinessCashFlowWidget(_: WidgetProps) {
     const totalOut = chartData.reduce((s, r) => s + r.outCents, 0);
     return { totalIn, totalOut, net: totalIn - totalOut };
   }, [chartData]);
+
+  if (!hasFinancialAccess) {
+    return (
+      <div
+        className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center"
+        data-testid="cash-flow-locked"
+      >
+        <Lock className="h-5 w-5 text-bp-amber" />
+        <p className="text-sm text-bp-muted">
+          You don't have permission to view financial data.
+        </p>
+      </div>
+    );
+  }
 
   if (billsQ.isLoading || invoicesQ.isLoading) return <WidgetSkeleton />;
   if (billsQ.isError || invoicesQ.isError) {
@@ -154,20 +253,71 @@ export default function BusinessCashFlowWidget(_: WidgetProps) {
       </div>
       <div className="flex-1 px-2 pb-4 min-h-[160px]">
         <ResponsiveContainer width="100%" height="100%" minHeight={160}>
-          <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--bp-border))" vertical={false} />
-            <XAxis
-              dataKey="label"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
-            />
-            <YAxis hide />
-            <Tooltip content={<CashFlowTooltip />} cursor={{ fill: "hsl(var(--bp-border) / 0.2)" }} />
-            <ReferenceLine y={0} stroke="hsl(var(--bp-border))" />
-            <Bar dataKey="inCents" name="In" fill="hsl(var(--bp-green))" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="outCents" name="Out" fill="hsl(var(--bp-coral))" radius={[3, 3, 0, 0]} />
-          </BarChart>
+          {view === "scurve" ? (
+            <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="bp-cashflow-cumnet" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--bp-green))" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="hsl(var(--bp-green))" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--bp-border))"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
+              />
+              <YAxis hide />
+              <Tooltip content={<CashFlowTooltip view="scurve" />} />
+              <ReferenceLine y={0} stroke="hsl(var(--bp-border))" />
+              <Area
+                type="monotone"
+                dataKey="cumNet"
+                stroke="hsl(var(--bp-green))"
+                strokeWidth={2}
+                fill="url(#bp-cashflow-cumnet)"
+              />
+              <Line
+                type="monotone"
+                dataKey="cumIn"
+                stroke="hsl(var(--bp-green))"
+                strokeWidth={1.5}
+                dot={{ r: 2 }}
+                strokeDasharray="4 2"
+              />
+              <Line
+                type="monotone"
+                dataKey="cumOut"
+                stroke="hsl(var(--bp-coral))"
+                strokeWidth={1.5}
+                dot={{ r: 2 }}
+                strokeDasharray="4 2"
+              />
+            </ComposedChart>
+          ) : (
+            <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--bp-border))" vertical={false} />
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: "hsl(var(--bp-muted))" }}
+              />
+              <YAxis hide />
+              <Tooltip
+                content={<CashFlowTooltip view="bars" />}
+                cursor={{ fill: "hsl(var(--bp-border) / 0.2)" }}
+              />
+              <ReferenceLine y={0} stroke="hsl(var(--bp-border))" />
+              <Bar dataKey="inCents" name="In" fill="hsl(var(--bp-green))" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="outCents" name="Out" fill="hsl(var(--bp-coral))" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          )}
         </ResponsiveContainer>
       </div>
     </div>

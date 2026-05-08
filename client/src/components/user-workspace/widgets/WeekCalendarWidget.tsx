@@ -23,6 +23,7 @@ import { generateNotionColors, TYPE_COLORS_HEX } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
+import { WidgetSkeleton } from "@/components/ui/WidgetSkeleton";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { useMutation } from "@tanstack/react-query";
@@ -591,11 +592,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
       {/* Content area - Timeline or Stacked view */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {isLoading ? (
-          <div className="p-4 grid grid-cols-7 gap-1">
-            {[1, 2, 3, 4, 5, 6, 7].map(i => (
-              <div key={i} className="animate-pulse h-24 bg-muted rounded-md" />
-            ))}
-          </div>
+          <WidgetSkeleton rows={5} />
         ) : viewMode === "stacked" ? (
           /* Stacked view - events listed under each day */
           <div className="grid grid-cols-7 h-full">
