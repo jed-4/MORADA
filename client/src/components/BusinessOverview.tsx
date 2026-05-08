@@ -536,6 +536,18 @@ export default function BusinessOverview() {
     });
   };
 
+  const createEmptyView = () => {
+    const baseName = "New View";
+    const existing = new Set(savedViews.map(v => v.name));
+    let n = savedViews.length + 1;
+    let name = `${baseName} ${n}`;
+    while (existing.has(name)) {
+      n++;
+      name = `${baseName} ${n}`;
+    }
+    createViewMutation.mutate({ name, widgets: [] });
+  };
+
   const deleteView = (viewId: string) => {
     const view = savedViews.find(v => v.id === viewId);
     if (!view || view.isDefault) {
@@ -668,72 +680,73 @@ export default function BusinessOverview() {
 
   const toolbar = (
     <>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="h-6 w-auto px-2 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1.5"
-              data-testid="view-selector"
-            >
-              <span className="font-medium">{activeView?.name || "Overview"}</span>
-              <ChevronDown className="w-3 h-3 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {savedViews.map((view) => (
-              <DropdownMenuItem
-                key={view.id}
-                className="text-xs flex items-center justify-between gap-2 group"
-                onSelect={(e) => e.preventDefault()}
-              >
+        <div className="flex items-center gap-0.5 mr-1 max-w-[60vw] overflow-x-auto">
+          {savedViews.map((view) => {
+            const isActive = view.id === activeViewId;
+            const VisIcon =
+              view.visibility === "private" ? Lock :
+              view.visibility === "roles" ? Shield :
+              view.visibility === "users" ? Users : null;
+            return (
+              <div key={view.id} className="relative group flex items-center flex-shrink-0">
                 <button
-                  className="flex-1 text-left flex items-center gap-2"
+                  type="button"
                   onClick={() => switchView(view.id)}
+                  className={`h-6 px-2 text-xs rounded-md flex items-center gap-1.5 hover-elevate active-elevate-2 ${
+                    isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'
+                  }`}
+                  data-testid={`tab-view-${view.id}`}
                 >
-                  <span className="flex-1 truncate">{view.name}</span>
-                  {view.visibility === "private" && <Lock className="w-3 h-3 text-muted-foreground" />}
-                  {view.visibility === "roles" && <Shield className="w-3 h-3 text-muted-foreground" />}
-                  {view.visibility === "users" && <Users className="w-3 h-3 text-muted-foreground" />}
-                  {activeViewId === view.id && (
-                    <Check className="w-3 h-3 text-primary flex-shrink-0" />
-                  )}
+                  {VisIcon && <VisIcon className="w-3 h-3 text-muted-foreground" />}
+                  <span className="truncate max-w-[140px]">{view.name}</span>
                 </button>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {canEditView(view) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditView(view);
-                      }}
-                      className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground"
-                      data-testid={`edit-view-${view.id}`}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  )}
-                  {!view.isDefault && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteView(view.id);
-                      }}
-                      className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                {isActive && (canEditView(view) || !view.isDefault) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-6 w-5 flex items-center justify-center rounded-md hover-elevate active-elevate-2 ml-0.5"
+                        data-testid={`view-menu-${view.id}`}
+                        aria-label="View options"
+                      >
+                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      {canEditView(view) && (
+                        <DropdownMenuItem
+                          className="text-xs flex items-center gap-2"
+                          onClick={() => openEditView(view)}
+                          data-testid={`edit-view-${view.id}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Rename</span>
+                        </DropdownMenuItem>
+                      )}
+                      {!view.isDefault && (
+                        <DropdownMenuItem
+                          className="text-xs flex items-center gap-2 text-destructive focus:text-destructive"
+                          onClick={() => deleteView(view.id)}
+                          data-testid={`delete-view-${view.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => setIsCreatingView(true)}
-              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+              onClick={createEmptyView}
+              disabled={createViewMutation.isPending}
+              className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2 disabled:opacity-50"
               data-testid="button-new-view"
               aria-label="New view"
             >
