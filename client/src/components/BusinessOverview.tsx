@@ -681,7 +681,7 @@ export default function BusinessOverview() {
 
   const toolbar = (
     <>
-        <div className="flex items-center gap-0.5 mr-1 max-w-[60vw] overflow-x-auto">
+        <div className="flex items-center gap-1 mr-1 max-w-[60vw] overflow-x-auto self-stretch">
           {savedViews.map((view) => {
             const isActive = view.id === activeViewId;
             const VisIcon =
@@ -689,17 +689,22 @@ export default function BusinessOverview() {
               view.visibility === "roles" ? Shield :
               view.visibility === "users" ? Users : null;
             return (
-              <div key={view.id} className="relative group flex items-center flex-shrink-0">
+              <div key={view.id} className="relative group flex items-center flex-shrink-0 self-stretch">
                 <button
                   type="button"
                   onClick={() => switchView(view.id)}
-                  className={`h-6 px-2 text-xs rounded-md flex items-center gap-1.5 hover-elevate active-elevate-2 ${
-                    isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'
+                  className={`relative h-full px-2 text-xs flex items-center gap-1.5 transition-colors bg-transparent border-0 ${
+                    isActive
+                      ? 'text-primary font-semibold'
+                      : 'text-muted-foreground hover:text-foreground font-medium'
                   }`}
                   data-testid={`tab-view-${view.id}`}
                 >
                   {VisIcon && <VisIcon className="w-3 h-3 text-muted-foreground" />}
                   <span className="truncate max-w-[140px]">{view.name}</span>
+                  {isActive && (
+                    <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
+                  )}
                 </button>
                 {isActive && (canEditView(view) || !view.isDefault) && (
                   <DropdownMenu>

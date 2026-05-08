@@ -93,13 +93,13 @@ export default function Business() {
     <div className="flex flex-col h-full gap-1.5" data-testid="business-page">
       {/* Header Panel - Rounded like Workspace */}
       {toolbarVisible ? (
-      <div className="surface-panel flex-shrink-0">
+      <div className="flex-shrink-0">
         {/* Row 1 - Title + dashboard toolbar (portaled in by BusinessOverview) */}
-        <div className="h-8 flex items-center justify-between px-4 gap-4">
+        <div className="h-9 flex items-center justify-between px-4 gap-4">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {businessLabel}
           </h2>
-          <div id="business-toolbar-slot" className="flex items-center gap-1 self-stretch border-b border-border/50" />
+          <div id="business-toolbar-slot" className="flex items-stretch gap-1 self-stretch border-b border-border" />
         </div>
 
         {/* Row 2 - Tabs - Underline Style */}
