@@ -693,7 +693,7 @@ export default function BusinessOverview() {
                 <button
                   type="button"
                   onClick={() => switchView(view.id)}
-                  className={`relative h-full px-2 text-xs flex items-center gap-1.5 transition-colors bg-transparent border-0 ${
+                  className={`relative h-full pl-2 pr-1 text-xs flex items-center gap-1.5 transition-colors bg-transparent border-0 ${
                     isActive
                       ? 'text-primary font-semibold'
                       : 'text-muted-foreground hover:text-foreground font-medium'
@@ -706,12 +706,12 @@ export default function BusinessOverview() {
                     <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
                   )}
                 </button>
-                {isActive && (canEditView(view) || !view.isDefault) && (
+                {isActive && (canEditView(view) || !view.isDefault) ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="h-6 w-5 flex items-center justify-center rounded-md hover-elevate active-elevate-2 ml-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                        className="h-5 w-4 flex items-center justify-center rounded hover-elevate active-elevate-2 mr-1 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                         data-testid={`view-menu-${view.id}`}
                         aria-label="View options"
                       >
@@ -741,6 +741,8 @@ export default function BusinessOverview() {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                ) : (
+                  <div className="w-4 mr-1" aria-hidden />
                 )}
               </div>
             );

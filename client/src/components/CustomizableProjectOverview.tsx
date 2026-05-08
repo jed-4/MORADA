@@ -3,7 +3,7 @@ import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity } from "lucide-react";
+import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -510,6 +510,22 @@ export default function CustomizableProjectOverview() {
     setIsNewViewModalOpen(true);
   };
 
+  // Create an empty view immediately with auto-generated name
+  const createEmptyView = () => {
+    const existingNames = new Set(dashboardViews.map(v => v.name));
+    let n = dashboardViews.length + 1;
+    let candidate = `New View ${n}`;
+    while (existingNames.has(candidate)) {
+      n += 1;
+      candidate = `New View ${n}`;
+    }
+    createViewMutation.mutate({
+      name: candidate,
+      visibility: "private",
+      widgets: [],
+    });
+  };
+
   // Create new view
   const handleCreateView = () => {
     if (!newViewName.trim()) {
@@ -891,103 +907,99 @@ export default function CustomizableProjectOverview() {
   // Check if we're on the overview tab (renders the widget dashboard)
   const isOverviewTab = activeTab === "overview";
 
-  // Dashboard controls (View | + | Settings) — reused in full and minimal toolbar
-  const dashboardControls = (
-    <div className="flex items-center gap-1">
-      {isOverviewTab && (
-        <>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-auto px-2 text-xs rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1.5"
-                data-testid="button-view-switcher"
-              >
-                {activeView && (() => {
-                  const VisIcon = getVisibilityIcon(activeView.visibility);
-                  return <VisIcon className="w-3 h-3 text-muted-foreground" />;
-                })()}
-                <span className="font-medium">{activeView?.name || 'Select View'}</span>
-                <ChevronDown className="w-3 h-3 text-muted-foreground" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {dashboardViews.length === 0 ? (
-                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                  No views yet. Create one!
-                </DropdownMenuItem>
-              ) : (
-                dashboardViews.map((view) => {
-                  const VisIcon = getVisibilityIcon(view.visibility);
-                  const isViewCreator = view.creatorId === user?.id;
-                  const isAdminOrOwner = user?.role === "owner" || user?.role === "admin";
-                  const canEditViewItem = isViewCreator || isAdminOrOwner;
-                  return (
-                    <DropdownMenuItem
-                      key={view.id}
-                      className="text-xs flex items-center justify-between gap-2 group"
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      <button
-                        className="flex-1 text-left flex items-center gap-2"
-                        onClick={() => switchToView(view)}
-                      >
-                        <VisIcon className="w-3 h-3 text-muted-foreground" />
-                        <span className="flex-1 truncate">{view.name}</span>
-                        {view.id === activeViewId && (
-                          <Check className="w-3 h-3 text-primary flex-shrink-0" />
-                        )}
-                      </button>
-                      {view.isCompanyDefault && (
-                        <span className="text-data px-1 py-0.5 bg-primary/20 text-primary rounded" title="Company Default">
-                          Default
-                        </span>
-                      )}
-                      {canEditViewItem && (
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); openEditViewModal(view); }}
-                            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                            data-testid={`button-edit-view-${view.id}`}
-                            title="Edit view"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                          {!view.isCompanyDefault && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setCompanyDefaultMutation.mutate(view.id); }}
-                              className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                              data-testid={`button-set-default-${view.id}`}
-                              title="Set as company default"
-                            >
-                              <Star className="w-3 h-3" />
-                            </button>
-                          )}
-                          {dashboardViews.length > 1 && !view.isCompanyDefault && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); confirmDeleteView(view); }}
-                              className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
-                              data-testid={`button-delete-view-${view.id}`}
-                              title="Delete view"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+  const isAdminOrOwner = user?.role === "owner" || user?.role === "admin";
 
+  // Dashboard controls — view tabs + customize + project settings (far right)
+  const dashboardControls = (
+    <div className="flex items-stretch gap-1 self-stretch border-b border-border">
+      {isOverviewTab && (
+        <div className="flex items-stretch gap-0">
+          {dashboardViews.map((view) => {
+            const VisIcon = getVisibilityIcon(view.visibility);
+            const isActive = view.id === activeViewId;
+            const isViewCreator = view.creatorId === user?.id;
+            const canEditViewItem = isViewCreator || isAdminOrOwner;
+            const canDelete = canEditViewItem && dashboardViews.length > 1 && !view.isCompanyDefault;
+            const showMenu = isActive && (canEditViewItem || canDelete);
+            return (
+              <div key={view.id} className="relative group flex items-center flex-shrink-0 self-stretch">
+                <button
+                  type="button"
+                  onClick={() => switchToView(view)}
+                  className={`relative h-full pl-2 pr-1 text-xs flex items-center gap-1.5 transition-colors bg-transparent border-0 ${
+                    isActive
+                      ? 'text-primary font-semibold'
+                      : 'text-muted-foreground hover:text-foreground font-medium'
+                  }`}
+                  data-testid={`tab-view-${view.id}`}
+                >
+                  <VisIcon className="w-3 h-3 text-muted-foreground" />
+                  <span className="truncate max-w-[140px]">{view.name}</span>
+                  {view.isCompanyDefault && (
+                    <Star className="w-3 h-3 text-primary fill-primary" />
+                  )}
+                  {isActive && (
+                    <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
+                  )}
+                </button>
+                {showMenu ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-5 w-4 flex items-center justify-center rounded hover-elevate active-elevate-2 mr-1 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                        data-testid={`view-menu-${view.id}`}
+                        aria-label="View options"
+                      >
+                        <MoreHorizontal className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      {canEditViewItem && (
+                        <DropdownMenuItem
+                          className="text-xs flex items-center gap-2"
+                          onClick={() => openEditViewModal(view)}
+                          data-testid={`button-edit-view-${view.id}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </DropdownMenuItem>
+                      )}
+                      {canEditViewItem && !view.isCompanyDefault && (
+                        <DropdownMenuItem
+                          className="text-xs flex items-center gap-2"
+                          onClick={() => setCompanyDefaultMutation.mutate(view.id)}
+                          data-testid={`button-set-default-${view.id}`}
+                        >
+                          <Star className="w-3 h-3" />
+                          <span>Set as default</span>
+                        </DropdownMenuItem>
+                      )}
+                      {canDelete && (
+                        <DropdownMenuItem
+                          className="text-xs flex items-center gap-2 text-destructive focus:text-destructive"
+                          onClick={() => confirmDeleteView(view)}
+                          data-testid={`button-delete-view-${view.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <div className="w-4 mr-1" aria-hidden />
+                )}
+              </div>
+            );
+          })}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={openNewViewModal}
-                className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                type="button"
+                onClick={createEmptyView}
+                disabled={createViewMutation.isPending}
+                className="h-full px-2 flex items-center justify-center text-muted-foreground hover:text-foreground bg-transparent border-0 self-stretch"
                 data-testid="button-new-view"
                 aria-label="New view"
               >
@@ -996,18 +1008,23 @@ export default function CustomizableProjectOverview() {
             </TooltipTrigger>
             <TooltipContent side="bottom">New view</TooltipContent>
           </Tooltip>
-
+        </div>
+      )}
+      {isOverviewTab && (
+        <div className="flex items-center px-1 self-stretch">
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
                     data-testid="button-dashboard-settings"
                     aria-label="Customize dashboard"
                   >
-                    <SlidersHorizontal className="h-3 w-3" />
-                  </button>
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                  </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="bottom">Customize dashboard</TooltipContent>
@@ -1029,30 +1046,27 @@ export default function CustomizableProjectOverview() {
                 <Palette className="w-3 h-3" />
                 <span>Theme Settings</span>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-xs flex items-center gap-2"
-                onClick={() => navigate('/project-settings')}
-                data-testid="menu-project-settings"
-              >
-                <Settings className="w-3 h-3" />
-                <span>Project Settings</span>
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </>
+        </div>
       )}
-      {!isOverviewTab && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => navigate('/project-settings')}
-          data-testid="button-project-settings"
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </Button>
-      )}
+      <div className="flex items-center pl-1 pr-1 self-stretch">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => navigate('/project-settings')}
+              data-testid="button-project-settings"
+              aria-label="Project settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Project settings</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   );
 
@@ -1060,9 +1074,9 @@ export default function CustomizableProjectOverview() {
     <div className="flex flex-col h-full gap-1.5" data-testid="customizable-project-overview">
       {/* Header Panel - Rounded like Workspace */}
       {toolbarVisible ? (
-      <div className="surface-panel flex-shrink-0">
+      <div className="flex-shrink-0">
         {/* Row 1 - Title & Actions */}
-        <div className="h-8 flex items-center justify-between px-4 gap-4">
+        <div className="h-9 flex items-stretch justify-between px-4 gap-4">
           {/* Left: Project Name + Active chip */}
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
@@ -1096,7 +1110,7 @@ export default function CustomizableProjectOverview() {
         </div>
 
         {/* Row 2 - Navigation Tabs - Underline Style */}
-        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        <div className="h-8 flex items-center px-4 gap-4 overflow-x-auto">
         {PROJECT_TABS.map((tab) => {
           const Icon = tab.icon;
           const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
