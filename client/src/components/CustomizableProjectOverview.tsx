@@ -1071,7 +1071,7 @@ export default function CustomizableProjectOverview() {
   );
 
   return (
-    <div className="flex flex-col h-full gap-1.5" data-testid="customizable-project-overview">
+    <div className="flex flex-col h-full" data-testid="customizable-project-overview">
       {/* Header Panel - Rounded like Workspace */}
       {toolbarVisible ? (
       <div className="flex-shrink-0">
@@ -1178,7 +1178,7 @@ export default function CustomizableProjectOverview() {
           />
         )}
         
-        <div className="relative p-4">
+        <div className="relative px-4 pt-1 pb-4">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
