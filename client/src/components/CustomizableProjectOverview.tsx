@@ -1164,7 +1164,7 @@ export default function CustomizableProjectOverview() {
         <>
           {/* Widgets Area with Background */}
       <div 
-        className={`flex-1 overflow-auto relative ${!theme ? currentBackground : ''}`}
+        className="flex-1 overflow-auto relative"
         style={getThemeBackground()}
       >
         {/* Overlay for image backgrounds */}
