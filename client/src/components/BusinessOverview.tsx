@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -345,6 +346,16 @@ export default function BusinessOverview() {
   const [isCreatingView, setIsCreatingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const findSlot = () => {
+      const el = document.getElementById("business-toolbar-slot");
+      setToolbarSlot(el);
+    };
+    findSlot();
+    const id = window.setTimeout(findSlot, 0);
+    return () => window.clearTimeout(id);
+  }, []);
   const [editingView, setEditingView] = useState<BusinessDashboardView | null>(null);
   const [editViewName, setEditViewName] = useState("");
   const [editVisibility, setEditVisibility] = useState<"everyone" | "roles" | "users" | "private">("everyone");
@@ -655,10 +666,8 @@ export default function BusinessOverview() {
     );
   }
 
-  return (
-    <div className="flex flex-col h-full px-4 pt-2" data-testid="business-overview">
-      {/* Toolbar row - View | + | Settings (Scope-style) */}
-      <div className="h-8 flex items-center justify-end gap-1 mb-2 flex-shrink-0">
+  const toolbar = (
+    <>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -769,11 +778,16 @@ export default function BusinessOverview() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+    </>
+  );
 
-      {/* Widget Grid with Theme Background - rounded corners */}
+  return (
+    <div className="flex flex-col h-full px-4 pt-2" data-testid="business-overview">
+      {toolbarSlot && createPortal(toolbar, toolbarSlot)}
+
+      {/* Widget Grid with Theme Background */}
       <div 
-        className="flex-1 overflow-auto border border-border rounded-lg relative"
+        className="flex-1 overflow-auto rounded-lg relative"
         style={getBackgroundStyle()}
       >
         {/* Overlay for image backgrounds */}

@@ -94,11 +94,12 @@ export default function Business() {
       {/* Header Panel - Rounded like Workspace */}
       {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
-        {/* Row 1 - Title */}
+        {/* Row 1 - Title + dashboard toolbar (portaled in by BusinessOverview) */}
         <div className="h-8 flex items-center justify-between px-4 gap-4">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {businessLabel}
           </h2>
+          <div id="business-toolbar-slot" className="flex items-center gap-1" />
         </div>
 
         {/* Row 2 - Tabs - Underline Style */}
@@ -132,10 +133,13 @@ export default function Business() {
         </div>
       </div>
       ) : (
-        <div className="flex-shrink-0 px-4 py-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground" data-testid="text-page-title">{businessLabel}</span>
-          <span>·</span>
-          <span className="font-medium text-foreground/70">{BUSINESS_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+        <div className="flex-shrink-0 px-4 py-1 flex items-center justify-between gap-2 border-b border-border/50">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span className="font-semibold text-foreground truncate" data-testid="text-page-title">{businessLabel}</span>
+            <span>·</span>
+            <span className="font-medium text-foreground/70 truncate">{BUSINESS_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+          </div>
+          <div id="business-toolbar-slot" className="flex items-center gap-1" />
         </div>
       )}
 
