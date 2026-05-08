@@ -272,6 +272,20 @@ export default function DashboardThemeSettings({
                       type="button"
                       variant="ghost"
                       size="sm"
+                      className="h-8 px-2 text-xs gap-1"
+                      onClick={() => updatePaletteColor(pageKey, "")}
+                      data-testid="button-clear-page-background"
+                      title="Reset to default background"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Reset
+                    </Button>
+                  )}
+                  {hasColor && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       className="h-8 w-8 p-0"
                       onClick={() => updatePaletteColor(pageKey, "")}
                       title="Reset to default"

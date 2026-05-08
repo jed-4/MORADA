@@ -7,6 +7,7 @@ import {
   Settings,
   Palette,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -325,25 +326,38 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           {isOwnPage && (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1"
-                  data-testid="button-add-widget"
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                      data-testid="button-workspace-settings"
+                      aria-label="Workspace settings"
+                    >
+                      <Settings className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Settings</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="text-xs flex items-center gap-2"
+                  onClick={() => setIsAddingWidget(true)}
+                  data-testid="menu-add-widget"
                 >
-                  <Plus className="w-3 h-3" />
-                  <span>Add Widget</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem className="text-xs flex items-center gap-2" onClick={() => setIsAddingWidget(true)}>
                   <Plus className="w-3 h-3" />
                   <span>Add Widget</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-xs flex items-center gap-2" onClick={() => setIsThemeSettingsOpen(true)}>
+                <DropdownMenuItem
+                  className="text-xs flex items-center gap-2"
+                  onClick={() => setIsThemeSettingsOpen(true)}
+                  data-testid="menu-theme-settings"
+                >
                   <Palette className="w-3 h-3" />
                   <span>Theme Settings</span>
                 </DropdownMenuItem>
