@@ -23,6 +23,7 @@ import {
   Lock,
   Globe,
   Shield,
+  LayoutGrid,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -622,8 +623,8 @@ export default function BusinessOverview() {
 
   const getBackgroundStyle = () => {
     if (!theme) return {};
-    
-    if (theme.backgroundType === "color" && theme.backgroundColor) {
+
+    if (theme.backgroundType === "color" && theme.backgroundColor && theme.backgroundColor !== "#f8fafc") {
       return { backgroundColor: theme.backgroundColor };
     } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
       return { background: theme.backgroundGradient };
@@ -841,6 +842,28 @@ export default function BusinessOverview() {
                     themeStyle={getWidgetStyle()}
                   />
                 ))}
+                {widgets.length === 0 && (
+                  <div className="col-span-full flex items-center justify-center py-16">
+                    <div className="flex flex-col items-center text-center gap-3 max-w-sm">
+                      <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
+                        <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold">This view is empty</h3>
+                        <p className="text-xs text-muted-foreground">Add widgets to build your business overview.</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsAddingWidget(true)}
+                        data-testid="button-add-first-widget"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1.5" />
+                        Add widget
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </SortableContext>
           </DndContext>

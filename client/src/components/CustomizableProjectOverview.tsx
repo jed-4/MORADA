@@ -793,7 +793,7 @@ export default function CustomizableProjectOverview() {
   const getThemeBackground = (): React.CSSProperties => {
     if (!theme) return {};
     
-    if (theme.backgroundType === "color" && theme.backgroundColor) {
+    if (theme.backgroundType === "color" && theme.backgroundColor && theme.backgroundColor !== "#f8fafc") {
       return { backgroundColor: theme.backgroundColor };
     } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
       return { background: theme.backgroundGradient };
@@ -1192,25 +1192,25 @@ export default function CustomizableProjectOverview() {
               {widgets.map((widget) => renderWidget(widget))}
 
               {widgets.length === 0 && (
-                <div className="col-span-full">
-                  <Card className="border-dashed border-2 border-primary/20 bg-card/80 backdrop-blur-sm">
-                    <CardContent className="p-8 text-center">
-                      <div className="space-y-3">
-                        <div className="text-muted-foreground">
-                          <LayoutGrid className="h-12 w-12 mx-auto mb-4 text-primary/50" />
-                          <h3 className="text-lg font-semibold tracking-tight">Customize Your Dashboard</h3>
-                          <p className="text-base">Add widgets to create your personalized project overview</p>
-                        </div>
-                        <Button
-                          onClick={() => setIsAddingWidget(true)}
-                          className="bg-primary hover:bg-primary/90 text-white"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Your First Widget
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                <div className="col-span-full flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center text-center gap-3 max-w-sm">
+                    <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
+                      <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold">Customize this view</h3>
+                      <p className="text-xs text-muted-foreground">Add widgets to build your project overview.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsAddingWidget(true)}
+                      data-testid="button-add-first-widget"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      Add widget
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

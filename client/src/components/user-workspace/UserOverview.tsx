@@ -7,6 +7,7 @@ import {
   Settings,
   SlidersHorizontal,
   Palette,
+  LayoutGrid,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -290,7 +291,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
 
   const getThemeBackground = (): React.CSSProperties => {
     if (!theme) return {};
-    if (theme.backgroundType === "color" && theme.backgroundColor) return { backgroundColor: theme.backgroundColor };
+    if (theme.backgroundType === "color" && theme.backgroundColor && theme.backgroundColor !== "#f8fafc") return { backgroundColor: theme.backgroundColor };
     if (theme.backgroundType === "gradient" && theme.backgroundGradient) return { background: theme.backgroundGradient };
     if (theme.backgroundType === "image" && theme.backgroundImage) {
       return {
@@ -386,28 +387,27 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
               ))}
 
               {widgets.length === 0 && (
-                <div className="col-span-full">
-                  <Card className="border-dashed border-2 border-primary/20 bg-card/80">
-                    <CardContent className="p-8 text-center">
-                      <div className="space-y-3">
-                        <div className="text-muted-foreground">
-                          <p className="text-sm">Your workspace is empty</p>
-                          <p className="text-xs">Add widgets to customize your dashboard</p>
-                        </div>
-                        {isOwnPage && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsAddingWidget(true)}
-                            data-testid="button-add-first-widget"
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Widget
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                <div className="col-span-full flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center text-center gap-3 max-w-sm">
+                    <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
+                      <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold">Your workspace is empty</h3>
+                      <p className="text-xs text-muted-foreground">Add widgets to customize your dashboard.</p>
+                    </div>
+                    {isOwnPage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsAddingWidget(true)}
+                        data-testid="button-add-first-widget"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1.5" />
+                        Add widget
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
