@@ -658,7 +658,7 @@ export default function Header() {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={toggleToolbar} data-testid="menu-toggle-toolbar">
               <LayoutDashboard className="h-4 w-4 mr-2" />
-              <span className="flex-1">Show toolbar</span>
+              <span className="flex-1">Show Tabs</span>
               {toolbarVisible && <Check className="h-3.5 w-3.5 ml-2 text-muted-foreground" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />

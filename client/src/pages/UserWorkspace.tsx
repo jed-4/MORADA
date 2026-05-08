@@ -141,9 +141,9 @@ export default function UserWorkspace() {
     <div className="flex flex-col h-full gap-1.5" data-testid="user-workspace-page">
       {/* User Info + Tabs in floating box */}
       {toolbarVisible ? (
-      <div className="surface-panel flex-shrink-0">
+      <div className="flex-shrink-0">
         {/* Row 1 - User Info */}
-        <div className="h-8 flex items-center justify-between px-4 gap-4">
+        <div className="h-9 flex items-center justify-between px-4 gap-4">
           <div className="flex items-center gap-2">
             <Avatar className="h-6 w-6" data-testid="avatar-user">
               <AvatarFallback className="text-xs bg-primary/20 text-primary">
@@ -167,8 +167,8 @@ export default function UserWorkspace() {
           )}
         </div>
 
-        {/* Row 2 - Tabs - Underline Style */}
-        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        {/* Row 2 - Floating Tabs */}
+        <div className="flex items-center gap-1 px-4 border-b border-border overflow-x-auto">
         {USER_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -182,17 +182,17 @@ export default function UserWorkspace() {
                 e.preventDefault();
                 navigate(tabPath);
               }}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+              className={`relative flex items-center gap-1.5 px-3 py-2 text-xs transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0 ${
                 isActive
-                  ? 'text-primary font-medium'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground font-medium'
               }`}
               data-testid={`tab-${tab.id}`}
             >
-              <Icon className="w-3 h-3" />
+              <Icon className="w-3.5 h-3.5" />
               <span>{tab.label}</span>
               {isActive && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
               )}
             </button>
           );

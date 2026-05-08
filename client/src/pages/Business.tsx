@@ -102,8 +102,8 @@ export default function Business() {
           <div id="business-toolbar-slot" className="flex items-stretch gap-1 self-stretch border-b border-border" />
         </div>
 
-        {/* Row 2 - Tabs - Underline Style */}
-        <div className="h-8 flex items-center px-4 gap-4 overflow-x-auto">
+        {/* Row 2 - Floating Tabs */}
+        <div className="flex items-center gap-1 px-4 border-b border-border overflow-x-auto">
           {BUSINESS_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -115,17 +115,17 @@ export default function Business() {
                   e.preventDefault();
                   navigate(tab.path);
                 }}
-                className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                className={`relative flex items-center gap-1.5 px-3 py-2 text-xs transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0 ${
                   isActive
-                    ? 'text-primary font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'text-primary font-semibold'
+                    : 'text-muted-foreground hover:text-foreground font-medium'
                 }`}
                 data-testid={`tab-${tab.id}`}
               >
-                <Icon className="w-3 h-3" />
+                <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
                 {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                  <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
                 )}
               </button>
             );
