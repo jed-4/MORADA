@@ -99,11 +99,11 @@ export default function Business() {
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {businessLabel}
           </h2>
-          <div id="business-toolbar-slot" className="flex items-center gap-1" />
+          <div id="business-toolbar-slot" className="flex items-center gap-1 self-stretch border-b border-border/50" />
         </div>
 
         {/* Row 2 - Tabs - Underline Style */}
-        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        <div className="h-8 flex items-center px-4 gap-4 overflow-x-auto">
           {BUSINESS_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;

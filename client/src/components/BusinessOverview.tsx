@@ -10,6 +10,7 @@ import {
   Settings, 
   SlidersHorizontal,
   ChevronDown, 
+  MoreHorizontal,
   Check, 
   PlusCircle,
   Trash2,
@@ -705,11 +706,11 @@ export default function BusinessOverview() {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="h-6 w-5 flex items-center justify-center rounded-md hover-elevate active-elevate-2 ml-0.5"
+                        className="h-6 w-5 flex items-center justify-center rounded-md hover-elevate active-elevate-2 ml-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                         data-testid={`view-menu-${view.id}`}
                         aria-label="View options"
                       >
-                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                        <MoreHorizontal className="w-3 h-3 text-muted-foreground" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
