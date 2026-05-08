@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   Plus,
   Settings,
+  SlidersHorizontal,
   Palette,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -335,13 +336,13 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                     <button
                       className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                       data-testid="button-workspace-settings"
-                      aria-label="Workspace settings"
+                      aria-label="Customize workspace"
                     >
-                      <Settings className="h-3 w-3" />
+                      <SlidersHorizontal className="h-3 w-3" />
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Settings</TooltipContent>
+                <TooltipContent side="bottom">Customize workspace</TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem

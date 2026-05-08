@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { 
   Plus, 
   Settings, 
+  SlidersHorizontal,
   ChevronDown, 
   Check, 
   PlusCircle,
@@ -740,13 +741,13 @@ export default function BusinessOverview() {
                 <button
                   className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                   data-testid="button-dashboard-settings"
-                  aria-label="Dashboard settings"
+                  aria-label="Customize dashboard"
                 >
-                  <Settings className="h-3 w-3" />
+                  <SlidersHorizontal className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Settings</TooltipContent>
+            <TooltipContent side="bottom">Customize dashboard</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem
