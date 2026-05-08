@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon, Bell, Activity } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User } from "@shared/schema";
 import ComingSoonPage from "./ComingSoonPage";
 
@@ -28,7 +29,6 @@ const USER_TABS = [
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Notes", icon: FileText, path: "notes" },
   { id: "activity", label: "Activity", icon: Activity, path: "activity" },
-  { id: "settings", label: "Settings", icon: SettingsIcon, path: "settings" },
 ] as const;
 
 export default function UserWorkspace() {
@@ -68,9 +68,14 @@ export default function UserWorkspace() {
   // Determine active tab based on URL
   const activeTab = useMemo(() => {
     const baseUserPath = `/users/${userId}`;
-    
+
     if (location === baseUserPath) return "overview";
-    
+
+    // Settings is accessible via gear icon (not a tab) but still routed
+    if (location === `${baseUserPath}/settings` || location.startsWith(`${baseUserPath}/settings/`)) {
+      return "settings";
+    }
+
     const sortedTabs = [...USER_TABS].sort((a, b) => b.path.length - a.path.length);
     const currentTab = sortedTabs.find(tab => {
       if (tab.path === "") return false; // Skip overview for this check
@@ -154,17 +159,25 @@ export default function UserWorkspace() {
               {getFullName(user.firstName, user.lastName)}
             </h2>
           </div>
-          {isOwnPage && (
-            <button
-              type="button"
-              onClick={() => navigate("/user-settings")}
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              data-testid="button-settings"
-            >
-              <SettingsIcon className="w-3 h-3" />
-              <span>Settings</span>
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            <div id="user-workspace-toolbar-slot" className="flex items-center gap-1" />
+            {isOwnPage && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/users/${userId}/settings`)}
+                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+                    data-testid="button-settings"
+                    aria-label="User settings"
+                  >
+                    <SettingsIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Settings</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
         {/* Row 2 - Floating Tabs */}
@@ -200,10 +213,31 @@ export default function UserWorkspace() {
         </div>
       </div>
       ) : (
-        <div className="flex-shrink-0 px-4 py-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground" data-testid="text-user-name">{getFullName(user.firstName, user.lastName)}</span>
-          <span>·</span>
-          <span className="font-medium text-foreground/70">{activeTabLabel}</span>
+        <div className="flex-shrink-0 px-4 py-1 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span className="font-semibold text-foreground truncate" data-testid="text-user-name">{getFullName(user.firstName, user.lastName)}</span>
+            <span>·</span>
+            <span className="font-medium text-foreground/70 truncate">{activeTabLabel}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div id="user-workspace-toolbar-slot" className="flex items-center gap-1" />
+            {isOwnPage && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/users/${userId}/settings`)}
+                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+                    data-testid="button-settings"
+                    aria-label="User settings"
+                  >
+                    <SettingsIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Settings</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
       )}
 

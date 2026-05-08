@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -316,58 +318,56 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     return { className: "" };
   };
 
+  const toolbarVisible = useToolbarVisible();
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setToolbarSlot(document.getElementById("user-workspace-toolbar-slot"));
+  }, [toolbarVisible]);
+
+  const optionsDropdown = isOwnPage ? (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+              data-testid="button-workspace-settings"
+              aria-label="Customize workspace"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Customize workspace</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          className="text-xs flex items-center gap-2"
+          onClick={() => setIsAddingWidget(true)}
+          data-testid="menu-add-widget"
+        >
+          <Plus className="w-3 h-3" />
+          <span>Add Widget</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="text-xs flex items-center gap-2"
+          onClick={() => setIsThemeSettingsOpen(true)}
+          data-testid="menu-theme-settings"
+        >
+          <Palette className="w-3 h-3" />
+          <span>Theme Settings</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
   return (
     <div className="flex flex-col h-full px-4 pt-2" data-testid="user-overview" style={getThemeBackground()}>
-      <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {isOwnPage ? `${getGreeting()}, ${user.firstName || "there"}` : `${user.firstName}'s workspace`}
-          </span>
-          {saveMutation.isPending && (
-            <span className="text-xs text-muted-foreground">Saving…</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {isOwnPage && (
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
-                      data-testid="button-workspace-settings"
-                      aria-label="Customize workspace"
-                    >
-                      <SlidersHorizontal className="h-3 w-3" />
-                    </button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Customize workspace</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem
-                  className="text-xs flex items-center gap-2"
-                  onClick={() => setIsAddingWidget(true)}
-                  data-testid="menu-add-widget"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Add Widget</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-xs flex items-center gap-2"
-                  onClick={() => setIsThemeSettingsOpen(true)}
-                  data-testid="menu-theme-settings"
-                >
-                  <Palette className="w-3 h-3" />
-                  <span>Theme Settings</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </div>
+      {toolbarSlot && optionsDropdown && createPortal(optionsDropdown, toolbarSlot)}
+      {saveMutation.isPending && (
+        <div className="px-4 pb-1 text-xs text-muted-foreground">Saving…</div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
