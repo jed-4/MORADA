@@ -4,7 +4,7 @@ import { storage, InvalidProposalStateError } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
-import { format } from "date-fns";
+import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
@@ -28176,6 +28176,247 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("[GET /api/tasks/my] error:", error);
       res.status(500).json({ error: "Failed to fetch user tasks" });
+    }
+  });
+
+  // Project Cash Flow widget data endpoint
+  app.get("/api/projects/:projectId/cash-flow", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const groupBy = (req.query.groupBy === "week" ? "week" : "month") as "week" | "month";
+      const rangeParam = String(req.query.range || "project");
+      const range = (["project", "last6", "current6"].includes(rangeParam) ? rangeParam : "project") as
+        | "project"
+        | "last6"
+        | "current6";
+      const user = req.user as any;
+      const companyId = user?.companyId;
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (companyId && (project as any).companyId && (project as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const {
+        clientInvoices: invoicesTbl,
+        clientInvoicePayments: paymentsTbl,
+        bills: billsTbl,
+        variations: variationsTbl,
+      } = await import("@shared/schema");
+
+      const [invoiceRows, billRows, variationRows] = await Promise.all([
+        db.select().from(invoicesTbl).where(eq(invoicesTbl.projectId, projectId)),
+        db.select().from(billsTbl).where(eq(billsTbl.projectId, projectId)),
+        db
+          .select()
+          .from(variationsTbl)
+          .where(and(eq(variationsTbl.projectId, projectId), eq(variationsTbl.status, "approved"))),
+      ]);
+
+      const invoiceIds = invoiceRows.map((i: any) => i.id);
+      const paymentRows = invoiceIds.length
+        ? await db
+            .select()
+            .from(paymentsTbl)
+            .where(and(inArray(paymentsTbl.invoiceId, invoiceIds), eq(paymentsTbl.isVoided, false)))
+        : [];
+
+      const now = new Date();
+      let rangeStart: Date;
+      let rangeEnd: Date;
+      const stepNext = (d: Date) => (groupBy === "week" ? addDays(d, 7) : addMonths(d, 1));
+      const truncate = (d: Date) => (groupBy === "week" ? startOfISOWeek(d) : startOfMonth(d));
+
+      if (range === "last6") {
+        rangeEnd = now;
+        rangeStart = groupBy === "week" ? subDays(now, 7 * 26) : subMonths(now, 6);
+      } else if (range === "current6") {
+        rangeStart = groupBy === "week" ? subDays(now, 7 * 13) : subMonths(now, 3);
+        rangeEnd = groupBy === "week" ? addDays(now, 7 * 13) : addMonths(now, 3);
+      } else {
+        const ps = (project as any).proposedStartDate || (project as any).startDate;
+        const pe = (project as any).proposedEndDate || (project as any).endDate;
+        const collected: Date[] = [];
+        if (ps) collected.push(new Date(ps));
+        if (pe) collected.push(new Date(pe));
+        for (const r of invoiceRows as any[]) {
+          if (r.invoiceDate) collected.push(new Date(r.invoiceDate));
+          if (r.dueDate) collected.push(new Date(r.dueDate));
+        }
+        for (const r of billRows as any[]) {
+          if (r.billDate) collected.push(new Date(r.billDate));
+          if (r.dueDate) collected.push(new Date(r.dueDate));
+        }
+        for (const r of paymentRows as any[]) {
+          if (r.paymentDate) collected.push(new Date(r.paymentDate));
+        }
+        const valid = collected.filter((d) => !isNaN(d.getTime()));
+        if (valid.length === 0) {
+          rangeStart = groupBy === "week" ? subDays(now, 7 * 12) : subMonths(now, 6);
+          rangeEnd = groupBy === "week" ? addDays(now, 7 * 12) : addMonths(now, 6);
+        } else {
+          rangeStart = new Date(Math.min(...valid.map((d) => d.getTime())));
+          rangeEnd = new Date(Math.max(...valid.map((d) => d.getTime())));
+        }
+      }
+
+      const bucketLabel = (start: Date) =>
+        groupBy === "week" ? `W${getISOWeek(start)} ${format(start, "MMM yy")}` : format(start, "MMM yy");
+
+      type Bucket = {
+        periodStart: Date;
+        label: string;
+        moneyIn: number;
+        moneyOut: number;
+        invoicedNotPaid: number;
+        committedNotPaid: number;
+        plannedIn: number;
+      };
+      const periodsMap = new Map<string, Bucket>();
+      let cursor = truncate(rangeStart);
+      const lastBoundary = truncate(rangeEnd);
+      let safety = 0;
+      while (cursor.getTime() <= lastBoundary.getTime() && safety++ < 5000) {
+        periodsMap.set(cursor.toISOString(), {
+          periodStart: new Date(cursor),
+          label: bucketLabel(cursor),
+          moneyIn: 0,
+          moneyOut: 0,
+          invoicedNotPaid: 0,
+          committedNotPaid: 0,
+          plannedIn: 0,
+        });
+        cursor = stepNext(cursor);
+      }
+
+      const addToBucket = (
+        d: Date | string | null | undefined,
+        field: "moneyIn" | "moneyOut" | "invoicedNotPaid" | "committedNotPaid" | "plannedIn",
+        amount: number,
+      ) => {
+        if (!d || !amount) return;
+        const dt = new Date(d as any);
+        if (isNaN(dt.getTime())) return;
+        const key = truncate(dt).toISOString();
+        const bucket = periodsMap.get(key);
+        if (!bucket) return;
+        bucket[field] += amount;
+      };
+
+      for (const p of paymentRows as any[]) {
+        addToBucket(p.paymentDate, "moneyIn", Number(p.amount) || 0);
+      }
+      for (const b of billRows as any[]) {
+        if (b.status === "paid") {
+          addToBucket(b.billDate, "moneyOut", Number(b.paidAmount) || 0);
+        }
+        if (["awaiting_payment", "awaiting_approval", "needs_review"].includes(b.status)) {
+          const remaining = (Number(b.total) || 0) - (Number(b.paidAmount) || 0);
+          if (remaining > 0) addToBucket(b.dueDate || b.billDate, "committedNotPaid", remaining);
+        }
+      }
+      for (const i of invoiceRows as any[]) {
+        if (["sent", "partial", "overdue"].includes(i.status)) {
+          const remaining = (Number(i.totalAmount) || 0) - (Number(i.paidAmount) || 0);
+          if (remaining > 0) addToBucket(i.dueDate || i.invoiceDate, "invoicedNotPaid", remaining);
+        }
+      }
+
+      const contractCeiling =
+        Number((project as any).contractPrice) || Number((project as any).contractCost) || 0;
+      const approvedVarTotal = (variationRows as any[]).reduce(
+        (s, v) => s + (Number(v.totalAmount) || 0),
+        0,
+      );
+      const contractPlusVariationsCeiling = contractCeiling + approvedVarTotal;
+
+      const periods = Array.from(periodsMap.values()).sort(
+        (a, b) => a.periodStart.getTime() - b.periodStart.getTime(),
+      );
+
+      if (contractCeiling > 0 && periods.length > 0) {
+        let totalClaimPct = 0;
+        for (const inv of invoiceRows as any[]) {
+          const rows = (inv.contractClaimRows as any[]) || [];
+          for (const r of rows) totalClaimPct += Number(r?.claimPercent) || 0;
+        }
+        if (totalClaimPct > 0) {
+          for (const inv of invoiceRows as any[]) {
+            const rows = (inv.contractClaimRows as any[]) || [];
+            const pct = rows.reduce((s: number, r: any) => s + (Number(r?.claimPercent) || 0), 0);
+            if (pct <= 0) continue;
+            const amount = (pct / 100) * contractCeiling;
+            addToBucket(inv.dueDate || inv.invoiceDate, "plannedIn", amount);
+          }
+        } else {
+          const per = contractCeiling / periods.length;
+          for (const p of periods) p.plannedIn += per;
+        }
+      }
+
+      let cumIn = 0;
+      let cumOut = 0;
+      let cumPlanned = 0;
+      const periodsOut = periods.map((p) => {
+        cumIn += p.moneyIn;
+        cumOut += p.moneyOut;
+        cumPlanned += p.plannedIn;
+        return {
+          label: p.label,
+          periodStart: p.periodStart.toISOString(),
+          moneyIn: p.moneyIn,
+          moneyOut: p.moneyOut,
+          invoicedNotPaid: p.invoicedNotPaid,
+          committedNotPaid: p.committedNotPaid,
+          plannedIn: p.plannedIn,
+          cumulativeIn: cumIn,
+          cumulativeOut: cumOut,
+          cumulativePlanned: cumPlanned,
+        };
+      });
+
+      const unpaidInvoices = (invoiceRows as any[])
+        .filter(
+          (i) =>
+            ["sent", "partial", "overdue"].includes(i.status) &&
+            (Number(i.paidAmount) || 0) < (Number(i.totalAmount) || 0),
+        )
+        .map((i) => ({
+          id: i.id,
+          invoiceNumber: i.invoiceNumber,
+          totalAmount: Number(i.totalAmount) || 0,
+          paidAmount: Number(i.paidAmount) || 0,
+          status: i.status,
+          dueDate: i.dueDate,
+        }));
+
+      const totalMoneyIn = (paymentRows as any[]).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const totalMoneyOut = (billRows as any[])
+        .filter((b) => b.status === "paid")
+        .reduce((s, b) => s + (Number(b.paidAmount) || 0), 0);
+      const totalInvoiced = (invoiceRows as any[]).reduce(
+        (s, i) => s + (Number(i.totalAmount) || 0),
+        0,
+      );
+      const totalBilled = (billRows as any[]).reduce((s, b) => s + (Number(b.total) || 0), 0);
+
+      res.json({
+        periods: periodsOut,
+        contractCeiling,
+        contractPlusVariationsCeiling,
+        unpaidInvoices,
+        summary: {
+          totalMoneyIn,
+          totalMoneyOut,
+          netPosition: totalMoneyIn - totalMoneyOut,
+          totalInvoiced,
+          totalBilled,
+        },
+      });
+    } catch (err: any) {
+      console.error("[GET /api/projects/:projectId/cash-flow] error:", err);
+      res.status(500).json({ error: "Failed to compute cash flow" });
     }
   });
 

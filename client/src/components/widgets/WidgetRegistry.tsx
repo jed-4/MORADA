@@ -215,7 +215,7 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     icon: Wallet,
     component: ProjectCashFlowWidget,
     defaultSize: "md",
-    configurable: false,
+    configurable: true,
     accent: "green",
     financialGated: true,
     requiredPermission: { key: "financial.invoices", action: "view" },
