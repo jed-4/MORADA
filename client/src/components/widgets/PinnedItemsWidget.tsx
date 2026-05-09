@@ -466,24 +466,13 @@ export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
     </>
   );
 
-  if (!currentProject) {
-    return (
-      <div className="p-4">
-        <WidgetEmpty message="Select a project to see pinned items" />
-      </div>
-    );
-  }
-
-  if (itemsQ.isLoading) return <WidgetSkeleton />;
-  if (itemsQ.isError) return <WidgetError onRetry={() => itemsQ.refetch()} />;
-
   const draggable = config.sortOrder === "manual" && !config.groupByCategory;
   const limit = config.maxVisible;
   const showLimitToggle = limit > 0 && sortedItems.length > limit;
   const visibleItems =
     showLimitToggle && !showAll ? sortedItems.slice(0, limit) : sortedItems;
 
-  // Group by category if enabled
+  // Group by category if enabled (must run before any early return to keep hook order stable)
   const grouped = useMemo(() => {
     if (!config.groupByCategory) return null;
     const map = new Map<string, PinnedItemRow[]>();
@@ -494,6 +483,17 @@ export default function PinnedItemsWidget({ widget, onUpdate }: WidgetProps) {
     }
     return Array.from(map.entries());
   }, [visibleItems, config.groupByCategory]);
+
+  if (!currentProject) {
+    return (
+      <div className="p-4">
+        <WidgetEmpty message="Select a project to see pinned items" />
+      </div>
+    );
+  }
+
+  if (itemsQ.isLoading) return <WidgetSkeleton />;
+  if (itemsQ.isError) return <WidgetError onRetry={() => itemsQ.refetch()} />;
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-pinned-items">
