@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,7 @@ function DraggableKanbanCard({ variation, columnId, onCardClick, projectIdFromUr
         className={cn("p-3 cursor-pointer hover-elevate", isDragging && "opacity-40")}
         onClick={() => !isDragging && onCardClick(variation.id)}
         data-testid={`kanban-card-${variation.id}`}
+        style={{ position: "relative", ...(isDragging ? {} : {}) }}
       >
         <div className="space-y-2">
           <div className="flex items-start gap-2">
@@ -142,6 +144,14 @@ function DraggableKanbanCard({ variation, columnId, onCardClick, projectIdFromUr
               <p className="font-medium text-sm truncate" data-testid={`kanban-card-name-${variation.id}`}>
                 {variation.name}
               </p>
+              <div className="absolute top-1 right-1" onClick={(e) => e.stopPropagation()}>
+                <PinRowButton
+                  projectId={variation.projectId}
+                  itemType="variation"
+                  itemId={variation.id}
+                  itemName={variation.name || variation.variationNumber || "Variation"}
+                />
+              </div>
               <p className="text-xs text-muted-foreground" data-testid={`kanban-card-number-${variation.id}`}>
                 {variation.variationNumber}
               </p>

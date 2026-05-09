@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useParams } from "wouter";
+import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1221,6 +1222,7 @@ function SiteDiaryFeedCard({
 }
 
 function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiaryEntry; projectName?: string; onView: () => void; onEdit: () => void }) {
+  // Pin button uses entry.projectId so this works on both project-scoped and all-entries views.
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
@@ -1269,6 +1271,12 @@ function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiar
                 Shared
               </Badge>
             )}
+            <PinRowButton
+              projectId={entry.projectId}
+              itemType="diary"
+              itemId={entry.id}
+              itemName={entry.title}
+            />
           </div>
           {fieldValues.notes || fieldValues.description || fieldValues.summary ? (
             <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -750,7 +751,13 @@ function DefectListTable({
               )}
             </div>
 
-            <div onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <PinRowButton
+                projectId={projectId}
+                itemType="defect"
+                itemId={defect.id}
+                itemName={defect.title}
+              />
               <button
                 onClick={(e) => {
                   e.stopPropagation();

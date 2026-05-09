@@ -5889,14 +5889,16 @@ export const pinnedItems = pgTable("pinned_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  itemType: varchar("item_type", { length: 50 }).notNull(), // project, contact, document, page
-  itemId: varchar("item_id", { length: 255 }).notNull(), // ID of the pinned item or path for pages
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // nullable — null = workspace pin, set = project-level pin
+  itemType: varchar("item_type", { length: 50 }).notNull(), // project | contact | document | page | variation | bill | checklist | defect | diary | link | note | folder
+  itemId: varchar("item_id", { length: 255 }).notNull(), // ID of the pinned item or path for pages or URL for links
   itemName: varchar("item_name", { length: 255 }).notNull(), // Display name
   itemIcon: varchar("item_icon", { length: 50 }), // Optional icon name
+  category: varchar("category", { length: 100 }), // Optional user-defined group label
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
-  uniqueUserItem: uniqueIndex("pinned_items_user_item_unique").on(table.userId, table.itemType, table.itemId),
+  uniqueUserItem: uniqueIndex("pinned_items_user_item_unique").on(table.userId, table.projectId, table.itemType, table.itemId),
 }));
 
 export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
@@ -5904,6 +5906,13 @@ export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
   userId: true,
   companyId: true,
   createdAt: true,
+}).extend({
+  itemType: z.enum([
+    "project", "contact", "document", "page",
+    "variation", "bill", "checklist", "defect", "diary", "link", "note", "folder",
+  ]),
+  projectId: z.string().nullish(),
+  category: z.string().max(100).nullish(),
 });
 
 export type InsertPinnedItem = z.infer<typeof insertPinnedItemSchema>;

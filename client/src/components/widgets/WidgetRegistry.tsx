@@ -21,6 +21,7 @@ import {
   StickyNote,
   Gauge,
   MailCheck,
+  Pin,
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
@@ -46,6 +47,7 @@ import ProgrammeScheduleWidget from "./ProgrammeScheduleWidget";
 import ProjectDocumentsWidget from "./ProjectDocumentsWidget";
 import QuickNotesWidget from "./QuickNotesWidget";
 import ProjectHealthScoreWidget from "./ProjectHealthScoreWidget";
+import PinnedItemsWidget from "./PinnedItemsWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -291,6 +293,18 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     accent: "green",
     defaultColumns: 3,
     defaultRowSpan: 2,
+  },
+  pinnedItems: {
+    type: "pinnedItems",
+    name: "Pinned Items",
+    description: "Quick access to items you've pinned from across this project",
+    icon: Pin,
+    component: PinnedItemsWidget,
+    defaultSize: "md",
+    configurable: true,
+    accent: "purple",
+    defaultColumns: 3,
+    defaultRowSpan: 3,
   },
 };
 

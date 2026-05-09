@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
+import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -1277,9 +1278,21 @@ export default function ProjectChecklists() {
                         return (
                           <div
                             key={group.id}
-                            className="group relative bg-card rounded-xl mb-4 overflow-hidden shadow-sm dark:shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-all"
+                            className="group/card relative bg-card rounded-xl mb-4 overflow-hidden shadow-sm dark:shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-all"
                             data-testid={`checklist-card-${group.id}`}
                           >
+                            <div
+                              className="absolute top-2 right-2 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <PinRowButton
+                                projectId={projectId}
+                                itemType="checklist"
+                                itemId={group.id}
+                                itemName={group.name}
+                                alwaysVisible
+                              />
+                            </div>
                             {/* 4px left accent bar */}
                             <div
                               className={`absolute top-0 left-0 bottom-0 w-1 ${accentClass}`}

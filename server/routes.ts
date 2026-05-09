@@ -25299,6 +25299,155 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
   
+  // ============================================
+  // PROJECT-SCOPED PINNED ITEMS API
+  // ============================================
+
+  // Helper to resolve current user identity in this routes file
+  const _resolvePinnedUser = (req: any) => {
+    const userId = req.user?.dbUser?.id || req.user?.id || req.userId;
+    const companyId = req.user?.dbUser?.companyId || req.user?.companyId;
+    return { userId, companyId };
+  };
+
+  // GET pinned items for a project
+  app.get("/api/projects/:projectId/pinned-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { userId, companyId } = _resolvePinnedUser(req);
+      if (!userId || !companyId) return res.status(401).json({ error: "Not authenticated" });
+
+      const items = await db.select()
+        .from(pinnedItems)
+        .where(and(
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.projectId, req.params.projectId),
+        ))
+        .orderBy(asc(pinnedItems.sortOrder), desc(pinnedItems.createdAt));
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching project pinned items:", error);
+      res.status(500).json({ error: "Failed to fetch pinned items" });
+    }
+  });
+
+  // CREATE a project pinned item
+  app.post("/api/projects/:projectId/pinned-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { userId, companyId } = _resolvePinnedUser(req);
+      if (!userId || !companyId) return res.status(401).json({ error: "Not authenticated" });
+
+      const parsed = insertPinnedItemSchema.safeParse({
+        ...req.body,
+        projectId: req.params.projectId,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      // Append at end
+      const existing = await db.select()
+        .from(pinnedItems)
+        .where(and(
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.projectId, req.params.projectId),
+        ));
+      const maxOrder = existing.reduce((m, i) => Math.max(m, i.sortOrder), -1);
+
+      const [item] = await db.insert(pinnedItems)
+        .values({
+          ...parsed.data,
+          projectId: req.params.projectId,
+          userId,
+          companyId,
+          sortOrder: maxOrder + 1,
+        })
+        .returning();
+      res.status(201).json(item);
+    } catch (error: any) {
+      console.error("Error creating project pinned item:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ error: "Item already pinned" });
+      }
+      res.status(500).json({ error: "Failed to create pinned item" });
+    }
+  });
+
+  // PATCH a project pinned item
+  app.patch("/api/projects/:projectId/pinned-items/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { userId } = _resolvePinnedUser(req);
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+      const updateSchema = insertPinnedItemSchema.partial();
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      }
+
+      const [updated] = await db.update(pinnedItems)
+        .set(parsed.data)
+        .where(and(
+          eq(pinnedItems.id, req.params.id),
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.projectId, req.params.projectId),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Pinned item not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating project pinned item:", error);
+      res.status(500).json({ error: "Failed to update pinned item" });
+    }
+  });
+
+  // REORDER project pinned items
+  app.post("/api/projects/:projectId/pinned-items/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { userId } = _resolvePinnedUser(req);
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+      const { orderedIds } = req.body as { orderedIds?: string[] };
+      if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ error: "orderedIds must be an array" });
+      }
+
+      for (let i = 0; i < orderedIds.length; i++) {
+        await db.update(pinnedItems)
+          .set({ sortOrder: i })
+          .where(and(
+            eq(pinnedItems.id, orderedIds[i]),
+            eq(pinnedItems.userId, userId),
+            eq(pinnedItems.projectId, req.params.projectId),
+          ));
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error reordering project pinned items:", error);
+      res.status(500).json({ error: "Failed to reorder pinned items" });
+    }
+  });
+
+  // DELETE a project pinned item
+  app.delete("/api/projects/:projectId/pinned-items/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { userId } = _resolvePinnedUser(req);
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+      const result = await db.delete(pinnedItems)
+        .where(and(
+          eq(pinnedItems.id, req.params.id),
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.projectId, req.params.projectId),
+        ))
+        .returning();
+      if (result.length === 0) return res.status(404).json({ error: "Pinned item not found" });
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting project pinned item:", error);
+      res.status(500).json({ error: "Failed to delete pinned item" });
+    }
+  });
+
   // Delete a pinned item
   app.delete("/api/pinned-items/:id", requireAuth, async (req, res) => {
     try {
