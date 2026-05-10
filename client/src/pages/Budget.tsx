@@ -435,13 +435,12 @@ export default function BudgetPage() {
       if (budget?.id) {
         recalculateLineItemsMutation.mutate();
       }
-    } else {
-      recalculateLabourHoursMutation.mutate();
     }
+    recalculateLabourHoursMutation.mutate();
   };
 
-  const isRecalculating = activeTab === "costs" 
-    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending)
+  const isRecalculating = activeTab === "costs"
+    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending || recalculateLabourHoursMutation.isPending)
     : recalculateLabourHoursMutation.isPending;
 
   if (budgetLoading) {
