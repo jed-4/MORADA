@@ -525,19 +525,6 @@ export default function BudgetPage() {
           ))}
         </div>
 
-        {/* Right — recalculate */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleRecalculate}
-            disabled={isRecalculating}
-            className="h-7 px-3 text-[11px] bg-[hsl(var(--bp-purple))] hover:bg-[hsl(var(--bp-purple)/0.9)] text-white"
-            data-testid="button-recalculate"
-          >
-            <RefreshCw size={11} className={cn("mr-1", isRecalculating && "animate-spin")} />
-            Recalculate
-          </Button>
-        </div>
       </div>
 
       {/* TAB ROW */}
@@ -577,6 +564,7 @@ export default function BudgetPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-2">
         {activeTab === "costs" && budgetData && (
           <div className="flex items-center gap-0 text-[11px]">
             {[
@@ -629,6 +617,19 @@ export default function BudgetPage() {
             ))}
           </div>
         )}
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleRecalculate}
+          disabled={isRecalculating}
+          className="h-7 w-7 text-[hsl(var(--bp-purple))]"
+          data-testid="button-recalculate"
+          title="Recalculate"
+          aria-label="Recalculate"
+        >
+          <RefreshCw size={14} className={cn(isRecalculating && "animate-spin")} />
+        </Button>
+        </div>
       </div>
 
       {/* Content */}
