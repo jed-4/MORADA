@@ -200,6 +200,29 @@ export default function CostCodes() {
     },
   });
 
+  const bulkToggleLabourMutation = useMutation({
+    mutationFn: async ({ codeIds, isLabour }: { codeIds: string[]; isLabour: boolean }) => {
+      await Promise.all(
+        codeIds.map(id => apiRequest(`/api/cost-codes/${id}`, "PATCH", { isLabour }))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
+      clearSelection();
+      toast({
+        title: "Bulk update completed",
+        description: "Labour tag updated for selected codes.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update some cost codes.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const bulkArchiveMutation = useMutation({
     mutationFn: async (codeIds: string[]) => {
       await Promise.all(
@@ -673,6 +696,38 @@ export default function CostCodes() {
                 >
                   <Ban className="h-4 w-4 mr-2" />
                   Remove from Timesheets
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-bulk-labour">
+                  <HardHat className="w-3 h-3" />
+                  <span>Labour</span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem
+                  onClick={() => bulkToggleLabourMutation.mutate({
+                    codeIds: Array.from(selectedCodeIds),
+                    isLabour: true
+                  })}
+                  data-testid="menu-bulk-mark-labour"
+                >
+                  <HardHat className="h-4 w-4 mr-2" />
+                  Mark as Labour
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => bulkToggleLabourMutation.mutate({
+                    codeIds: Array.from(selectedCodeIds),
+                    isLabour: false
+                  })}
+                  data-testid="menu-bulk-unmark-labour"
+                >
+                  <Ban className="h-4 w-4 mr-2" />
+                  Remove Labour Tag
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

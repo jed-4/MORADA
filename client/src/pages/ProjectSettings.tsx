@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatters";
 
 const dashboardBackgroundOptions = [
   { id: "default", name: "Default", value: "bg-background", preview: "bg-slate-100 dark:bg-slate-900" },
@@ -52,7 +53,11 @@ import * as LucideIcons from "lucide-react";
 export default function ProjectSettings() {
   const { currentProject, setCurrentProject } = useProject();
   const [, setLocation] = useLocation();
-  const { data: contractMetrics } = useQuery<ContractMetrics>({
+  const {
+    data: contractMetrics,
+    isLoading: contractMetricsLoading,
+    isError: contractMetricsError,
+  } = useQuery<ContractMetrics>({
     queryKey: ['/api/projects', currentProject?.id, 'contract-metrics'],
     queryFn: () => fetch(`/api/projects/${currentProject!.id}/contract-metrics`, { credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error(`Failed to fetch contract metrics (${r.status})`);
@@ -638,6 +643,73 @@ export default function ProjectSettings() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Project Numbers */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Project Numbers
+          </CardTitle>
+          <CardDescription>
+            Contract values for this project, derived from the selected estimate and approved variations
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!currentProject.selectedEstimateId ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-project-numbers-empty">
+              Select an estimate for this project to see contract numbers.
+            </div>
+          ) : contractMetricsLoading ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-project-numbers-loading">
+              Loading contract numbers…
+            </div>
+          ) : contractMetricsError || !contractMetrics ? (
+            <div className="text-sm text-destructive" data-testid="text-project-numbers-error">
+              Failed to load contract numbers. Try refreshing the page.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Metric</TableHead>
+                  <TableHead className="text-right">Ex GST</TableHead>
+                  <TableHead className="text-right">Inc GST</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow data-testid="row-contract-original">
+                  <TableCell className="font-medium">Contract Price</TableCell>
+                  <TableCell className="text-right tabular-nums" data-testid="text-contract-ex-gst">
+                    {formatCurrency(contractMetrics.originalContractPriceExGstCents)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums" data-testid="text-contract-inc-gst">
+                    {formatCurrency(contractMetrics.originalContractPriceIncGstCents)}
+                  </TableCell>
+                </TableRow>
+                <TableRow data-testid="row-contract-variations">
+                  <TableCell className="font-medium">Approved Variations</TableCell>
+                  <TableCell className="text-right tabular-nums" data-testid="text-variations-ex-gst">
+                    {formatCurrency(contractMetrics.approvedVariationsExGstCents)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums" data-testid="text-variations-inc-gst">
+                    {formatCurrency(contractMetrics.approvedVariationsIncGstCents)}
+                  </TableCell>
+                </TableRow>
+                <TableRow data-testid="row-contract-revised">
+                  <TableCell className="font-semibold">Revised Contract</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold" data-testid="text-revised-ex-gst">
+                    {formatCurrency(contractMetrics.revisedContractPriceExGstCents)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold" data-testid="text-revised-inc-gst">
+                    {formatCurrency(contractMetrics.revisedContractPriceIncGstCents)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
