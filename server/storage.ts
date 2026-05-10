@@ -16678,7 +16678,8 @@ export class DbStorage implements IStorage {
           eq(schema.costCodes.isArchived, false),
           eq(schema.costCodes.isLabour, true),
           eq(schema.costCodes.companyId, companyId)
-        ));
+        ))
+        .orderBy(schema.costCodes.sortOrder, schema.costCodes.code);
 
       const labourCostCodeIds = new Set(labourCostCodes.map((cc: CostCode) => cc.id));
 
@@ -16738,6 +16739,26 @@ export class DbStorage implements IStorage {
       // Track which timesheets are covered by the join table
       const timesheetsWithSplits = new Set(timesheetCostCodes.map((tcc) => tcc.timesheetId));
 
+      // Fallback: when a timesheet has no costCodeId but is linked to an
+      // estimate work item, derive the cost code from that estimate item.
+      // Without this, mobile/clock-in entries that only reference a work
+      // item are dropped from the labour-hours actuals.
+      const workItemIds = Array.from(new Set(timesheets
+        .filter((t) => !t.costCodeId && t.workItemId)
+        .map((t) => t.workItemId as string)));
+      const workItemCostCode = new Map<string, string>();
+      if (workItemIds.length > 0) {
+        const items = await exec.select({
+          id: schema.estimateItems.id,
+          costCode: schema.estimateItems.costCode,
+        })
+          .from(schema.estimateItems)
+          .where(inArray(schema.estimateItems.id, workItemIds));
+        for (const it of items) {
+          if (it.costCode) workItemCostCode.set(it.id, it.costCode);
+        }
+      }
+
       // Map pending and approved hours by cost code ID
       const pendingHoursMap = new Map<string, number>();
       const approvedHoursMap = new Map<string, number>();
@@ -16765,13 +16786,16 @@ export class DbStorage implements IStorage {
         addHours(mapKey, duration, timesheet.status);
       }
 
-      // Process timesheets NOT in the join table (cost code stored directly on timesheet)
+      // Process timesheets NOT in the join table (cost code stored directly
+      // on timesheet, or derived from the linked work item).
       for (const ts of timesheets) {
         if (timesheetsWithSplits.has(ts.id)) continue;
         const duration = parseFloat(ts.duration || "0");
         if (duration <= 0) continue;
 
-        const mapKey = ts.costCodeId || "uncategorized";
+        const mapKey = ts.costCodeId
+          || (ts.workItemId ? workItemCostCode.get(ts.workItemId) : undefined)
+          || "uncategorized";
         addHours(mapKey, duration, ts.status);
       }
 
