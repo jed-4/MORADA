@@ -57,7 +57,8 @@ import {
   Flag,
   Check,
   Palette,
-  ExternalLink
+  ExternalLink,
+  Archive
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection } from "@shared/schema";
 import { computeEstimateItemPrice } from "@shared/pricing";
@@ -2146,9 +2147,30 @@ export default function EstimateDetail() {
   // / budget / labour-hours recalcs atomically on the server.
 
   // Approve confirmation dialog state. The dialog is wired to the per-row
-  // 3-dot menu in the revisions popover (and to the top-bar Approve button
-  // for the active revision). Confirm calls approveMutation.mutate(id).
+  // 3-dot menu in the revisions popover (and to the Approve action in the
+  // options popover for the active revision). Confirm calls
+  // approveMutation.mutate(id).
   const [approveDialogRevisionId, setApproveDialogRevisionId] = useState<string | null>(null);
+
+  // Archive confirmation dialog state. Archiving sets the estimate's status
+  // to "archived" via PATCH. We gate it behind a confirmation dialog so the
+  // status change is deliberate (mirrors the Approve flow).
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const archiveMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", { status: "archived" });
+    },
+    onSuccess: () => {
+      invalidateEstimateAndProject();
+      setArchiveDialogOpen(false);
+      toast({ title: "Estimate archived" });
+    },
+    onError: (error: any) => toast({
+      title: "Error",
+      description: error.message || "Failed to archive estimate.",
+      variant: "destructive",
+    }),
+  });
 
   const deleteRevisionMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -2298,22 +2320,57 @@ export default function EstimateDetail() {
     setIsEditEstimateDialogOpen(true);
   };
 
-  // Handler to save estimate changes from dialog
+  // Handler to save estimate changes from dialog. Note: "approved" and
+  // "archived" status changes are handled inline by the status select
+  // (they trigger the Approve / Archive confirmation flows respectively),
+  // so they should never reach this save handler — but we guard anyway.
   const handleSaveEstimateEdit = () => {
     if (!estimate) return;
     const updates: { name?: string; status?: string } = {};
-    
+
     if (editEstimateForm.name.trim() && editEstimateForm.name !== estimate.name) {
       updates.name = editEstimateForm.name.trim();
     }
-    if (editEstimateForm.status && editEstimateForm.status !== estimate.status) {
+    if (
+      editEstimateForm.status &&
+      editEstimateForm.status !== estimate.status &&
+      editEstimateForm.status !== "approved" &&
+      editEstimateForm.status !== "archived"
+    ) {
       updates.status = editEstimateForm.status;
     }
-    
+
     if (Object.keys(updates).length > 0) {
       updateEstimateMutation.mutate(updates);
     }
     setIsEditEstimateDialogOpen(false);
+  };
+
+  // When the user picks "approved" or "archived" inside the Edit Estimate
+  // dialog, divert into the proper Approve / Archive confirmation flow
+  // instead of saving the status change directly. This keeps the workflow
+  // (locking, contract promotion, budget recalc, audit fields) consistent
+  // with the Approve / Archive actions in the options menu.
+  //
+  // Before diverting, we persist any pending name edit so the user doesn't
+  // silently lose unsaved changes if they cancel the confirmation dialog.
+  const handleEditDialogStatusChange = (value: string) => {
+    if (value !== "approved" && value !== "archived") {
+      setEditEstimateForm(prev => ({ ...prev, status: value }));
+      return;
+    }
+    if (estimate) {
+      const trimmedName = editEstimateForm.name.trim();
+      if (trimmedName && trimmedName !== estimate.name) {
+        updateEstimateMutation.mutate({ name: trimmedName });
+      }
+    }
+    setIsEditEstimateDialogOpen(false);
+    if (value === "approved") {
+      setApproveDialogRevisionId(effectiveEstimateId ?? null);
+    } else {
+      setArchiveDialogOpen(true);
+    }
   };
 
   const handleNameKeyDown = (e: React.KeyboardEvent) => {
@@ -4965,46 +5022,6 @@ export default function EstimateDetail() {
               </span>
             )}
             {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
-            {estimate && (
-              <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                {estimate.status !== "contract" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
-                    disabled={approveMutation.isPending}
-                    data-testid="button-approve-estimate"
-                  >
-                    Approve
-                  </Button>
-                )}
-                {estimate.status === "contract" && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
-                      disabled={approveMutation.isPending}
-                      data-testid="button-reapprove-estimate"
-                    >
-                      Re-approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => revertMutation.mutate("approved")}
-                      disabled={revertMutation.isPending}
-                      data-testid="button-revert-to-approved"
-                    >
-                      Revert to Approved
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -5173,6 +5190,48 @@ export default function EstimateDetail() {
               </div>
               <Separator className="my-3" />
               <div className="flex flex-col gap-0.5">
+                {estimate && estimate.status !== "contract" && (
+                  <button
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
+                    disabled={approveMutation.isPending}
+                    data-testid="button-approve-estimate"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Approve estimate
+                  </button>
+                )}
+                {estimate && estimate.status === "contract" && (
+                  <>
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
+                      disabled={approveMutation.isPending}
+                      data-testid="button-reapprove-estimate"
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Re-approve estimate
+                    </button>
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => revertMutation.mutate("approved")}
+                      disabled={revertMutation.isPending}
+                      data-testid="button-revert-to-approved"
+                    >
+                      <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
+                      Revert to Approved
+                    </button>
+                  </>
+                )}
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => setArchiveDialogOpen(true)}
+                  disabled={archiveMutation.isPending || estimate?.status === "archived"}
+                  data-testid="button-archive-estimate"
+                >
+                  <Archive className="w-3.5 h-3.5 text-muted-foreground" />
+                  {estimate?.status === "archived" ? "Archived" : "Archive estimate"}
+                </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
                   onClick={handleOpenEditEstimateDialog}
@@ -7317,7 +7376,7 @@ export default function EstimateDetail() {
               <label className="text-sm font-medium">Status</label>
               <Select
                 value={editEstimateForm.status}
-                onValueChange={(value) => setEditEstimateForm(prev => ({ ...prev, status: value }))}
+                onValueChange={handleEditDialogStatusChange}
               >
                 <SelectTrigger data-testid="select-edit-estimate-status">
                   <SelectValue placeholder="Select status" />
@@ -7811,6 +7870,40 @@ export default function EstimateDetail() {
               data-testid="button-approve-confirm"
             >
               {approveMutation.isPending ? "Approving…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive confirmation dialog. Mirrors the Approve flow so changing
+          status to "archived" — whether from the options menu or the Edit
+          Estimate dialog — is always a deliberate, confirmed action. */}
+      <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+        <DialogContent data-testid="dialog-archive-estimate">
+          <DialogHeader>
+            <DialogTitle>Archive this estimate?</DialogTitle>
+            <DialogDescription>
+              The estimate will be marked as archived and hidden from active
+              workflows. You can change its status back at any time from the
+              Edit Estimate dialog.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setArchiveDialogOpen(false)}
+              disabled={archiveMutation.isPending}
+              data-testid="button-archive-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => archiveMutation.mutate()}
+              disabled={archiveMutation.isPending}
+              data-testid="button-archive-confirm"
+            >
+              {archiveMutation.isPending ? "Archiving…" : "Archive"}
             </Button>
           </DialogFooter>
         </DialogContent>
