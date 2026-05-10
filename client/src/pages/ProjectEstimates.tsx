@@ -41,6 +41,7 @@ import {
   Columns3,
   ChevronDown,
   GripVertical,
+  BadgeCheck,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -362,17 +363,26 @@ export default function ProjectEstimates() {
       setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
     };
 
+    const isContract = estimate.status === "contract";
     return (
       <Card 
         key={estimate.id} 
-        className="hover-elevate p-3 cursor-pointer border rounded-xl"
+        className={`hover-elevate p-3 cursor-pointer border rounded-xl ${
+          isContract ? "bg-primary/5 dark:bg-primary/10 border-primary/40" : ""
+        }`}
         data-testid={`estimate-card-${estimate.id}`}
         onClick={handleEstimateClick}
       >
         <div className="flex items-center gap-3">
           {/* Left: Estimate Name */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-sm line-clamp-1">
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            {isContract && (
+              <BadgeCheck
+                className="w-4 h-4 text-primary flex-shrink-0"
+                data-testid={`icon-contract-${estimate.id}`}
+              />
+            )}
+            <h3 className={`text-sm line-clamp-1 ${isContract ? "font-semibold" : "font-medium"}`}>
               {estimate.name}
             </h3>
           </div>
