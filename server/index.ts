@@ -89,12 +89,33 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    // Log the error so it still shows in deployment logs.
+    console.error(`[error] ${req.method} ${req.path} -> ${status}: ${message}`, err);
+
+    // For browser navigations to non-API routes, serve the SPA shell so the
+    // user sees the React app (which will render its own error UI / login)
+    // instead of a raw JSON error like `{"message":"Control plane request failed"}`.
+    // API clients keep getting JSON. We require Sec-Fetch-Mode: navigate so a
+    // generic `Accept: */*` non-browser client doesn't unexpectedly receive HTML.
+    const isBrowserNavigation =
+      req.method === "GET" &&
+      req.get("sec-fetch-mode") === "navigate" &&
+      !req.path.startsWith("/api") &&
+      !req.path.startsWith("/uploads");
+
+    if (isBrowserNavigation) {
+      const indexPath = path.resolve(import.meta.dirname, "..", "dist", "public", "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.status(status).sendFile(indexPath);
+        return;
+      }
+    }
+
     res.status(status).json({ message });
-    throw err;
   });
 
   // Serve mobile manifest with no-cache headers for PWA updates
