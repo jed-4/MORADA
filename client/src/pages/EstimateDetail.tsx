@@ -5190,48 +5190,6 @@ export default function EstimateDetail() {
               </div>
               <Separator className="my-3" />
               <div className="flex flex-col gap-0.5">
-                {estimate && estimate.status !== "contract" && (
-                  <button
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                    onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
-                    disabled={approveMutation.isPending}
-                    data-testid="button-approve-estimate"
-                  >
-                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Approve estimate
-                  </button>
-                )}
-                {estimate && estimate.status === "contract" && (
-                  <>
-                    <button
-                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
-                      disabled={approveMutation.isPending}
-                      data-testid="button-reapprove-estimate"
-                    >
-                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      Re-approve estimate
-                    </button>
-                    <button
-                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={() => revertMutation.mutate("approved")}
-                      disabled={revertMutation.isPending}
-                      data-testid="button-revert-to-approved"
-                    >
-                      <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      Revert to Approved
-                    </button>
-                  </>
-                )}
-                <button
-                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                  onClick={() => setArchiveDialogOpen(true)}
-                  disabled={archiveMutation.isPending || estimate?.status === "archived"}
-                  data-testid="button-archive-estimate"
-                >
-                  <Archive className="w-3.5 h-3.5 text-muted-foreground" />
-                  {estimate?.status === "archived" ? "Archived" : "Archive estimate"}
-                </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
                   onClick={handleOpenEditEstimateDialog}
@@ -5276,6 +5234,49 @@ export default function EstimateDetail() {
                 >
                   <Package className="w-3.5 h-3.5 text-muted-foreground" />
                   Browse catalog
+                </button>
+                <Separator className="my-1" />
+                {estimate && estimate.status !== "contract" && (
+                  <button
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
+                    disabled={approveMutation.isPending}
+                    data-testid="button-approve-estimate"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Approve estimate
+                  </button>
+                )}
+                {estimate && estimate.status === "contract" && (
+                  <>
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
+                      disabled={approveMutation.isPending}
+                      data-testid="button-reapprove-estimate"
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Re-approve estimate
+                    </button>
+                    <button
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={() => revertMutation.mutate("approved")}
+                      disabled={revertMutation.isPending}
+                      data-testid="button-revert-to-approved"
+                    >
+                      <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
+                      Revert to Approved
+                    </button>
+                  </>
+                )}
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => setArchiveDialogOpen(true)}
+                  disabled={archiveMutation.isPending || estimate?.status === "archived"}
+                  data-testid="button-archive-estimate"
+                >
+                  <Archive className="w-3.5 h-3.5 text-muted-foreground" />
+                  {estimate?.status === "archived" ? "Archived" : "Archive estimate"}
                 </button>
               </div>
             </PopoverContent>
