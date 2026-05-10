@@ -551,7 +551,6 @@ export default function ProgrammeScheduleWidget({
                     const ec =
                       endCol >= 0 ? endCol : COL_COUNT - 1;
                     const color = getItemColor(item, config.colourBy);
-                    const isMultiDay = sc !== ec;
                     return (
                       <div
                         key={item.id}
@@ -560,23 +559,13 @@ export default function ProgrammeScheduleWidget({
                             ? ` · ${item.assignedToName}`
                             : ""
                         }`}
-                        className={cn(
-                          "absolute top-1 bottom-1 flex items-center px-2 rounded-md text-[9px] font-medium cursor-pointer overflow-hidden",
-                          isMultiDay ? "text-white" : "border",
-                        )}
+                        className="absolute top-1 bottom-1 flex items-center px-2 rounded-md text-[9px] font-medium text-white cursor-pointer overflow-hidden"
                         style={{
                           left: `calc(${(sc / COL_COUNT) * 100}% + 2px)`,
                           right: `calc(${
                             ((COL_COUNT - ec - 1) / COL_COUNT) * 100
                           }% + 2px)`,
-                          backgroundColor: isMultiDay
-                            ? color
-                            : "transparent",
-                          borderColor: isMultiDay
-                            ? "transparent"
-                            : color,
-                          color: isMultiDay ? "white" : color,
-                          borderLeftWidth: isMultiDay ? 0 : 3,
+                          backgroundColor: color,
                         }}
                         data-testid={`week-item-${item.id}`}
                       >
