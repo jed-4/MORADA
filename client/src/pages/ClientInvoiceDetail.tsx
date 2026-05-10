@@ -23,7 +23,6 @@ import {
   ChevronDown,
   ChevronUp,
   Lock,
-  Unlock,
   Settings2,
   Pencil,
   RefreshCw,
@@ -262,12 +261,9 @@ export default function ClientInvoiceDetail() {
   const [allowanceClaims, setAllowanceClaims] = useState<ClaimState>({});
   const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(defaultColumnConfig());
   const [showAmountsIncTax, setShowAmountsIncTax] = useState(true);
-  const [lockedContractPrice, setLockedContractPrice] = useState<number | null>(null);
   const [contractClaimRows, setContractClaimRows] = useState<ContractClaimRow[]>([
     { id: crypto.randomUUID(), name: "", description: "", claimPercent: 100 },
   ]);
-  const [contractPriceOverrideOpen, setContractPriceOverrideOpen] = useState(false);
-  const [contractPriceOverrideValue, setContractPriceOverrideValue] = useState("");
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [dragOverId, setDragOverId] = useState<ColumnId | null>(null);
   const dragItem = useRef<ColumnId | null>(null);
@@ -513,9 +509,6 @@ export default function ClientInvoiceDetail() {
         setShowAmountsIncTax((invoice as any).showAmountsIncTax);
       }
       setTermsAndConditions((invoice as any).termsAndConditions || "");
-      if ((invoice as any).lockedContractPrice) {
-        setLockedContractPrice((invoice as any).lockedContractPrice);
-      }
       if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
         setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
       }
@@ -666,8 +659,9 @@ export default function ClientInvoiceDetail() {
 
   // ── calculations ───────────────────────────────────────────────────────────────
 
+  // Always derived from the project's approved estimate snapshot — no per-invoice override.
   const getEffectiveContractPrice = () =>
-    lockedContractPrice || ((currentProject as any)?.contractPrice ?? null);
+    ((currentProject as any)?.contractPrice ?? null);
 
   const calculateContractPrice = () => {
     const baseCents = getEffectiveContractPrice();
@@ -862,7 +856,6 @@ export default function ClientInvoiceDetail() {
     markupAmount: Math.round(calculateMarkup() * 100),
     gstAmount: Math.round(calculateGST() * 100),
     totalAmount: Math.round(calculateTotal() * 100),
-    lockedContractPrice: lockedContractPrice,
     columnConfig: columnConfig,
     showAmountsIncTax: showAmountsIncTax,
     contractClaimRows: contractClaimRows,
@@ -2147,7 +2140,7 @@ export default function ClientInvoiceDetail() {
                       </div>{/* end contract price header */}
 
                       <div className="px-4 py-3 space-y-3">
-                        {/* Locked contract price display + unlock popover */}
+                        {/* Locked contract price display (read-only — sourced from approved estimate) */}
                         {(() => {
                           const baseCents = getEffectiveContractPrice();
                           return (
@@ -2155,53 +2148,14 @@ export default function ClientInvoiceDetail() {
                               <span className="text-xs text-muted-foreground uppercase tracking-wide">
                                 Locked Contract Price
                               </span>
-                              <span className="font-semibold text-sm">
+                              <span className="font-semibold text-sm" data-testid="text-locked-contract-price">
                                 {baseCents ? formatCurrency(baseCents / 100) : (
                                   <span className="text-muted-foreground italic">Not set</span>
                                 )}
                               </span>
-                              {/* Unlock / override popover */}
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="text-muted-foreground hover:text-foreground"
-                                    title="Override contract price"
-                                  >
-                                    <Unlock className="w-3.5 h-3.5" />
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-64 p-3" align="start">
-                                  <p className="text-sm font-medium mb-1">Override contract price?</p>
-                                  <p className="text-xs text-muted-foreground mb-3">
-                                    This will override the locked price from the project's approved estimate for this invoice only.
-                                  </p>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      type="number"
-                                      placeholder="Amount (inc GST)"
-                                      defaultValue={baseCents ? (baseCents / 100).toFixed(2) : ""}
-                                      min="0"
-                                      step="0.01"
-                                      className="h-8 text-sm"
-                                      id="contract-price-override-input"
-                                    />
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => {
-                                        const input = document.getElementById("contract-price-override-input") as HTMLInputElement;
-                                        const val = parseFloat(input?.value || "0");
-                                        if (!isNaN(val) && val >= 0) {
-                                          setLockedContractPrice(Math.round(val * 100));
-                                        }
-                                      }}
-                                    >
-                                      Set
-                                    </Button>
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
+                              <span className="text-xs text-muted-foreground italic">
+                                from approved estimate (inc GST)
+                              </span>
                             </div>
                           );
                         })()}

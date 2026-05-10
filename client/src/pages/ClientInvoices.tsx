@@ -189,8 +189,12 @@ export default function ClientInvoices() {
     const paidTotal     = filteredInvoices.reduce((s, i) => s + i.paidAmount, 0);
     const balanceTotal  = filteredInvoices.reduce((s, i) => s + i.balanceAmount, 0);
 
-    const contractPriceCents      = (currentProject as any)?.contractPrice ?? 0;
-    const approvedVariationsTotal = projectVariations.reduce((s, v) => s + (v.totalAmount ?? 0), 0);
+    // Original contract = snapshot from approved estimate (inc-GST cents).
+    const contractPriceCents = (currentProject as any)?.contractPrice ?? 0;
+    // Approved variations total (inc-GST cents) — drives the revised contract price.
+    const approvedVariationsTotal = projectVariations
+      .filter((v) => v.status === "approved" || v.status === "released")
+      .reduce((s, v) => s + (v.totalAmount ?? 0), 0);
 
     const finalizedAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus === "finalized")

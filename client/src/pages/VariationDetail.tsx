@@ -675,6 +675,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
       toast({ title: "Success", description: "Variation moved to Action" });
     },
     onError: (error: Error) => {
@@ -690,6 +691,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
       toast({ title: "Success", description: "Variation sent for approval" });
     },
     onError: (error: Error) => {
@@ -709,6 +711,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
       setApproveDialogOpen(false);
       toast({ title: "Variation approved", description: "Variation approved successfully" });
       // T005: Show EOT toast if project end date was extended
@@ -746,6 +749,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[0] === "string" && (query.queryKey[0] as string).startsWith("/api/variations") });
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
       setRejectDialogOpen(false);
       setRejectReason("");
       toast({ title: "Success", description: "Variation rejected" });

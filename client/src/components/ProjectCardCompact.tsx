@@ -112,7 +112,11 @@ export default function ProjectCardCompact({
   });
 
   const statusOption = allStatusOptions.find(opt => opt.key === project.projectSubStatus);
-  const costValue = project.contractCost || project.clientBudget || project.budget;
+  // Use contractPrice (snapshot of approved estimate inc-GST) as the canonical
+  // value here. Fetching variations per card to compute the revised total would
+  // be too expensive — surfaces that need the revised value should call the
+  // /api/projects/:id/contract-metrics endpoint or use useProjectMetrics.
+  const costValue = project.contractPrice || project.clientBudget || project.budget;
 
   const showBudgetRow = (visibleFields.budget && !!costValue) || (visibleFields.progress && project.progress != null);
   const showClientRow = (visibleFields.client && !!project.clientName) || (visibleFields.foreman);

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
+import type { ContractMetrics } from "@shared/projectMetrics";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,15 @@ import * as LucideIcons from "lucide-react";
 
 export default function ProjectSettings() {
   const { currentProject, setCurrentProject } = useProject();
+  const [, setLocation] = useLocation();
+  const { data: contractMetrics } = useQuery<ContractMetrics>({
+    queryKey: ['/api/projects', currentProject?.id, 'contract-metrics'],
+    queryFn: () => fetch(`/api/projects/${currentProject!.id}/contract-metrics`, { credentials: 'include' }).then((r) => {
+      if (!r.ok) throw new Error(`Failed to fetch contract metrics (${r.status})`);
+      return r.json();
+    }),
+    enabled: !!currentProject?.id && !!currentProject?.selectedEstimateId,
+  });
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isAddingProjectType, setIsAddingProjectType] = useState(false);
@@ -71,7 +81,6 @@ export default function ProjectSettings() {
     clientBudget: currentProject?.clientBudget || null,
     proposedStartDate: currentProject?.proposedStartDate || null,
     proposedEndDate: currentProject?.proposedEndDate || null,
-    contractCost: currentProject?.contractCost || null,
     selectedEstimateId: currentProject?.selectedEstimateId || null,
     color: currentProject?.color || "#A890D4",
     icon: currentProject?.icon || "Building2",
@@ -248,7 +257,6 @@ export default function ProjectSettings() {
         clientBudget: currentProject.clientBudget || null,
         proposedStartDate: currentProject.proposedStartDate || null,
         proposedEndDate: currentProject.proposedEndDate || null,
-        contractCost: currentProject.contractCost || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
@@ -324,7 +332,6 @@ export default function ProjectSettings() {
         clientBudget: currentProject.clientBudget || null,
         proposedStartDate: currentProject.proposedStartDate || null,
         proposedEndDate: currentProject.proposedEndDate || null,
-        contractCost: currentProject.contractCost || null,
         selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#A890D4",
         icon: currentProject.icon || "Building2",
@@ -868,24 +875,28 @@ export default function ProjectSettings() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="contract-cost">Contract Cost</Label>
-              {isEditing ? (
-                <Input
-                  id="contract-cost"
-                  type="number"
-                  value={formData.contractCost ? formData.contractCost / 100 : ""}
-                  onChange={(e) => setFormData({ ...formData, contractCost: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null })}
-                  placeholder="0.00"
-                  step="0.01"
-                  data-testid="input-contract-cost"
-                />
-              ) : (
-                <div className="p-2 bg-muted rounded-md" data-testid="text-contract-cost">
-                  {currentProject.contractCost 
-                    ? `$${(currentProject.contractCost / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : "Not set"}
-                </div>
-              )}
+              <Label htmlFor="contract-cost">Contract Cost (from approved estimate)</Label>
+              <div className="p-2 bg-muted rounded-md flex items-center justify-between gap-2" data-testid="text-contract-cost">
+                <span>
+                  {!currentProject.selectedEstimateId
+                    ? "No contract estimate selected"
+                    : contractMetrics
+                      ? `$${(contractMetrics.originalContractPriceExGstCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ex GST`
+                      : "—"}
+                </span>
+                {currentProject.selectedEstimateId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => setLocation(`/projects/${currentProject.id}/estimates/${currentProject.selectedEstimateId}`)}
+                    data-testid="link-view-contract-estimate"
+                  >
+                    View contract estimate
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">

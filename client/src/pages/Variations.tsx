@@ -272,7 +272,10 @@ export default function Variations() {
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       apiRequest(`/api/variations/${id}`, "PATCH", { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/variations"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
+    },
     onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
   });
 
@@ -281,6 +284,7 @@ export default function Variations() {
       apiRequest("/api/variations/bulk-status", "POST", { ids, status }),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+      queryClient.invalidateQueries({ predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/projects" });
       setSelectedIds(new Set());
       toast({ title: `${vars.ids.length} variation${vars.ids.length !== 1 ? "s" : ""} updated to ${STATUS_LABEL[vars.status] ?? vars.status}` });
     },

@@ -339,7 +339,7 @@ function DroppableColumn({
   });
 
   const totalValue = projects.reduce((sum, project) => {
-    const value = project.contractCost || project.clientBudget || project.budget || 0;
+    const value = project.contractPrice || project.clientBudget || project.budget || 0;
     return sum + value;
   }, 0);
 

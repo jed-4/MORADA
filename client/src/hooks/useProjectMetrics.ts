@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
 import type { Estimate, Bill, Variation, ClientInvoice } from "@shared/schema";
+import { computeContractMetrics, type ContractMetrics } from "@shared/projectMetrics";
 
 export interface ProjectMetric {
   id: string;
@@ -14,8 +15,8 @@ export interface ProjectMetric {
   percentage?: number;
 }
 
-export interface ProjectMetricsData {
-  // Contract & Revenue
+export interface ProjectMetricsData extends ContractMetrics {
+  // Contract & Revenue (legacy aliases — prefer the *ExGst / *IncGst variants)
   contractPrice: number;
   approvedChangeOrders: number;
   revisedContractPrice: number;
@@ -179,6 +180,18 @@ export function useProjectMetrics() {
   const calculateMetrics = (): ProjectMetricsData => {
     // Default values
     const defaults: ProjectMetricsData = {
+      originalContractPriceExGst: 0,
+      originalContractPriceIncGst: 0,
+      approvedVariationsExGst: 0,
+      approvedVariationsIncGst: 0,
+      revisedContractPriceExGst: 0,
+      revisedContractPriceIncGst: 0,
+      originalContractPriceExGstCents: 0,
+      originalContractPriceIncGstCents: 0,
+      approvedVariationsExGstCents: 0,
+      approvedVariationsIncGstCents: 0,
+      revisedContractPriceExGstCents: 0,
+      revisedContractPriceIncGstCents: 0,
       contractPrice: 0,
       approvedChangeOrders: 0,
       revisedContractPrice: 0,
@@ -219,11 +232,20 @@ export function useProjectMetrics() {
 
     if (!projectId) return defaults;
 
-    // Contract Price: Sum of all estimate items (including taxes)
-    const contractPrice = estimateItems.reduce((sum, item) => {
-      const price = item.priceIncTax || 0;
-      return sum + (typeof price === 'number' ? price : 0);
-    }, 0) / 100; // Convert from cents
+    // Centralised contract derivation (ex-GST + inc-GST variants).
+    // priceIncTax / taxAmount on estimate items are line totals in cents;
+    // variations.subtotal is ex-GST cents and variations.totalAmount is inc-GST cents.
+    const contractMetrics = computeContractMetrics(
+      estimateItems.map(i => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
+      variations.map(v => ({
+        status: (v as any).status ?? null,
+        subtotal: (v as any).subtotal ?? null,
+        totalAmount: (v as any).totalAmount ?? (v as any).totalIncTax ?? null,
+      })),
+    );
+
+    // Contract Price (legacy alias — inc-GST dollars)
+    const contractPrice = contractMetrics.originalContractPriceIncGst;
 
     // Contract Costs: Estimate values without markup
     const contractCosts = estimateItems.reduce((sum, item) => {
@@ -232,14 +254,11 @@ export function useProjectMetrics() {
       return sum + (unitCost * qty);
     }, 0) / 100;
 
-    // Approved Change Orders (Variations)
+    // Variation status buckets (for counts + pending value)
     const approvedVariationsList = variations.filter(v => v.status === 'approved' || v.status === 'released');
     const pendingVariationsList = variations.filter(v => v.status === 'pending' || v.status === 'draft');
-    
-    const approvedChangeOrders = approvedVariationsList.reduce((sum, v) => {
-      return sum + (v.totalIncTax || 0);
-    }, 0) / 100;
 
+    const approvedChangeOrders = contractMetrics.approvedVariationsIncGst;
     const pendingVariationValue = pendingVariationsList.reduce((sum, v) => {
       return sum + (v.totalIncTax || 0);
     }, 0) / 100;
@@ -251,8 +270,8 @@ export function useProjectMetrics() {
       return sum + (unitCost * qty);
     }, 0) / 100;
 
-    // Revised Contract Price
-    const revisedContractPrice = contractPrice + approvedChangeOrders;
+    // Revised Contract Price (legacy alias — inc-GST dollars)
+    const revisedContractPrice = contractMetrics.revisedContractPriceIncGst;
 
     // Total Project Costs
     const totalProjectCosts = contractCosts + changeOrderCosts;
@@ -328,6 +347,7 @@ export function useProjectMetrics() {
     }
 
     return {
+      ...contractMetrics,
       contractPrice,
       approvedChangeOrders,
       revisedContractPrice,

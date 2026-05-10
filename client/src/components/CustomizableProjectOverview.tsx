@@ -188,6 +188,16 @@ const visibilityOptions: { value: VisibilityOption; label: string; description: 
 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
+  const { data: contractMetrics } = useQuery<import("@shared/projectMetrics").ContractMetrics>({
+    queryKey: ["/api/projects", currentProject?.id, "contract-metrics"],
+    queryFn: () => fetch(`/api/projects/${currentProject!.id}/contract-metrics`, { credentials: "include" }).then((r) => {
+      if (!r.ok) throw new Error(`Failed to fetch contract metrics (${r.status})`);
+      return r.json();
+    }),
+    enabled: !!currentProject?.id && !!currentProject?.selectedEstimateId,
+  });
+  const fmtAud = (cents: number) =>
+    new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(cents / 100);
   const { user } = useAuth();
   const { toolbarVisible } = useToolbarVisible();
   const { toast } = useToast();
@@ -1153,6 +1163,35 @@ export default function CustomizableProjectOverview() {
             <span className="font-medium text-foreground/70 truncate">{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
           </div>
           {dashboardControls}
+        </div>
+      )}
+
+      {/* 3-up contract summary: Original / Approved Variations / Revised — shown
+          whenever a contract estimate has been approved for this project. */}
+      {currentProject?.selectedEstimateId && contractMetrics && (
+        <div
+          className="flex-shrink-0 mx-4 mt-2 grid grid-cols-3 gap-px rounded-md border border-border bg-border overflow-hidden"
+          data-testid="header-contract-3up"
+        >
+          {[
+            { label: "Original Contract", ex: contractMetrics.originalContractPriceExGstCents, inc: contractMetrics.originalContractPriceIncGstCents, testid: "metric-original" },
+            { label: "Approved Variations", ex: contractMetrics.approvedVariationsExGstCents, inc: contractMetrics.approvedVariationsIncGstCents, testid: "metric-variations" },
+            { label: "Revised Contract", ex: contractMetrics.revisedContractPriceExGstCents, inc: contractMetrics.revisedContractPriceIncGstCents, testid: "metric-revised", emphasis: true },
+          ].map((m) => (
+            <div
+              key={m.label}
+              className="flex flex-col gap-0.5 bg-card px-3 py-2"
+              data-testid={m.testid}
+            >
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{m.label}</span>
+              <span className={`tabular-nums leading-tight ${m.emphasis ? "text-base font-semibold" : "text-sm font-medium"}`}>
+                {fmtAud(m.inc)} <span className="text-[10px] font-normal text-muted-foreground">inc GST</span>
+              </span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {fmtAud(m.ex)} ex GST
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

@@ -3097,6 +3097,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Centralised contract metrics for a project (used by PDFs / Xero exports
+  // and any consumer that needs the revised contract price server-side).
+  app.get("/api/projects/:id/contract-metrics", async (req, res) => {
+    try {
+      const { computeContractMetrics } = await import("@shared/projectMetrics");
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const items = project.selectedEstimateId
+        ? await storage.getEstimateItems(project.selectedEstimateId)
+        : [];
+      const variations = await storage.getVariations(req.params.id);
+
+      const metrics = computeContractMetrics(
+        items.map((i: any) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
+        variations.map((v: any) => ({
+          status: v.status ?? null,
+          subtotal: v.subtotal ?? null,
+          totalAmount: v.totalAmount ?? v.totalIncTax ?? null,
+        })),
+      );
+      res.json(metrics);
+    } catch (error) {
+      console.error("[GET /api/projects/:id/contract-metrics] Error:", error);
+      res.status(500).json({ error: "Failed to compute contract metrics" });
+    }
+  });
+
   app.post("/api/projects", async (req, res) => {
     try {
       const userId = (req.session as any).userId;
