@@ -451,79 +451,30 @@ export default function ProgrammeScheduleWidget({
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-programme">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--bp-border))]">
-        <span className="text-[13px] font-semibold text-foreground">
-          Programme &amp; Schedule
-        </span>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-full bg-[hsl(var(--bp-subtle))] border border-[hsl(var(--bp-border))] p-0.5 text-[10px]">
-            {(["week", "gantt"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => updateConfig("viewMode", v)}
-                className={cn(
-                  "px-3 py-1 rounded-full font-medium transition-colors",
-                  config.viewMode === v
-                    ? "bg-[hsl(var(--bp-purple))] text-white"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                data-testid={`view-${v}`}
-              >
-                {v === "week" ? "Week" : "Gantt"}
-              </button>
-            ))}
-          </div>
-
-          {config.viewMode === "gantt" && (
-            <div className="flex rounded-full bg-[hsl(var(--bp-subtle))] border border-[hsl(var(--bp-border))] p-0.5 text-[10px]">
-              {(["2w", "4w", "6w"] as const).map((z) => (
-                <button
-                  key={z}
-                  onClick={() => updateConfig("ganttZoom", z)}
-                  className={cn(
-                    "px-2 py-1 rounded-full font-medium transition-colors",
-                    config.ganttZoom === z
-                      ? "bg-[hsl(var(--bp-purple))] text-white"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {z.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {config.viewMode === "week" && (
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <button
-                onClick={() => setWeekStart((w) => addDays(w, -7))}
-                className="p-1 rounded hover:bg-[hsl(var(--bp-subtle))]"
-                data-testid="week-prev"
-                aria-label="Previous week"
-              >
-                ‹
-              </button>
-              <span className="font-medium text-foreground min-w-[120px] text-center">
-                {format(weekStart, "d MMM")} –{" "}
-                {format(addDays(weekStart, 6), "d MMM yyyy")}
-              </span>
-              <button
-                onClick={() => setWeekStart((w) => addDays(w, 7))}
-                className="p-1 rounded hover:bg-[hsl(var(--bp-subtle))]"
-                data-testid="week-next"
-                aria-label="Next week"
-              >
-                ›
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Body */}
       {config.viewMode === "week" ? (
         <>
+          <div className="flex items-center justify-between px-2 py-1 border-b border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))] text-[10px] text-muted-foreground">
+            <button
+              onClick={() => setWeekStart((w) => addDays(w, -7))}
+              className="px-1 rounded hover-elevate"
+              data-testid="week-prev"
+              aria-label="Previous week"
+            >
+              ‹
+            </button>
+            <span className="font-medium text-foreground">
+              {format(weekStart, "d MMM")} – {format(addDays(weekStart, 6), "d MMM yyyy")}
+            </span>
+            <button
+              onClick={() => setWeekStart((w) => addDays(w, 7))}
+              className="px-1 rounded hover-elevate"
+              data-testid="week-next"
+              aria-label="Next week"
+            >
+              ›
+            </button>
+          </div>
           <div
             className="grid border-b border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))]"
             style={{
@@ -534,31 +485,25 @@ export default function ProgrammeScheduleWidget({
               <div
                 key={i}
                 className={cn(
-                  "flex flex-col items-center py-1.5 text-center border-r last:border-r-0 border-[hsl(var(--bp-border))]",
+                  "flex items-center justify-center gap-1 py-0.5 text-center border-r last:border-r-0 border-[hsl(var(--bp-border))]",
                   isToday(day) && "bg-[hsl(var(--bp-purple)/0.06)]",
                 )}
               >
                 <span className="text-[9px] text-muted-foreground uppercase">
                   {format(day, "EEE")}
                 </span>
-                {isToday(day) ? (
-                  <div className="w-5 h-5 rounded-full bg-[hsl(var(--bp-purple))] flex items-center justify-center mt-0.5">
-                    <span className="text-[10px] font-semibold text-white">
-                      {format(day, "d")}
-                    </span>
-                  </div>
-                ) : (
-                  <span
-                    className={cn(
-                      "text-[11px] font-medium mt-0.5",
-                      i >= 5
+                <span
+                  className={cn(
+                    "text-[10px] font-medium",
+                    isToday(day)
+                      ? "text-[hsl(var(--bp-purple))] font-semibold"
+                      : i >= 5
                         ? "text-muted-foreground"
                         : "text-foreground",
-                    )}
-                  >
-                    {format(day, "d")}
-                  </span>
-                )}
+                  )}
+                >
+                  {format(day, "d")}
+                </span>
               </div>
             ))}
           </div>
@@ -763,24 +708,6 @@ export default function ProgrammeScheduleWidget({
         </>
       )}
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 px-3 py-1.5 border-t border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))] text-[9px] text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-2.5 rounded-sm bg-[hsl(var(--bp-purple))]" />
-          <span>Schedule item</span>
-        </div>
-        {config.showTasks && config.viewMode === "week" && (
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-sm bg-[hsl(var(--bp-amber))]" />
-            <span>Task due</span>
-          </div>
-        )}
-        <span className="ml-auto">
-          {config.viewMode === "week"
-            ? `${weekItems.length} items this week`
-            : `${filteredItems.length} items`}
-        </span>
-      </div>
     </div>
   );
 }

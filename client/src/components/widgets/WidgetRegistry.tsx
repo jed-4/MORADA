@@ -248,7 +248,7 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
   },
   programme: {
     type: "programme",
-    name: "Programme & Schedule",
+    name: "Schedule",
     description: "Schedule items and tasks in week or Gantt view",
     icon: GanttChart,
     component: ProgrammeScheduleWidget,
