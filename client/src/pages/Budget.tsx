@@ -478,23 +478,7 @@ export default function BudgetPage() {
     <div className="flex flex-col h-full" data-testid="page-budget">
       {/* SUB-HEADER */}
       <div className="flex items-center justify-between px-4 h-[52px] bg-background border-b border-border flex-shrink-0">
-        {/* Left — title + phase badge */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[15px] font-semibold text-foreground truncate" data-testid="text-budget-title">
-            {project?.name}
-          </span>
-          <span className="text-[15px] text-muted-foreground">· Budget</span>
-          {project?.currentSystemPhase && (
-            <span
-              className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-[hsl(var(--bp-purple)/0.08)] text-[hsl(var(--bp-purple))]"
-              data-testid="badge-project-phase"
-            >
-              {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
-            </span>
-          )}
-        </div>
-
-        {/* Centre — three contract chips (inc + ex GST) */}
+        {/* Left — three contract chips (inc + ex GST) */}
         <div className="flex items-center gap-2">
           {[
             {
@@ -541,14 +525,8 @@ export default function BudgetPage() {
           ))}
         </div>
 
-        {/* Right — cost code count + recalculate */}
+        {/* Right — recalculate */}
         <div className="flex items-center gap-2">
-          <span
-            className="px-2 py-1 rounded-md text-[10px] text-muted-foreground bg-[hsl(var(--bp-subtle))] border border-border"
-            data-testid="text-cost-code-count"
-          >
-            {lineItems?.length ?? 0} cost codes
-          </span>
           <Button
             size="sm"
             onClick={handleRecalculate}
