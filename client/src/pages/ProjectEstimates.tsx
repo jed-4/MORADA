@@ -330,12 +330,19 @@ export default function ProjectEstimates() {
     return groups;
   }, [filteredEstimates]);
 
-  // For grid: one entry per group — active (non-locked) version preferred, else latest
+  // For grid: one entry per group — active (non-locked) version preferred, else latest.
+  // Contract estimate is pinned to the top.
   const gridEstimateGroups = useMemo(() => {
-    return Array.from(revisionGroupsMap.values()).map(group => ({
+    const groups = Array.from(revisionGroupsMap.values()).map(group => ({
       primary: group.find(e => !e.isLocked) || group[group.length - 1],
       versions: group,
     }));
+    groups.sort((a, b) => {
+      const aContract = a.primary.status === "contract" ? 0 : 1;
+      const bContract = b.primary.status === "contract" ? 0 : 1;
+      return aContract - bContract;
+    });
+    return groups;
   }, [revisionGroupsMap]);
 
   // For kanban: only show the latest version per group
@@ -368,7 +375,7 @@ export default function ProjectEstimates() {
       <Card 
         key={estimate.id} 
         className={`hover-elevate p-3 cursor-pointer border rounded-xl ${
-          isContract ? "bg-primary/5 dark:bg-primary/10 border-primary/40" : ""
+          isContract ? "bg-primary/10 dark:bg-primary/15 border-primary/50" : ""
         }`}
         data-testid={`estimate-card-${estimate.id}`}
         onClick={handleEstimateClick}
@@ -382,7 +389,7 @@ export default function ProjectEstimates() {
                 data-testid={`icon-contract-${estimate.id}`}
               />
             )}
-            <h3 className={`text-sm line-clamp-1 ${isContract ? "font-semibold" : "font-medium"}`}>
+            <h3 className={`text-sm line-clamp-1 ${isContract ? "font-bold" : "font-medium"}`}>
               {estimate.name}
             </h3>
           </div>
@@ -680,9 +687,24 @@ export default function ProjectEstimates() {
             {/* Grid View */}
             {currentView === 'grid' && (
               <div className="space-y-2">
-                {gridEstimateGroups.map(({ primary, versions }) => (
-                  <EstimateCard key={primary.id} estimate={primary} versions={versions} />
-                ))}
+                {gridEstimateGroups.map(({ primary, versions }, idx) => {
+                  const isContract = primary.status === "contract";
+                  const nextIsNonContract =
+                    isContract &&
+                    idx + 1 < gridEstimateGroups.length &&
+                    gridEstimateGroups[idx + 1].primary.status !== "contract";
+                  return (
+                    <div key={primary.id}>
+                      <EstimateCard estimate={primary} versions={versions} />
+                      {nextIsNonContract && (
+                        <div
+                          className="border-t border-border my-3"
+                          data-testid="divider-contract"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
