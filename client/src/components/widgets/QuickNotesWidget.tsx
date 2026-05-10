@@ -123,7 +123,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-quick-notes">
-      <div className="flex-1 overflow-auto px-3 py-3 space-y-1">
+      <div className="flex-1 overflow-auto px-3 py-3 divide-y divide-border">
         {notes.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">
             No quick notes yet. Add the first block below.
@@ -135,7 +135,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
             return (
               <div
                 key={n.id}
-                className="group flex items-center gap-2 pt-2"
+                className="group flex items-center gap-2 py-2 first:pt-0"
                 data-testid={`quicknote-${n.id}`}
               >
                 <h4 className="text-sm font-semibold flex-1 truncate">{n.content}</h4>
@@ -153,7 +153,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
           }
           if (k === "bullet") {
             return (
-              <div key={n.id} className="group flex items-start gap-2" data-testid={`quicknote-${n.id}`}>
+              <div key={n.id} className="group flex items-start gap-2 py-2 first:pt-0" data-testid={`quicknote-${n.id}`}>
                 <span className="text-muted-foreground mt-1.5">•</span>
                 <span className="text-sm flex-1 break-words">{n.content}</span>
                 <Button
@@ -171,7 +171,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
           if (k === "todo") {
             const done = n.status === "done";
             return (
-              <div key={n.id} className="group flex items-start gap-2" data-testid={`quicknote-${n.id}`}>
+              <div key={n.id} className="group flex items-start gap-2 py-2 first:pt-0" data-testid={`quicknote-${n.id}`}>
                 <Checkbox
                   checked={done}
                   className="mt-1"
@@ -198,7 +198,7 @@ export default function QuickNotesWidget(_: WidgetProps) {
             );
           }
           return (
-            <div key={n.id} className="group flex items-start gap-2" data-testid={`quicknote-${n.id}`}>
+            <div key={n.id} className="group flex items-start gap-2 py-2 first:pt-0" data-testid={`quicknote-${n.id}`}>
               <span className="text-sm flex-1 break-words">{n.content}</span>
               <Button
                 size="icon"
