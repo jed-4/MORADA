@@ -16393,7 +16393,7 @@ export class DbStorage implements IStorage {
       // before summing to avoid both Postgres integer errors and a 100x
       // unit drift on the budget page.
       const baselineAmount = estimateItems.reduce(
-        (sum, item) => sum + Math.round((item.priceIncTax || 0) * 100),
+        (sum, item) => sum + Math.round((((item.priceIncTax || 0) - (item.taxAmount || 0))) * 100),
         0,
       );
 
@@ -16415,7 +16415,7 @@ export class DbStorage implements IStorage {
           eq(schema.variations.status, "approved")
         ));
 
-      const variationAmount = variations.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
+      const variationAmount = variations.reduce((sum, v) => sum + (v.subtotal || 0), 0);
 
       const revisedAmount = baselineAmount + variationAmount;
       const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
@@ -16557,7 +16557,7 @@ export class DbStorage implements IStorage {
       // but budget_line_items.budgetedAmount is integer CENTS, so convert
       // per line.
       for (const item of estimateItems) {
-        const amount = Math.round((item.priceIncTax || 0) * 100);
+        const amount = Math.round((((item.priceIncTax || 0) - (item.taxAmount || 0))) * 100);
         if (item.costCode) {
           const cc = costCodeMap.get(item.costCode);
           const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
