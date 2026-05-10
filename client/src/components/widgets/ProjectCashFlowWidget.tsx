@@ -1,11 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  BarChart3,
-  LineChart as LineChartIcon,
-  MoreHorizontal,
-} from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import {
   Area,
   Bar,
@@ -23,20 +18,15 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useFinancialPermission } from "@/hooks/use-permission";
 import { WidgetSkeleton, WidgetEmpty, WidgetError } from "@/components/ui/widget-states";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuCheckboxItem,
-} from "@/components/ui/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
@@ -153,7 +143,7 @@ function SCurveTooltip({ active, payload }: any) {
   );
 }
 
-export default function ProjectCashFlowWidget({ widget, onUpdate }: WidgetProps) {
+export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const allowed = useFinancialPermission();
   const projectId = currentProject?.id;
@@ -182,6 +172,97 @@ export default function ProjectCashFlowWidget({ widget, onUpdate }: WidgetProps)
     );
   }, [data]);
 
+  if (isConfiguring) {
+    return (
+      <div className="space-y-4 p-3">
+        <div className="space-y-2">
+          <Label className="text-xs">Chart type</Label>
+          <Select
+            value={config.chartType}
+            onValueChange={(v) => updateConfig({ chartType: v as ChartType })}
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="select-cashflow-chart-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bar" className="text-xs">Bar chart</SelectItem>
+              <SelectItem value="scurve" className="text-xs">S-Curve</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Group by</Label>
+          <Select
+            value={config.groupBy}
+            onValueChange={(v) => updateConfig({ groupBy: v as GroupBy })}
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="select-cashflow-group-by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week" className="text-xs">Week</SelectItem>
+              <SelectItem value="month" className="text-xs">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Date range</Label>
+          <Select
+            value={config.range}
+            onValueChange={(v) => updateConfig({ range: v as RangeOpt })}
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="select-cashflow-range">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="project" className="text-xs">Project duration</SelectItem>
+              <SelectItem value="last6" className="text-xs">Last 6 months</SelectItem>
+              <SelectItem value="current6" className="text-xs">Rolling 6 months</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2 pt-2 border-t">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Overlays
+          </Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-normal">Show contract ceiling</Label>
+            <Switch
+              checked={config.showContractCeiling}
+              onCheckedChange={(v) => updateConfig({ showContractCeiling: !!v })}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-normal">Show contract + variations</Label>
+            <Switch
+              checked={config.showVariationsCeiling}
+              onCheckedChange={(v) => updateConfig({ showVariationsCeiling: !!v })}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className={cn("text-xs font-normal", config.chartType !== "scurve" && "opacity-50")}>
+              Show planned curve
+            </Label>
+            <Switch
+              checked={config.showPlannedCurve}
+              disabled={config.chartType !== "scurve"}
+              onCheckedChange={(v) => updateConfig({ showPlannedCurve: !!v })}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          <Button size="sm" onClick={onCloseConfig} className="h-7 px-3 text-xs">
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentProject) return <WidgetEmpty message="Select a project to view cash flow" />;
   if (!allowed) return <WidgetEmpty message="You don't have access to financial data" />;
   if (isLoading) return <WidgetSkeleton />;
@@ -194,177 +275,17 @@ export default function ProjectCashFlowWidget({ widget, onUpdate }: WidgetProps)
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-project-cash-flow">
-      {/* Header */}
-      <div className="flex items-start gap-2 px-3 pt-3 pb-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-[hsl(var(--bp-card-foreground))] truncate">
-              Project Cash Flow
-            </h3>
-            <span
-              className={cn(
-                "text-[10px] font-medium px-1.5 py-0.5 rounded border",
-                net >= 0
-                  ? "text-[hsl(var(--bp-green))] border-[hsl(var(--bp-green))]/40 bg-[hsl(var(--bp-green))]/10"
-                  : "text-[hsl(var(--bp-coral))] border-[hsl(var(--bp-coral))]/40 bg-[hsl(var(--bp-coral))]/10",
-              )}
-              data-testid="chip-net-position"
-            >
-              Net {formatCurrency(net)}
-            </span>
-          </div>
-          <p className="text-xs text-[hsl(var(--bp-muted))] truncate">
-            Money in vs out{config.range === "project" ? " for project duration" : config.range === "last6" ? " last 6 months" : " rolling 6 months"}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {/* Inline Bar / S-Curve toggle */}
-          <div className="flex items-center rounded-md border border-[hsl(var(--bp-border))] p-0.5 gap-0.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              className={cn("h-6 px-2 text-[11px]", config.chartType === "bar" && "toggle-elevate toggle-elevated")}
-              onClick={() => updateConfig({ chartType: "bar" })}
-              data-testid="button-cashflow-chart-bar"
-            >
-              <BarChart3 className="h-3 w-3 mr-1" />
-              Bar
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className={cn("h-6 px-2 text-[11px]", config.chartType === "scurve" && "toggle-elevate toggle-elevated")}
-              onClick={() => updateConfig({ chartType: "scurve" })}
-              data-testid="button-cashflow-chart-scurve"
-            >
-              <LineChartIcon className="h-3 w-3 mr-1" />
-              S-Curve
-            </Button>
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                data-testid="button-cashflow-menu"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>View</DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={config.chartType}
-                      onValueChange={(v) => updateConfig({ chartType: v as ChartType })}
-                    >
-                      <DropdownMenuRadioItem value="bar">Bar chart</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="scurve">S-Curve</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Group by</DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={config.groupBy}
-                      onValueChange={(v) => updateConfig({ groupBy: v as GroupBy })}
-                    >
-                      <DropdownMenuRadioItem value="week">Week</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="month">Month</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Date range</DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={config.range}
-                      onValueChange={(v) => updateConfig({ range: v as RangeOpt })}
-                    >
-                      <DropdownMenuRadioItem value="project">Project duration</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="last6">Last 6 months</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="current6">Rolling 6 months</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-[hsl(var(--bp-muted))]">
-                Overlays
-              </DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={config.showContractCeiling}
-                onCheckedChange={(v) => updateConfig({ showContractCeiling: !!v })}
-              >
-                Show contract ceiling
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={config.showVariationsCeiling}
-                onCheckedChange={(v) => updateConfig({ showVariationsCeiling: !!v })}
-              >
-                Show contract + variations
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={config.showPlannedCurve}
-                disabled={config.chartType !== "scurve"}
-                onCheckedChange={(v) => updateConfig({ showPlannedCurve: !!v })}
-              >
-                Show planned curve
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
       {/* Unpaid invoice warning */}
       {data.unpaidInvoices.length > 0 && (
-        <div className="mx-3 mb-2 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))] text-xs font-medium">
+        <div className="mx-3 mt-2 mb-1 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))] text-xs font-medium">
           <AlertCircle size={12} />
           {data.unpaidInvoices.length} invoice{data.unpaidInvoices.length > 1 ? "s" : ""} unpaid —{" "}
           {formatCurrency(totalOutstanding)} outstanding
         </div>
       )}
 
-      {/* Summary KPI row */}
-      <div className="flex items-center gap-4 px-4 pb-2 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="text-[hsl(var(--bp-muted))]">Money in:</span>
-          <span className="font-medium text-[hsl(var(--bp-card-foreground))]">
-            {formatCurrency(data.summary.totalMoneyIn)}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[hsl(var(--bp-muted))]">Money out:</span>
-          <span className="font-medium text-[hsl(var(--bp-card-foreground))]">
-            {formatCurrency(data.summary.totalMoneyOut)}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[hsl(var(--bp-muted))]">Net:</span>
-          <span
-            className={cn(
-              "font-semibold",
-              net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]",
-            )}
-          >
-            {formatCurrency(net)}
-          </span>
-        </div>
-      </div>
-
       {/* Chart */}
-      <div className="flex-1 px-2 min-h-[160px]">
+      <div className="flex-1 px-2 pt-2 min-h-[160px]">
         {data.periods.length === 0 ? (
           <div className="flex items-center justify-center h-full text-xs text-[hsl(var(--bp-muted))]">
             No periods to display
@@ -499,34 +420,62 @@ export default function ProjectCashFlowWidget({ widget, onUpdate }: WidgetProps)
         )}
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-[10px] text-[hsl(var(--bp-muted))]">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
-          Received
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))]" />
-          Paid out
-        </span>
-        {config.chartType === "scurve" && config.showPlannedCurve && (
+      {/* Footer: KPIs left, legend right */}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 text-[11px]">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="text-[hsl(var(--bp-muted))]">In:</span>
+            <span className="font-medium text-[hsl(var(--bp-card-foreground))] tabular-nums">
+              {formatCurrency(data.summary.totalMoneyIn)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[hsl(var(--bp-muted))]">Out:</span>
+            <span className="font-medium text-[hsl(var(--bp-card-foreground))] tabular-nums">
+              {formatCurrency(data.summary.totalMoneyOut)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[hsl(var(--bp-muted))]">Net:</span>
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]",
+              )}
+              data-testid="chip-net-position"
+            >
+              {formatCurrency(net)}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-[hsl(var(--bp-muted))]">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
-            Planned
+            <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
+            Received
           </span>
-        )}
-        {config.showContractCeiling && data.contractCeiling > 0 && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-muted))]" />
-            Contract
+            <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))]" />
+            Paid out
           </span>
-        )}
-        {showVariationsLine && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
-            +Variations
-          </span>
-        )}
+          {config.chartType === "scurve" && config.showPlannedCurve && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
+              Planned
+            </span>
+          )}
+          {config.showContractCeiling && data.contractCeiling > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-muted))]" />
+              Contract
+            </span>
+          )}
+          {showVariationsLine && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
+              +Variations
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
