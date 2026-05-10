@@ -17232,7 +17232,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       const updated = await storage.bulkUpdateCostCodes(parsed.data.codeIds, parsed.data.updates, companyId);
-      res.json({ updated: updated.length, codes: updated });
+
+      // If the labour flag was touched, refresh every project's labour-hours
+      // budget in this company so the new flag is reflected without each PM
+      // having to hit Recalculate manually.
+      let labourRecalcProjects = 0;
+      if (Object.prototype.hasOwnProperty.call(parsed.data.updates, "isLabour")) {
+        try {
+          const projectIds = await storage.getProjectIdsWithContractEstimate(companyId);
+          for (const pid of projectIds) {
+            try {
+              await storage.recalculateLabourHoursBudget(pid);
+              labourRecalcProjects++;
+            } catch (e: any) {
+              console.error(`Labour-hours recalc failed for project ${pid}:`, e?.message || e);
+            }
+          }
+        } catch (e: any) {
+          console.error("Failed to enumerate projects for labour-hours recalc:", e?.message || e);
+        }
+      }
+
+      res.json({ updated: updated.length, codes: updated, labourRecalcProjects });
     } catch (error: any) {
       res.status(500).json({
         error: "Failed to bulk update cost codes",
@@ -17265,6 +17286,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!code) {
         return res.status(404).json({ error: "Cost code not found" });
       }
+
+      if (Object.prototype.hasOwnProperty.call(validationResult.data, "isLabour")) {
+        try {
+          const projectIds = await storage.getProjectIdsWithContractEstimate(companyId);
+          for (const pid of projectIds) {
+            try {
+              await storage.recalculateLabourHoursBudget(pid);
+            } catch (e: any) {
+              console.error(`Labour-hours recalc failed for project ${pid}:`, e?.message || e);
+            }
+          }
+        } catch (e: any) {
+          console.error("Failed to enumerate projects for labour-hours recalc:", e?.message || e);
+        }
+      }
+
       res.json(code);
     } catch (error: any) {
       res.status(500).json({ 

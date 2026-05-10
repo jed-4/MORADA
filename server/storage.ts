@@ -943,6 +943,7 @@ export interface IStorage {
   // Labour Hours Budget CRUD
   getLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>;
   recalculateLabourHoursBudget(projectId: string, tx?: any): Promise<LabourHoursBudget[]>; // Recalculates from flagged estimate items
+  getProjectIdsWithContractEstimate(companyId: string): Promise<string[]>;
 
   // Timesheets CRUD
   getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]>;
@@ -16623,6 +16624,22 @@ export class DbStorage implements IStorage {
       return lineItems;
     } catch (error) {
       console.error("Database error in recalculateBudgetLineItems:", error);
+      throw error;
+    }
+  }
+
+  async getProjectIdsWithContractEstimate(companyId: string): Promise<string[]> {
+    try {
+      const rows = await db.selectDistinct({ projectId: schema.estimates.projectId })
+        .from(schema.estimates)
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.estimates.projectId))
+        .where(and(
+          eq(schema.estimates.status, "contract"),
+          eq(schema.projects.companyId, companyId),
+        ));
+      return rows.map((r: { projectId: string }) => r.projectId).filter(Boolean);
+    } catch (error) {
+      console.error("Database error in getProjectIdsWithContractEstimate:", error);
       throw error;
     }
   }
