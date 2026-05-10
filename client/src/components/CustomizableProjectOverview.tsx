@@ -225,7 +225,6 @@ export default function CustomizableProjectOverview() {
   }, [currentLocation, currentProject]);
 
   // New View Modal state
-  const [noContractBannerDismissed, setNoContractBannerDismissed] = useState(false);
   const [isNewViewModalOpen, setIsNewViewModalOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [newViewVisibility, setNewViewVisibility] = useState<VisibilityOption>("private");
@@ -1169,43 +1168,8 @@ export default function CustomizableProjectOverview() {
       {/* Contract pricing strip is rendered by the Budget page itself
           (client/src/pages/Budget.tsx) — not by the project shell. */}
 
-      {/* Empty-state banner: nudge users to approve an estimate when no
-          contract has been set for this project. Once a contract estimate
-          exists the banner disappears. Dismissible per session. */}
-      {activeTab === "budget" && currentProject && !currentProject.selectedEstimateId && !noContractBannerDismissed && (
-        <div
-          className="flex-shrink-0 mx-4 mt-2 flex items-start justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="banner-no-contract-estimate"
-        >
-          <div className="text-xs text-foreground">
-            <span className="font-medium">No contract estimate selected.</span>{" "}
-            <span className="text-muted-foreground">
-              Financial widgets, the project budget and the labour-hours budget will be empty until you approve an estimate.
-            </span>
-          </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-xs"
-              onClick={() => navigate(`/projects/${currentProject.id}/estimates`)}
-              data-testid="button-banner-go-to-estimates"
-            >
-              Go to Estimates
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={() => setNoContractBannerDismissed(true)}
-              data-testid="button-banner-dismiss"
-              aria-label="Dismiss"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Empty-state banner removed: contract chips on the Budget sub-header
+          already convey when no estimate has been approved (all values $0). */}
 
       {/* Content Area - either tab content or widget dashboard */}
       {!isOverviewTab ? (

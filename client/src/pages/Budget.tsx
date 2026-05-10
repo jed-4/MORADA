@@ -494,41 +494,48 @@ export default function BudgetPage() {
           )}
         </div>
 
-        {/* Centre — three contract chips */}
+        {/* Centre — three contract chips (inc + ex GST) */}
         <div className="flex items-center gap-2">
           {[
             {
               label: "Contract",
-              value:
+              inc:
                 contractMetrics?.originalContractPriceIncGstCents ??
                 budgetData.baselineAmount ??
                 0,
+              ex: contractMetrics?.originalContractPriceExGstCents ?? 0,
               testid: "chip-contract-original",
             },
             {
               label: "Variations",
-              value: contractMetrics?.approvedVariationsIncGstCents ?? 0,
+              inc: contractMetrics?.approvedVariationsIncGstCents ?? 0,
+              ex: contractMetrics?.approvedVariationsExGstCents ?? 0,
               testid: "chip-contract-variations",
             },
             {
               label: "Revised",
-              value:
+              inc:
                 contractMetrics?.revisedContractPriceIncGstCents ??
                 budgetData.revisedAmount ??
                 0,
+              ex: contractMetrics?.revisedContractPriceExGstCents ?? 0,
               testid: "chip-contract-revised",
             },
           ].map((chip) => (
             <div
               key={chip.label}
-              className="flex flex-col px-3 py-1.5 rounded-md border border-border bg-[hsl(var(--bp-subtle))] min-w-[120px]"
+              className="flex flex-col px-3 py-1 rounded-md border border-border bg-[hsl(var(--bp-subtle))] min-w-[140px]"
               data-testid={chip.testid}
             >
               <span className="text-[9px] text-muted-foreground uppercase tracking-wide leading-tight">
                 {chip.label}
               </span>
-              <span className="text-[12px] font-semibold text-foreground leading-snug tabular-nums">
-                {formatCurrency(chip.value)}
+              <span className="text-[12px] font-semibold text-foreground leading-tight tabular-nums">
+                {formatCurrency(chip.inc)}{" "}
+                <span className="text-[9px] font-normal text-muted-foreground">inc GST</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground leading-tight tabular-nums">
+                {formatCurrency(chip.ex)} ex GST
               </span>
             </div>
           ))}
