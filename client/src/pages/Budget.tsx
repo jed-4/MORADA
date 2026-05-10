@@ -9,11 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
+import type { ContractMetrics } from "@shared/projectMetrics";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +57,12 @@ export default function BudgetPage() {
 
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
+    enabled: !!projectId,
+  });
+
+  const { data: contractMetrics } = useQuery<ContractMetrics>({
+    queryKey: ["/api/projects", projectId, "contract-metrics"],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/contract-metrics`, "GET"),
     enabled: !!projectId,
   });
 
@@ -137,8 +144,8 @@ export default function BudgetPage() {
   };
 
   const getVarianceColor = (variance: number) => {
-    if (variance > 0) return "text-status-success dark:text-green-400";
-    if (variance < 0) return "text-status-danger dark:text-red-400";
+    if (variance > 0) return "text-[hsl(var(--bp-green))]";
+    if (variance < 0) return "text-[hsl(var(--bp-coral))]";
     return "text-muted-foreground";
   };
 
@@ -342,7 +349,7 @@ export default function BudgetPage() {
       header: "Pending",
       accessorFn: (item) => parseFloat(item.pendingHours || "0"),
       cell: ({ row }) => (
-        <span className="text-xs tabular-nums text-amber-600 dark:text-amber-400" data-testid={`text-pending-${row.original.id}`}>
+        <span className="text-xs tabular-nums text-[hsl(var(--bp-amber))]" data-testid={`text-pending-${row.original.id}`}>
           {formatHours(parseFloat(row.original.pendingHours || "0"))}
         </span>
       ),
@@ -467,142 +474,189 @@ export default function BudgetPage() {
     profitPercent: 0,
   };
 
-  const remaining = budgetData.revisedAmount - budgetData.actualAmount;
-  const percentSpent = budgetData.revisedAmount > 0 
-    ? Math.round((budgetData.actualAmount / budgetData.revisedAmount) * 100) 
-    : 0;
-
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
-      {/* Row 2 - Tabs (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setActiveTab('costs')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === 'costs' 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-costs"
-          >
-            <DollarSign className="w-3 h-3" />
-            <span>Costs</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('hours')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === 'hours' 
-                ? 'bg-primary text-white border-primary/20 hover:bg-primary/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-labour-hours"
-          >
-            <Clock className="w-3 h-3" />
-            <span>Labour Hours</span>
-          </button>
+      {/* SUB-HEADER */}
+      <div className="flex items-center justify-between px-4 h-[52px] bg-background border-b border-border flex-shrink-0">
+        {/* Left — title + phase badge */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[15px] font-semibold text-foreground truncate" data-testid="text-budget-title">
+            {project?.name}
+          </span>
+          <span className="text-[15px] text-muted-foreground">· Budget</span>
+          {project?.currentSystemPhase && (
+            <span
+              className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-[hsl(var(--bp-purple)/0.08)] text-[hsl(var(--bp-purple))]"
+              data-testid="badge-project-phase"
+            >
+              {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Summary stats in header */}
-          {activeTab === "costs" && (
-            <div className="flex items-center gap-4 text-data text-muted-foreground">
-              <span>Budget: <span className="font-medium text-foreground">{formatCurrency(budgetData.revisedAmount)}</span></span>
-              <span>Spent: <span className="font-medium text-foreground">{formatCurrency(budgetData.actualAmount)}</span></span>
-              <span className={getVarianceColor(remaining)}>Remaining: <span className="font-medium">{formatCurrency(remaining)}</span></span>
+        {/* Centre — three contract chips */}
+        <div className="flex items-center gap-2">
+          {[
+            {
+              label: "Contract",
+              value:
+                contractMetrics?.originalContractPriceIncGstCents ??
+                budgetData.baselineAmount ??
+                0,
+              testid: "chip-contract-original",
+            },
+            {
+              label: "Variations",
+              value: contractMetrics?.approvedVariationsIncGstCents ?? 0,
+              testid: "chip-contract-variations",
+            },
+            {
+              label: "Revised",
+              value:
+                contractMetrics?.revisedContractPriceIncGstCents ??
+                budgetData.revisedAmount ??
+                0,
+              testid: "chip-contract-revised",
+            },
+          ].map((chip) => (
+            <div
+              key={chip.label}
+              className="flex flex-col px-3 py-1.5 rounded-md border border-border bg-[hsl(var(--bp-subtle))] min-w-[120px]"
+              data-testid={chip.testid}
+            >
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wide leading-tight">
+                {chip.label}
+              </span>
+              <span className="text-[12px] font-semibold text-foreground leading-snug tabular-nums">
+                {formatCurrency(chip.value)}
+              </span>
             </div>
-          )}
-          {activeTab === "hours" && (
-            <div className="flex items-center gap-4 text-data text-muted-foreground">
-              <span>Budget: <span className="font-medium text-foreground">{formatHours(totalBudgetedHours)}</span></span>
-              <span>Used: <span className="font-medium text-foreground">{formatHours(totalActualHours)}</span></span>
-              <span className={getVarianceColor(hoursRemaining)}>Remaining: <span className="font-medium">{formatHours(hoursRemaining)}</span></span>
-            </div>
-          )}
+          ))}
+        </div>
+
+        {/* Right — cost code count + recalculate */}
+        <div className="flex items-center gap-2">
+          <span
+            className="px-2 py-1 rounded-md text-[10px] text-muted-foreground bg-[hsl(var(--bp-subtle))] border border-border"
+            data-testid="text-cost-code-count"
+          >
+            {lineItems?.length ?? 0} cost codes
+          </span>
           <Button
-            size="icon"
-            variant="ghost"
+            size="sm"
             onClick={handleRecalculate}
             disabled={isRecalculating}
+            className="h-7 px-3 text-[11px] bg-[hsl(var(--bp-purple))] hover:bg-[hsl(var(--bp-purple)/0.9)] text-white"
             data-testid="button-recalculate"
-            title="Recalculate"
-            aria-label="Recalculate"
           >
-            <RefreshCw className={`w-4 h-4 ${isRecalculating ? 'animate-spin' : ''}`} />
+            <RefreshCw size={11} className={cn("mr-1", isRecalculating && "animate-spin")} />
+            Recalculate
           </Button>
         </div>
       </div>
 
+      {/* TAB ROW */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-stretch h-full">
+          <button
+            onClick={() => setActiveTab("costs")}
+            className={cn(
+              "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+              activeTab === "costs"
+                ? "text-[hsl(var(--bp-purple))]"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            data-testid="tab-costs"
+          >
+            <DollarSign className="w-3 h-3" />
+            <span>Costs</span>
+            {activeTab === "costs" && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("hours")}
+            className={cn(
+              "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+              activeTab === "hours"
+                ? "text-[hsl(var(--bp-purple))]"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            data-testid="tab-labour-hours"
+          >
+            <Clock className="w-3 h-3" />
+            <span>Labour Hours</span>
+            {activeTab === "hours" && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+            )}
+          </button>
+        </div>
+
+        {activeTab === "costs" && budgetData && (
+          <div className="flex items-center gap-0 text-[11px]">
+            {[
+              { label: "Budget", value: budgetData.baselineAmount, color: "text-foreground" },
+              { label: "Spent", value: budgetData.actualAmount, color: "text-muted-foreground" },
+              {
+                label: "Remaining",
+                value: (budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0),
+                color: getVarianceColor((budgetData.revisedAmount ?? 0) - (budgetData.actualAmount ?? 0)),
+              },
+              { label: "Forecast", value: budgetData.forecastAmount, color: "text-foreground" },
+            ].map((stat, i) => (
+              <div
+                key={stat.label}
+                className={cn("flex flex-col px-3", i > 0 && "border-l border-border")}
+                data-testid={`stat-${stat.label.toLowerCase()}`}
+              >
+                <span className="text-[9px] text-muted-foreground leading-tight">{stat.label}</span>
+                <span className={cn("font-semibold leading-snug tabular-nums", stat.color)}>
+                  {formatCurrency(stat.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "hours" && (
+          <div className="flex items-center gap-0 text-[11px]">
+            {[
+              { label: "Budgeted", value: formatHours(totalBudgetedHours), color: "text-foreground" },
+              { label: "Pending", value: formatHours(totalPendingHours), color: "text-[hsl(var(--bp-amber))]" },
+              { label: "Approved", value: formatHours(totalApprovedHours), color: "text-foreground" },
+              {
+                label: "Remaining",
+                value: formatHours(hoursRemaining),
+                color: getVarianceColor(hoursRemaining),
+              },
+              { label: "Efficiency", value: `${hoursPercentUsed}%`, color: "text-foreground" },
+            ].map((stat, i) => (
+              <div
+                key={stat.label}
+                className={cn("flex flex-col px-3", i > 0 && "border-l border-border")}
+                data-testid={`stat-hours-${stat.label.toLowerCase()}`}
+              >
+                <span className="text-[9px] text-muted-foreground leading-tight">{stat.label}</span>
+                <span className={cn("font-semibold leading-snug tabular-nums", stat.color)}>
+                  {stat.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-auto p-2 space-y-2">
+      <div className="flex-1 min-h-0 overflow-hidden p-2">
         {activeTab === "costs" && (
           <>
-            {/* Compact Summary Cards */}
-            <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Total Budget</p>
-                    <p className="text-base font-bold" data-testid="text-total-budget">
-                      {formatCurrency(budgetData.revisedAmount)}
-                    </p>
-                    <p className="text-data text-muted-foreground">
-                      Baseline: {formatCurrency(budgetData.baselineAmount)}
-                    </p>
-                  </div>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Actual Spent</p>
-                    <p className="text-base font-bold" data-testid="text-actual-spent">
-                      {formatCurrency(budgetData.actualAmount)}
-                    </p>
-                    <p className="text-data text-muted-foreground">{percentSpent}% of budget</p>
-                  </div>
-                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Remaining</p>
-                    <p className={`text-base font-bold ${getVarianceColor(remaining)}`} data-testid="text-remaining">
-                      {formatCurrency(remaining)}
-                    </p>
-                    <p className="text-data text-muted-foreground">{100 - percentSpent}% remaining</p>
-                  </div>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Forecast</p>
-                    <p className="text-base font-bold" data-testid="text-forecast">
-                      {formatCurrency(budgetData.forecastAmount)}
-                    </p>
-                    <p className={`text-data ${getVarianceColor(budgetData.varianceAmount)}`}>
-                      Variance: {formatCurrency(budgetData.varianceAmount)}
-                    </p>
-                  </div>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-            </div>
-
             {/* Cost Code Breakdown Table */}
-            <Card>
+            <Card className="flex flex-col h-full">
               <CardHeader className="py-2 px-3">
                 <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
                 <CardDescription className="text-xs">Budget vs actual costs by cost code</CardDescription>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                 {lineItemsLoading ? (
                   <div className="p-3 space-y-2">
                     {[1, 2, 3, 4, 5].map((i) => (
@@ -618,7 +672,7 @@ export default function BudgetPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="h-[480px]">
+                  <div className="flex-1 min-h-0">
                     <DataTable
                       data={costRows}
                       columns={costColumns}
@@ -646,76 +700,8 @@ export default function BudgetPage() {
 
         {activeTab === "hours" && (
           <>
-            {/* Labour Hours Summary Cards */}
-            <div className="grid gap-2 grid-cols-2 lg:grid-cols-5">
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Budgeted Hours</p>
-                    <p className="text-base font-bold" data-testid="text-budgeted-hours">
-                      {formatHours(totalBudgetedHours)}
-                    </p>
-                    <p className="text-data text-muted-foreground">From estimates</p>
-                  </div>
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Pending Hours</p>
-                    <p className="text-base font-bold text-amber-600 dark:text-amber-400" data-testid="text-pending-hours">
-                      {formatHours(totalPendingHours)}
-                    </p>
-                    <p className="text-data text-muted-foreground">Awaiting approval</p>
-                  </div>
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Approved Hours</p>
-                    <p className="text-base font-bold" data-testid="text-approved-hours">
-                      {formatHours(totalApprovedHours)}
-                    </p>
-                    <p className="text-data text-muted-foreground">{hoursPercentUsed}% of budget</p>
-                  </div>
-                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Remaining</p>
-                    <p className={`text-base font-bold ${getVarianceColor(hoursRemaining)}`} data-testid="text-remaining-hours">
-                      {formatHours(hoursRemaining)}
-                    </p>
-                    <p className="text-data text-muted-foreground">{100 - hoursPercentUsed}% remaining</p>
-                  </div>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-
-              <Card className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-data text-muted-foreground">Efficiency</p>
-                    <p className="text-base font-bold" data-testid="text-efficiency">
-                      {hoursPercentUsed}%
-                    </p>
-                    <Progress value={hoursPercentUsed} className="mt-1 h-1.5" />
-                  </div>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Card>
-            </div>
-
             {/* Labour Hours Breakdown Table */}
-            <Card>
+            <Card className="flex flex-col h-full">
               <CardHeader className="py-2 px-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
@@ -736,7 +722,7 @@ export default function BudgetPage() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                 {labourHoursLoading ? (
                   <div className="p-3 space-y-2">
                     {[1, 2, 3, 4, 5].map((i) => (
@@ -758,7 +744,7 @@ export default function BudgetPage() {
                       : "No labour hours data available."}
                   </div>
                 ) : (
-                  <div className="h-[480px]">
+                  <div className="flex-1 min-h-0">
                     <DataTable
                       data={filteredLabourHours}
                       columns={labourHoursColumns}

@@ -1166,34 +1166,8 @@ export default function CustomizableProjectOverview() {
         </div>
       )}
 
-      {/* 3-up contract summary: Original / Approved Variations / Revised — shown
-          whenever a contract estimate has been approved for this project. */}
-      {activeTab === "budget" && currentProject?.selectedEstimateId && contractMetrics && (
-        <div
-          className="flex-shrink-0 mx-4 mt-2 grid grid-cols-3 gap-px rounded-md border border-border bg-border overflow-hidden"
-          data-testid="header-contract-3up"
-        >
-          {[
-            { label: "Original Contract", ex: contractMetrics.originalContractPriceExGstCents, inc: contractMetrics.originalContractPriceIncGstCents, testid: "metric-original" },
-            { label: "Approved Variations", ex: contractMetrics.approvedVariationsExGstCents, inc: contractMetrics.approvedVariationsIncGstCents, testid: "metric-variations" },
-            { label: "Revised Contract", ex: contractMetrics.revisedContractPriceExGstCents, inc: contractMetrics.revisedContractPriceIncGstCents, testid: "metric-revised", emphasis: true },
-          ].map((m) => (
-            <div
-              key={m.label}
-              className="flex flex-col gap-0.5 bg-card px-3 py-2"
-              data-testid={m.testid}
-            >
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{m.label}</span>
-              <span className={`tabular-nums leading-tight ${m.emphasis ? "text-base font-semibold" : "text-sm font-medium"}`}>
-                {fmtAud(m.inc)} <span className="text-[10px] font-normal text-muted-foreground">inc GST</span>
-              </span>
-              <span className="text-[11px] text-muted-foreground tabular-nums">
-                {fmtAud(m.ex)} ex GST
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Contract pricing strip is rendered by the Budget page itself
+          (client/src/pages/Budget.tsx) — not by the project shell. */}
 
       {/* Empty-state banner: nudge users to approve an estimate when no
           contract has been set for this project. Once a contract estimate
