@@ -60,9 +60,14 @@ export default function ProjectCostings() {
       if (!buckets.has(key)) buckets.set(key, { key, label, items: [], totalExTax: 0, totalIncTax: 0 });
       const bucket = buckets.get(key)!;
       bucket.items.push(item);
-      const exTax = (item.unitCostExTax || 0) * (item.quantity || 0);
+      // priceIncTax is the cached line total (markup/fixed-price already
+      // baked in by shared/pricing.ts). Derive ex-GST from inc-GST minus
+      // the cached tax amount; never multiply unit cost by quantity here.
+      const incTax = item.priceIncTax || 0;
+      const taxAmt = item.taxAmount || 0;
+      const exTax = incTax - taxAmt;
       bucket.totalExTax += exTax;
-      bucket.totalIncTax += item.priceIncTax || 0;
+      bucket.totalIncTax += incTax;
     }
     return Array.from(buckets.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [items, costCodeMap]);
@@ -144,7 +149,7 @@ export default function ProjectCostings() {
                     </thead>
                     <tbody>
                       {group.items.map(item => {
-                        const exTax = (item.unitCostExTax || 0) * (item.quantity || 0);
+                        const exTax = (item.priceIncTax || 0) - (item.taxAmount || 0);
                         return (
                           <tr key={item.id} className="border-t" data-testid={`costings-item-${item.id}`}>
                             <td className="px-4 py-2">
