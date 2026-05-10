@@ -4159,6 +4159,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-recalc budget + labour hours when an item on a Contract estimate
+  // changes. Fire-and-forget so the mutation response isn't blocked. Logs
+  // (but doesn't surface) failures to keep the user-facing call resilient.
+  // Manual budget edits remain possible until the next estimate change.
+  const triggerBudgetAutoRecalc = (estimateId: string) => {
+    setImmediate(async () => {
+      try {
+        const est = await storage.getEstimate(estimateId);
+        if (!est || est.status !== "contract" || !est.projectId) return;
+        const projectId = est.projectId;
+        const budget = await storage.calculateBudget(projectId);
+        if (budget?.id) {
+          await storage.recalculateBudgetLineItems(budget.id);
+        }
+        await storage.recalculateLabourHoursBudget(projectId);
+      } catch (e: any) {
+        console.error(`[auto-recalc] estimate ${estimateId}:`, e?.message || e);
+      }
+    });
+  };
+
   // Estimate Items API Routes
   app.get("/api/estimates/:id/items", async (req, res) => {
     try {
@@ -4222,6 +4243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const item = await storage.createEstimateItem(validationResult.data);
+      triggerBudgetAutoRecalc(estimateId);
       res.status(201).json(item);
     } catch (error: any) {
       if (error.message?.includes("locked estimate")) {
@@ -4419,7 +4441,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Items are imported without groups - user can organize them manually later
 
       const createdItems = await storage.bulkCreateEstimateItems(validatedItems);
-      
+
+      if (createdItems.length > 0) {
+        triggerBudgetAutoRecalc(estimateId);
+      }
       res.status(201).json({
         success: true,
         count: createdItems.length,
@@ -4586,6 +4611,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Newly imported estimate defaults to draft, not contract, so no
+      // budget auto-recalc is needed here — promotion to Contract has its
+      // own recalc path.
       res.status(201).json({
         success: true,
         estimate,
@@ -4637,6 +4665,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updated++;
       }
 
+      if (updated > 0) {
+        triggerBudgetAutoRecalc(estimateId);
+      }
       res.json({ updated });
     } catch (error) {
       console.error("Error in bulk markup update:", error);
@@ -4760,6 +4791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!item) {
         return res.status(404).json({ error: "Estimate item not found" });
       }
+      triggerBudgetAutoRecalc(existingItem.estimateId);
       res.json(item);
     } catch (error: any) {
       if (error.message?.includes("locked estimate")) {
@@ -4771,9 +4803,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/estimate-items/:id", async (req, res) => {
     try {
+      const existingItem = await storage.getEstimateItem(req.params.id);
       const deleted = await storage.deleteEstimateItem(req.params.id);
       if (!deleted) {
         return res.status(404).json({ error: "Estimate item not found" });
+      }
+      if (existingItem?.estimateId) {
+        triggerBudgetAutoRecalc(existingItem.estimateId);
       }
       res.status(204).send();
     } catch (error: any) {
@@ -4793,6 +4829,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Failed to duplicate item" });
       }
       
+      if (newItem.estimateId) {
+        triggerBudgetAutoRecalc(newItem.estimateId);
+      }
       res.status(201).json(newItem);
     } catch (error: any) {
       if (error.message?.includes("not found")) {
@@ -4828,6 +4867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Failed to copy item" });
       }
       
+      triggerBudgetAutoRecalc(validationResult.data.targetEstimateId);
       res.status(201).json(newItem);
     } catch (error: any) {
       if (error.message?.includes("not found")) {
