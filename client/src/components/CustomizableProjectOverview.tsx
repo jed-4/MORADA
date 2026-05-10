@@ -1168,7 +1168,7 @@ export default function CustomizableProjectOverview() {
 
       {/* 3-up contract summary: Original / Approved Variations / Revised — shown
           whenever a contract estimate has been approved for this project. */}
-      {currentProject?.selectedEstimateId && contractMetrics && (
+      {activeTab === "budget" && currentProject?.selectedEstimateId && contractMetrics && (
         <div
           className="flex-shrink-0 mx-4 mt-2 grid grid-cols-3 gap-px rounded-md border border-border bg-border overflow-hidden"
           data-testid="header-contract-3up"
