@@ -16632,13 +16632,19 @@ export class DbStorage implements IStorage {
         });
       }
 
-      // Get estimates for this project
-      const estimates = await exec.select()
+      // Get the project's Contract estimate (single source of truth for the
+      // labour-hours budget). If no estimate has been promoted to Contract
+      // yet, the budget contains only the cost-code skeleton with zero hours.
+      const estimates: Estimate[] = await exec.select()
         .from(schema.estimates)
-        .where(eq(schema.estimates.projectId, projectId));
+        .where(and(
+          eq(schema.estimates.projectId, projectId),
+          eq(schema.estimates.status, "contract"),
+        ));
 
-      // Get labour estimate items (case-insensitive type check, no trackLabourHours filter)
-      const estimateItems = estimates.length > 0 ? await exec.select()
+      // Get labour estimate items from the Contract estimate only
+      // (case-insensitive type check, no trackLabourHours filter).
+      const estimateItems: EstimateItem[] = estimates.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(
           and(
