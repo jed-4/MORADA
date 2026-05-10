@@ -12835,7 +12835,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!status || !validStatuses.includes(status)) {
         return res.status(400).json({ error: "Invalid status" });
       }
+      // Task #257: capture pre-update statuses so we can log approved-boundary
+      // transitions for the contract-metrics derivation.
+      const previous = await Promise.all(ids.map((id: string) => storage.getVariation(id)));
       await Promise.all(ids.map((id: string) => storage.updateVariation(id, { status })));
+      const APPROVED = new Set(["approved", "released"]);
+      const projectsAffected = new Set<string>();
+      previous.forEach((prev: any) => {
+        if (!prev) return;
+        const wasApproved = APPROVED.has(prev.status ?? "");
+        const isApproved = APPROVED.has(status);
+        if (wasApproved !== isApproved && prev.projectId) projectsAffected.add(prev.projectId);
+      });
+      if (projectsAffected.size > 0) {
+        console.log(
+          `[ContractMetrics] bulk variation status → ${status}; revised contract price will recompute for projects: ${Array.from(projectsAffected).join(", ")}`,
+        );
+      }
       res.json({ updated: ids.length });
     } catch (error) {
       res.status(500).json({ error: "Failed to bulk update variations" });
@@ -12900,6 +12916,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const variation = await storage.updateVariation(req.params.id, validationResult.data);
       if (!variation) {
         return res.status(404).json({ error: "Variation not found" });
+      }
+
+      // Task #257: emit a marker log whenever a variation crosses the approved
+      // boundary so downstream consumers (and operators tailing logs) can
+      // confirm contract-metrics will recompute on the next client fetch.
+      const prevApproved = ["approved", "released"].includes((prevVariation as any)?.status ?? "");
+      const nextApproved = ["approved", "released"].includes((variation as any)?.status ?? "");
+      if (prevApproved !== nextApproved && (variation as any).projectId) {
+        console.log(
+          `[ContractMetrics] variation ${req.params.id} approved-status changed (${(prevVariation as any)?.status ?? "none"} → ${(variation as any).status}); project ${(variation as any).projectId} revised contract price will recompute`,
+        );
       }
 
       // T005: EOT — extend project end date when variation is approved and has daysChanged

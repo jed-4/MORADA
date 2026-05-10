@@ -20,6 +20,9 @@ interface ProjectCardCompactProps {
   isDragging?: boolean;
   editMode?: boolean;
   groupBy?: "phase" | "status";
+  // Revised contract price (inc-GST cents) — original contract + approved
+  // variations. When supplied, shown in preference to the project snapshot.
+  revisedContractPriceCents?: number | null;
   visibleFields?: {
     client?: boolean;
     budget?: boolean;
@@ -94,6 +97,7 @@ export default function ProjectCardCompact({
   isDragging = false,
   editMode = false,
   groupBy = "phase",
+  revisedContractPriceCents = null,
   visibleFields = {}
 }: ProjectCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -112,11 +116,12 @@ export default function ProjectCardCompact({
   });
 
   const statusOption = allStatusOptions.find(opt => opt.key === project.projectSubStatus);
-  // Use contractPrice (snapshot of approved estimate inc-GST) as the canonical
-  // value here. Fetching variations per card to compute the revised total would
-  // be too expensive — surfaces that need the revised value should call the
-  // /api/projects/:id/contract-metrics endpoint or use useProjectMetrics.
-  const costValue = project.contractPrice || project.clientBudget || project.budget;
+  // Prefer the revised contract price (original + approved variations) when
+  // the parent has computed it; fall back to the contractPrice snapshot,
+  // then clientBudget / budget. Fetching variations per individual card would
+  // be too expensive, so the parent (e.g. ProjectBoard) computes a single
+  // map up-front and forwards the revised total via this prop.
+  const costValue = revisedContractPriceCents ?? project.contractPrice ?? project.clientBudget ?? project.budget;
 
   const showBudgetRow = (visibleFields.budget && !!costValue) || (visibleFields.progress && project.progress != null);
   const showClientRow = (visibleFields.client && !!project.clientName) || (visibleFields.foreman);

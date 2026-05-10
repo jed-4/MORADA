@@ -659,7 +659,13 @@ export default function ClientInvoiceDetail() {
 
   // ── calculations ───────────────────────────────────────────────────────────────
 
-  // Always derived from the project's approved estimate snapshot — no per-invoice override.
+  // Always the original-contract snapshot from the approved estimate. This is
+  // the "Contract" base used to compute the contract-claim rows in this
+  // invoice (e.g. progress payments). Variations are claimed in their own
+  // section below, so this MUST NOT be the revised contract price — using
+  // revised here would double-count approved variations on the invoice.
+  // Surfaces that need the revised total (Project Total panel, project header)
+  // call /api/projects/:id/contract-metrics or use useProjectMetrics.
   const getEffectiveContractPrice = () =>
     ((currentProject as any)?.contractPrice ?? null);
 

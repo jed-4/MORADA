@@ -236,12 +236,15 @@ export function useProjectMetrics() {
     // priceIncTax / taxAmount on estimate items are line totals in cents;
     // variations.subtotal is ex-GST cents and variations.totalAmount is inc-GST cents.
     const contractMetrics = computeContractMetrics(
-      estimateItems.map(i => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
-      variations.map(v => ({
-        status: (v as any).status ?? null,
-        subtotal: (v as any).subtotal ?? null,
-        totalAmount: (v as any).totalAmount ?? (v as any).totalIncTax ?? null,
-      })),
+      estimateItems.map((i) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
+      variations.map((v) => {
+        const row = v as Variation & { subtotal?: number | null; totalAmount?: number | null; status?: string | null };
+        return {
+          status: row.status ?? null,
+          subtotal: row.subtotal ?? null,
+          totalAmount: row.totalAmount ?? null,
+        };
+      }),
     );
 
     // Contract Price (legacy alias — inc-GST dollars)

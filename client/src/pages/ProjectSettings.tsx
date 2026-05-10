@@ -875,15 +875,24 @@ export default function ProjectSettings() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="contract-cost">Contract Cost (from approved estimate)</Label>
+              <Label htmlFor="contract-cost">Contract Price (from approved estimate)</Label>
               <div className="p-2 bg-muted rounded-md flex items-center justify-between gap-2" data-testid="text-contract-cost">
-                <span>
-                  {!currentProject.selectedEstimateId
-                    ? "No contract estimate selected"
-                    : contractMetrics
-                      ? `$${(contractMetrics.originalContractPriceExGstCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ex GST`
-                      : "—"}
-                </span>
+                <div className="flex flex-col">
+                  {!currentProject.selectedEstimateId ? (
+                    <span>No contract estimate selected</span>
+                  ) : contractMetrics ? (
+                    <>
+                      <span className="font-medium tabular-nums">
+                        {`$${(contractMetrics.originalContractPriceIncGstCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} <span className="text-xs font-normal text-muted-foreground">inc GST</span>
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {`$${(contractMetrics.originalContractPriceExGstCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ex GST`}
+                      </span>
+                    </>
+                  ) : (
+                    <span>—</span>
+                  )}
+                </div>
                 {currentProject.selectedEstimateId && (
                   <Button
                     type="button"

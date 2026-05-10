@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { type Project, type FieldOption } from "@shared/schema";
+import { type Project, type FieldOption, type Variation } from "@shared/schema";
+import { isApprovedVariationStatus } from "@shared/projectMetrics";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical } from "lucide-react";
 import ProjectCardCompact from "./ProjectCardCompact";
@@ -193,6 +194,7 @@ function DraggableProjectCard({
   phases = [],
   currentPhase,
   onPhaseTransition,
+  revisedContractPriceCents = null,
 }: { 
   project: Project; 
   onClick?: () => void;
@@ -202,6 +204,7 @@ function DraggableProjectCard({
   phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
   currentPhase?: string | null;
   onPhaseTransition?: (project: Project, toPhase: string) => void;
+  revisedContractPriceCents?: number | null;
 }) {
   const {
     attributes,
@@ -251,6 +254,7 @@ function DraggableProjectCard({
             editMode={editMode}
             groupBy={groupBy}
             visibleFields={visibleFields}
+            revisedContractPriceCents={revisedContractPriceCents}
           />
         </div>
       </ContextMenuTrigger>
@@ -317,6 +321,7 @@ function DroppableColumn({
   groupBy = "phase",
   phases = [],
   onPhaseTransition,
+  revisedByProject,
 }: { 
   column: { id: string; title: string; color: string; systemPhase?: string }; 
   projects: Project[];
@@ -326,6 +331,7 @@ function DroppableColumn({
   groupBy?: "phase" | "status";
   phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
   onPhaseTransition?: (project: Project, toPhase: string) => void;
+  revisedByProject?: Map<string, number>;
 }) {
   const {
     setNodeRef,
@@ -339,7 +345,10 @@ function DroppableColumn({
   });
 
   const totalValue = projects.reduce((sum, project) => {
-    const value = project.contractPrice || project.clientBudget || project.budget || 0;
+    // Prefer the revised contract price (original + approved variations) when
+    // available; fall back to the snapshot, clientBudget, or budget.
+    const revised = revisedByProject?.get(project.id);
+    const value = revised || project.contractPrice || project.clientBudget || project.budget || 0;
     return sum + value;
   }, 0);
 
@@ -401,6 +410,7 @@ function DroppableColumn({
                 phases={phases}
                 currentPhase={column.systemPhase}
                 onPhaseTransition={onPhaseTransition}
+                revisedContractPriceCents={revisedByProject?.get(project.id) ?? null}
               />
             ))
           )}
@@ -551,6 +561,33 @@ export function ProjectBoard({
       },
     })
   );
+
+  // Fetch all variations once and build a map of projectId → revised contract
+  // price in inc-GST cents (project.contractPrice + sum of approved variations
+  // totalAmount). This avoids per-card fetches and keeps cards in sync with
+  // approved variation status changes.
+  const { data: allVariations = [] } = useQuery<Array<Variation & { projectId: string; status: string | null; totalAmount: number | null }>>({
+    queryKey: ["/api/variations"],
+    queryFn: async () => {
+      const r = await fetch(`/api/variations`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+  const revisedByProject = useMemo(() => {
+    const sumByProject = new Map<string, number>();
+    for (const v of allVariations) {
+      if (!v.projectId || !isApprovedVariationStatus(v.status)) continue;
+      sumByProject.set(v.projectId, (sumByProject.get(v.projectId) ?? 0) + (v.totalAmount ?? 0));
+    }
+    const out = new Map<string, number>();
+    for (const p of projects) {
+      const base = p.contractPrice ?? 0;
+      const approved = sumByProject.get(p.id) ?? 0;
+      out.set(p.id, base + approved);
+    }
+    return out;
+  }, [allVariations, projects]);
 
   // Fetch project status field options
   const { data: statusOptions = [], isLoading: isLoadingStatuses } = useQuery<FieldOption[]>({
@@ -1147,6 +1184,7 @@ export function ProjectBoard({
                       systemPhase: s.systemPhase || s.key,
                     }))}
                     onPhaseTransition={handlePhaseTransition}
+                    revisedByProject={revisedByProject}
                   />
                 </div>
               );
@@ -1165,6 +1203,7 @@ export function ProjectBoard({
                 editMode={true}
                 groupBy={preferences.groupBy}
                 visibleFields={preferences.visibleFields}
+                revisedContractPriceCents={revisedByProject.get(activeProject.id) ?? null}
               />
             </div>
           ) : null}
