@@ -454,7 +454,7 @@ export default function ProgrammeScheduleWidget({
       {/* Body */}
       {config.viewMode === "week" ? (
         <>
-          <div className="flex items-center justify-between px-2 py-1 border-b border-[hsl(var(--bp-border))] bg-[hsl(var(--bp-subtle))] text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-end gap-1 px-2 py-1 text-[10px] text-muted-foreground">
             <button
               onClick={() => setWeekStart((w) => addDays(w, -7))}
               className="px-1 rounded hover-elevate"
