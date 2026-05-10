@@ -447,7 +447,7 @@ export default function ProgrammeScheduleWidget({
   if (itemsQ.isError)
     return <WidgetError onRetry={() => itemsQ.refetch()} />;
 
-  const rowH = config.compactMode ? "h-8" : "h-10";
+  const rowH = config.compactMode ? "h-6" : "h-8";
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-programme">

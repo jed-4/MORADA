@@ -299,7 +299,7 @@ export default function WidgetContainer({
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
       <WidgetCard
-        title={widget.title}
+        title={widget.type === "programme" && /programme/i.test(widget.title) ? "Schedule" : widget.title}
         accent={accent}
         headerLeft={headerLeft}
         headerRight={headerRight}
