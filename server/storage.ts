@@ -16382,13 +16382,15 @@ export class DbStorage implements IStorage {
       const varianceAmount = revisedAmount - forecastAmount;
       const profitPercent = revisedAmount > 0 ? Math.round(((revisedAmount - forecastAmount) / revisedAmount) * 100) : 0;
 
-      // Update budget
+      // Update budget. Amount columns are integer-typed so we round any
+      // float sums (estimate items use doublePrecision price columns) before
+      // persisting — Postgres rejects e.g. 55653.41 for an integer column.
       const updated = await this.updateBudget(budget.id, {
-        baselineAmount,
-        revisedAmount,
-        actualAmount,
-        forecastAmount,
-        varianceAmount,
+        baselineAmount: Math.round(baselineAmount),
+        revisedAmount: Math.round(revisedAmount),
+        actualAmount: Math.round(actualAmount),
+        forecastAmount: Math.round(forecastAmount),
+        varianceAmount: Math.round(varianceAmount),
         profitPercent
       }, tx);
 
@@ -16557,18 +16559,21 @@ export class DbStorage implements IStorage {
         const variance = data.budgeted - forecast;
         const variancePercent = data.budgeted > 0 ? Math.round((variance / data.budgeted) * 100) : 0;
 
+        // budget_line_items amount columns are integer-typed; the source
+        // estimate items expose priceIncTax as doublePrecision dollars, so
+        // we must round before insert to avoid Postgres rejecting decimals.
         const lineItem = await this.createBudgetLineItem({
           budgetId,
           costCodeId: data.costCodeId,
           costCodeTitle: data.costCodeTitle,
           categoryTitle: data.categoryTitle,
-          budgetedAmount: data.budgeted,
-          actualAmount: data.actual,
+          budgetedAmount: Math.round(data.budgeted),
+          actualAmount: Math.round(data.actual),
           variationAmount: 0,
-          forecastAmount: forecast,
-          variance,
+          forecastAmount: Math.round(forecast),
+          variance: Math.round(variance),
           variancePercent,
-          profitAmount: variance,
+          profitAmount: Math.round(variance),
           sortOrder: sortOrder++
         }, tx);
         lineItems.push(lineItem);
