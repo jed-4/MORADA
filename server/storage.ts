@@ -467,6 +467,11 @@ export interface IStorage {
   // the approved/contract status.
   updateEstimateStatus(estimateId: string, patch: Partial<Estimate>): Promise<Estimate | undefined>;
   promoteEstimateToContract(estimateId: string, userId: string): Promise<Estimate | undefined>;
+  approveEstimateAsContract(
+    estimateId: string,
+    userId: string,
+    contractPriceCents: number | null,
+  ): Promise<{ estimate: Estimate; project: Project } | undefined>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -4761,6 +4766,60 @@ export class MemStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in promoteEstimateToContract:", error);
+      throw error;
+    }
+  }
+
+  async approveEstimateAsContract(
+    estimateId: string,
+    userId: string,
+    contractPriceCents: number | null,
+  ): Promise<{ estimate: Estimate; project: Project } | undefined> {
+    // MemStorage shim — defers to the DB implementation. MemStorage is not
+    // used by the live approve flow; this method exists only to satisfy
+    // IStorage. See DbStorage.approveEstimateAsContract for the real
+    // transactional implementation.
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target || !target.projectId) return undefined;
+      const projectId = target.projectId;
+      return await db.transaction(async (tx) => {
+        await tx.update(schema.estimates)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(and(
+            eq(schema.estimates.projectId, projectId),
+            eq(schema.estimates.status, "contract"),
+            ne(schema.estimates.id, estimateId),
+          ));
+        const promotedRows = await tx.update(schema.estimates)
+          .set({
+            status: "contract",
+            isLocked: true,
+            contractedAt: new Date(),
+            contractedById: userId,
+            approvedAt: target.approvedAt ?? new Date(),
+            approvedById: target.approvedById ?? userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        const promoted = promotedRows[0];
+        if (!promoted) throw new Error("Failed to promote estimate to contract");
+        const updatedProjectRows = await tx.update(schema.projects)
+          .set({
+            selectedEstimateId: estimateId,
+            contractPrice: contractPriceCents && contractPriceCents > 0 ? contractPriceCents : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.projects.id, projectId))
+          .returning();
+        const updatedProject = updatedProjectRows[0];
+        if (!updatedProject) throw new Error("Failed to update project for approved estimate");
+        this.estimates.set(estimateId, promoted);
+        return { estimate: promoted, project: updatedProject };
+      });
+    } catch (error) {
+      console.error("Database error in approveEstimateAsContract (MemStorage):", error);
       throw error;
     }
   }
@@ -11092,6 +11151,82 @@ export class DbStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in promoteEstimateToContract:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Atomic "Approve" for the Estimate-to-Contract flow. In a single DB
+   * transaction:
+   *   - any existing contract estimate on the same project is demoted to
+   *     "approved" (kept locked);
+   *   - the target estimate is promoted to "contract" with isLocked=true,
+   *     contractedAt/contractedById, and approvedAt/approvedById stamped if
+   *     not already set;
+   *   - the project's selectedEstimateId is set to the target estimate, and
+   *     contractPrice is overwritten with the supplied total.
+   * If any step fails, the whole change is rolled back so the estimate and
+   * project rows can never disagree about which estimate is the contract.
+   * Derived data (budget line items, labour-hours) is recomputed by the
+   * caller AFTER this transaction commits — those recalcs are idempotent
+   * and safe to retry on failure.
+   */
+  async approveEstimateAsContract(
+    estimateId: string,
+    userId: string,
+    contractPriceCents: number | null,
+  ): Promise<{ estimate: Estimate; project: Project } | undefined> {
+    try {
+      const target = await this.getEstimate(estimateId);
+      if (!target || !target.projectId) return undefined;
+      const projectId = target.projectId;
+
+      return await db.transaction(async (tx) => {
+        // Demote any prior contract on this project.
+        await tx.update(schema.estimates)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(and(
+            eq(schema.estimates.projectId, projectId),
+            eq(schema.estimates.status, "contract"),
+            ne(schema.estimates.id, estimateId),
+          ));
+
+        // Promote target + stamp approve/contract audit fields.
+        const promotedRows = await tx.update(schema.estimates)
+          .set({
+            status: "contract",
+            isLocked: true,
+            contractedAt: new Date(),
+            contractedById: userId,
+            approvedAt: target.approvedAt ?? new Date(),
+            approvedById: target.approvedById ?? userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.estimates.id, estimateId))
+          .returning();
+        const promoted = promotedRows[0];
+        if (!promoted) {
+          throw new Error("Failed to promote estimate to contract");
+        }
+
+        // Update project selectedEstimateId + contractPrice in the same tx.
+        const updatedProjectRows = await tx.update(schema.projects)
+          .set({
+            selectedEstimateId: estimateId,
+            contractPrice: contractPriceCents && contractPriceCents > 0 ? contractPriceCents : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.projects.id, projectId))
+          .returning();
+        const updatedProject = updatedProjectRows[0];
+        if (!updatedProject) {
+          throw new Error("Failed to update project for approved estimate");
+        }
+
+        return { estimate: promoted, project: updatedProject };
+      });
+    } catch (error) {
+      console.error("Database error in approveEstimateAsContract:", error);
       throw error;
     }
   }

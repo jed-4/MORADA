@@ -27,7 +27,7 @@ export default function ProjectCostings() {
     enabled: !!projectId,
   });
 
-  const contractEstimateId = (project as any)?.selectedEstimateId as string | undefined;
+  const contractEstimateId = project?.selectedEstimateId ?? undefined;
 
   usePageTitle({ pageName: project ? `${project.name} · Costings` : "Costings" });
 

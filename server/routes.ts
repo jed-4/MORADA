@@ -5134,43 +5134,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
-      // 1. Promote estimate to contract (also demotes any prior contract on
-      // this project back to approved inside a transaction).
-      const promoted = await storage.promoteEstimateToContract(req.params.id, req.user.id);
-      if (!promoted) {
-        return res.status(500).json({ error: "Failed to promote estimate to contract" });
-      }
-      // Stamp approvedAt/approvedById too so the audit trail is complete.
-      const stamped = await storage.updateEstimateStatus(req.params.id, {
-        approvedAt: existing.approvedAt ?? new Date(),
-        approvedById: existing.approvedById ?? req.user.id,
-      });
-
-      // 2. Compute contract price (cents) from items. `priceIncTax` is the
-      // already-computed line total inc. tax (see shared/pricing.ts), so we
-      // sum it directly — multiplying by quantity would double-count.
+      // 1. Compute contract price (cents) from items BEFORE the atomic write
+      //    so the same transaction can stamp it onto the project.
+      //    `priceIncTax` is the already-computed line total inc. tax (see
+      //    shared/pricing.ts), so we sum it directly — multiplying by
+      //    quantity would double-count.
       const items = await storage.getEstimateItems(req.params.id);
       const totalCents = items.reduce(
-        (sum: number, item: any) => sum + Math.round((item.priceIncTax ?? 0) * 100),
+        (sum: number, item) => sum + Math.round((item.priceIncTax ?? 0) * 100),
         0,
       );
 
-      // 3. Update project: selectedEstimateId + contractPrice. If the project
-      // update fails the contract promotion has already happened, so surface
-      // the failure clearly instead of returning a misleading success.
-      const updatedProject = await storage.updateProject(existing.projectId, {
-        selectedEstimateId: req.params.id,
-        contractPrice: totalCents > 0 ? totalCents : null,
-      } as any);
-      if (!updatedProject) {
-        console.error(
-          "[/api/estimates/:id/approve] estimate was promoted but project update failed",
-          { estimateId: req.params.id, projectId: existing.projectId },
-        );
-        return res.status(500).json({
-          error: "Estimate was promoted to contract, but the project record could not be updated. Please retry.",
-        });
+      // 2. Atomically promote estimate to contract, demote any prior
+      //    contract on this project, stamp approve/contract audit fields,
+      //    and update the project's selectedEstimateId + contractPrice — all
+      //    inside a single DB transaction. If any step fails, the entire
+      //    change is rolled back so the estimate and project rows can never
+      //    disagree about which estimate is the contract.
+      const promotedResult = await storage.approveEstimateAsContract(
+        req.params.id,
+        req.user.id,
+        totalCents > 0 ? totalCents : null,
+      );
+      if (!promotedResult) {
+        return res.status(500).json({ error: "Failed to approve estimate" });
       }
+      const { estimate: stamped, project: updatedProject } = promotedResult;
 
       // 4 + 5. Recalc budget + labour hours. Failures here shouldn't roll back
       // the contract promotion (which is the user-visible action), but we
@@ -5193,7 +5182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json({
-        estimate: stamped ?? promoted,
+        estimate: stamped,
         project: updatedProject,
         recalcWarnings,
       });

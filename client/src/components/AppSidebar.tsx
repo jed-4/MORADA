@@ -216,7 +216,7 @@ export function AppSidebar() {
   // the project nav. Without a contract estimate, only Estimates appears in
   // its original slot.
   const getProjectItems = () => {
-    const hasContract = !!(currentProject as any)?.selectedEstimateId;
+    const hasContract = !!currentProject?.selectedEstimateId;
 
     const compose = (urlFor: (baseUrl: string) => string) => {
       const items = projectItemsBase.map(item => ({ ...item, url: urlFor(item.baseUrl) }));
