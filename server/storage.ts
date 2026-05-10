@@ -16680,21 +16680,16 @@ export class DbStorage implements IStorage {
       const pendingHoursMap = new Map<string, number>();
       const approvedHoursMap = new Map<string, number>();
 
-      // Helper to add hours to the correct map
-      const addHours = (mapKey: string, duration: number, status: string, costCodeId: string | null) => {
+      // Helper to add hours to the correct map. Only labour-flagged cost
+      // codes (already seeded into costCodeMap) accumulate hours — timesheet
+      // entries against non-labour or uncategorized cost codes are ignored
+      // so the budget never spawns rows outside the labour set.
+      const addHours = (mapKey: string, duration: number, status: string) => {
+        if (!costCodeMap.has(mapKey)) return;
         if (status === "submitted") {
           pendingHoursMap.set(mapKey, (pendingHoursMap.get(mapKey) || 0) + duration);
         } else if (status === "approved") {
           approvedHoursMap.set(mapKey, (approvedHoursMap.get(mapKey) || 0) + duration);
-        }
-        if (!costCodeMap.has(mapKey)) {
-          const cc = costCodeId ? costCodeById.get(costCodeId) : null;
-          costCodeMap.set(mapKey, {
-            budgetedHours: 0,
-            costCodeTitle: cc?.title || "Uncategorized",
-            categoryTitle: "General",
-            costCodeId: costCodeId
-          });
         }
       };
 
@@ -16705,7 +16700,7 @@ export class DbStorage implements IStorage {
 
         const duration = parseFloat(split.duration);
         const mapKey = split.costCodeId || "uncategorized";
-        addHours(mapKey, duration, timesheet.status, split.costCodeId);
+        addHours(mapKey, duration, timesheet.status);
       }
 
       // Process timesheets NOT in the join table (cost code stored directly on timesheet)
@@ -16715,7 +16710,7 @@ export class DbStorage implements IStorage {
         if (duration <= 0) continue;
 
         const mapKey = ts.costCodeId || "uncategorized";
-        addHours(mapKey, duration, ts.status, ts.costCodeId);
+        addHours(mapKey, duration, ts.status);
       }
 
       // Delete existing labour hours budget for this project

@@ -99,7 +99,7 @@ export default function EditCostCodeDialog({
         title: costCode.title,
         categoryId: costCode.categoryId,
         availableInTimesheets: costCode.availableInTimesheets ?? false,
-        isLabour: (costCode as any).isLabour ?? false,
+        isLabour: costCode.isLabour ?? false,
         xeroTrackingOptionId: (costCode as any).xeroTrackingOptionId ?? null,
         xeroTrackingOptionName: (costCode as any).xeroTrackingOptionName ?? null,
       });

@@ -381,7 +381,7 @@ export default function CostCodes() {
             {row.original.isSynced && (
               <Badge variant="outline" className="text-data">Synced</Badge>
             )}
-            {(row.original as any).isLabour && (
+            {row.original.isLabour && (
               <Badge variant="outline" className="gap-1 text-data" data-testid={`badge-labour-${row.original.id}`}>
                 <HardHat className="h-3 w-3" /> Labour
               </Badge>
