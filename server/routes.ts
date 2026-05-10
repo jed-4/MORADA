@@ -3735,18 +3735,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (toPhase === "construction") {
         updateData.constructionNumber = generatedJobNumber;
         updateData.jobNumber = generatedJobNumber; // Also update main job number
-        // Stamp the contract price from the first approved/locked estimate if not already set
-        if (!(project as any).contractPrice) {
-          try {
-            const projectEstimates = await storage.getEstimates(req.params.id);
-            const approvedEst = projectEstimates.find((e: any) => e.status === "approved" || e.isLocked);
-            if (approvedEst) {
-              const estItems = await storage.getEstimateItems(approvedEst.id);
-              const totalCents = estItems.reduce((sum: number, item: any) => sum + Math.round(item.priceIncTax * item.quantity * 100), 0);
-              if (totalCents > 0) updateData.contractPrice = totalCents;
-            }
-          } catch {}
-        }
+        // NOTE: contractPrice is no longer stamped here. The single source of
+        // truth is POST /api/estimates/:id/approve, which atomically promotes
+        // the chosen estimate to the contract and sets projects.contractPrice.
       }
       
       // Record phase transition
@@ -5117,41 +5108,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const normalizeStatus = (s?: string | null) =>
     s === "approved" || s === "contract" || s === "archived" ? s : "draft";
 
+  // Single atomic "Approve" action — collapses the old draft→approved→contract
+  // workflow into one explicit step. Approving an estimate:
+  //   1. Locks it and promotes its status to "contract" (demoting any prior
+  //      contract on the same project back to "approved").
+  //   2. Sets projects.selectedEstimateId to this revision.
+  //   3. Recomputes projects.contractPrice (cents) from the estimate items.
+  //   4. Recalculates the project's budget line items.
+  //   5. Recalculates the project's labour hours budget.
+  // Re-approving a different (or the same) revision re-runs the whole flow,
+  // replacing the existing contract estimate cleanly.
   app.post("/api/estimates/:id/approve", requireAuth, async (req: any, res) => {
     try {
       const existing = await storage.getEstimate(req.params.id);
       if (!existing) return res.status(404).json({ error: "Estimate not found" });
-      const current = normalizeStatus(existing.status);
-      if (current !== "draft") {
-        return res.status(409).json({ error: `Cannot approve from status '${current}'. Only Draft estimates can be approved.` });
+      if (!existing.projectId) {
+        return res.status(400).json({ error: "Estimate is not associated with a project." });
       }
-      const updated = await storage.updateEstimateStatus(req.params.id, {
-        status: "approved",
-        isLocked: true,
-        approvedAt: new Date(),
-        approvedById: req.user.id,
+
+      // Authorization: caller must belong to the same company as the project.
+      const project = await storage.getProject(existing.projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const userCompanyId = (req.user as any)?.companyId;
+      if (!userCompanyId || project.companyId !== userCompanyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      // 1. Promote estimate to contract (also demotes any prior contract on
+      // this project back to approved inside a transaction).
+      const promoted = await storage.promoteEstimateToContract(req.params.id, req.user.id);
+      if (!promoted) {
+        return res.status(500).json({ error: "Failed to promote estimate to contract" });
+      }
+      // Stamp approvedAt/approvedById too so the audit trail is complete.
+      const stamped = await storage.updateEstimateStatus(req.params.id, {
+        approvedAt: existing.approvedAt ?? new Date(),
+        approvedById: existing.approvedById ?? req.user.id,
       });
-      res.json(updated);
+
+      // 2. Compute contract price (cents) from items. `priceIncTax` is the
+      // already-computed line total inc. tax (see shared/pricing.ts), so we
+      // sum it directly — multiplying by quantity would double-count.
+      const items = await storage.getEstimateItems(req.params.id);
+      const totalCents = items.reduce(
+        (sum: number, item: any) => sum + Math.round((item.priceIncTax ?? 0) * 100),
+        0,
+      );
+
+      // 3. Update project: selectedEstimateId + contractPrice. If the project
+      // update fails the contract promotion has already happened, so surface
+      // the failure clearly instead of returning a misleading success.
+      const updatedProject = await storage.updateProject(existing.projectId, {
+        selectedEstimateId: req.params.id,
+        contractPrice: totalCents > 0 ? totalCents : null,
+      } as any);
+      if (!updatedProject) {
+        console.error(
+          "[/api/estimates/:id/approve] estimate was promoted but project update failed",
+          { estimateId: req.params.id, projectId: existing.projectId },
+        );
+        return res.status(500).json({
+          error: "Estimate was promoted to contract, but the project record could not be updated. Please retry.",
+        });
+      }
+
+      // 4 + 5. Recalc budget + labour hours. Failures here shouldn't roll back
+      // the contract promotion (which is the user-visible action), but we
+      // surface them in the logs and the response so the client can prompt.
+      const recalcWarnings: string[] = [];
+      try {
+        const budget = await storage.calculateBudget(existing.projectId);
+        if (budget?.id) {
+          await storage.recalculateBudgetLineItems(budget.id);
+        }
+      } catch (e: any) {
+        console.error("[/api/estimates/:id/approve] budget recalc failed", e);
+        recalcWarnings.push("budget");
+      }
+      try {
+        await storage.recalculateLabourHoursBudget(existing.projectId);
+      } catch (e: any) {
+        console.error("[/api/estimates/:id/approve] labour hours recalc failed", e);
+        recalcWarnings.push("labourHours");
+      }
+
+      res.json({
+        estimate: stamped ?? promoted,
+        project: updatedProject,
+        recalcWarnings,
+      });
     } catch (error: any) {
       console.error("[/api/estimates/:id/approve]", error);
       res.status(500).json({ error: error.message || "Failed to approve estimate" });
     }
   });
 
-  app.post("/api/estimates/:id/contract", requireAuth, async (req: any, res) => {
-    try {
-      const existing = await storage.getEstimate(req.params.id);
-      if (!existing) return res.status(404).json({ error: "Estimate not found" });
-      const current = normalizeStatus(existing.status);
-      if (current !== "approved") {
-        return res.status(409).json({ error: `Cannot set as Contract from status '${current}'. Approve the estimate first.` });
-      }
-      const updated = await storage.promoteEstimateToContract(req.params.id, req.user.id);
-      res.json(updated);
-    } catch (error: any) {
-      console.error("[/api/estimates/:id/contract]", error);
-      res.status(500).json({ error: error.message || "Failed to set estimate as contract" });
-    }
+  // Deprecated: the old two-step "Set as Contract" endpoint. Approving an
+  // estimate (POST /api/estimates/:id/approve) is now the single source of
+  // truth for promoting a revision to the contract estimate, setting
+  // selectedEstimateId, recomputing contractPrice and triggering the budget
+  // and labour-hours recalcs. This endpoint is retained only to surface a
+  // clear error to any out-of-date callers.
+  app.post("/api/estimates/:id/contract", requireAuth, async (_req, res) => {
+    return res.status(410).json({
+      error: "This endpoint has been removed. Use POST /api/estimates/:id/approve to promote an estimate to the contract.",
+    });
   });
 
   app.post("/api/estimates/:id/revert", requireAuth, async (req: any, res) => {

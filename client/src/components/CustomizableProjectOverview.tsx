@@ -3,7 +3,7 @@ import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal } from "lucide-react";
+import { Plus, Settings, SlidersHorizontal, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity, MoreHorizontal, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -215,6 +215,7 @@ export default function CustomizableProjectOverview() {
   }, [currentLocation, currentProject]);
 
   // New View Modal state
+  const [noContractBannerDismissed, setNoContractBannerDismissed] = useState(false);
   const [isNewViewModalOpen, setIsNewViewModalOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [newViewVisibility, setNewViewVisibility] = useState<VisibilityOption>("private");
@@ -1152,6 +1153,44 @@ export default function CustomizableProjectOverview() {
             <span className="font-medium text-foreground/70 truncate">{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
           </div>
           {dashboardControls}
+        </div>
+      )}
+
+      {/* Empty-state banner: nudge users to approve an estimate when no
+          contract has been set for this project. Once a contract estimate
+          exists the banner disappears. Dismissible per session. */}
+      {currentProject && !(currentProject as any).selectedEstimateId && !noContractBannerDismissed && (
+        <div
+          className="flex-shrink-0 mx-4 mt-2 flex items-start justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2"
+          data-testid="banner-no-contract-estimate"
+        >
+          <div className="text-xs text-foreground">
+            <span className="font-medium">No contract estimate selected.</span>{" "}
+            <span className="text-muted-foreground">
+              Financial widgets, the project budget and the labour-hours budget will be empty until you approve an estimate.
+            </span>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={() => navigate(`/projects/${currentProject.id}/estimates`)}
+              data-testid="button-banner-go-to-estimates"
+            >
+              Go to Estimates
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setNoContractBannerDismissed(true)}
+              data-testid="button-banner-dismiss"
+              aria-label="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       )}
 

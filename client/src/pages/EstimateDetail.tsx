@@ -2039,22 +2039,32 @@ export default function EstimateDetail() {
     }
   };
 
+  // Approve = single atomic action: promotes the chosen revision to the
+  // project's contract estimate, recomputes contractPrice, and recalculates
+  // both the budget line items and the labour-hours budget on the server.
+  // No more "click here to recalc" toast — recalc is baked in.
   const approveMutation = useMutation({
-    mutationFn: async () => apiRequest(`/api/estimates/${effectiveEstimateId}/approve`, "POST"),
-    onSuccess: () => {
+    mutationFn: async (estimateId?: string) => {
+      const id = estimateId ?? effectiveEstimateId;
+      return apiRequest(`/api/estimates/${id}/approve`, "POST");
+    },
+    onSuccess: (data: any) => {
       invalidateEstimateAndProject();
-      offerBudgetRecalc("Estimate approved");
+      if (estimate?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/budget-line-items`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${estimate.projectId}/labour-hours-budget`] });
+      }
+      const warnings: string[] = data?.recalcWarnings ?? [];
+      toast({
+        title: "Estimate approved",
+        description: warnings.length
+          ? `This is now the contract estimate. Recalc warnings: ${warnings.join(", ")}.`
+          : "This is now the contract estimate. The budget and labour hours have been updated.",
+      });
     },
     onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to approve estimate.", variant: "destructive" }),
-  });
-
-  const contractMutation = useMutation({
-    mutationFn: async () => apiRequest(`/api/estimates/${effectiveEstimateId}/contract`, "POST"),
-    onSuccess: () => {
-      invalidateEstimateAndProject();
-      offerBudgetRecalc("Set as Contract estimate");
-    },
-    onError: (error: any) => toast({ title: "Error", description: error.message || "Failed to set as Contract.", variant: "destructive" }),
   });
 
   const revertMutation = useMutation({
@@ -2131,21 +2141,14 @@ export default function EstimateDetail() {
     onError: () => toast({ title: "Error", description: "Failed to set as working.", variant: "destructive" }),
   });
 
-  const setAsContractMutation = useMutation({
-    mutationFn: async (estimateId: string) => {
-      const summary = await apiRequest(`/api/estimates/${estimateId}/summary`);
-      const totalCents = Math.round((summary?.total ?? 0) * 100);
-      return await apiRequest(`/api/projects/${projectId}`, "PATCH", {
-        selectedEstimateId: estimateId,
-        contractPrice: totalCents > 0 ? totalCents : null,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
-      toast({ title: "Contract estimate set", description: "This revision is now the contract estimate." });
-    },
-    onError: () => toast({ title: "Error", description: "Failed to set as contract.", variant: "destructive" }),
-  });
+  // setAsContractMutation removed: the single Approve action below now does
+  // both promote-to-contract AND project.selectedEstimateId / contractPrice
+  // / budget / labour-hours recalcs atomically on the server.
+
+  // Approve confirmation dialog state. The dialog is wired to the per-row
+  // 3-dot menu in the revisions popover (and to the top-bar Approve button
+  // for the active revision). Confirm calls approveMutation.mutate(id).
+  const [approveDialogRevisionId, setApproveDialogRevisionId] = useState<string | null>(null);
 
   const deleteRevisionMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -4964,53 +4967,41 @@ export default function EstimateDetail() {
             {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
             {estimate && (
               <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                {estimate.status === "draft" && (
+                {estimate.status !== "contract" && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-6 px-2 text-xs"
-                    onClick={() => approveMutation.mutate()}
+                    onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
                     disabled={approveMutation.isPending}
                     data-testid="button-approve-estimate"
                   >
                     Approve
                   </Button>
                 )}
-                {estimate.status === "approved" && (
+                {estimate.status === "contract" && (
                   <>
                     <Button
                       size="sm"
-                      variant="default"
+                      variant="outline"
                       className="h-6 px-2 text-xs"
-                      onClick={() => contractMutation.mutate()}
-                      disabled={contractMutation.isPending}
-                      data-testid="button-set-as-contract"
+                      onClick={() => setApproveDialogRevisionId(effectiveEstimateId ?? null)}
+                      disabled={approveMutation.isPending}
+                      data-testid="button-reapprove-estimate"
                     >
-                      Set as Contract
+                      Re-approve
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       className="h-6 px-2 text-xs"
-                      onClick={() => revertMutation.mutate("draft")}
+                      onClick={() => revertMutation.mutate("approved")}
                       disabled={revertMutation.isPending}
-                      data-testid="button-revert-to-draft"
+                      data-testid="button-revert-to-approved"
                     >
-                      Revert to Draft
+                      Revert to Approved
                     </Button>
                   </>
-                )}
-                {estimate.status === "contract" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => revertMutation.mutate("approved")}
-                    disabled={revertMutation.isPending}
-                    data-testid="button-revert-to-approved"
-                  >
-                    Revert to Approved
-                  </Button>
                 )}
               </div>
             )}
@@ -5144,14 +5135,14 @@ export default function EstimateDetail() {
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
-                            onClick={() => setAsContractMutation.mutate(v.id)}
-                            data-testid={`revision-set-contract-${v.id}`}
+                            onClick={() => setApproveDialogRevisionId(v.id)}
+                            data-testid={`revision-approve-${v.id}`}
                           >
                             {isContract
                               ? <Check className="w-3.5 h-3.5 mr-2 text-emerald-500" />
                               : <Check className="w-3.5 h-3.5 mr-2 opacity-0" />
                             }
-                            Set as Contract
+                            {isContract ? "Re-approve" : "Approve"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => createVersionMutation.mutate(v.id)}
@@ -7778,6 +7769,52 @@ export default function EstimateDetail() {
           </div>
         </div>
       )}
+
+      {/* Approve confirmation dialog (single source of truth for promoting a
+          revision to the contract estimate). */}
+      <Dialog
+        open={approveDialogRevisionId !== null}
+        onOpenChange={(open) => { if (!open) setApproveDialogRevisionId(null); }}
+      >
+        <DialogContent data-testid="dialog-approve-estimate">
+          <DialogHeader>
+            <DialogTitle>
+              {project?.selectedEstimateId
+                ? (project.selectedEstimateId === approveDialogRevisionId ? "Re-approve this revision?" : "Replace the current contract estimate?")
+                : "Approve this revision?"}
+            </DialogTitle>
+            <DialogDescription>
+              {project?.selectedEstimateId && project.selectedEstimateId !== approveDialogRevisionId
+                ? "This will replace the current contract estimate. The contract price, project budget and labour-hours budget will be re-populated from this revision."
+                : "Approving this estimate will turn it into the contract for this project. The contract price, budget and labour-hours budget will all be populated from this estimate, and this Estimates page will become the Costings page."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setApproveDialogRevisionId(null)}
+              disabled={approveMutation.isPending}
+              data-testid="button-approve-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                const id = approveDialogRevisionId;
+                if (!id) return;
+                approveMutation.mutate(id, {
+                  onSuccess: () => setApproveDialogRevisionId(null),
+                });
+              }}
+              disabled={approveMutation.isPending}
+              data-testid="button-approve-confirm"
+            >
+              {approveMutation.isPending ? "Approving…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

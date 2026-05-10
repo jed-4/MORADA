@@ -25,6 +25,7 @@ import Business from "@/pages/Business";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
 import ProjectEstimates from "@/pages/ProjectEstimates";
+import ProjectCostings from "@/pages/ProjectCostings";
 import EstimateDetail from "@/pages/EstimateDetail";
 import Selections from "@/pages/Selections";
 import SelectionDetail from "@/pages/SelectionDetail";
@@ -196,6 +197,7 @@ function Router() {
       <Route path="/projects/:projectId/estimates/new" component={EstimateDetail} />
       <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
       <Route path="/projects/:projectId/labour-estimate" component={LabourEstimate} />
+      <Route path="/projects/:projectId/costings" component={ProjectCostings} />
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />

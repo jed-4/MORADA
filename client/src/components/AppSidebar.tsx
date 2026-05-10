@@ -209,25 +209,45 @@ export function AppSidebar() {
     localStorage.setItem("sidebar-favorites-open", JSON.stringify(isFavoritesOpen));
   }, [isFavoritesOpen]);
 
-  // Generate project-scoped URLs
+  // Generate project-scoped URLs.
+  // When the project has a contract estimate set (selectedEstimateId), the
+  // Estimates slot in the sidebar becomes "Costings" (read-only contract
+  // costings page) and the editable Estimates entry moves to the bottom of
+  // the project nav. Without a contract estimate, only Estimates appears in
+  // its original slot.
   const getProjectItems = () => {
+    const hasContract = !!(currentProject as any)?.selectedEstimateId;
+
+    const compose = (urlFor: (baseUrl: string) => string) => {
+      const items = projectItemsBase.map(item => ({ ...item, url: urlFor(item.baseUrl) }));
+      if (!hasContract) return items;
+      // Replace Estimates slot with Costings; append Estimates at the end.
+      const estimatesIdx = items.findIndex(i => i.title === "Estimates");
+      if (estimatesIdx === -1) return items;
+      const estimatesItem = items[estimatesIdx];
+      const costingsItem = {
+        title: "Costings",
+        baseUrl: "/costings",
+        icon: DollarSign,
+        url: urlFor("/costings"),
+      } as typeof items[number];
+      const next = [...items];
+      next.splice(estimatesIdx, 1, costingsItem);
+      next.push({ ...estimatesItem, title: "Estimates" });
+      return next;
+    };
+
     if (!currentProject || currentProject.isBusiness) {
       // For business projects or no project selected, use global URLs
-      return projectItemsBase.map(item => ({
-        ...item,
-        url: item.baseUrl || "/"
-      }));
+      return compose(baseUrl => baseUrl || "/");
     }
-    
+
     // For regular projects, use project-scoped URLs
-    return projectItemsBase.map(item => {
-      return {
-        ...item,
-        url: item.baseUrl === "" 
-          ? `/projects/${currentProject.id}` 
-          : `/projects/${currentProject.id}${item.baseUrl}`
-      };
-    });
+    return compose(baseUrl =>
+      baseUrl === ""
+        ? `/projects/${currentProject.id}`
+        : `/projects/${currentProject.id}${baseUrl}`
+    );
   };
   
   const projectItems = getProjectItems();
