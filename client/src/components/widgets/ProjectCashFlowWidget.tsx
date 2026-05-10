@@ -421,7 +421,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
       </div>
 
       {/* Footer: KPIs left, legend right */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-3 py-1 text-[11px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-3 py-0.5 text-[10px] leading-tight">
         <div className="flex items-center gap-3 mr-auto">
           <div className="flex items-center gap-1">
             <span className="text-[hsl(var(--bp-muted))]">In:</span>
