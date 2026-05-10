@@ -1172,7 +1172,7 @@ export default function CustomizableProjectOverview() {
       {/* Empty-state banner: nudge users to approve an estimate when no
           contract has been set for this project. Once a contract estimate
           exists the banner disappears. Dismissible per session. */}
-      {currentProject && !currentProject.selectedEstimateId && !noContractBannerDismissed && (
+      {activeTab === "budget" && currentProject && !currentProject.selectedEstimateId && !noContractBannerDismissed && (
         <div
           className="flex-shrink-0 mx-4 mt-2 flex items-start justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2"
           data-testid="banner-no-contract-estimate"
