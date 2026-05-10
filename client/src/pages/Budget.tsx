@@ -60,7 +60,7 @@ export default function BudgetPage() {
 
   const recalculateMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('POST', `/api/projects/${projectId}/budget/calculate`, {});
+      return await apiRequest(`/api/projects/${projectId}/budget/calculate`, 'POST', {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/budget`] });
@@ -80,7 +80,7 @@ export default function BudgetPage() {
 
   const recalculateLineItemsMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('POST', `/api/budgets/${budget?.id}/line-items/recalculate`, {});
+      return await apiRequest(`/api/budgets/${budget?.id}/line-items/recalculate`, 'POST', {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budget?.id}/line-items`] });
@@ -100,7 +100,7 @@ export default function BudgetPage() {
 
   const recalculateLabourHoursMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('POST', `/api/projects/${projectId}/labour-hours-budget/recalculate`, {});
+      return await apiRequest(`/api/projects/${projectId}/labour-hours-budget/recalculate`, 'POST', {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/labour-hours-budget`] });
