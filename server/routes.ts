@@ -28517,8 +28517,32 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
-      const contractCeiling =
+      let contractCeiling =
         Number((project as any).contractPrice) || Number((project as any).contractCost) || 0;
+
+      // Fallback: when the project's contractPrice/contractCost isn't set
+      // (e.g. estimate was promoted to contract via a path that didn't sync
+      // the project field, or the project predates that sync), derive the
+      // ceiling from the contract estimate's total.
+      if (contractCeiling <= 0) {
+        try {
+          const { estimates: estimatesTbl } = await import("@shared/schema");
+          const contractEstimateRows = await db
+            .select()
+            .from(estimatesTbl)
+            .where(and(eq(estimatesTbl.projectId, projectId), eq(estimatesTbl.status, "contract")))
+            .limit(1);
+          const contractEstimate = contractEstimateRows[0];
+          if (contractEstimate) {
+            const summary = await storage.getEstimateSummary(contractEstimate.id);
+            if (summary && Number(summary.total) > 0) {
+              contractCeiling = Number(summary.total);
+            }
+          }
+        } catch (e) {
+          console.warn("[cash-flow] contract-estimate fallback failed:", e);
+        }
+      }
       const approvedVarTotal = (variationRows as any[]).reduce(
         (s, v) => s + (Number(v.totalAmount) || 0),
         0,
