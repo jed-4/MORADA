@@ -437,6 +437,7 @@ export interface IStorage {
   getCostCode(id: string, companyId: string): Promise<CostCode | undefined>;
   createCostCode(costCode: InsertCostCode): Promise<CostCode>;
   updateCostCode(id: string, costCode: Partial<InsertCostCode>, companyId: string): Promise<CostCode | undefined>;
+  bulkUpdateCostCodes(ids: string[], updates: Partial<InsertCostCode>, companyId: string): Promise<CostCode[]>;
   deleteCostCode(id: string, companyId: string): Promise<boolean>;
   archiveCostCode(id: string, companyId: string): Promise<CostCode | undefined>;
   mergeCostCodes(sourceId: string, targetId: string, companyId: string): Promise<boolean>;
@@ -4553,6 +4554,15 @@ export class MemStorage implements IStorage {
     };
     this.costCodes.set(id, updatedCode);
     return updatedCode;
+  }
+
+  async bulkUpdateCostCodes(ids: string[], updates: Partial<InsertCostCode>, companyId: string): Promise<CostCode[]> {
+    const out: CostCode[] = [];
+    for (const id of ids) {
+      const updated = await this.updateCostCode(id, updates, companyId);
+      if (updated) out.push(updated);
+    }
+    return out;
   }
 
   async deleteCostCode(id: string, companyId: string): Promise<boolean> {
@@ -10748,6 +10758,27 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateCostCode:", error);
+      throw error;
+    }
+  }
+
+  async bulkUpdateCostCodes(ids: string[], updates: Partial<InsertCostCode>, companyId: string): Promise<CostCode[]> {
+    if (ids.length === 0) return [];
+    try {
+      const result = await db
+        .update(schema.costCodes)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          inArray(schema.costCodes.id, ids),
+          eq(schema.costCodes.companyId, companyId)
+        ))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in bulkUpdateCostCodes:", error);
       throw error;
     }
   }

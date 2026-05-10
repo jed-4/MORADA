@@ -202,9 +202,7 @@ export default function CostCodes() {
 
   const bulkToggleLabourMutation = useMutation({
     mutationFn: async ({ codeIds, isLabour }: { codeIds: string[]; isLabour: boolean }) => {
-      await Promise.all(
-        codeIds.map(id => apiRequest(`/api/cost-codes/${id}`, "PATCH", { isLabour }))
-      );
+      await apiRequest(`/api/cost-codes/bulk-update`, "PATCH", { codeIds, updates: { isLabour } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });

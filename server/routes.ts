@@ -17211,6 +17211,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/cost-codes/bulk-update", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const bodySchema = z.object({
+        codeIds: z.array(z.string().min(1)).min(1).max(500),
+        updates: insertCostCodeSchema.omit({ companyId: true }).partial(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const companyId = req.user!.companyId;
+      if (parsed.data.updates.categoryId) {
+        const category = await storage.getCostCategory(parsed.data.updates.categoryId, companyId);
+        if (!category) {
+          return res.status(400).json({ error: "Cost category not found" });
+        }
+      }
+      const updated = await storage.bulkUpdateCostCodes(parsed.data.codeIds, parsed.data.updates, companyId);
+      res.json({ updated: updated.length, codes: updated });
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to bulk update cost codes",
+        details: error.message,
+      });
+    }
+  });
+
   app.patch("/api/cost-codes/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const validationResult = insertCostCodeSchema.omit({ companyId: true }).partial().safeParse(req.body);
