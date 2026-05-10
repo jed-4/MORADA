@@ -5147,10 +5147,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 2. Atomically promote estimate to contract, demote any prior
       //    contract on this project, stamp approve/contract audit fields,
-      //    and update the project's selectedEstimateId + contractPrice — all
-      //    inside a single DB transaction. If any step fails, the entire
-      //    change is rolled back so the estimate and project rows can never
-      //    disagree about which estimate is the contract.
+      //    update the project's selectedEstimateId + contractPrice, AND
+      //    recalculate the project's budget, budget line items, and
+      //    labour-hours budget — all inside a single DB transaction. If
+      //    any step fails the whole change rolls back so the estimate,
+      //    project, budget, and labour-hours rows can never disagree
+      //    about which estimate is the contract.
       const promotedResult = await storage.approveEstimateAsContract(
         req.params.id,
         req.user.id,
@@ -5159,27 +5161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!promotedResult) {
         return res.status(500).json({ error: "Failed to approve estimate" });
       }
-      const { estimate: stamped, project: updatedProject } = promotedResult;
-
-      // 4 + 5. Recalc budget + labour hours. Failures here shouldn't roll back
-      // the contract promotion (which is the user-visible action), but we
-      // surface them in the logs and the response so the client can prompt.
-      const recalcWarnings: string[] = [];
-      try {
-        const budget = await storage.calculateBudget(existing.projectId);
-        if (budget?.id) {
-          await storage.recalculateBudgetLineItems(budget.id);
-        }
-      } catch (e: any) {
-        console.error("[/api/estimates/:id/approve] budget recalc failed", e);
-        recalcWarnings.push("budget");
-      }
-      try {
-        await storage.recalculateLabourHoursBudget(existing.projectId);
-      } catch (e: any) {
-        console.error("[/api/estimates/:id/approve] labour hours recalc failed", e);
-        recalcWarnings.push("labourHours");
-      }
+      const { estimate: stamped, project: updatedProject, recalcWarnings } = promotedResult;
 
       res.json({
         estimate: stamped,

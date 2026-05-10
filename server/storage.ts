@@ -471,7 +471,7 @@ export interface IStorage {
     estimateId: string,
     userId: string,
     contractPriceCents: number | null,
-  ): Promise<{ estimate: Estimate; project: Project } | undefined>;
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined>;
   
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
@@ -925,23 +925,23 @@ export interface IStorage {
   deleteChecklistStatusTrigger(id: string): Promise<boolean>;
 
   // Budget CRUD
-  getBudget(projectId: string): Promise<Budget | undefined>;
-  createBudget(budget: InsertBudget): Promise<Budget>;
-  updateBudget(id: string, budget: Partial<InsertBudget>): Promise<Budget | undefined>;
+  getBudget(projectId: string, tx?: any): Promise<Budget | undefined>;
+  createBudget(budget: InsertBudget, tx?: any): Promise<Budget>;
+  updateBudget(id: string, budget: Partial<InsertBudget>, tx?: any): Promise<Budget | undefined>;
   deleteBudget(id: string): Promise<boolean>;
-  calculateBudget(projectId: string): Promise<Budget | undefined>; // Recalculates from estimates, bills, variations
+  calculateBudget(projectId: string, tx?: any): Promise<Budget | undefined>; // Recalculates from estimates, bills, variations
 
   // Budget Line Items CRUD
   getBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>;
   getBudgetLineItem(id: string): Promise<BudgetLineItem | undefined>;
-  createBudgetLineItem(item: InsertBudgetLineItem): Promise<BudgetLineItem>;
+  createBudgetLineItem(item: InsertBudgetLineItem, tx?: any): Promise<BudgetLineItem>;
   updateBudgetLineItem(id: string, item: Partial<InsertBudgetLineItem>): Promise<BudgetLineItem | undefined>;
   deleteBudgetLineItem(id: string): Promise<boolean>;
-  recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>; // Recalculates all line items
+  recalculateBudgetLineItems(budgetId: string, tx?: any): Promise<BudgetLineItem[]>; // Recalculates all line items
 
   // Labour Hours Budget CRUD
   getLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>;
-  recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>; // Recalculates from flagged estimate items
+  recalculateLabourHoursBudget(projectId: string, tx?: any): Promise<LabourHoursBudget[]>; // Recalculates from flagged estimate items
 
   // Timesheets CRUD
   getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]>;
@@ -4774,7 +4774,7 @@ export class MemStorage implements IStorage {
     estimateId: string,
     userId: string,
     contractPriceCents: number | null,
-  ): Promise<{ estimate: Estimate; project: Project } | undefined> {
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
     // MemStorage shim — defers to the DB implementation. MemStorage is not
     // used by the live approve flow; this method exists only to satisfy
     // IStorage. See DbStorage.approveEstimateAsContract for the real
@@ -4816,7 +4816,7 @@ export class MemStorage implements IStorage {
         const updatedProject = updatedProjectRows[0];
         if (!updatedProject) throw new Error("Failed to update project for approved estimate");
         this.estimates.set(estimateId, promoted);
-        return { estimate: promoted, project: updatedProject };
+        return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
       });
     } catch (error) {
       console.error("Database error in approveEstimateAsContract (MemStorage):", error);
@@ -11165,17 +11165,19 @@ export class DbStorage implements IStorage {
    *     not already set;
    *   - the project's selectedEstimateId is set to the target estimate, and
    *     contractPrice is overwritten with the supplied total.
-   * If any step fails, the whole change is rolled back so the estimate and
-   * project rows can never disagree about which estimate is the contract.
-   * Derived data (budget line items, labour-hours) is recomputed by the
-   * caller AFTER this transaction commits — those recalcs are idempotent
-   * and safe to retry on failure.
+   * If any step fails, the whole change is rolled back so neither the
+   * estimate, project, budget, nor labour-hours rows can disagree about
+   * which estimate is the contract. Budget + labour-hours recalcs run
+   * inside the same transaction and rollback together with the contract
+   * promotion if any step throws. Recalc warnings are returned as a
+   * separate field for callers that want to surface partial-failure
+   * messaging (currently always empty since failures roll back).
    */
   async approveEstimateAsContract(
     estimateId: string,
     userId: string,
     contractPriceCents: number | null,
-  ): Promise<{ estimate: Estimate; project: Project } | undefined> {
+  ): Promise<{ estimate: Estimate; project: Project; recalcWarnings: string[] } | undefined> {
     try {
       const target = await this.getEstimate(estimateId);
       if (!target || !target.projectId) return undefined;
@@ -11223,7 +11225,18 @@ export class DbStorage implements IStorage {
           throw new Error("Failed to update project for approved estimate");
         }
 
-        return { estimate: promoted, project: updatedProject };
+        // Recalculate budget + budget line items + labour-hours budget
+        // inside the SAME transaction so the contract promotion and the
+        // derived data either all commit or all roll back together. This
+        // closes the prior gap where stale budget/labour rows could be
+        // left behind on partial failure.
+        const recomputedBudget = await this.calculateBudget(projectId, tx);
+        if (recomputedBudget) {
+          await this.recalculateBudgetLineItems(recomputedBudget.id, tx);
+        }
+        await this.recalculateLabourHoursBudget(projectId, tx);
+
+        return { estimate: promoted, project: updatedProject, recalcWarnings: [] };
       });
     } catch (error) {
       console.error("Database error in approveEstimateAsContract:", error);
@@ -16253,9 +16266,10 @@ export class DbStorage implements IStorage {
   }
 
   // Budget CRUD
-  async getBudget(projectId: string): Promise<Budget | undefined> {
+  async getBudget(projectId: string, tx?: any): Promise<Budget | undefined> {
+    const exec = tx ?? db;
     try {
-      const result = await db.select()
+      const result = await exec.select()
         .from(schema.budgets)
         .where(eq(schema.budgets.projectId, projectId))
         .limit(1);
@@ -16266,9 +16280,10 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createBudget(budget: InsertBudget): Promise<Budget> {
+  async createBudget(budget: InsertBudget, tx?: any): Promise<Budget> {
+    const exec = tx ?? db;
     try {
-      const result = await db.insert(schema.budgets)
+      const result = await exec.insert(schema.budgets)
         .values(budget)
         .returning();
       return result[0];
@@ -16278,9 +16293,10 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateBudget(id: string, budget: Partial<InsertBudget>): Promise<Budget | undefined> {
+  async updateBudget(id: string, budget: Partial<InsertBudget>, tx?: any): Promise<Budget | undefined> {
+    const exec = tx ?? db;
     try {
-      const result = await db.update(schema.budgets)
+      const result = await exec.update(schema.budgets)
         .set({ ...budget, updatedAt: new Date() })
         .where(eq(schema.budgets.id, id))
         .returning();
@@ -16303,10 +16319,11 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async calculateBudget(projectId: string): Promise<Budget | undefined> {
+  async calculateBudget(projectId: string, tx?: any): Promise<Budget | undefined> {
+    const exec = tx ?? db;
     try {
       // Get or create budget for this project
-      let budget = await this.getBudget(projectId);
+      let budget = await this.getBudget(projectId, tx);
       if (!budget) {
         budget = await this.createBudget({ 
           projectId,
@@ -16318,7 +16335,7 @@ export class DbStorage implements IStorage {
           varianceAmount: 0,
           profitAmount: 0,
           profitPercent: 0
-        });
+        }, tx);
       }
 
       // Calculate baseline from the single Contract estimate on the project.
@@ -16326,39 +16343,39 @@ export class DbStorage implements IStorage {
       // status='contract'. There is at most one Contract estimate per project
       // (enforced by the /contract endpoint, which demotes any prior Contract
       // back to Approved).
-      const estimates = await db.select()
+      const estimates = await exec.select()
         .from(schema.estimates)
         .where(and(
           eq(schema.estimates.projectId, projectId),
           eq(schema.estimates.status, "contract"),
         ));
 
-      const estimateIds = estimates.map(e => e.id);
-      const estimateItems = estimateIds.length > 0 ? await db.select()
+      const estimateIds = estimates.map((e: any) => e.id);
+      const estimateItems = estimateIds.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
-      const baselineAmount = estimateItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
+      const baselineAmount = estimateItems.reduce((sum: number, item: any) => sum + (item.priceIncTax || 0), 0);
 
       // Calculate actual from bills
-      const bills = await db.select()
+      const bills = await exec.select()
         .from(schema.bills)
         .where(eq(schema.bills.projectId, projectId));
-      
-      const actualAmount = bills.reduce((sum, bill) => {
+
+      const actualAmount = bills.reduce((sum: number, bill: any) => {
         const amount = bill.total || 0;
         return sum + (bill.billType === 'credit' ? -amount : amount);
       }, 0);
 
       // Calculate variations
-      const variations = await db.select()
+      const variations = await exec.select()
         .from(schema.variations)
         .where(and(
           eq(schema.variations.projectId, projectId),
           eq(schema.variations.status, "approved")
         ));
-      
-      const variationAmount = variations.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
+
+      const variationAmount = variations.reduce((sum: number, v: any) => sum + (v.totalAmount || 0), 0);
 
       const revisedAmount = baselineAmount + variationAmount;
       const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
@@ -16373,7 +16390,7 @@ export class DbStorage implements IStorage {
         forecastAmount,
         varianceAmount,
         profitPercent
-      });
+      }, tx);
 
       return updated;
     } catch (error) {
@@ -16408,9 +16425,10 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createBudgetLineItem(item: InsertBudgetLineItem): Promise<BudgetLineItem> {
+  async createBudgetLineItem(item: InsertBudgetLineItem, tx?: any): Promise<BudgetLineItem> {
+    const exec = tx ?? db;
     try {
-      const result = await db.insert(schema.budgetLineItems)
+      const result = await exec.insert(schema.budgetLineItems)
         .values(item)
         .returning();
       return result[0];
@@ -16445,9 +16463,10 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]> {
+  async recalculateBudgetLineItems(budgetId: string, tx?: any): Promise<BudgetLineItem[]> {
+    const exec = tx ?? db;
     try {
-      const budgetResult = await db.select()
+      const budgetResult = await exec.select()
         .from(schema.budgets)
         .where(eq(schema.budgets.id, budgetId))
         .limit(1);
@@ -16457,27 +16476,27 @@ export class DbStorage implements IStorage {
       const projectId = budget.projectId;
 
       // Load cost codes and categories for lookups
-      const costCodes = await db.select().from(schema.costCodes).where(eq(schema.costCodes.isActive, true));
-      const costCategories = await db.select().from(schema.costCategories);
+      const costCodes = await exec.select().from(schema.costCodes).where(eq(schema.costCodes.isActive, true));
+      const costCategories = await exec.select().from(schema.costCategories);
 
-      const costCodeMap = new Map<string, CostCode>(costCodes.map(cc => [cc.id, cc]));
-      const categoryMap = new Map<string, string>(costCategories.map(cat => [cat.id, `${cat.code} - ${cat.title}`]));
+      const costCodeMap = new Map<string, CostCode>(costCodes.map((cc: CostCode) => [cc.id, cc]));
+      const categoryMap = new Map<string, string>(costCategories.map((cat: any) => [cat.id, `${cat.code} - ${cat.title}`]));
 
       // Pull items from the project's Contract estimate only (see
       // calculateBudget for the rationale).
-      const estimates = await db.select().from(schema.estimates).where(and(
+      const estimates = await exec.select().from(schema.estimates).where(and(
         eq(schema.estimates.projectId, projectId),
         eq(schema.estimates.status, "contract"),
       ));
-      const estimateIds = estimates.map(e => e.id);
-      const estimateItems = estimateIds.length > 0 ? await db.select()
+      const estimateIds = estimates.map((e: any) => e.id);
+      const estimateItems = estimateIds.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
       // Get bills (exclude vendor credits from "actual" or subtract them)
-      const bills = await db.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
-      const billIds = bills.map(b => b.id);
-      const billLineItems = billIds.length > 0 ? await db.select()
+      const bills = await exec.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
+      const billIds = bills.map((b: any) => b.id);
+      const billLineItems = billIds.length > 0 ? await exec.select()
         .from(schema.billLineItems)
         .where(inArray(schema.billLineItems.billId, billIds)) : [];
 
@@ -16513,7 +16532,7 @@ export class DbStorage implements IStorage {
 
       // Actuals from bill line items
       for (const billItem of billLineItems) {
-        const bill = bills.find(b => b.id === billItem.billId);
+        const bill = bills.find((b: any) => b.id === billItem.billId);
         const multiplier = bill?.billType === "credit" ? -1 : 1;
         const amount = (billItem.total || 0) * multiplier;
         if (billItem.costCodeId) {
@@ -16528,7 +16547,7 @@ export class DbStorage implements IStorage {
       }
 
       // Delete and recreate budget line items
-      await db.delete(schema.budgetLineItems).where(eq(schema.budgetLineItems.budgetId, budgetId));
+      await exec.delete(schema.budgetLineItems).where(eq(schema.budgetLineItems.budgetId, budgetId));
 
       const lineItems: BudgetLineItem[] = [];
       let sortOrder = 0;
@@ -16551,7 +16570,7 @@ export class DbStorage implements IStorage {
           variancePercent,
           profitAmount: variance,
           sortOrder: sortOrder++
-        });
+        }, tx);
         lineItems.push(lineItem);
       }
 
@@ -16576,16 +16595,17 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]> {
+  async recalculateLabourHoursBudget(projectId: string, tx?: any): Promise<LabourHoursBudget[]> {
+    const exec = tx ?? db;
     try {
       // Get project's company for scoping cost codes
-      const projectRows = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1);
+      const projectRows = await exec.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1);
       if (!projectRows[0] || !projectRows[0].companyId) {
         return [];
       }
       const companyId = projectRows[0].companyId;
 
-      const costCodes = await db.select()
+      const costCodes = await exec.select()
         .from(schema.costCodes)
         .where(and(
           eq(schema.costCodes.isActive, true),
@@ -16593,7 +16613,7 @@ export class DbStorage implements IStorage {
         ));
 
       // Build cost code lookup by ID for fast matching
-      const costCodeById = new Map(costCodes.map(cc => [cc.id, cc]));
+      const costCodeById = new Map(costCodes.map((cc: any) => [cc.id, cc] as const));
 
       // Initialize costCodeMap with ALL active cost codes (so they all appear in budget)
       const costCodeMap = new Map<string, {
@@ -16613,12 +16633,12 @@ export class DbStorage implements IStorage {
       }
 
       // Get estimates for this project
-      const estimates = await db.select()
+      const estimates = await exec.select()
         .from(schema.estimates)
         .where(eq(schema.estimates.projectId, projectId));
 
       // Get labour estimate items (case-insensitive type check, no trackLabourHours filter)
-      const estimateItems = estimates.length > 0 ? await db.select()
+      const estimateItems = estimates.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(
           and(
@@ -16646,18 +16666,18 @@ export class DbStorage implements IStorage {
       }
 
       // Get timesheets for this project
-      const timesheets = await db.select()
+      const timesheets = await exec.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
 
       // Get timesheet cost code splits
-      const timesheetIds = timesheets.map(t => t.id);
-      const timesheetCostCodes = timesheetIds.length > 0 ? await db.select()
+      const timesheetIds = timesheets.map((t: any) => t.id);
+      const timesheetCostCodes = timesheetIds.length > 0 ? await exec.select()
         .from(schema.timesheetCostCodes)
         .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds)) : [];
 
       // Track which timesheets are covered by the join table
-      const timesheetsWithSplits = new Set(timesheetCostCodes.map(tcc => tcc.timesheetId));
+      const timesheetsWithSplits = new Set(timesheetCostCodes.map((tcc: any) => tcc.timesheetId));
 
       // Map pending and approved hours by cost code ID
       const pendingHoursMap = new Map<string, number>();
@@ -16683,7 +16703,7 @@ export class DbStorage implements IStorage {
 
       // Process hours from join table splits
       for (const split of timesheetCostCodes) {
-        const timesheet = timesheets.find(t => t.id === split.timesheetId);
+        const timesheet = timesheets.find((t: any) => t.id === split.timesheetId);
         if (!timesheet) continue;
 
         const duration = parseFloat(split.duration);
@@ -16702,7 +16722,7 @@ export class DbStorage implements IStorage {
       }
 
       // Delete existing labour hours budget for this project
-      await db.delete(schema.labourHoursBudget)
+      await exec.delete(schema.labourHoursBudget)
         .where(eq(schema.labourHoursBudget.projectId, projectId));
 
       // Build all rows and batch insert
@@ -16727,7 +16747,7 @@ export class DbStorage implements IStorage {
 
       if (valuesToInsert.length === 0) return [];
 
-      const labourHoursBudget = await db.insert(schema.labourHoursBudget)
+      const labourHoursBudget = await exec.insert(schema.labourHoursBudget)
         .values(valuesToInsert)
         .returning();
 
