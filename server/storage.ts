@@ -16618,7 +16618,6 @@ export class DbStorage implements IStorage {
         ));
 
       const labourCostCodeIds = new Set(labourCostCodes.map((cc: CostCode) => cc.id));
-      const costCodeById = new Map(labourCostCodes.map((cc: CostCode) => [cc.id, cc] as const));
 
       // Seed map with the labour-flagged skeleton so every flagged code
       // appears with zero hours when there's no Contract estimate yet.

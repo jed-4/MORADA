@@ -139,9 +139,18 @@ export const PROJECT_INFO_COLUMN_REGISTRY: ProjectInfoColumn[] = [
 // ── Tab ─────────────────────────────────────────────────────────────────────
 
 export default function ProjectInfoTab() {
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
+  const {
+    data: projects = [],
+    isLoading: projectsLoading,
+    isError: projectsError,
+    error: projectsErrorObj,
+  } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    queryFn: () => fetch("/api/projects", { credentials: "include" }).then((r) => r.json()),
+    queryFn: () =>
+      fetch("/api/projects", { credentials: "include" }).then((r) => {
+        if (!r.ok) throw new Error("Failed to load projects");
+        return r.json();
+      }),
   });
 
   const clientProjects = useMemo(
@@ -180,6 +189,22 @@ export default function ProjectInfoTab() {
       }),
     [clientProjects, metricsQueries],
   );
+
+  if (projectsError) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div
+          className="flex items-center gap-2 text-sm text-destructive"
+          data-testid="error-project-info"
+        >
+          <AlertCircle className="h-4 w-4" />
+          {projectsErrorObj instanceof Error
+            ? projectsErrorObj.message
+            : "Failed to load projects."}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0">
