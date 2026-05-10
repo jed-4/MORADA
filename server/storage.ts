@@ -16355,7 +16355,15 @@ export class DbStorage implements IStorage {
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
-      const baselineAmount = estimateItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
+      // estimate_items.priceIncTax is doublePrecision DOLLARS (e.g.
+      // 55653.41) while budgets.baselineAmount is integer CENTS (the UI
+      // divides by 100 for display). Convert per-line to cents and round
+      // before summing to avoid both Postgres integer errors and a 100x
+      // unit drift on the budget page.
+      const baselineAmount = estimateItems.reduce(
+        (sum, item) => sum + Math.round((item.priceIncTax || 0) * 100),
+        0,
+      );
 
       // Calculate actual from bills
       const bills: Bill[] = await exec.select()
@@ -16513,9 +16521,11 @@ export class DbStorage implements IStorage {
         return buckets.get(key)!;
       };
 
-      // Budget from estimate items
+      // Budget from estimate items. priceIncTax is doublePrecision DOLLARS
+      // but budget_line_items.budgetedAmount is integer CENTS, so convert
+      // per line.
       for (const item of estimateItems) {
-        const amount = item.priceIncTax || 0;
+        const amount = Math.round((item.priceIncTax || 0) * 100);
         if (item.costCode) {
           const cc = costCodeMap.get(item.costCode);
           const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
