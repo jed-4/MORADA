@@ -47,6 +47,7 @@ import {
   X,
   FolderInput,
   Columns3,
+  HardHat,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -379,6 +380,11 @@ export default function CostCodes() {
             )}
             {row.original.isSynced && (
               <Badge variant="outline" className="text-data">Synced</Badge>
+            )}
+            {(row.original as any).isLabour && (
+              <Badge variant="outline" className="gap-1 text-data" data-testid={`badge-labour-${row.original.id}`}>
+                <HardHat className="h-3 w-3" /> Labour
+              </Badge>
             )}
           </div>
         ),

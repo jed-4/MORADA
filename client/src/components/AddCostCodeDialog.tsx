@@ -17,11 +17,12 @@ type AddCostCodeDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const formSchema = insertCostCodeSchema.pick({ 
-  code: true, 
-  title: true, 
-  categoryId: true, 
-  availableInTimesheets: true 
+const formSchema = insertCostCodeSchema.pick({
+  code: true,
+  title: true,
+  categoryId: true,
+  availableInTimesheets: true,
+  isLabour: true,
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -40,6 +41,7 @@ export default function AddCostCodeDialog({ open, onOpenChange }: AddCostCodeDia
       title: "",
       categoryId: null,
       availableInTimesheets: true,
+      isLabour: false,
     },
   });
 
@@ -170,6 +172,28 @@ export default function AddCostCodeDialog({ open, onOpenChange }: AddCostCodeDia
                       checked={field.value}
                       onCheckedChange={field.onChange}
                       data-testid="switch-timesheet-available"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="isLabour"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Labour Cost Code</FormLabel>
+                    <FormDescription>
+                      Hours estimated against this cost code feed the project's labour hours budget.
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={!!field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="switch-is-labour"
                     />
                   </FormControl>
                 </FormItem>

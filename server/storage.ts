@@ -16605,17 +16605,23 @@ export class DbStorage implements IStorage {
       }
       const companyId = projectRows[0].companyId;
 
-      const costCodes = await exec.select()
+      // Pull cost codes flagged as labour for this company. These are the
+      // exclusive source of rows on the labour-hours budget; non-labour codes
+      // never appear (even if a stray timesheet references one).
+      const labourCostCodes = await exec.select()
         .from(schema.costCodes)
         .where(and(
           eq(schema.costCodes.isActive, true),
+          eq(schema.costCodes.isArchived, false),
+          eq(schema.costCodes.isLabour, true),
           eq(schema.costCodes.companyId, companyId)
         ));
 
-      // Build cost code lookup by ID for fast matching
-      const costCodeById = new Map(costCodes.map((cc: CostCode) => [cc.id, cc] as const));
+      const labourCostCodeIds = new Set(labourCostCodes.map((cc: CostCode) => cc.id));
+      const costCodeById = new Map(labourCostCodes.map((cc: CostCode) => [cc.id, cc] as const));
 
-      // Initialize costCodeMap with ALL active cost codes (so they all appear in budget)
+      // Seed map with the labour-flagged skeleton so every flagged code
+      // appears with zero hours when there's no Contract estimate yet.
       const costCodeMap = new Map<string, {
         budgetedHours: number;
         costCodeTitle: string;
@@ -16623,7 +16629,7 @@ export class DbStorage implements IStorage {
         costCodeId: string | null;
       }>();
 
-      for (const cc of costCodes) {
+      for (const cc of labourCostCodes) {
         costCodeMap.set(cc.id, {
           budgetedHours: 0,
           costCodeTitle: cc.title,
@@ -16632,9 +16638,8 @@ export class DbStorage implements IStorage {
         });
       }
 
-      // Get the project's Contract estimate (single source of truth for the
-      // labour-hours budget). If no estimate has been promoted to Contract
-      // yet, the budget contains only the cost-code skeleton with zero hours.
+      // Pull the project's Contract estimate. Without one, the skeleton is
+      // returned as-is.
       const estimates: Estimate[] = await exec.select()
         .from(schema.estimates)
         .where(and(
@@ -16642,33 +16647,19 @@ export class DbStorage implements IStorage {
           eq(schema.estimates.status, "contract"),
         ));
 
-      // Get labour estimate items from the Contract estimate only
-      // (case-insensitive type check, no trackLabourHours filter).
+      // Sum quantity from contract-estimate items grouped by cost code,
+      // restricted to items whose cost code is flagged isLabour=true. The
+      // legacy `type='labour'` filter is dropped — the flag on the cost code
+      // is now the single source of truth.
       const estimateItems: EstimateItem[] = estimates.length > 0 ? await exec.select()
         .from(schema.estimateItems)
-        .where(
-          and(
-            eq(schema.estimateItems.estimateId, estimates[0].id),
-            sql`LOWER(${schema.estimateItems.type}) = 'labour'`
-          )
-        ) : [];
+        .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
 
-      // Calculate budgeted hours from labour estimate items, grouped by cost code ID
       for (const item of estimateItems) {
         const costCodeId = item.costCode || null;
-        const mapKey = costCodeId || "uncategorized";
-        const cc = costCodeId ? costCodeById.get(costCodeId) : null;
-
-        const existing = costCodeMap.get(mapKey) || {
-          budgetedHours: 0,
-          costCodeTitle: cc?.title || "Uncategorized",
-          categoryTitle: "General",
-          costCodeId: costCodeId
-        };
-
+        if (!costCodeId || !labourCostCodeIds.has(costCodeId)) continue;
+        const existing = costCodeMap.get(costCodeId)!; // seeded above
         existing.budgetedHours += item.quantity || 0;
-
-        costCodeMap.set(mapKey, existing);
       }
 
       // Get timesheets for this project

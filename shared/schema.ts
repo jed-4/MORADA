@@ -1281,6 +1281,9 @@ export const costCodes = pgTable("cost_codes", {
   title: text("title").notNull(), // e.g., "Flat rate", "Preliminaries", "Interior Trim"
   categoryId: varchar("category_id").references(() => costCategories.id, { onDelete: "set null" }), // Nullable - can exist without category
   availableInTimesheets: boolean("available_in_timesheets").notNull().default(true),
+  // When true, contract-estimate items referencing this cost code feed the
+  // project's labour-hours budget (sum of qty per cost code).
+  isLabour: boolean("is_labour").notNull().default(false),
   isSynced: boolean("is_synced").notNull().default(false), // Synced with Xero tracking category
   xeroTrackingCategoryId: text("xero_tracking_category_id"), // Xero tracking category ID (TC1 for cost codes)
   xeroTrackingOptionId: text("xero_tracking_option_id"), // Mapped Xero tracking option within TC1

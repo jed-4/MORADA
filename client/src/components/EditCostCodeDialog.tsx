@@ -37,6 +37,7 @@ const editCostCodeSchema = z.object({
   title: z.string().min(1, "Title is required"),
   categoryId: z.string().nullable(),
   availableInTimesheets: z.boolean(),
+  isLabour: z.boolean(),
   xeroTrackingOptionId: z.string().nullable().optional(),
   xeroTrackingOptionName: z.string().nullable().optional(),
 });
@@ -85,6 +86,7 @@ export default function EditCostCodeDialog({
       title: "",
       categoryId: null,
       availableInTimesheets: false,
+      isLabour: false,
       xeroTrackingOptionId: null,
       xeroTrackingOptionName: null,
     },
@@ -97,6 +99,7 @@ export default function EditCostCodeDialog({
         title: costCode.title,
         categoryId: costCode.categoryId,
         availableInTimesheets: costCode.availableInTimesheets ?? false,
+        isLabour: (costCode as any).isLabour ?? false,
         xeroTrackingOptionId: (costCode as any).xeroTrackingOptionId ?? null,
         xeroTrackingOptionName: (costCode as any).xeroTrackingOptionName ?? null,
       });
@@ -269,6 +272,28 @@ export default function EditCostCodeDialog({
                   </FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>Available in Timesheets</FormLabel>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="isLabour"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="checkbox-edit-cost-code-labour"
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>Labour Cost Code</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      Hours estimated against this cost code feed the labour hours budget.
+                    </p>
                   </div>
                 </FormItem>
               )}

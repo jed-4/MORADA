@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import {
   ShieldCheck, TrendingUp, Briefcase, BarChart3,
   AlertTriangle, CheckCircle2, Clock, Building2,
-  DollarSign, Pencil, Check, X, Info, TableProperties
+  DollarSign, Pencil, Check, X, Info, TableProperties, FileText
 } from "lucide-react";
 import HBCFTracker from "./HBCFTracker";
+import ProjectInfoTab from "./business-metrics/ProjectInfoTab";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ interface Project {
   isBusiness?: boolean;
 }
 
-type TabId = "overview" | "compliance" | "hbcf" | "financial" | "pipeline";
+type TabId = "overview" | "compliance" | "hbcf" | "financial" | "pipeline" | "projectInfo";
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
@@ -66,6 +67,7 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: "hbcf", label: "HBCF Limits", icon: TableProperties },
   { id: "financial", label: "Financial", icon: TrendingUp },
   { id: "pipeline", label: "Pipeline", icon: Briefcase },
+  { id: "projectInfo", label: "Project Info", icon: FileText },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -691,6 +693,7 @@ export default function BusinessMetrics() {
       case "hbcf": return null; // rendered outside scroll wrapper
       case "financial": return <FinancialTab settings={settings} onSave={handleSave} projects={projects} />;
       case "pipeline": return <PipelineTab projects={projects} />;
+      case "projectInfo": return null; // rendered outside scroll wrapper (table owns its scroll)
     }
   };
 
@@ -722,6 +725,10 @@ export default function BusinessMetrics() {
       {activeTab === "hbcf" ? (
         <div className="flex-1 min-h-0 overflow-hidden">
           <HBCFTracker />
+        </div>
+      ) : activeTab === "projectInfo" ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ProjectInfoTab />
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4">
