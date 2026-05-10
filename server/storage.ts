@@ -16343,39 +16343,39 @@ export class DbStorage implements IStorage {
       // status='contract'. There is at most one Contract estimate per project
       // (enforced by the /contract endpoint, which demotes any prior Contract
       // back to Approved).
-      const estimates = await exec.select()
+      const estimates: Estimate[] = await exec.select()
         .from(schema.estimates)
         .where(and(
           eq(schema.estimates.projectId, projectId),
           eq(schema.estimates.status, "contract"),
         ));
 
-      const estimateIds = estimates.map((e: any) => e.id);
-      const estimateItems = estimateIds.length > 0 ? await exec.select()
+      const estimateIds = estimates.map((e) => e.id);
+      const estimateItems: EstimateItem[] = estimateIds.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
-      const baselineAmount = estimateItems.reduce((sum: number, item: any) => sum + (item.priceIncTax || 0), 0);
+      const baselineAmount = estimateItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
 
       // Calculate actual from bills
-      const bills = await exec.select()
+      const bills: Bill[] = await exec.select()
         .from(schema.bills)
         .where(eq(schema.bills.projectId, projectId));
 
-      const actualAmount = bills.reduce((sum: number, bill: any) => {
+      const actualAmount = bills.reduce((sum, bill) => {
         const amount = bill.total || 0;
         return sum + (bill.billType === 'credit' ? -amount : amount);
       }, 0);
 
       // Calculate variations
-      const variations = await exec.select()
+      const variations: Variation[] = await exec.select()
         .from(schema.variations)
         .where(and(
           eq(schema.variations.projectId, projectId),
           eq(schema.variations.status, "approved")
         ));
 
-      const variationAmount = variations.reduce((sum: number, v: any) => sum + (v.totalAmount || 0), 0);
+      const variationAmount = variations.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
 
       const revisedAmount = baselineAmount + variationAmount;
       const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
@@ -16480,23 +16480,23 @@ export class DbStorage implements IStorage {
       const costCategories = await exec.select().from(schema.costCategories);
 
       const costCodeMap = new Map<string, CostCode>(costCodes.map((cc: CostCode) => [cc.id, cc]));
-      const categoryMap = new Map<string, string>(costCategories.map((cat: any) => [cat.id, `${cat.code} - ${cat.title}`]));
+      const categoryMap = new Map<string, string>(costCategories.map((cat: CostCategory) => [cat.id, `${cat.code} - ${cat.title}`]));
 
       // Pull items from the project's Contract estimate only (see
       // calculateBudget for the rationale).
-      const estimates = await exec.select().from(schema.estimates).where(and(
+      const estimates: Estimate[] = await exec.select().from(schema.estimates).where(and(
         eq(schema.estimates.projectId, projectId),
         eq(schema.estimates.status, "contract"),
       ));
-      const estimateIds = estimates.map((e: any) => e.id);
-      const estimateItems = estimateIds.length > 0 ? await exec.select()
+      const estimateIds = estimates.map((e) => e.id);
+      const estimateItems: EstimateItem[] = estimateIds.length > 0 ? await exec.select()
         .from(schema.estimateItems)
         .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
 
       // Get bills (exclude vendor credits from "actual" or subtract them)
-      const bills = await exec.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
-      const billIds = bills.map((b: any) => b.id);
-      const billLineItems = billIds.length > 0 ? await exec.select()
+      const bills: Bill[] = await exec.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
+      const billIds = bills.map((b) => b.id);
+      const billLineItems: BillLineItem[] = billIds.length > 0 ? await exec.select()
         .from(schema.billLineItems)
         .where(inArray(schema.billLineItems.billId, billIds)) : [];
 
@@ -16532,7 +16532,7 @@ export class DbStorage implements IStorage {
 
       // Actuals from bill line items
       for (const billItem of billLineItems) {
-        const bill = bills.find((b: any) => b.id === billItem.billId);
+        const bill = bills.find((b) => b.id === billItem.billId);
         const multiplier = bill?.billType === "credit" ? -1 : 1;
         const amount = (billItem.total || 0) * multiplier;
         if (billItem.costCodeId) {
@@ -16613,7 +16613,7 @@ export class DbStorage implements IStorage {
         ));
 
       // Build cost code lookup by ID for fast matching
-      const costCodeById = new Map(costCodes.map((cc: any) => [cc.id, cc] as const));
+      const costCodeById = new Map(costCodes.map((cc: CostCode) => [cc.id, cc] as const));
 
       // Initialize costCodeMap with ALL active cost codes (so they all appear in budget)
       const costCodeMap = new Map<string, {
@@ -16666,18 +16666,18 @@ export class DbStorage implements IStorage {
       }
 
       // Get timesheets for this project
-      const timesheets = await exec.select()
+      const timesheets: Timesheet[] = await exec.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
 
       // Get timesheet cost code splits
-      const timesheetIds = timesheets.map((t: any) => t.id);
-      const timesheetCostCodes = timesheetIds.length > 0 ? await exec.select()
+      const timesheetIds = timesheets.map((t) => t.id);
+      const timesheetCostCodes: TimesheetCostCode[] = timesheetIds.length > 0 ? await exec.select()
         .from(schema.timesheetCostCodes)
         .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds)) : [];
 
       // Track which timesheets are covered by the join table
-      const timesheetsWithSplits = new Set(timesheetCostCodes.map((tcc: any) => tcc.timesheetId));
+      const timesheetsWithSplits = new Set(timesheetCostCodes.map((tcc) => tcc.timesheetId));
 
       // Map pending and approved hours by cost code ID
       const pendingHoursMap = new Map<string, number>();
@@ -16703,7 +16703,7 @@ export class DbStorage implements IStorage {
 
       // Process hours from join table splits
       for (const split of timesheetCostCodes) {
-        const timesheet = timesheets.find((t: any) => t.id === split.timesheetId);
+        const timesheet = timesheets.find((t) => t.id === split.timesheetId);
         if (!timesheet) continue;
 
         const duration = parseFloat(split.duration);
