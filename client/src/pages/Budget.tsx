@@ -7,6 +7,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -473,46 +474,6 @@ export default function BudgetPage() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
-      {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-budget-title">
-            {pageTitle}
-          </h2>
-          {project?.currentSystemPhase && (
-            <Badge 
-              variant="outline" 
-              className="text-xs bg-primary/10 text-primary border-primary/30"
-              data-testid="badge-project-phase"
-            >
-              {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
-            </Badge>
-          )}
-          {activeTab === "costs" && (
-            <Badge variant="secondary" className="text-xs">
-              {lineItems.length} cost codes
-            </Badge>
-          )}
-          {activeTab === "hours" && (
-            <Badge variant="secondary" className="text-xs">
-              {labourHours.length} items
-            </Badge>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
-            onClick={handleRecalculate}
-            disabled={isRecalculating}
-            data-testid="button-recalculate"
-          >
-            <RefreshCw className={`w-3 h-3 ${isRecalculating ? 'animate-spin' : ''}`} />
-            <span>Recalculate</span>
-          </button>
-        </div>
-      </div>
-
       {/* Row 2 - Tabs (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
@@ -542,21 +503,34 @@ export default function BudgetPage() {
           </button>
         </div>
 
-        {/* Summary stats in header */}
-        {activeTab === "costs" && (
-          <div className="flex items-center gap-4 text-data text-muted-foreground">
-            <span>Budget: <span className="font-medium text-foreground">{formatCurrency(budgetData.revisedAmount)}</span></span>
-            <span>Spent: <span className="font-medium text-foreground">{formatCurrency(budgetData.actualAmount)}</span></span>
-            <span className={getVarianceColor(remaining)}>Remaining: <span className="font-medium">{formatCurrency(remaining)}</span></span>
-          </div>
-        )}
-        {activeTab === "hours" && (
-          <div className="flex items-center gap-4 text-data text-muted-foreground">
-            <span>Budget: <span className="font-medium text-foreground">{formatHours(totalBudgetedHours)}</span></span>
-            <span>Used: <span className="font-medium text-foreground">{formatHours(totalActualHours)}</span></span>
-            <span className={getVarianceColor(hoursRemaining)}>Remaining: <span className="font-medium">{formatHours(hoursRemaining)}</span></span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Summary stats in header */}
+          {activeTab === "costs" && (
+            <div className="flex items-center gap-4 text-data text-muted-foreground">
+              <span>Budget: <span className="font-medium text-foreground">{formatCurrency(budgetData.revisedAmount)}</span></span>
+              <span>Spent: <span className="font-medium text-foreground">{formatCurrency(budgetData.actualAmount)}</span></span>
+              <span className={getVarianceColor(remaining)}>Remaining: <span className="font-medium">{formatCurrency(remaining)}</span></span>
+            </div>
+          )}
+          {activeTab === "hours" && (
+            <div className="flex items-center gap-4 text-data text-muted-foreground">
+              <span>Budget: <span className="font-medium text-foreground">{formatHours(totalBudgetedHours)}</span></span>
+              <span>Used: <span className="font-medium text-foreground">{formatHours(totalActualHours)}</span></span>
+              <span className={getVarianceColor(hoursRemaining)}>Remaining: <span className="font-medium">{formatHours(hoursRemaining)}</span></span>
+            </div>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handleRecalculate}
+            disabled={isRecalculating}
+            data-testid="button-recalculate"
+            title="Recalculate"
+            aria-label="Recalculate"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRecalculating ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
