@@ -450,11 +450,11 @@ export default function ProgrammeScheduleWidget({
   const rowH = config.compactMode ? "h-6" : "h-8";
 
   return (
-    <div className="flex flex-col h-full" data-testid="widget-programme">
+    <div className="flex flex-col h-full -mt-1" data-testid="widget-programme">
       {/* Body */}
       {config.viewMode === "week" ? (
         <>
-          <div className="flex items-center justify-end gap-1 px-2 py-1 text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-end gap-1 px-1 py-0 text-[10px] text-muted-foreground">
             <button
               onClick={() => setWeekStart((w) => addDays(w, -7))}
               className="px-1 rounded hover-elevate"
