@@ -421,8 +421,8 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
       </div>
 
       {/* Footer: KPIs left, legend right */}
-      <div className="flex items-center justify-between gap-3 px-3 py-2 text-[11px]">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-[11px]">
+        <div className="flex items-center gap-3 mr-auto">
           <div className="flex items-center gap-1">
             <span className="text-[hsl(var(--bp-muted))]">In:</span>
             <span className="font-medium text-[hsl(var(--bp-card-foreground))] tabular-nums">
@@ -448,7 +448,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-[hsl(var(--bp-muted))]">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 ml-auto text-[10px] text-[hsl(var(--bp-muted))]">
           <span className="flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
             Received
@@ -463,7 +463,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
               Planned
             </span>
           )}
-          {config.showContractCeiling && data.contractCeiling > 0 && (
+          {config.showContractCeiling && (
             <span className="flex items-center gap-1">
               <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-muted))]" />
               Contract
