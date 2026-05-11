@@ -4629,6 +4629,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk markup update for estimate items
+  // Generic bulk-update endpoint — applies a partial patch (whitelisted
+  // fields only) to many estimate items in one call. Each line is repriced
+  // through computeEstimateItemPrice so taxAmount/priceIncTax stay correct.
+  app.patch("/api/estimates/:estimateId/items/bulk-update", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { estimateId } = req.params;
+      const { itemIds, patch } = req.body;
+
+      if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds must be a non-empty array" });
+      }
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+        return res.status(400).json({ error: "patch must be an object" });
+      }
+
+      // Validate the patch with a strict whitelist + types. Anything not
+      // listed here is silently dropped; anything malformed is rejected.
+      const bulkPatchSchema = z.object({
+        type: z.enum(['Material', 'Labour', 'Subcontractor', 'Fee']).optional(),
+        costCode: z.string().nullable().optional(),
+        costCategoryId: z.string().nullable().optional(),
+        groupId: z.string().nullable().optional(),
+        markupPercent: z.number().min(0).max(1000).nullable().optional(),
+        quantity: z.number().optional(),
+        unitType: z.string().optional(),
+        unitCostExTax: z.number().min(0).optional(),
+        status: z.string().optional(),
+        allowance: z.enum(['None', 'Prime Cost', 'Provisional Sum']).optional(),
+        wastagePercent: z.number().min(0).max(100).optional(),
+        proposalVisible: z.boolean().optional(),
+        trackLabourHours: z.boolean().optional(),
+        requestForQuote: z.boolean().optional(),
+        isSelection: z.boolean().optional(),
+        description: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      }).strict();
+
+      // Normalise empty-string and "none" sentinel for nullable FK fields.
+      const normalised: Record<string, any> = { ...patch };
+      for (const fk of ['costCode', 'costCategoryId', 'groupId'] as const) {
+        if (normalised[fk] === '' || normalised[fk] === 'none') normalised[fk] = null;
+      }
+      const parsed = bulkPatchSchema.safeParse(normalised);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(parsed.error).toString(),
+        });
+      }
+      const cleanPatch = parsed.data;
+      if (Object.keys(cleanPatch).length === 0) {
+        return res.status(400).json({ error: "patch contains no editable fields" });
+      }
+
+      // Security: estimate must belong to this company, and every item must
+      // belong to estimates in this company.
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      const project = await storage.getProject(estimate.projectId);
+      if (!project || project.companyId !== companyId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      if (estimate.isLocked) {
+        return res.status(409).json({ error: "Cannot modify items in a locked estimate" });
+      }
+      const ownership = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
+      if (!ownership.authorized) {
+        return res.status(404).json({ error: `Estimate item not found: ${ownership.invalidItemId}` });
+      }
+
+      const items = await storage.getEstimateItems(estimateId);
+      let updated = 0;
+
+      for (const itemId of itemIds) {
+        const item = items.find(i => i.id === itemId);
+        if (!item) continue;
+
+        const next: Record<string, any> = { ...cleanPatch };
+
+        // Re-price using the merged values so the cached tax/inc-tax stay
+        // in sync whenever quantity / unitCost / markup is in the patch.
+        const unitCostExTax = next.unitCostExTax !== undefined ? Number(next.unitCostExTax) : Number(item.unitCostExTax);
+        const quantity = next.quantity !== undefined ? Number(next.quantity) : Number(item.quantity);
+        const markupPercent = next.markupPercent !== undefined ? next.markupPercent : item.markupPercent;
+        const { taxAmount, lineIncTax } = computeEstimateItemPrice({
+          unitCostExTax,
+          quantity,
+          markupPercent,
+          projectMarkupPercent: estimate?.projectMarkupPercent,
+          taxRate: estimate?.taxRate,
+        });
+        next.taxAmount = taxAmount;
+        next.priceIncTax = lineIncTax;
+
+        await storage.updateEstimateItem(itemId, next);
+        updated++;
+      }
+
+      if (updated > 0) {
+        triggerBudgetAutoRecalc(estimateId);
+      }
+      res.json({ updated });
+    } catch (error: any) {
+      console.error("Error in bulk-update:", error);
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to bulk-update items" });
+    }
+  });
+
   app.patch("/api/estimates/:estimateId/items/bulk-markup", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { estimateId } = req.params;

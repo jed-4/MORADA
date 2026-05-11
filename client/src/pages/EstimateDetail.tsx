@@ -67,6 +67,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
 import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
+import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -7713,91 +7714,75 @@ export default function EstimateDetail() {
         />
       </div>
       
-      {/* Fixed Floating Bulk Action Bar */}
+      {/* Floating Bulk Action Bar — centred narrow pill */}
       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-        <div className="fixed bottom-4 left-4 right-4 z-50 h-9 bg-background border rounded-lg shadow-lg flex items-center gap-3 px-3" data-testid="bulk-action-bar">
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClearSelection}
-              data-testid="button-clear-selection"
-              title="Clear selection"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-            <span className="text-sm font-medium">
-              {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
-              {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
-              {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
-              {' selected'}
-            </span>
-            {selectedItems.size > 0 && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
-                  disabled={estimate?.isLocked}
-                  data-testid="button-bulk-set-markup"
-                >
-                  Markup
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsBulkStatusDialogOpen(true)}
-                  disabled={estimate?.isLocked}
-                  data-testid="button-bulk-change-status"
-                >
-                  Status
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsBulkGroupDialogOpen(true)}
-                  disabled={estimate?.isLocked}
-                  data-testid="button-bulk-move-group"
-                >
-                  Move
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={estimate?.isLocked}
-                      data-testid="button-create-from-estimate"
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      Create
-                      <ChevronDown className="w-3 h-3 ml-1" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top">
-                    <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
-                      <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                      Purchase Order
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
-                      <Package className="w-3.5 h-3.5 mr-2" />
-                      RFQ
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            )}
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setIsBulkDeleteDialogOpen(true)}
+        <div
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-background border rounded-lg shadow-lg flex items-center gap-2 px-2 py-1.5"
+          data-testid="bulk-action-bar"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClearSelection}
+            data-testid="button-clear-selection"
+            title="Clear selection"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+          <span className="text-sm font-medium whitespace-nowrap">
+            {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
+            {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
+            {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
+            {' selected'}
+          </span>
+          {selectedItems.size > 0 && effectiveEstimateId && (
+            <BulkEditDropdown
+              estimateId={effectiveEstimateId}
+              selectedItemIds={Array.from(selectedItems)}
+              groups={groups}
+              unitOptions={(estimateItemUnitCategory?.options as any) || []}
+              statusOptions={(estimateItemStatusCategory?.options as any) || []}
+              taxRate={Number(estimate?.taxRate ?? 10)}
               disabled={estimate?.isLocked}
-              data-testid="button-bulk-delete"
-            >
-              <Trash2 className="w-3 h-3 mr-1" />
-              Delete
-            </Button>
-          </div>
+              onComplete={() => setSelectedItems(new Set())}
+            />
+          )}
+          {selectedItems.size > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={estimate?.isLocked}
+                  data-testid="button-create-from-estimate"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Create
+                  <ChevronDown className="w-3 h-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" side="top">
+                <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                  <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                  Purchase Order
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                  <Package className="w-3.5 h-3.5 mr-2" />
+                  RFQ
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsBulkDeleteDialogOpen(true)}
+            disabled={estimate?.isLocked}
+            data-testid="button-bulk-delete"
+            title="Delete selected"
+          >
+            <Trash2 className="w-4 h-4 text-destructive" />
+          </Button>
         </div>
       )}
 
