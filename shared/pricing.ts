@@ -150,7 +150,10 @@ export function computeEstimateSummary(
       taxRate,
     });
 
-    if (unitCost * qty > 0) {
+    if (unitCost * qty !== 0) {
+      // Priced line: include positive AND negative-quantity rows
+      // (e.g. deduction lines) so their markup nets correctly against the
+      // matching positive lines.
       builderCostTotal += computed.builderCost;
       lineItemMarkupTotal += computed.lineMarkupAmount;
     } else {
