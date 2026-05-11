@@ -183,10 +183,10 @@ export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODia
               <p className="text-xs mt-1">Approve subcontractor timesheets first to generate purchase orders.</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="divide-y border rounded-md overflow-hidden">
               {[...grouped.entries()].map(([userId, timesheets]) => (
-                <div key={userId} className="space-y-2">
-                  <div className="flex items-center gap-2">
+                <div key={userId}>
+                  <div className="flex items-center gap-2 bg-muted px-3 py-2 border-b">
                     <HardHat className="h-3.5 w-3.5 text-amber-500" />
                     <span className="text-sm font-medium">{getUserName(userId)}</span>
                     <Badge variant="secondary" className="text-data">
