@@ -24,3 +24,9 @@ id = "pVZ9b66eyqSrZ0579ZLnJ"
 uri = "file://screenshots/mobile-dark.jpg"
 type = "image"
 title = "Mobile Dashboard — Dark"
+
+[[outputs]]
+id = "uAp5vMKmLCkXfxV1UStRk"
+uri = "file://.local/po_audit.md"
+type = "text"
+title = "Purchase Order Codebase Audit"
