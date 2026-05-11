@@ -7,15 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
   Search,
-  LayoutList,
   ShoppingCart,
-  ChevronDown,
-  ChevronRight,
-  Building2,
-  Hammer,
   Loader2,
   Columns3,
   MoreVertical,
+  Filter,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -398,7 +394,7 @@ export default function PurchaseOrders() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1 - Status tabs (overheads-style underlined) */}
+      {/* Single header row - Status tabs + toolbar */}
       <div className="bg-background flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1 overflow-x-auto">
           {STATUS_OPTIONS.map((status) => {
@@ -428,112 +424,9 @@ export default function PurchaseOrders() {
           })}
         </div>
 
-      </div>
-
-      {/* Row 3 - Type pills + Search + Supplier + Totals + Columns */}
-      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
-        {/* Type pills (Standard / Site) */}
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setSelectedType("all")}
-            className={`h-6 px-2 text-xs border rounded-md ${
-              selectedType === "all"
-                ? "bg-primary text-white border-primary/20"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-type-all"
-          >
-            <LayoutList className="w-3 h-3" />
-            <span>All</span>
-            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.all}</Badge>
-          </button>
-          <button
-            onClick={() => setSelectedType("main")}
-            className={`h-6 px-2 text-xs border rounded-md ${
-              selectedType === "main"
-                ? "bg-primary text-white border-primary/20"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-type-main"
-          >
-            <Building2 className="w-3 h-3" />
-            <span>Standard</span>
-            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.main}</Badge>
-          </button>
-          <button
-            onClick={() => setSelectedType("site")}
-            className={`h-6 px-2 text-xs border rounded-md ${
-              selectedType === "site"
-                ? "bg-primary text-white border-primary/20"
-                : "hover-elevate"
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-type-site"
-          >
-            <Hammer className="w-3 h-3" />
-            <span>Site</span>
-            <Badge variant="secondary" className="h-4 text-data px-1">{typeCounts.site}</Badge>
-          </button>
-        </div>
-
-        <div className="w-px h-4 bg-border mx-1" />
-
-        <div className="relative w-48">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input
-            placeholder="Search..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-7 pr-2 py-0 h-6 text-xs border"
-            data-testid="po-search-input"
-          />
-        </div>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
-                selectedSupplierId
-                  ? "bg-primary/10 text-primary border border-primary/30 font-medium"
-                  : "bg-background border hover-elevate"
-              }`}
-              data-testid="filter-supplier-popover"
-            >
-              <span className="truncate max-w-[120px]">
-                {selectedSupplierId ? suppliersMap.get(selectedSupplierId)?.name || "Supplier" : "Supplier"}
-              </span>
-              <ChevronDown className="w-3 h-3 opacity-60" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-2" align="start">
-            <div className="space-y-1 max-h-64 overflow-y-auto">
-              <button
-                onClick={() => setSelectedSupplierId(null)}
-                className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
-                  !selectedSupplierId ? "bg-primary/10 text-primary font-medium" : ""
-                }`}
-                data-testid="filter-supplier-all"
-              >
-                All Suppliers
-              </button>
-              {suppliers.map((supplier) => (
-                <button
-                  key={supplier.id}
-                  onClick={() => setSelectedSupplierId(supplier.id)}
-                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
-                    selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
-                  }`}
-                  data-testid={`filter-supplier-${supplier.id}`}
-                >
-                  {supplier.name}
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-
         <div className="flex-1" />
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground mr-1">
           <span data-testid="text-total-value">Total: <span className="font-medium text-foreground">{formatCurrency(totals.total)}</span></span>
           <div className="w-px h-4 bg-border" />
           <span data-testid="text-sent-value">Sent: <span className="font-medium text-foreground">{formatCurrency(totals.sent)}</span></span>
@@ -542,6 +435,77 @@ export default function PurchaseOrders() {
         </div>
 
         <div className="w-px h-4 bg-border mx-1" />
+
+        {/* Search icon-button (popover with input) */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className={`h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center ${
+                searchTerm ? "bg-primary/10 text-primary border-primary/30" : ""
+              }`}
+              data-testid="button-search"
+              title="Search"
+            >
+              <Search className="w-3 h-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align="end">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                autoFocus
+                placeholder="Search purchase orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 pr-2 h-7 text-xs"
+                data-testid="po-search-input"
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Filter icon-button (popover with supplier filter) */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className={`h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center ${
+                selectedSupplierId ? "bg-primary/10 text-primary border-primary/30" : ""
+              }`}
+              data-testid="button-filter"
+              title="Filter"
+            >
+              <Filter className="w-3 h-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="end">
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">Supplier</div>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                <button
+                  onClick={() => setSelectedSupplierId(null)}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors ${
+                    !selectedSupplierId ? "bg-primary/10 text-primary font-medium" : ""
+                  }`}
+                  data-testid="filter-supplier-all"
+                >
+                  All Suppliers
+                </button>
+                {suppliers.map((supplier) => (
+                  <button
+                    key={supplier.id}
+                    onClick={() => setSelectedSupplierId(supplier.id)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted dark:hover:bg-gray-800 transition-colors truncate ${
+                      selectedSupplierId === supplier.id ? "bg-primary/10 text-primary font-medium" : ""
+                    }`}
+                    data-testid={`filter-supplier-${supplier.id}`}
+                  >
+                    {supplier.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
 
         <button
           onClick={handleNewPO}
