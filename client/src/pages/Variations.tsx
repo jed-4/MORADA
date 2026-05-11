@@ -28,6 +28,7 @@ import {
   X,
   CheckCheck,
   Ban,
+  ChevronRight,
 } from "lucide-react";
 import {
   DndContext,
@@ -671,6 +672,15 @@ export default function Variations() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-variations">
+
+      {/* Breadcrumb */}
+      {!projectIdFromUrl && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">All Projects</span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground">Variations</span>
+        </div>
+      )}
 
       {/* ── Unified header card ── */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
