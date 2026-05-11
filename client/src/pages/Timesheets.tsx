@@ -359,6 +359,28 @@ export default function Timesheets() {
     },
   });
 
+  // Clear the "Awaiting PO" state from a timesheet so it stops appearing
+  // in the Generate Subcontractor PO modal.
+  const clearPoStatusMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/api/timesheets/${id}`, "PATCH", { poStatus: null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/subcontractor/awaiting-po"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+      }
+      toast({ title: "Removed from PO queue" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to remove PO status",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Get date range based on selection
   const getDateRange = (): { start: Date; end: Date } | null => {
     const now = new Date();
@@ -941,6 +963,19 @@ export default function Timesheets() {
                       >
                         <div className="w-2 h-2 rounded-full mr-2 bg-[hsl(var(--coral))]" />
                         Rejected
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {ts.poStatus === "awaiting_po" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => clearPoStatusMutation.mutate(ts.id)}
+                        disabled={clearPoStatusMutation.isPending}
+                        data-testid={`menu-clear-po-status-${ts.id}`}
+                      >
+                        <X className="h-3.5 w-3.5 mr-2" />
+                        Remove "Awaiting PO"
                       </DropdownMenuItem>
                     </>
                   )}
@@ -2281,6 +2316,8 @@ export default function Timesheets() {
       <SubcontractorPODialog
         open={isSubPODialogOpen}
         onOpenChange={setIsSubPODialogOpen}
+        projectId={projectId}
+        userIdFilter={selectedUsers.length > 0 ? selectedUsers : undefined}
       />
 
       <TimesheetImportDialog

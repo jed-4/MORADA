@@ -34,17 +34,29 @@ import { Loader2, FileText, HardHat } from "lucide-react";
 interface SubcontractorPODialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When set, only timesheets for this project are shown. */
+  projectId?: string;
+  /** When set, only timesheets for these user IDs are shown. */
+  userIdFilter?: string[];
 }
 
-export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODialogProps) {
+export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFilter }: SubcontractorPODialogProps) {
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedProject, setSelectedProject] = useState<string>("");
 
-  const { data: awaitingTimesheets = [], isLoading } = useQuery<any[]>({
+  const { data: allAwaitingTimesheets = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/timesheets/subcontractor/awaiting-po"],
     enabled: open,
   });
+
+  const awaitingTimesheets = useMemo(() => {
+    return allAwaitingTimesheets.filter((t: any) => {
+      if (projectId && t.projectId !== projectId) return false;
+      if (userIdFilter && userIdFilter.length > 0 && !userIdFilter.includes(t.userId)) return false;
+      return true;
+    });
+  }, [allAwaitingTimesheets, projectId, userIdFilter]);
 
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
