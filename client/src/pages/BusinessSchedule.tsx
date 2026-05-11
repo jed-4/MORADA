@@ -245,9 +245,7 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
             {activeItems.map(item => {
               const isUnassigned = isUnassignedItem(item);
               const isCompany = !isUnassigned && isCompanyItem(item);
-              const fill = isCompany
-                ? (companyColor || item.assignedToColor || project.color || TYPE_COLORS_HEX.task)
-                : (item.assignedToColor || project.color || TYPE_COLORS_HEX.task);
+              const fill = project.color || TYPE_COLORS_HEX.task;
               return (
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
