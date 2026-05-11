@@ -14497,7 +14497,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       const allTimesheets = await storage.getTimesheets(undefined, req.user.companyId);
-      const awaitingPo = allTimesheets.filter((t: any) => t.poStatus === "awaiting_po");
+
+      // Build a map of subcontractor users in this company so we can
+      // include any approved subbie timesheet that hasn't been pushed
+      // to a PO yet — even if poStatus was never set (e.g. timesheet
+      // approved before the user was flagged as a subcontractor, or
+      // before the queueing logic was deployed).
+      const companyUsers = await storage.getUsersByCompany(req.user.companyId);
+      const subUserIds = new Set(
+        companyUsers.filter((u: any) => u.isSubcontractor).map((u: any) => u.id)
+      );
+
+      const awaitingPo = allTimesheets.filter((t: any) => {
+        if (t.linkedPurchaseOrderId) return false;
+        if (t.poStatus === "on_po") return false;
+        if (t.poStatus === "awaiting_po") return true;
+        // Retroactive: approved subbie timesheet with no PO state yet
+        return t.status === "approved" && subUserIds.has(t.userId);
+      });
+
       res.json(awaitingPo);
     } catch (error) {
       console.error("Failed to fetch awaiting PO timesheets:", error);
