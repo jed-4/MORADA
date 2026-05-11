@@ -686,7 +686,6 @@ export default function PurchaseOrderDetail() {
   const [deliveryContact, setDeliveryContact] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
-  const [includeGst, setIncludeGst] = useState(true);
   const [items, setItems] = useState<PurchaseOrderItem[]>([]);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -812,7 +811,6 @@ export default function PurchaseOrderDetail() {
       setDeliveryContact(purchaseOrder.deliveryContact || "");
       setDeliveryAddress(purchaseOrder.deliveryAddress || "");
       setDeliveryInstructions(purchaseOrder.deliveryInstructions || "");
-      setIncludeGst(purchaseOrder.gstMode !== "exclusive");
       setRequiredByDate(
         purchaseOrder.requiredByDate
           ? new Date(purchaseOrder.requiredByDate).toISOString().split("T")[0]
@@ -1316,7 +1314,6 @@ export default function PurchaseOrderDetail() {
   }, [items]);
 
   const gstAmount = useMemo(() => {
-    if (!includeGst) return 0;
     return items.reduce((sum, item) => {
       if (item.isGstFree) return sum;
       const qty = parseFloat(item.quantity || "0");
@@ -1324,7 +1321,7 @@ export default function PurchaseOrderDetail() {
       const lineTotal = Math.round(qty * price);
       return sum + Math.round(lineTotal * 0.1);
     }, 0);
-  }, [items, includeGst]);
+  }, [items]);
 
   const total = subtotal + gstAmount;
 
@@ -1454,7 +1451,7 @@ export default function PurchaseOrderDetail() {
         </table>
         <div class="totals">
           <div><span style="color:#888;">Subtotal:</span> <strong>${formatCurrency(subtotal)}</strong></div>
-          ${includeGst ? `<div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>` : ""}
+          <div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>
           <div style="font-size:18px;margin-top:8px;"><span>Total:</span> <strong>${formatCurrency(total)}</strong></div>
         </div>
         ${scope ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">SCOPE OF WORK</p><div>${scope}</div></div>` : ""}
@@ -2077,40 +2074,27 @@ export default function PurchaseOrderDetail() {
               <CardContent className="pt-4 space-y-2">
                 <p className="text-sm font-semibold">Purchase Order Total</p>
 
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Include GST</span>
-                  <Switch
-                    checked={includeGst}
-                    onCheckedChange={setIncludeGst}
-                    data-testid="switch-include-gst"
-                  />
-                </div>
-
-                <Separator />
-
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium" data-testid="text-subtotal">
                     {formatCurrency(subtotal)}
                   </span>
                 </div>
-                {includeGst && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">GST (10%)</span>
-                    <span
-                      className="text-muted-foreground"
-                      data-testid="text-gst"
-                    >
-                      {formatCurrency(gstAmount)}
-                    </span>
-                  </div>
-                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">GST (10%)</span>
+                  <span
+                    className="text-muted-foreground"
+                    data-testid="text-gst"
+                  >
+                    {formatCurrency(gstAmount)}
+                  </span>
+                </div>
 
                 <Separator />
 
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-sm font-semibold">
-                    Total {includeGst ? "(inc GST)" : "(ex GST)"}
+                    Total (inc GST)
                   </span>
                   <span
                     className="text-2xl font-bold"
