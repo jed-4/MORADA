@@ -1068,7 +1068,12 @@ export function SidebarNav() {
                           </p>
                           {sec.items.map((item, index) => {
                             const url = getItemUrl(sectionId, item);
-                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            // Overview (empty baseUrl) must match exactly so it doesn't
+                            // light up on every project subpage. Other items match nested
+                            // routes via the trailing "/" guard.
+                            const isActive = item.url === ""
+                              ? location === url
+                              : location === url || (url !== "/" && location.startsWith(url + "/"));
                             const isFocused = focusedItemIndex === index;
                             const itemIsFavorite = isFavorite(sectionId, url);
                             const projectIdForFav = currentProject && !currentProject.isBusiness ? currentProject.id : undefined;
@@ -1127,8 +1132,9 @@ export function SidebarNav() {
                 <div className={isMobile ? "p-2" : "p-1.5"}>
                   {dynamicSections[activeSection as Exclude<SectionId, "projects" | "business">].items.map((item, index) => {
                     const url = getItemUrl(activeSection, item);
-                    const isActive = location === url || 
-                      (url !== "/" && location.startsWith(url));
+                    const isActive = item.url === ""
+                      ? location === url
+                      : location === url || (url !== "/" && location.startsWith(url + "/"));
                     const isFocused = focusedItemIndex === index;
                     const showBadge = (item.title === "Inbox" || item.title === "Messages") && totalUnreadMessages > 0;
                     const itemIsFavorite = favoriteSections.includes(activeSection) && isFavorite(activeSection, url);
@@ -1252,7 +1258,12 @@ export function SidebarNav() {
                             if ((fav.title === "My Tasks" || url === "/tasks") && currentUser?.id) {
                               url = `/users/${currentUser.id}/tasks`;
                             }
-                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            // Project-root favorites (Overview, Workspace) must match
+                            // exactly so they don't light up on every nested subpage.
+                            const isProjectRoot = /^\/projects\/[^/]+$/.test(url);
+                            const isActive = isProjectRoot
+                              ? location === url
+                              : location === url || (url !== "/" && location.startsWith(url + "/"));
                             
                             return (
                               <div key={fav.id} className="group flex items-center">
@@ -1365,7 +1376,12 @@ export function SidebarNav() {
                             if (sectionId === "user" && (fav.title === "My Tasks" || url === "/tasks") && currentUser?.id) {
                               url = `/users/${currentUser.id}/tasks`;
                             }
-                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            // Project-root favorites (Overview) must match exactly so
+                            // they don't light up on every nested subpage.
+                            const isProjectRoot = /^\/projects\/[^/]+$/.test(url);
+                            const isActive = isProjectRoot
+                              ? location === url
+                              : location === url || (url !== "/" && location.startsWith(url + "/"));
                             
                             return (
                               <div key={fav.id} className="group flex items-center">

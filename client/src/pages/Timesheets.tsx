@@ -2318,6 +2318,7 @@ export default function Timesheets() {
         onOpenChange={setIsSubPODialogOpen}
         projectId={projectId}
         userIdFilter={selectedUsers.length > 0 ? selectedUsers : undefined}
+        allowedTimesheetIds={filteredTimesheets.map((t) => t.id)}
       />
 
       <TimesheetImportDialog

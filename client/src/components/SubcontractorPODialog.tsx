@@ -38,9 +38,16 @@ interface SubcontractorPODialogProps {
   projectId?: string;
   /** When set, only timesheets for these user IDs are shown. */
   userIdFilter?: string[];
+  /**
+   * When set, only timesheets whose id is in this set are shown.
+   * Used to mirror the active filter set from the parent Timesheets page
+   * (date range, status, cost code, search, etc.) without re-implementing
+   * the filter logic here.
+   */
+  allowedTimesheetIds?: string[];
 }
 
-export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFilter }: SubcontractorPODialogProps) {
+export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFilter, allowedTimesheetIds }: SubcontractorPODialogProps) {
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedProject, setSelectedProject] = useState<string>("");
@@ -50,13 +57,19 @@ export function SubcontractorPODialog({ open, onOpenChange, projectId, userIdFil
     enabled: open,
   });
 
+  const allowedSet = useMemo(
+    () => (allowedTimesheetIds ? new Set(allowedTimesheetIds) : null),
+    [allowedTimesheetIds]
+  );
+
   const awaitingTimesheets = useMemo(() => {
     return allAwaitingTimesheets.filter((t: any) => {
       if (projectId && t.projectId !== projectId) return false;
       if (userIdFilter && userIdFilter.length > 0 && !userIdFilter.includes(t.userId)) return false;
+      if (allowedSet && !allowedSet.has(t.id)) return false;
       return true;
     });
-  }, [allAwaitingTimesheets, projectId, userIdFilter]);
+  }, [allAwaitingTimesheets, projectId, userIdFilter, allowedSet]);
 
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
