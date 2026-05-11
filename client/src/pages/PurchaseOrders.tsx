@@ -15,7 +15,14 @@ import {
   Hammer,
   Loader2,
   Columns3,
+  MoreVertical,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
@@ -391,36 +398,8 @@ export default function PurchaseOrders() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1 - Project breadcrumb (project context) + New PO */}
-      {(isProjectContext && currentProject) ? (
-        <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
-          <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
-            <button
-              onClick={() => setLocation(`/projects/${projectIdFromUrl}`)}
-              className="hover:text-foreground transition-colors"
-            >
-              {currentProject.name}
-            </button>
-          </nav>
-
-          <button
-            onClick={handleNewPO}
-            disabled={createPoMutation.isPending}
-            className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
-            data-testid="button-new-po"
-          >
-            {createPoMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Plus className="w-3 h-3" />
-            )}
-            <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
-          </button>
-        </div>
-      ) : null}
-
-      {/* Row 2 - Status tabs (overheads-style underlined) */}
-      <div className="bg-background flex items-center justify-between px-3 gap-2 border-b border-border flex-shrink-0">
+      {/* Row 1 - Status tabs (overheads-style underlined) */}
+      <div className="bg-background flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1 overflow-x-auto">
           {STATUS_OPTIONS.map((status) => {
             const isActive = selectedStatus === status.key;
@@ -449,21 +428,6 @@ export default function PurchaseOrders() {
           })}
         </div>
 
-        {!(isProjectContext && currentProject) && (
-          <button
-            onClick={handleNewPO}
-            disabled={createPoMutation.isPending}
-            className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
-            data-testid="button-new-po"
-          >
-            {createPoMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Plus className="w-3 h-3" />
-            )}
-            <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
-          </button>
-        )}
       </div>
 
       {/* Row 3 - Type pills + Search + Supplier + Totals + Columns */}
@@ -579,6 +543,20 @@ export default function PurchaseOrders() {
 
         <div className="w-px h-4 bg-border mx-1" />
 
+        <button
+          onClick={handleNewPO}
+          disabled={createPoMutation.isPending}
+          className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
+          data-testid="button-new-po"
+        >
+          {createPoMutation.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Plus className="w-3 h-3" />
+          )}
+          <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
+        </button>
+
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -593,6 +571,24 @@ export default function PurchaseOrders() {
             <DataTableColumnPicker storageKey="purchase-orders" columns={pickerColumns} />
           </PopoverContent>
         </Popover>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-po-more"
+              title="More actions"
+            >
+              <MoreVertical className="w-3 h-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={handleNewPO} data-testid="menu-new-po">
+              <Plus className="w-3.5 h-3.5 mr-2" />
+              New Purchase Order
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Table Content */}
