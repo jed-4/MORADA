@@ -391,45 +391,84 @@ export default function PurchaseOrders() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1 - Breadcrumbs + Title + Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      {/* Row 1 - Project breadcrumb (project context) + New PO */}
+      {(isProjectContext && currentProject) ? (
+        <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
-            {isProjectContext && currentProject && (
-              <>
-                <button
-                  onClick={() => setLocation(`/projects/${projectIdFromUrl}`)}
-                  className="hover:text-foreground transition-colors"
-                >
-                  {currentProject.name}
-                </button>
-                <ChevronRight className="w-3 h-3" />
-              </>
-            )}
-            <span className="text-foreground font-medium">Purchase Orders</span>
+            <button
+              onClick={() => setLocation(`/projects/${projectIdFromUrl}`)}
+              className="hover:text-foreground transition-colors"
+            >
+              {currentProject.name}
+            </button>
           </nav>
-          <Badge variant="secondary" className="text-xs" data-testid="text-po-count">
-            {filteredPOs.length}
-          </Badge>
+
+          <button
+            onClick={handleNewPO}
+            disabled={createPoMutation.isPending}
+            className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+            data-testid="button-new-po"
+          >
+            {createPoMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Plus className="w-3 h-3" />
+            )}
+            <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
+          </button>
+        </div>
+      ) : null}
+
+      {/* Row 2 - Status tabs (overheads-style underlined) */}
+      <div className="bg-background flex items-center justify-between px-3 gap-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {STATUS_OPTIONS.map((status) => {
+            const isActive = selectedStatus === status.key;
+            const label = status.label === "All Statuses" ? "All" : status.label;
+            const count = statusCounts[status.key] ?? 0;
+            return (
+              <button
+                key={status.key}
+                onClick={() => setSelectedStatus(status.key)}
+                data-testid={`filter-status-${status.key}`}
+                className={`relative flex items-center gap-1.5 px-3 py-2 text-xs transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0 ${
+                  isActive
+                    ? "text-primary font-semibold"
+                    : "text-muted-foreground hover:text-foreground font-medium"
+                }`}
+              >
+                <span>{label}</span>
+                <span className={`text-[11px] tabular-nums ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                  {count}
+                </span>
+                {isActive && (
+                  <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        <button
-          onClick={handleNewPO}
-          disabled={createPoMutation.isPending}
-          className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
-          data-testid="button-new-po"
-        >
-          {createPoMutation.isPending ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <Plus className="w-3 h-3" />
-          )}
-          <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
-        </button>
+        {!(isProjectContext && currentProject) && (
+          <button
+            onClick={handleNewPO}
+            disabled={createPoMutation.isPending}
+            className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
+            data-testid="button-new-po"
+          >
+            {createPoMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Plus className="w-3 h-3" />
+            )}
+            <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
+          </button>
+        )}
       </div>
 
-      {/* Row 2 - Type Tabs + Totals */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0">
+      {/* Row 3 - Type pills + Search + Supplier + Totals + Columns */}
+      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
+        {/* Type pills (Standard / Site) */}
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setSelectedType("all")}
@@ -472,17 +511,8 @@ export default function PurchaseOrders() {
           </button>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span data-testid="text-total-value">Total: <span className="font-medium text-foreground">{formatCurrency(totals.total)}</span></span>
-          <div className="w-px h-4 bg-border" />
-          <span data-testid="text-sent-value">Sent: <span className="font-medium text-foreground">{formatCurrency(totals.sent)}</span></span>
-          <div className="w-px h-4 bg-border" />
-          <span data-testid="text-approved-value">Approved: <span className="font-medium text-foreground">{formatCurrency(totals.approved)}</span></span>
-        </div>
-      </div>
+        <div className="w-px h-4 bg-border mx-1" />
 
-      {/* Row 3 - Search + Status Filters + Supplier + Columns */}
-      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
         <div className="relative w-48">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           <Input
@@ -493,32 +523,6 @@ export default function PurchaseOrders() {
             data-testid="po-search-input"
           />
         </div>
-
-        <div className="w-px h-4 bg-border" />
-
-        <div className="flex items-center gap-1">
-          {STATUS_OPTIONS.map((status) => (
-            <button
-              key={status.key}
-              onClick={() => setSelectedStatus(status.key)}
-              className={`h-6 px-2 text-xs rounded-md transition-all ${
-                selectedStatus === status.key
-                  ? "bg-primary/10 text-primary border border-primary/30 font-medium"
-                  : "bg-background border hover-elevate"
-              }`}
-              data-testid={`filter-status-${status.key}`}
-            >
-              {status.label === "All Statuses" ? "All" : status.label}
-              {statusCounts[status.key] > 0 && (
-                <span className={`ml-1 ${selectedStatus === status.key ? "" : "text-muted-foreground"}`}>
-                  {statusCounts[status.key]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-4 bg-border" />
 
         <Popover>
           <PopoverTrigger asChild>
@@ -564,6 +568,16 @@ export default function PurchaseOrders() {
         </Popover>
 
         <div className="flex-1" />
+
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span data-testid="text-total-value">Total: <span className="font-medium text-foreground">{formatCurrency(totals.total)}</span></span>
+          <div className="w-px h-4 bg-border" />
+          <span data-testid="text-sent-value">Sent: <span className="font-medium text-foreground">{formatCurrency(totals.sent)}</span></span>
+          <div className="w-px h-4 bg-border" />
+          <span data-testid="text-approved-value">Approved: <span className="font-medium text-foreground">{formatCurrency(totals.approved)}</span></span>
+        </div>
+
+        <div className="w-px h-4 bg-border mx-1" />
 
         <Popover>
           <PopoverTrigger asChild>
