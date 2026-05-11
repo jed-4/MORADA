@@ -105,6 +105,10 @@ export const users = pgTable("users", {
   isSubcontractor: boolean("is_subcontractor").notNull().default(false),
   hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Pay rate - cost to company per hour
   chargeRate: numeric("charge_rate", { precision: 10, scale: 2 }), // Charge rate - what you charge the client per hour
+
+  // Xero link (used when this user is acting as a subcontractor "supplier" on POs/bills)
+  xeroContactId: text("xero_contact_id"), // Xero ContactID for this user as a supplier
+  xeroDefaultAccountCode: text("xero_default_account_code"), // Default Xero account code (e.g. 5000 Subcontractors)
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -4945,8 +4949,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
   poNumber: text("po_number").notNull(), // Auto-generated: PO-2025-001 or SPO-2025-001
   poType: purchaseOrderTypeEnum("po_type").notNull().default("main"),
   
-  // Supplier (from contacts with contactType = 'supplier')
+  // Supplier — either a contact OR a team-member user flagged as subcontractor.
+  // Exactly one of supplierId / supplierUserId should be set; supplierName is the cached display label.
   supplierId: varchar("supplier_id").references(() => contacts.id),
+  supplierUserId: varchar("supplier_user_id").references(() => users.id),
   supplierName: text("supplier_name"), // Cached for display and quick POs without contact
   
   // Description & Scope

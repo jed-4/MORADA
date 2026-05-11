@@ -375,34 +375,59 @@ function SortableItemRow({
 }
 
 // ---------- Change-supplier dialog ----------
+type SupplierUser = {
+  id: string;
+  displayName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  isSubcontractor?: boolean;
+  userCategory?: string;
+};
+type SupplierPick =
+  | { kind: "contact"; id: string }
+  | { kind: "user"; id: string };
+
 interface ChangeSupplierDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contacts: Contact[];
+  users: SupplierUser[];
   currentSupplierId: string | null | undefined;
-  onSelect: (supplierId: string) => void;
+  currentSupplierUserId: string | null | undefined;
+  onSelect: (pick: SupplierPick) => void;
 }
 function ChangeSupplierDialog({
   open,
   onOpenChange,
   contacts,
+  users,
   currentSupplierId,
+  currentSupplierUserId,
   onSelect,
 }: ChangeSupplierDialogProps) {
   const [search, setSearch] = useState("");
-  const suppliers = useMemo(() => {
+  const q = search.toLowerCase();
+  const contactSuppliers = useMemo(() => {
     return contacts
       .filter(
         (c) =>
           c.contactType === "supplier" || c.contactType === "subcontractor",
       )
-      .filter((c) =>
-        search
-          ? (c.name || "").toLowerCase().includes(search.toLowerCase())
-          : true,
-      )
+      .filter((c) => (q ? (c.name || "").toLowerCase().includes(q) : true))
       .slice(0, 100);
-  }, [contacts, search]);
+  }, [contacts, q]);
+  const teamSubcontractors = useMemo(() => {
+    return users
+      .filter((u) => u.isSubcontractor)
+      .filter((u) => {
+        if (!q) return true;
+        const name = (u.displayName || `${u.firstName || ""} ${u.lastName || ""}`).toLowerCase();
+        return name.includes(q) || (u.email || "").toLowerCase().includes(q);
+      })
+      .slice(0, 100);
+  }, [users, q]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -425,42 +450,92 @@ function ChangeSupplierDialog({
           />
         </div>
         <div className="max-h-72 overflow-auto -mx-2">
-          {suppliers.length === 0 ? (
+          {contactSuppliers.length === 0 && teamSubcontractors.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
               No suppliers found
             </p>
           ) : (
-            suppliers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onSelect(c.id)}
-                className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
-                  c.id === currentSupplierId ? "bg-[#f5f4f0]" : ""
-                }`}
-                data-testid={`option-supplier-${c.id}`}
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
-                  style={{
-                    backgroundColor: "rgba(168,144,212,0.12)",
-                    color: TOKENS.purple,
-                  }}
+            <>
+              {teamSubcontractors.length > 0 && (
+                <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Team subcontractors
+                </p>
+              )}
+              {teamSubcontractors.map((u) => {
+                const name =
+                  u.displayName ||
+                  `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+                  u.email ||
+                  "Team member";
+                return (
+                  <button
+                    key={`u-${u.id}`}
+                    onClick={() => onSelect({ kind: "user", id: u.id })}
+                    className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
+                      u.id === currentSupplierUserId ? "bg-[#f5f4f0]" : ""
+                    }`}
+                    data-testid={`option-supplier-user-${u.id}`}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                      style={{
+                        backgroundColor: "rgba(168,144,212,0.12)",
+                        color: TOKENS.purple,
+                      }}
+                    >
+                      {getInitials(name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{name}</p>
+                      {u.email && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {u.email}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="text-[10px]">
+                      Team
+                    </Badge>
+                  </button>
+                );
+              })}
+              {contactSuppliers.length > 0 && (
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Contacts
+                </p>
+              )}
+              {contactSuppliers.map((c) => (
+                <button
+                  key={`c-${c.id}`}
+                  onClick={() => onSelect({ kind: "contact", id: c.id })}
+                  className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
+                    c.id === currentSupplierId ? "bg-[#f5f4f0]" : ""
+                  }`}
+                  data-testid={`option-supplier-${c.id}`}
                 >
-                  {getInitials(c.name || "?")}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{c.name}</p>
-                  {c.email && (
-                    <p className="text-xs text-muted-foreground truncate">
-                      {c.email}
-                    </p>
-                  )}
-                </div>
-                <Badge variant="outline" className="text-[10px] capitalize">
-                  {c.contactType}
-                </Badge>
-              </button>
-            ))
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                    style={{
+                      backgroundColor: "rgba(168,144,212,0.12)",
+                      color: TOKENS.purple,
+                    }}
+                  >
+                    {getInitials(c.name || "?")}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{c.name}</p>
+                    {c.email && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {c.email}
+                      </p>
+                    )}
+                  </div>
+                  <Badge variant="outline" className="text-[10px] capitalize">
+                    {c.contactType}
+                  </Badge>
+                </button>
+              ))}
+            </>
           )}
         </div>
         <DialogFooter>
@@ -628,6 +703,9 @@ export default function PurchaseOrderDetail() {
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(
     null,
   );
+  const [unmappedSupplierKind, setUnmappedSupplierKind] = useState<
+    "contact" | "user"
+  >("contact");
   const [unmappedDialogOpen, setUnmappedDialogOpen] = useState(false);
 
   // ---------- file upload ----------
@@ -677,10 +755,50 @@ export default function PurchaseOrderDetail() {
     return projects.find((p) => p.id === pid);
   }, [purchaseOrder, projectIdFromUrl, projects]);
 
+  const { data: assignableUsers = [] } = useQuery<SupplierUser[]>({
+    queryKey: ["/api/users/assignable"],
+  });
+
+  // Supplier may be a contact (supplierId) OR a team-member user marked as subcontractor (supplierUserId).
+  // We normalize both cases into a single shape so the supplier hero & email logic can stay simple.
   const supplier = useMemo(() => {
-    if (!purchaseOrder?.supplierId) return null;
-    return contacts.find((c) => c.id === purchaseOrder.supplierId);
-  }, [purchaseOrder, contacts]);
+    const po: any = purchaseOrder;
+    if (!po) return null;
+    if (po.supplierId) {
+      const c = contacts.find((x) => x.id === po.supplierId);
+      if (!c) return null;
+      return {
+        kind: "contact" as const,
+        id: c.id,
+        name: c.name || "",
+        email: c.email || "",
+        phone: (c as any).phone || "",
+        address: (c as any).address || "",
+        abn: (c as any).abn || "",
+        paymentTerms: (c as any).paymentTerms || "",
+      };
+    }
+    if (po.supplierUserId) {
+      const u = assignableUsers.find((x) => x.id === po.supplierUserId);
+      if (!u) return null;
+      const name =
+        u.displayName ||
+        `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+        u.email ||
+        "Team member";
+      return {
+        kind: "user" as const,
+        id: u.id,
+        name,
+        email: u.email || "",
+        phone: u.phone || "",
+        address: "",
+        abn: "",
+        paymentTerms: "",
+      };
+    }
+    return null;
+  }, [purchaseOrder, contacts, assignableUsers]);
 
   // ---------- hydrate state ----------
   useEffect(() => {
@@ -735,10 +853,12 @@ export default function PurchaseOrderDetail() {
   });
 
   const changeSupplierMutation = useMutation({
-    mutationFn: async (supplierId: string) => {
-      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
-        supplierId,
-      });
+    mutationFn: async (pick: SupplierPick) => {
+      const body =
+        pick.kind === "user"
+          ? { supplierUserId: pick.id, supplierId: null }
+          : { supplierId: pick.id, supplierUserId: null };
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -951,10 +1071,19 @@ export default function PurchaseOrderDetail() {
     onError: (err: any) => {
       const payload = err?.payload || {};
       if (payload.error === "UNMAPPED_CONTACT") {
+        // The PO supplier may be a contact or a user — choose the right link target.
+        const isUserSupplier =
+          !!payload.supplierUserId ||
+          (!payload.supplierId && supplier?.kind === "user");
+        setUnmappedSupplierKind(isUserSupplier ? "user" : "contact");
         setUnmappedSupplierName(
           payload.supplierName || supplier?.name || "Supplier",
         );
-        setUnmappedSupplierId(payload.supplierId || supplier?.id || null);
+        setUnmappedSupplierId(
+          isUserSupplier
+            ? payload.supplierUserId || supplier?.id || null
+            : payload.supplierId || supplier?.id || null,
+        );
         setUnmappedDialogOpen(true);
         toast({
           title: "Supplier not linked to Xero",
@@ -2426,8 +2555,10 @@ export default function PurchaseOrderDetail() {
         open={isChangeSupplierOpen}
         onOpenChange={setIsChangeSupplierOpen}
         contacts={contacts}
+        users={assignableUsers}
         currentSupplierId={purchaseOrder.supplierId}
-        onSelect={(id) => changeSupplierMutation.mutate(id)}
+        currentSupplierUserId={(purchaseOrder as any).supplierUserId}
+        onSelect={(pick) => changeSupplierMutation.mutate(pick)}
       />
 
       {/* Import timesheets */}
@@ -2447,6 +2578,7 @@ export default function PurchaseOrderDetail() {
         }}
         clientId={unmappedSupplierId}
         clientName={unmappedSupplierName}
+        targetType={unmappedSupplierKind}
         title="Link Supplier to Xero Contact"
         description={
           <>

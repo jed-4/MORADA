@@ -8109,9 +8109,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             lastName: user.lastName,
             displayName,
             email: user.email,
+            phone: user.phone,
             profileImageUrl: user.profileImageUrl,
             roleId: user.roleId,
             roleName: user.roleName,
+            userCategory: user.userCategory,
+            isSubcontractor: !!user.isSubcontractor,
+            xeroContactId: user.xeroContactId || null,
           };
         });
       res.json(assignableUsers);
@@ -8142,6 +8146,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching assignable roles:", error);
       res.status(500).json({ error: "Failed to fetch assignable roles" });
+    }
+  });
+
+  // Link a team-member user to a Xero contact (used when the user is the "supplier" on a PO/bill)
+  // Requires team membership rather than admin.users edit so finance/PM users can complete PO push flows.
+  app.patch("/api/users/:id/xero-link", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const target = await storage.getUser(req.params.id);
+      if (!target || (target as any).companyId !== currentUser.companyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { xeroContactId, xeroDefaultAccountCode } = req.body || {};
+      const patch: any = {};
+      if (xeroContactId !== undefined) patch.xeroContactId = xeroContactId || null;
+      if (xeroDefaultAccountCode !== undefined) patch.xeroDefaultAccountCode = xeroDefaultAccountCode || null;
+      const updated = await storage.updateUser(req.params.id, patch);
+      res.json({
+        id: updated?.id,
+        xeroContactId: (updated as any)?.xeroContactId || null,
+        xeroDefaultAccountCode: (updated as any)?.xeroDefaultAccountCode || null,
+      });
+    } catch (error) {
+      console.error("Failed to link user to Xero contact:", error);
+      res.status(500).json({ error: "Failed to link user to Xero contact" });
     }
   });
 
@@ -13529,6 +13561,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdById: req.user.id
       };
 
+      // Mutual exclusivity: a PO supplier is either a contact OR a team-member user, never both.
+      if (poData.supplierUserId && poData.supplierId) {
+        poData.supplierId = null;
+      }
+
       const validationResult = insertPurchaseOrderSchema.safeParse(poData);
 
       if (!validationResult.success) {
@@ -13566,7 +13603,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const po = await storage.updatePurchaseOrder(req.params.id, validationResult.data);
+      // Mutual exclusivity: when one supplier ref is being set, clear the other so a PO never points at both.
+      const patch: any = { ...validationResult.data };
+      if (patch.supplierUserId) patch.supplierId = null;
+      else if (patch.supplierId) patch.supplierUserId = null;
+
+      const po = await storage.updatePurchaseOrder(req.params.id, patch);
       if (!po) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
@@ -13643,6 +13685,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: existingPo.companyId,
         projectId: existingPo.projectId,
         supplierId: existingPo.supplierId,
+        // Carry over the team-member subcontractor link too, otherwise a duplicated PO loses its supplier.
+        supplierUserId: (existingPo as any).supplierUserId ?? null,
         poNumber: newPoNumber,
         title: existingPo.title ? `${existingPo.title} (Copy)` : "Copy",
         description: existingPo.description,
@@ -26448,10 +26492,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return res.status(400).json({ error: "Purchase order has no line items to push" });
       }
 
-      // Resolve supplier + Xero contact (mirror push-bill behaviour)
+      // Resolve supplier + Xero contact (mirror push-bill behaviour).
+      // Supplier may be a contact (supplierId) OR a team-member user marked as subcontractor (supplierUserId).
       let supplierName = (po as any).supplierName || "Unknown Supplier";
       let supplierXeroContactId: string | undefined;
       let supplierDefaultAccountCode: string | undefined;
+      const poSupplierUserId: string | undefined = (po as any).supplierUserId || undefined;
       if ((po as any).supplierId) {
         try {
           const contact = await storage.getContact((po as any).supplierId, companyId);
@@ -26465,20 +26511,36 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             supplierDefaultAccountCode = (contact as any).xeroDefaultAccountCode || undefined;
           }
         } catch {}
+      } else if (poSupplierUserId) {
+        try {
+          const u = await storage.getUser(poSupplierUserId);
+          if (u && (u as any).companyId === companyId) {
+            supplierName =
+              `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() ||
+              (u as any).email ||
+              supplierName;
+            supplierXeroContactId = (u as any).xeroContactId || undefined;
+            supplierDefaultAccountCode = (u as any).xeroDefaultAccountCode || undefined;
+          }
+        } catch {}
       }
 
       if (overrideXeroContactId) {
         supplierXeroContactId = overrideXeroContactId;
-        if ((po as any).supplierId) {
-          try {
+        try {
+          if ((po as any).supplierId) {
             await storage.updateContact(
               (po as any).supplierId,
               companyId,
               { xeroContactId: overrideXeroContactId } as any,
             );
-          } catch (e) {
-            console.error("Failed to save Xero contact link on PO push:", e);
+          } else if (poSupplierUserId) {
+            await storage.updateUser(poSupplierUserId, {
+              xeroContactId: overrideXeroContactId,
+            } as any);
           }
+        } catch (e) {
+          console.error("Failed to save Xero contact link on PO push:", e);
         }
       }
 
@@ -26487,6 +26549,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           error: "UNMAPPED_CONTACT",
           message: "Supplier is not linked to a Xero contact",
           supplierId: (po as any).supplierId,
+          supplierUserId: poSupplierUserId || null,
           supplierName,
         });
       }

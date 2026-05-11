@@ -150,6 +150,18 @@ export default function PurchaseOrders() {
     return contacts.filter(c => c.contactType === "supplier" || c.contactType === "subcontractor");
   }, [contacts]);
 
+  // Team-member subcontractors that can also act as PO suppliers (avoids duplicate Xero contacts).
+  const { data: assignableUsers = [] } = useQuery<Array<{
+    id: string;
+    displayName?: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    isSubcontractor?: boolean;
+  }>>({
+    queryKey: ["/api/users/assignable"],
+  });
+
   const projectsMap = useMemo(() => {
     return new Map(projects.map(p => [p.id, p]));
   }, [projects]);
@@ -162,6 +174,28 @@ export default function PurchaseOrders() {
     return new Map(suppliers.map(s => [s.id, s]));
   }, [suppliers]);
 
+  const supplierUsersMap = useMemo(() => {
+    const m = new Map<string, string>();
+    assignableUsers.forEach((u) => {
+      if (!u.isSubcontractor) return;
+      const name =
+        u.displayName ||
+        `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+        u.email ||
+        "Team member";
+      m.set(u.id, name);
+    });
+    return m;
+  }, [assignableUsers]);
+
+  // Resolve the display name of a PO's supplier whether it points at a contact or a user.
+  const supplierNameForPO = (po: PurchaseOrder): string => {
+    const anyPo = po as any;
+    if (anyPo.supplierId) return suppliersMap.get(anyPo.supplierId)?.name || "";
+    if (anyPo.supplierUserId) return supplierUsersMap.get(anyPo.supplierUserId) || "";
+    return "";
+  };
+
   const baseFilteredPOs = useMemo(() => {
     return purchaseOrders.filter((po) => {
       if (selectedSupplierId && po.supplierId !== selectedSupplierId) {
@@ -170,18 +204,19 @@ export default function PurchaseOrders() {
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         const project = po.projectId ? projectsMap.get(po.projectId) : null;
-        const supplier = po.supplierId ? suppliersMap.get(po.supplierId) : null;
+        const supplierName = supplierNameForPO(po);
         return (
           po.poNumber?.toLowerCase().includes(term) ||
           po.title?.toLowerCase().includes(term) ||
           po.description?.toLowerCase().includes(term) ||
           project?.name?.toLowerCase().includes(term) ||
-          supplier?.name?.toLowerCase().includes(term)
+          supplierName.toLowerCase().includes(term)
         );
       }
       return true;
     });
-  }, [purchaseOrders, selectedSupplierId, searchTerm, projectsMap, suppliersMap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseOrders, selectedSupplierId, searchTerm, projectsMap, suppliersMap, supplierUsersMap]);
 
   const filteredByType = useMemo(() => {
     if (selectedType === "all") return baseFilteredPOs;
@@ -320,12 +355,12 @@ export default function PurchaseOrders() {
       {
         id: "supplier",
         header: "Supplier",
-        accessorFn: (po) => (po.supplierId ? suppliersMap.get(po.supplierId)?.name || "" : ""),
+        accessorFn: (po) => supplierNameForPO(po),
         cell: ({ row }) => {
-          const supplier = row.original.supplierId ? suppliersMap.get(row.original.supplierId) : null;
+          const name = supplierNameForPO(row.original);
           return (
             <span className="text-xs truncate" data-testid={`cell-supplier-${row.original.id}`}>
-              {supplier?.name || <span className="text-muted-foreground">-</span>}
+              {name || <span className="text-muted-foreground">-</span>}
             </span>
           );
         },

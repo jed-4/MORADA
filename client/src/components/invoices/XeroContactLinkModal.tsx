@@ -29,6 +29,12 @@ interface Props {
   title?: string;
   description?: ReactNode;
   successMessage?: string;
+  /**
+   * What kind of BuildPro entity is being linked.
+   * "contact" (default) → patches /api/contacts/:id
+   * "user"             → patches /api/users/:id/xero-link (used when a PO supplier is a team-member subcontractor)
+   */
+  targetType?: "contact" | "user";
 }
 
 const CREATE_NEW_ID = "__CREATE_NEW__";
@@ -42,6 +48,7 @@ export function XeroContactLinkModal({
   title = "Link to Xero Contact",
   description,
   successMessage = "Xero contact linked successfully.",
+  targetType = "contact",
 }: Props) {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -80,17 +87,30 @@ export function XeroContactLinkModal({
         const name = search.trim() || clientName;
         const created = await apiRequest("/api/xero/contacts", "POST", {
           name,
-          buildproContactId: clientId,
+          // For user-as-supplier we don't pass buildproContactId — the caller will persist the link via the user endpoint below.
+          ...(targetType === "contact" ? { buildproContactId: clientId } : {}),
         });
         xeroContactId = created.contactId;
+        if (targetType === "user") {
+          await apiRequest(`/api/users/${clientId}/xero-link`, "PATCH", { xeroContactId });
+        }
       } else {
         xeroContactId = selectedId;
-        await apiRequest(`/api/contacts/${clientId}`, "PATCH", { xeroContactId });
+        if (targetType === "user") {
+          await apiRequest(`/api/users/${clientId}/xero-link`, "PATCH", { xeroContactId });
+        } else {
+          await apiRequest(`/api/contacts/${clientId}`, "PATCH", { xeroContactId });
+        }
       }
 
-      queryClient.invalidateQueries({ queryKey: [`/api/contacts/${clientId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      if (targetType === "user") {
+        queryClient.invalidateQueries({ queryKey: ["/api/users/assignable"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: [`/api/contacts/${clientId}`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      }
       return xeroContactId;
     },
     onSuccess: (xeroContactId) => {
