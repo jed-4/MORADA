@@ -14516,7 +14516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const projectName = project?.name || "Unknown";
         const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
         const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
-        const costCodeStr = costCode ? `${costCode.code} - ${costCode.name}` : "";
+        const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
         const descParts = [`${dateStr} -- ${projectName} -- ${timeRange}${breakStr}`];
         if (costCodeStr) descParts.push(costCodeStr);
         if (ts.description) descParts.push(ts.description);

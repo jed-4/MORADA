@@ -105,7 +105,7 @@ export function SubcontractorPODialog({ open, onOpenChange }: SubcontractorPODia
   const getCostCodeName = (costCodeId: string | null) => {
     if (!costCodeId) return "-";
     const cc = costCodes.find((c: any) => c.id === costCodeId);
-    return cc ? `${cc.code} - ${cc.name}` : "-";
+    return cc ? `${cc.code} - ${cc.title}` : "-";
   };
 
   const toggleSelect = (id: string) => {
