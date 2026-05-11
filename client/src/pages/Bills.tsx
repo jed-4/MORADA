@@ -48,6 +48,7 @@ import {
   Mail,
   Copy,
   ChevronDown,
+  ChevronRight,
   Search,
   Calendar,
   Building2,
@@ -59,7 +60,14 @@ import {
   Download,
   Loader2,
   AlertCircle,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -459,6 +467,7 @@ export default function Bills() {
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importProjectId, setImportProjectId] = useState<string>("");
+  const [emailSetupOpen, setEmailSetupOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -563,6 +572,7 @@ export default function Bills() {
     queryKey: ["/api/suppliers"],
   });
 
+  const currentProject = projectIdFromUrl ? projects.find((p) => p.id === projectIdFromUrl) : null;
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
   const getSupplierName = (supplierId: string, bill?: any) => {
     if (bill?.supplierName) return bill.supplierName;
@@ -874,90 +884,19 @@ export default function Bills() {
   return (
     <div className="flex flex-col h-full" data-testid="page-bills">
 
-      {/* ── Unified header card ── */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+      {/* ── Breadcrumb ── */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+        <span className="text-xs text-muted-foreground">
+          {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Bills</span>
+      </div>
 
-        {/* Row 1 — Title & Actions */}
-        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
-            <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {/* Email Setup */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-email-setup">
-                  <Mail className="w-3 h-3" />
-                  <span>Email Setup</span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="max-w-[min(500px,90vw)] w-full" align="end" data-testid="popover-email-setup">
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="font-semibold mb-1 text-sm" data-testid="text-email-to-bill-heading">Email-to-Bill Feature</h3>
-                    <p className="text-xs text-muted-foreground" data-testid="text-email-to-bill-description">Forward invoices to auto-create bills</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input value={webhookUrl} readOnly className="font-mono text-xs flex-1 h-7" data-testid="input-webhook-url" />
-                    <button className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center" onClick={handleCopyWebhookUrl} data-testid="button-copy-webhook-url">
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <Collapsible open={setupInstructionsOpen} onOpenChange={setSetupInstructionsOpen}>
-                    <CollapsibleTrigger asChild>
-                      <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" data-testid="button-toggle-setup-instructions">
-                        Setup Instructions
-                        <ChevronDown className={`h-3 w-3 transition-transform ${setupInstructionsOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-3" data-testid="content-setup-instructions">
-                      <div className="space-y-3 text-xs">
-                        <div>
-                          <h4 className="font-semibold mb-1" data-testid="text-sendgrid-heading">For SendGrid Inbound Parse:</h4>
-                          <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
-                            <li>Go to SendGrid → Settings → Inbound Parse</li>
-                            <li>Add your domain and set the URL to the webhook</li>
-                            <li>Forward invoices to your configured email address</li>
-                          </ol>
-                        </div>
-                        <div>
-                          <h4 className="font-semibold mb-1" data-testid="text-manual-testing-heading">For manual testing:</h4>
-                          <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
-                            <li>Use tools like Postman to POST to the webhook</li>
-                            <li>Include email data with attachments in SendGrid format</li>
-                          </ol>
-                        </div>
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-              onClick={() => {
-                setImportProjectId(projectIdFromUrl || "");
-                setImportDialogOpen(true);
-              }}
-              data-testid="button-import-from-xero"
-            >
-              <Download className="w-3 h-3" />
-              <span>Import from Xero</span>
-            </button>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
-              data-testid="button-create-bill"
-            >
-              <Plus className="w-3 h-3" />
-              <span>New Bill</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Row 2 — Status tabs */}
-        <div className="flex items-center px-3 border-b border-border/50 overflow-x-auto">
+      {/* ── Single toolbar row: tabs + amounts + actions ── */}
+      <div className="bg-background flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
+        {/* Status tabs */}
+        <div className="flex items-center overflow-x-auto">
           {STATUS_OPTIONS.map((status) => {
             const isActive = selectedStatus === status.key;
             const showCount = status.key !== "all" && status.key !== "paid";
@@ -967,58 +906,145 @@ export default function Bills() {
                 key={status.key}
                 onClick={() => handleStatusChange(status.key)}
                 className={cn(
-                  "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2",
-                  isActive ? "text-foreground border-primary" : "text-muted-foreground hover:text-foreground border-transparent"
+                  "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0",
+                  isActive ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
                 )}
                 data-testid={`tab-status-${status.key}`}
               >
                 {status.label}
                 {showCount && count > 0 && (
                   <span className={cn(
-                    "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
-                    isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                    "text-[11px] tabular-nums",
+                    isActive ? "text-primary" : "text-muted-foreground"
                   )}>
                     {count}
                   </span>
+                )}
+                {isActive && (
+                  <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
                 )}
               </button>
             );
           })}
         </div>
 
-        {/* Row 3 — Lilac summary strip (no Paid) */}
-        <div className="bg-primary/10 flex items-center px-5 py-2">
-          <div className="flex items-center gap-4 text-data text-muted-foreground ml-auto">
-            <span data-testid="text-total-draft">
-              Draft <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.draft * 100)}</span>
-            </span>
-            <span className="w-px h-3 bg-primary/40 self-center" />
-            <span data-testid="text-total-awaiting-approval">
-              Awaiting Approval <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
-            </span>
-            <span className="w-px h-3 bg-primary/40 self-center" />
-            <span data-testid="text-total-awaiting-payment">
-              Awaiting Payment <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
-            </span>
-          </div>
+        <div className="flex-1" />
+
+        {/* Amounts summary */}
+        <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
+          <span data-testid="text-total-draft">
+            Draft <span className="font-medium text-foreground">{formatCurrency(statusTotals.draft * 100)}</span>
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <span data-testid="text-total-awaiting-approval">
+            Awaiting Approval <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_approval * 100)}</span>
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <span data-testid="text-total-awaiting-payment">
+            Awaiting Payment <span className="font-medium text-foreground">{formatCurrency(statusTotals.awaiting_payment * 100)}</span>
+          </span>
         </div>
 
-      </div>{/* end header card */}
+        <div className="w-px h-4 bg-border mx-1 flex-shrink-0" />
 
-      {/* ── Bulk selection action bar (floating) ── */}
-      {selectedBills.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border shadow-lg flex items-center justify-between px-4 h-14">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{selectedBills.size} selected</span>
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
+        {/* New Bill button */}
+        <button
+          className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+          onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
+          data-testid="button-create-bill"
+        >
+          <Plus className="w-3 h-3" />
+          <span>New Bill</span>
+        </button>
+
+        {/* 3-dot menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+              data-testid="button-more-actions"
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={() => setEmailSetupOpen(true)} data-testid="menu-item-email-setup">
+              <Mail className="w-3.5 h-3.5 mr-2" />
+              Email Setup
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                setImportProjectId(projectIdFromUrl || "");
+                setImportDialogOpen(true);
+              }}
+              data-testid="menu-item-import-xero"
+            >
+              <Download className="w-3.5 h-3.5 mr-2" />
+              Import from Xero
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* ── Email Setup Dialog ── */}
+      <Dialog open={emailSetupOpen} onOpenChange={setEmailSetupOpen}>
+        <DialogContent className="max-w-[min(500px,90vw)]" data-testid="dialog-email-setup">
+          <DialogHeader>
+            <DialogTitle data-testid="text-email-to-bill-heading">Email-to-Bill Feature</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground" data-testid="text-email-to-bill-description">Forward invoices to auto-create bills</p>
+            <div className="flex items-center gap-2">
+              <Input value={webhookUrl} readOnly className="font-mono text-xs flex-1 h-7" data-testid="input-webhook-url" />
+              <button className="h-6 w-6 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center" onClick={handleCopyWebhookUrl} data-testid="button-copy-webhook-url">
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+            <Collapsible open={setupInstructionsOpen} onOpenChange={setSetupInstructionsOpen}>
+              <CollapsibleTrigger asChild>
+                <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" data-testid="button-toggle-setup-instructions">
+                  Setup Instructions
+                  <ChevronDown className={`h-3 w-3 transition-transform ${setupInstructionsOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3" data-testid="content-setup-instructions">
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <h4 className="font-semibold mb-1" data-testid="text-sendgrid-heading">For SendGrid Inbound Parse:</h4>
+                    <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
+                      <li>Go to SendGrid → Settings → Inbound Parse</li>
+                      <li>Add your domain and set the URL to the webhook</li>
+                      <li>Forward invoices to your configured email address</li>
+                    </ol>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1" data-testid="text-manual-testing-heading">For manual testing:</h4>
+                    <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
+                      <li>Use tools like Postman to POST to the webhook</li>
+                      <li>Include email data with attachments in SendGrid format</li>
+                    </ol>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk selection action bar ── */}
+      {selectedBills.size > 0 && (
+        <div className="flex-shrink-0 bg-primary/5 border-b border-primary/20 flex items-center justify-between px-4 h-10 gap-2">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
-            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
+            <span className="text-xs text-muted-foreground">{selectedBills.size} selected</span>
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
               <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : "Approve"}
             </Button>
-            <Button variant="ghost" size="sm" className="text-xs text-destructive" onClick={() => setDeleteDialogOpen(true)}>
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2 text-destructive" onClick={() => setDeleteDialogOpen(true)}>
               <Trash2 className="w-3 h-3 mr-1" />Delete
             </Button>
           </div>
