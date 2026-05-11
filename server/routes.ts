@@ -14558,11 +14558,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const lineTotal = Math.round(netHours * payRate * 100);
 
         const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
-        const projectName = project?.name || "Unknown";
         const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
         const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
         const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
-        const descParts = [`${dateStr} -- ${projectName} -- ${timeRange}${breakStr}`];
+        // Project is already shown in the PO header (Reference field), so we omit it here
+        // to keep line descriptions clean and avoid stale "Unknown" fallbacks.
+        const descParts = [`${dateStr} -- ${timeRange}${breakStr}`];
         if (costCodeStr) descParts.push(costCodeStr);
         if (ts.description) descParts.push(ts.description);
 
