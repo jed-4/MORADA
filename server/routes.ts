@@ -19386,6 +19386,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
             await storage.updateTimesheet(id, updateData);
+
+            // Mirror single-approve behaviour: when approving a subbie's
+            // timesheet, queue it for PO generation. (Without this the
+            // Sub PO modal never sees bulk-approved subbie timesheets.)
+            if (status === "approved") {
+              const tsOwner = await storage.getUser(timesheet.userId);
+              if (tsOwner?.isSubcontractor && !timesheet.linkedPurchaseOrderId) {
+                await storage.updateTimesheet(id, { poStatus: "awaiting_po" });
+              }
+            }
             successCount++;
           } else if (action === "delete") {
             await storage.deleteTimesheet(id);
