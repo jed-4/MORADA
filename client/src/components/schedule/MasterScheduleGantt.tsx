@@ -175,7 +175,8 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
       }).map((item) => {
         const hasStart = !!item.startDate;
         const hasEnd = !!item.endDate;
-        const isCompanyAssigned = !item.assignedToColor && !!item.assignedToName;
+        const isUnassigned = !item.assignedToColor && !item.assignedToName;
+        const isCompanyAssigned = !isUnassigned && !item.assignedToColor && !!item.assignedToName;
         // Solid fill for both; dim external slightly. Mirrors Week view treatment
         // so bars/text stay legible (previous 0.35 alpha was too washed out).
         const barFill = color;
@@ -204,36 +205,61 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
             className="relative border-b border-border/10 flex items-center"
           >
             {hasStart && hasEnd ? (
-              <div
-                className="absolute rounded-sm overflow-hidden flex items-center"
-                style={{
-                  left: barLeft,
-                  width: barWidth,
-                  top: 4,
-                  bottom: 4,
-                  backgroundColor: barFill,
-                  opacity: barOpacity,
-                }}
-              >
-                {isCompanyAssigned && (
-                  <span
-                    className="shrink-0 h-full"
-                    style={{ width: ITEM_ROW_HEIGHT - 8, backgroundColor: chipColor }}
-                    aria-hidden="true"
-                  />
-                )}
-                {showLeftArrow && (
-                  <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">◀</span>
-                )}
-                {showRightArrow && (
-                  <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">▶</span>
-                )}
-                <span
-                  className="flex-1 min-w-0 px-1.5 text-data font-medium whitespace-nowrap overflow-hidden text-ellipsis text-white"
+              isUnassigned ? (
+                <div
+                  className="absolute rounded-sm overflow-hidden flex items-center border border-dashed border-muted-foreground/50"
+                  style={{
+                    left: barLeft,
+                    width: barWidth,
+                    top: 4,
+                    bottom: 4,
+                    backgroundColor: 'transparent',
+                    backgroundImage:
+                      'repeating-linear-gradient(45deg, hsl(var(--muted)) 0, hsl(var(--muted)) 4px, transparent 4px, transparent 8px)',
+                  }}
                 >
-                  {item.name}
-                </span>
-              </div>
+                  {showLeftArrow && (
+                    <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-muted-foreground font-bold">◀</span>
+                  )}
+                  {showRightArrow && (
+                    <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-muted-foreground font-bold">▶</span>
+                  )}
+                  <span className="flex-1 min-w-0 px-1.5 text-data font-medium whitespace-nowrap overflow-hidden text-ellipsis text-muted-foreground">
+                    {item.name}
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="absolute rounded-sm overflow-hidden flex items-center"
+                  style={{
+                    left: barLeft,
+                    width: barWidth,
+                    top: 4,
+                    bottom: 4,
+                    backgroundColor: barFill,
+                    opacity: barOpacity,
+                  }}
+                >
+                  {isCompanyAssigned && (
+                    <span
+                      className="shrink-0 h-full"
+                      style={{ width: ITEM_ROW_HEIGHT - 8, backgroundColor: chipColor }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  {showLeftArrow && (
+                    <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">◀</span>
+                  )}
+                  {showRightArrow && (
+                    <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-2xs text-white font-bold">▶</span>
+                  )}
+                  <span
+                    className="flex-1 min-w-0 px-1.5 text-data font-medium whitespace-nowrap overflow-hidden text-ellipsis text-white"
+                  >
+                    {item.name}
+                  </span>
+                </div>
+              )
             ) : (
               <div className="absolute inset-0 flex items-center px-2">
                 <span className="text-label text-muted-foreground/40 italic">No date</span>

@@ -969,6 +969,7 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       const { item, lane, leftPx, widthPx } = barLayout;
                       const rowIdx = isExpanded ? (expandedItemIndexMap.get(item.id) ?? lane) : lane;
                       const topPx = ROW_PADDING + rowIdx * (BAR_HEIGHT + BAR_GAP);
+                      const isUnassignedRow = row.id === "__unassigned__";
                       // On company rows: prefer assignee colour, fall back to project colour, then row colour.
                       // On supplier/team/individual rows: prefer project colour, fall back to assignee colour, then row colour.
                       const barColor = isCompanyRow
@@ -977,25 +978,45 @@ export default function CompanyWorkload({ onSwitchView, className }: CompanyWork
                       return (
                         <Tooltip key={item.id}>
                           <TooltipTrigger asChild>
-                            <div
-                              className="absolute rounded-sm cursor-pointer flex items-center overflow-hidden z-[5] transition-opacity hover:opacity-100"
-                              style={{
-                                left: pct(leftPx),
-                                width: pct(widthPx),
-                                top: topPx,
-                                height: BAR_HEIGHT,
-                                backgroundColor: barColor,
-                                opacity: 0.85,
-                              }}
-                              onClick={() => setSelectedItem(item)}
-                            >
-                              <span
-                                className="text-data font-medium truncate px-1 leading-none"
-                                style={{ color: "#fff" }}
+                            {isUnassignedRow ? (
+                              <div
+                                className="absolute rounded-sm cursor-pointer flex items-center overflow-hidden z-[5] border border-dashed border-muted-foreground/50"
+                                style={{
+                                  left: pct(leftPx),
+                                  width: pct(widthPx),
+                                  top: topPx,
+                                  height: BAR_HEIGHT,
+                                  backgroundColor: 'transparent',
+                                  backgroundImage:
+                                    'repeating-linear-gradient(45deg, hsl(var(--muted)) 0, hsl(var(--muted)) 4px, transparent 4px, transparent 8px)',
+                                }}
+                                onClick={() => setSelectedItem(item)}
                               >
-                                {item.name}
-                              </span>
-                            </div>
+                                <span className="text-data font-medium truncate px-1 leading-none text-muted-foreground">
+                                  {item.name}
+                                </span>
+                              </div>
+                            ) : (
+                              <div
+                                className="absolute rounded-sm cursor-pointer flex items-center overflow-hidden z-[5] transition-opacity hover:opacity-100"
+                                style={{
+                                  left: pct(leftPx),
+                                  width: pct(widthPx),
+                                  top: topPx,
+                                  height: BAR_HEIGHT,
+                                  backgroundColor: barColor,
+                                  opacity: 0.85,
+                                }}
+                                onClick={() => setSelectedItem(item)}
+                              >
+                                <span
+                                  className="text-data font-medium truncate px-1 leading-none"
+                                  style={{ color: "#fff" }}
+                                >
+                                  {item.name}
+                                </span>
+                              </div>
+                            )}
                           </TooltipTrigger>
                           <TooltipContent side="top" className="bg-popover text-popover-foreground border max-w-[240px]">
                             <div className="text-data">

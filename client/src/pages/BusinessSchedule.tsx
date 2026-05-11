@@ -122,13 +122,21 @@ interface WeekScheduleItem {
   type: string | null;
 }
 
-// Treat unassigned items and items assigned to a `team` contact as "company" work.
-// Trade/supplier/client contacts are external. Legacy `company:*` ids and
-// orphaned assignments (assignedToId set but the contact no longer exists, so
-// the joined contactType comes back null) are also counted as company so that
-// the row never silently appears empty when "Company only" is on.
+// Items with no real assignee at all. These are visually distinct from items
+// deliberately assigned to the business so users can quickly spot what still
+// needs to be assigned.
+function isUnassignedItem(item: WeekScheduleItem): boolean {
+  return !item.assignedToId && !item.assignedToName;
+}
+
+// Treat items assigned to a `team` contact (and legacy `company:*` ids) as
+// "company" work. Truly unassigned items are NOT company — they get their own
+// indicator. Orphaned assignments (assignedToId set but contact no longer
+// exists, so contactType comes back null) still count as company so the row
+// never silently appears empty when "Company only" is on.
 function isCompanyItem(item: WeekScheduleItem): boolean {
-  if (!item.assignedToId) return true;
+  if (isUnassignedItem(item)) return false;
+  if (!item.assignedToId) return false;
   if (item.assignedToId.startsWith('company:')) return true;
   if (item.assignedToContactType === 'team') return true;
   if (item.assignedToContactType === null) return true;
@@ -235,42 +243,60 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
             style={{ minHeight: rowH, paddingTop: WEEK_ROW_PAD, paddingBottom: WEEK_ROW_PAD }}
           >
             {activeItems.map(item => {
-              const isCompany = isCompanyItem(item);
+              const isUnassigned = isUnassignedItem(item);
+              const isCompany = !isUnassigned && isCompanyItem(item);
               const fill = isCompany
                 ? (companyColor || item.assignedToColor || project.color || TYPE_COLORS_HEX.task)
                 : (item.assignedToColor || project.color || TYPE_COLORS_HEX.task);
               return (
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
-                    <div
-                      className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative gap-1.5"
-                      style={{
-                        height: WEEK_ITEM_H,
-                        backgroundColor: fill,
-                        opacity: isCompany ? 1 : 0.85,
-                        paddingLeft: isCompany ? 0 : 6,
-                        paddingRight: 6,
-                      }}
-                      data-testid={`week-item-${item.id}`}
-                    >
-                      {isCompany && (
-                        <span
-                          className="rounded-sm shrink-0"
-                          style={{
-                            width: WEEK_ITEM_H,
-                            height: WEEK_ITEM_H,
-                            backgroundColor: darkenHex(fill, 0.4),
-                          }}
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span className="text-table text-white font-medium truncate leading-none">{item.name}</span>
-                    </div>
+                    {isUnassigned ? (
+                      <div
+                        className="w-full rounded-sm flex items-center overflow-hidden shrink-0 border border-dashed border-muted-foreground/50"
+                        style={{
+                          height: WEEK_ITEM_H,
+                          backgroundColor: 'transparent',
+                          backgroundImage:
+                            'repeating-linear-gradient(45deg, hsl(var(--muted)) 0, hsl(var(--muted)) 4px, transparent 4px, transparent 8px)',
+                          paddingLeft: 6,
+                          paddingRight: 6,
+                        }}
+                        data-testid={`week-item-${item.id}`}
+                      >
+                        <span className="text-table text-muted-foreground font-medium truncate leading-none">{item.name}</span>
+                      </div>
+                    ) : (
+                      <div
+                        className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative gap-1.5"
+                        style={{
+                          height: WEEK_ITEM_H,
+                          backgroundColor: fill,
+                          opacity: isCompany ? 1 : 0.85,
+                          paddingLeft: isCompany ? 0 : 6,
+                          paddingRight: 6,
+                        }}
+                        data-testid={`week-item-${item.id}`}
+                      >
+                        {isCompany && (
+                          <span
+                            className="rounded-sm shrink-0"
+                            style={{
+                              width: WEEK_ITEM_H,
+                              height: WEEK_ITEM_H,
+                              backgroundColor: darkenHex(fill, 0.4),
+                            }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="text-table text-white font-medium truncate leading-none">{item.name}</span>
+                      </div>
+                    )}
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
                     <div className="font-medium">{item.name}</div>
                     <div className="text-muted-foreground">
-                      {isCompany ? 'Company' : (item.assignedToName || 'Assigned')}
+                      {isUnassigned ? 'Unassigned' : isCompany ? 'Company' : (item.assignedToName || 'Assigned')}
                     </div>
                   </TooltipContent>
                 </Tooltip>
