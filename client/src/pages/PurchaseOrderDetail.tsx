@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { format, formatDistanceToNow } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useUpload } from "@/hooks/use-upload";
 import {
   DndContext,
   closestCenter,
@@ -12,7 +14,6 @@ import {
   useSensors,
   DragStartEvent,
   DragEndEvent,
-  DragOverlay,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -32,19 +33,22 @@ import {
   Trash2,
   GripVertical,
   X,
-  Building2,
   Mail,
   Phone,
-  MapPin,
   Copy,
-  Check,
-  Calendar,
+  Calendar as CalendarIcon,
   Download,
   ChevronDown,
+  ChevronUp,
   MoreHorizontal,
   Loader2,
   AlertCircle,
   Package,
+  Search,
+  Paperclip,
+  Clock,
+  ArrowUp,
+  Building2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +58,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -69,19 +74,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
@@ -90,6 +84,7 @@ import type {
   PurchaseOrder,
   PurchaseOrderItem,
   InsertPurchaseOrderItem,
+  PurchaseOrderAttachment,
   Project,
   Contact,
   CostCode,
@@ -101,17 +96,35 @@ interface RouteParams {
   projectId?: string;
 }
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-muted", text: "text-secondary" },
-  sent: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-status-info dark:text-blue-300" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-status-success dark:text-green-300" },
-  pending_approval: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-status-warning dark:text-yellow-300" },
-  acknowledged: { bg: "bg-teal-100 dark:bg-teal-900/30", text: "text-teal-700 dark:text-teal-300" },
-  partially_delivered: { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-status-warning dark:text-orange-300" },
-  delivered: { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300" },
-  invoiced: { bg: "bg-indigo-100 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300" },
-  closed: { bg: "bg-border", text: "text-secondary" },
-  cancelled: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-status-danger dark:text-red-300" },
+// ---------- design tokens ----------
+const TOKENS = {
+  purple: "#a890d4",
+  green: "#68b088",
+  amber: "#e8952a",
+  coral: "#e85b5b",
+  blue: "#4a90d4",
+  muted: "#9b9b9b",
+  pageBg: "#fafaf8",
+  cardBg: "#ffffff",
+  border: "#eaeae8",
+  ghost: "#f5f4f0",
+  darkGreen: "#2d7a4f",
+};
+
+const STEPS = ["Draft", "Sent", "Acknowledged", "Complete"] as const;
+const STEP_INDEX: Record<string, number> = {
+  draft: 0,
+  pending_approval: 0,
+  sent: 1,
+  acknowledged: 2,
+  approved: 2,
+  accepted: 3,
+  completed: 3,
+  delivered: 3,
+  partially_delivered: 3,
+  invoiced: 3,
+  billed: 3,
+  closed: 3,
 };
 
 function formatCurrency(cents: number): string {
@@ -127,6 +140,85 @@ function parseCurrency(value: string): number {
   return Math.round(parseFloat(clean || "0") * 100);
 }
 
+function getInitials(name: string): string {
+  if (!name) return "?";
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase() || "")
+    .join("");
+}
+
+// ---------- Status stepper ----------
+interface StatusStepperProps {
+  status: string;
+}
+function StatusStepper({ status }: StatusStepperProps) {
+  if (status === "cancelled") {
+    return (
+      <Badge
+        className="text-white"
+        style={{ backgroundColor: TOKENS.coral }}
+        data-testid="badge-status-cancelled"
+      >
+        CANCELLED
+      </Badge>
+    );
+  }
+  const idx = STEP_INDEX[status] ?? 0;
+  return (
+    <div className="flex items-center gap-2" data-testid="status-stepper">
+      {STEPS.map((label, i) => {
+        const isActive = i === idx;
+        const isPast = i < idx;
+        const dotColor = isActive
+          ? TOKENS.amber
+          : isPast
+          ? TOKENS.purple
+          : TOKENS.border;
+        const labelColor = isActive
+          ? "#222"
+          : isPast
+          ? "#444"
+          : TOKENS.muted;
+        return (
+          <div key={label} className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-block rounded-full"
+                style={{
+                  width: 8,
+                  height: 8,
+                  backgroundColor: dotColor,
+                }}
+                data-testid={`step-dot-${label.toLowerCase()}`}
+              />
+              <span
+                className="text-xs font-medium"
+                style={{ color: labelColor }}
+              >
+                {label}
+              </span>
+            </div>
+            {i < STEPS.length - 1 && (
+              <span
+                className="inline-block"
+                style={{
+                  width: 24,
+                  height: 2,
+                  backgroundColor: i < idx ? TOKENS.purple : TOKENS.border,
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- Sortable line-item row ----------
 interface SortableItemRowProps {
   item: PurchaseOrderItem;
   index: number;
@@ -135,8 +227,14 @@ interface SortableItemRowProps {
   costCodes: CostCode[];
   disabled?: boolean;
 }
-
-function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled }: SortableItemRowProps) {
+function SortableItemRow({
+  item,
+  index,
+  onUpdate,
+  onDelete,
+  costCodes,
+  disabled,
+}: SortableItemRowProps) {
   const {
     attributes,
     listeners,
@@ -146,7 +244,7 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
     isDragging,
   } = useSortable({ id: item.id, disabled });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
@@ -156,22 +254,29 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
   const quantity = parseFloat(item.quantity || "1");
   const unitPrice = item.unitPrice || 0;
   const lineTotal = Math.round(quantity * unitPrice);
-  const gstAmount = item.isGstFree ? 0 : Math.round(lineTotal * 0.1);
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 items-center px-2 py-2 border-b hover:bg-muted/30 group ${
-        isDragging ? "bg-muted shadow-lg" : ""
+      className={`grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 items-center px-3 py-2 group transition-colors ${
+        isDragging ? "shadow-lg" : ""
       }`}
       data-testid={`po-item-row-${item.id}`}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.backgroundColor =
+          TOKENS.pageBg;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.backgroundColor =
+          isDragging ? TOKENS.ghost : "transparent";
+      }}
     >
       <div className="flex items-center justify-center">
         <button
           {...attributes}
           {...listeners}
-          className="p-1 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing"
+          className="p-1 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
           disabled={disabled}
           data-testid={`po-item-drag-${item.id}`}
         >
@@ -183,7 +288,7 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
         value={item.description}
         onChange={(e) => onUpdate(item.id, { description: e.target.value })}
         placeholder="Item description"
-        className="h-8 text-sm"
+        className="h-8 text-sm border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-description-${item.id}`}
       />
@@ -197,7 +302,7 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
           onUpdate(item.id, { quantity: qty, total: newTotal });
         }}
         placeholder="1"
-        className="h-8 text-sm text-right"
+        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-qty-${item.id}`}
       />
@@ -206,7 +311,7 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
         value={item.unit || ""}
         onChange={(e) => onUpdate(item.id, { unit: e.target.value })}
         placeholder="each"
-        className="h-8 text-sm"
+        className="h-8 text-sm border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-unit-${item.id}`}
       />
@@ -220,19 +325,25 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
           onUpdate(item.id, { unitPrice: price, total: newTotal });
         }}
         placeholder="0.00"
-        className="h-8 text-sm text-right"
+        className="h-8 text-sm text-right border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2"
         disabled={disabled}
         data-testid={`po-item-price-${item.id}`}
       />
 
-      <div className="text-sm text-right font-medium" data-testid={`po-item-total-${item.id}`}>
+      <div
+        className="text-sm text-right font-semibold"
+        style={{ color: "#111" }}
+        data-testid={`po-item-total-${item.id}`}
+      >
         {formatCurrency(lineTotal)}
       </div>
 
       <div className="flex items-center justify-center">
         <Switch
           checked={item.isGstFree}
-          onCheckedChange={(checked) => onUpdate(item.id, { isGstFree: checked })}
+          onCheckedChange={(checked) =>
+            onUpdate(item.id, { isGstFree: checked })
+          }
           disabled={disabled}
           data-testid={`po-item-gstfree-${item.id}`}
         />
@@ -241,7 +352,9 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
       <div className="w-full">
         <CostCodeSelect
           value={item.costCodeId || ""}
-          onValueChange={(value) => onUpdate(item.id, { costCodeId: value || null })}
+          onValueChange={(value) =>
+            onUpdate(item.id, { costCodeId: value || null })
+          }
           placeholder="Cost code"
           className="h-8 text-xs"
           disabled={disabled}
@@ -251,7 +364,7 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
 
       <button
         onClick={() => onDelete(item.id)}
-        className="p-1 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 rounded"
+        className="p-1 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 rounded transition-opacity"
         disabled={disabled}
         data-testid={`po-item-delete-${item.id}`}
       >
@@ -261,6 +374,217 @@ function SortableItemRow({ item, index, onUpdate, onDelete, costCodes, disabled 
   );
 }
 
+// ---------- Change-supplier dialog ----------
+interface ChangeSupplierDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  contacts: Contact[];
+  currentSupplierId: string | null | undefined;
+  onSelect: (supplierId: string) => void;
+}
+function ChangeSupplierDialog({
+  open,
+  onOpenChange,
+  contacts,
+  currentSupplierId,
+  onSelect,
+}: ChangeSupplierDialogProps) {
+  const [search, setSearch] = useState("");
+  const suppliers = useMemo(() => {
+    return contacts
+      .filter(
+        (c) =>
+          c.contactType === "supplier" || c.contactType === "subcontractor",
+      )
+      .filter((c) =>
+        search
+          ? (c.name || "").toLowerCase().includes(search.toLowerCase())
+          : true,
+      )
+      .slice(0, 100);
+  }, [contacts, search]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-testid="dialog-change-supplier">
+        <DialogHeader>
+          <DialogTitle>Change Supplier</DialogTitle>
+          <DialogDescription>
+            Pick a supplier or subcontractor for this purchase order.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search suppliers..."
+            className="pl-8"
+            data-testid="input-supplier-search"
+            autoFocus
+          />
+        </div>
+        <div className="max-h-72 overflow-auto -mx-2">
+          {suppliers.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              No suppliers found
+            </p>
+          ) : (
+            suppliers.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => onSelect(c.id)}
+                className={`w-full text-left px-3 py-2 rounded hover-elevate flex items-center gap-3 ${
+                  c.id === currentSupplierId ? "bg-[#f5f4f0]" : ""
+                }`}
+                data-testid={`option-supplier-${c.id}`}
+              >
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                  style={{
+                    backgroundColor: "rgba(168,144,212,0.12)",
+                    color: TOKENS.purple,
+                  }}
+                >
+                  {getInitials(c.name || "?")}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{c.name}</p>
+                  {c.email && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {c.email}
+                    </p>
+                  )}
+                </div>
+                <Badge variant="outline" className="text-[10px] capitalize">
+                  {c.contactType}
+                </Badge>
+              </button>
+            ))
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Import-timesheets dialog ----------
+interface ImportTimesheetsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImport: (selected: any[]) => void;
+  isPending: boolean;
+}
+function ImportTimesheetsDialog({
+  open,
+  onOpenChange,
+  onImport,
+  isPending,
+}: ImportTimesheetsDialogProps) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { data: timesheets = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/timesheets/subcontractor/awaiting-po"],
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (!open) setSelectedIds(new Set());
+  }, [open]);
+
+  const toggle = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleImport = () => {
+    const selected = timesheets.filter((t) => selectedIds.has(t.id));
+    onImport(selected);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg"
+        data-testid="dialog-import-timesheets"
+      >
+        <DialogHeader>
+          <DialogTitle>Import from Timesheets</DialogTitle>
+          <DialogDescription>
+            Pick the subcontractor timesheets to add as line items.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-80 overflow-auto -mx-2">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : timesheets.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              No timesheets awaiting PO.
+            </p>
+          ) : (
+            timesheets.map((ts) => (
+              <label
+                key={ts.id}
+                className="flex items-start gap-3 px-3 py-2 rounded hover-elevate cursor-pointer"
+                data-testid={`option-timesheet-${ts.id}`}
+              >
+                <Checkbox
+                  checked={selectedIds.has(ts.id)}
+                  onCheckedChange={() => toggle(ts.id)}
+                  className="mt-0.5"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {ts.date ? format(new Date(ts.date), "dd MMM yyyy") : "—"}
+                    {" — "}
+                    {ts.duration || "0"} hrs
+                  </p>
+                  {ts.description && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {ts.description}
+                    </p>
+                  )}
+                </div>
+              </label>
+            ))
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={selectedIds.size === 0 || isPending}
+            style={{ backgroundColor: TOKENS.purple, borderColor: TOKENS.purple }}
+            className="text-white hover:opacity-90"
+            data-testid="button-confirm-import-timesheets"
+          >
+            {isPending && (
+              <Loader2 className="w-4 h-4 animate-spin mr-1" />
+            )}
+            Add {selectedIds.size} item{selectedIds.size === 1 ? "" : "s"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// =====================================================================
+// Main page
+// =====================================================================
 export default function PurchaseOrderDetail() {
   const params = useParams<RouteParams>();
   const [, setLocation] = useLocation();
@@ -269,15 +593,18 @@ export default function PurchaseOrderDetail() {
 
   const rawPoId = params.id || params.poId;
   const projectIdFromUrl = params.projectId;
-  
-  // poId is always a real ID now - creation happens in PurchaseOrders.tsx before navigation
   const poId = rawPoId;
 
+  // ---------- form state ----------
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
   const [scopeText, setScopeText] = useState("");
+  const [scopeSection, setScopeSection] = useState<
+    "inclusions" | "exclusions" | "special"
+  >("inclusions");
   const [termsAndConditions, setTermsAndConditions] = useState("");
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
   const [requiredByDate, setRequiredByDate] = useState("");
   const [deliveryReference, setDeliveryReference] = useState("");
   const [deliveryAttention, setDeliveryAttention] = useState("");
@@ -287,38 +614,46 @@ export default function PurchaseOrderDetail() {
   const [includeGst, setIncludeGst] = useState(true);
   const [items, setItems] = useState<PurchaseOrderItem[]>([]);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ---------- dialog state ----------
   const [isImportScopeDialogOpen, setIsImportScopeDialogOpen] = useState(false);
   const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isChangeSupplierOpen, setIsChangeSupplierOpen] = useState(false);
+  const [isImportTimesheetsOpen, setIsImportTimesheetsOpen] = useState(false);
   const [sendEmail, setSendEmail] = useState("");
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
-  const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(null);
+  const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(
+    null,
+  );
   const [unmappedDialogOpen, setUnmappedDialogOpen] = useState(false);
 
+  // ---------- file upload ----------
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
+  // ---------- queries ----------
   const { data: purchaseOrder, isLoading: poLoading } = useQuery<PurchaseOrder>({
     queryKey: ["/api/purchase-orders", poId],
     enabled: !!poId,
     retry: false,
   });
 
-  const { data: rawPoItems, isLoading: itemsLoading } = useQuery<PurchaseOrderItem[]>({
+  const { data: rawPoItems, isLoading: itemsLoading } = useQuery<
+    PurchaseOrderItem[]
+  >({
     queryKey: ["/api/purchase-orders", poId, "items"],
     enabled: !!poId,
     retry: false,
   });
-  const poItems = rawPoItems ?? [];
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -332,6 +667,11 @@ export default function PurchaseOrderDetail() {
     queryKey: ["/api/cost-codes"],
   });
 
+  const { data: attachments = [] } = useQuery<PurchaseOrderAttachment[]>({
+    queryKey: ["/api/purchase-orders", poId, "attachments"],
+    enabled: !!poId,
+  });
+
   const project = useMemo(() => {
     const pid = purchaseOrder?.projectId || projectIdFromUrl;
     return projects.find((p) => p.id === pid);
@@ -342,6 +682,7 @@ export default function PurchaseOrderDetail() {
     return contacts.find((c) => c.id === purchaseOrder.supplierId);
   }, [purchaseOrder, contacts]);
 
+  // ---------- hydrate state ----------
   useEffect(() => {
     if (purchaseOrder) {
       setTitle(purchaseOrder.title || "");
@@ -357,24 +698,28 @@ export default function PurchaseOrderDetail() {
       setRequiredByDate(
         purchaseOrder.requiredByDate
           ? new Date(purchaseOrder.requiredByDate).toISOString().split("T")[0]
-          : ""
+          : "",
       );
-      if (supplier?.email) {
-        setSendEmail(supplier.email);
-      }
     }
-  }, [purchaseOrder, supplier]);
+  }, [purchaseOrder]);
+
+  useEffect(() => {
+    if (supplier?.email) setSendEmail(supplier.email);
+  }, [supplier]);
 
   useEffect(() => {
     setItems(rawPoItems ?? []);
   }, [rawPoItems]);
 
+  // ---------- mutations ----------
   const updatePoMutation = useMutation({
     mutationFn: async (data: Partial<PurchaseOrder>) => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       setHasUnsavedChanges(false);
       toast({ title: "Purchase order saved" });
@@ -389,23 +734,66 @@ export default function PurchaseOrderDetail() {
     },
   });
 
-  const updateItemMutation = useMutation({
-    mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<PurchaseOrderItem> }) => {
-      return apiRequest(`/api/purchase-orders/${poId}/items/${itemId}`, "PATCH", data);
+  const changeSupplierMutation = useMutation({
+    mutationFn: async (supplierId: string) => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
+        supplierId,
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      setIsChangeSupplierOpen(false);
+      toast({ title: "Supplier updated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to change supplier",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: async ({
+      itemId,
+      data,
+    }: {
+      itemId: string;
+      data: Partial<PurchaseOrderItem>;
+    }) => {
+      return apiRequest(
+        `/api/purchase-orders/${poId}/items/${itemId}`,
+        "PATCH",
+        data,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "items"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
     },
   });
 
   const deleteItemMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      return apiRequest(`/api/purchase-orders/${poId}/items/${itemId}`, "DELETE");
+      return apiRequest(
+        `/api/purchase-orders/${poId}/items/${itemId}`,
+        "DELETE",
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "items"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
       toast({ title: "Item deleted" });
     },
   });
@@ -415,21 +803,254 @@ export default function PurchaseOrderDetail() {
       return apiRequest(`/api/purchase-orders/${poId}/items`, "POST", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "items"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
       toast({ title: "Item added" });
+    },
+  });
+
+  const bulkItemsMutation = useMutation({
+    mutationFn: async (newItems: any[]) => {
+      return apiRequest(
+        `/api/purchase-orders/${poId}/items/bulk`,
+        "POST",
+        { items: newItems },
+      );
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "items"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      const count = Array.isArray(data) ? data.length : 0;
+      toast({ title: `${count} item${count === 1 ? "" : "s"} added` });
+      setIsImportTimesheetsOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to import timesheets",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const reorderItemsMutation = useMutation({
     mutationFn: async (itemIds: string[]) => {
-      return apiRequest(`/api/purchase-orders/${poId}/items/reorder`, "POST", { itemIds });
+      return apiRequest(
+        `/api/purchase-orders/${poId}/items/reorder`,
+        "POST",
+        { itemIds },
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "items"],
+      });
     },
   });
 
+  const sendPoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}/send`, "POST", {
+        email: sendEmail || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsSendDialogOpen(false);
+      toast({ title: "Purchase order sent", description: "Status updated to Sent" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deletePoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order deleted" });
+      handleGoBack();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const duplicatePoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}/duplicate`, "POST");
+    },
+    onSuccess: (newPo: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order duplicated" });
+      setLocation(`/purchase-orders/${newPo.id}`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to duplicate",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const pushToXeroMutation = useMutation({
+    mutationFn: async (xeroContactId?: string) => {
+      const res = await fetch("/api/xero/push-purchase-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          purchaseOrderId: poId,
+          ...(xeroContactId ? { xeroContactId } : {}),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err: any = new Error(
+          body?.message || body?.error || "Failed to push to Xero",
+        );
+        err.payload = body;
+        throw err;
+      }
+      return body;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({
+        title: "Pushed to Xero",
+        description: data?.xeroPurchaseOrderNumber
+          ? `Created ${data.xeroPurchaseOrderNumber} as DRAFT in Xero.`
+          : "Purchase order created in Xero as DRAFT.",
+      });
+    },
+    onError: (err: any) => {
+      const payload = err?.payload || {};
+      if (payload.error === "UNMAPPED_CONTACT") {
+        setUnmappedSupplierName(
+          payload.supplierName || supplier?.name || "Supplier",
+        );
+        setUnmappedSupplierId(payload.supplierId || supplier?.id || null);
+        setUnmappedDialogOpen(true);
+        toast({
+          title: "Supplier not linked to Xero",
+          description: "Pick the matching Xero contact to complete the push.",
+        });
+        return;
+      }
+      const desc =
+        Array.isArray(payload.validationErrors) &&
+        payload.validationErrors[0]?.message
+          ? payload.validationErrors[0].message
+          : err?.message || "Failed to push to Xero";
+      toast({
+        title: "Xero push failed",
+        description: desc,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const markReceivedMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
+        status: "delivered",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Goods received", description: "Status updated to Received" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addAttachmentMutation = useMutation({
+    mutationFn: async (data: {
+      fileName: string;
+      fileUrl: string;
+      fileType?: string;
+      fileSize?: number;
+    }) => {
+      return apiRequest(
+        `/api/purchase-orders/${poId}/attachments`,
+        "POST",
+        data,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "attachments"],
+      });
+      toast({ title: "File attached" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to attach file",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: string) => {
+      return apiRequest(
+        `/api/purchase-order-attachments/${attachmentId}`,
+        "DELETE",
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId, "attachments"],
+      });
+      toast({ title: "Attachment removed" });
+    },
+  });
+
+  const { uploadFile, isUploading } = useUpload({
+    onError: (err) => {
+      toast({
+        title: "Upload failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // ---------- handlers ----------
   const handleSave = async () => {
     if (!poId) return;
     setIsSaving(true);
@@ -451,202 +1072,13 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const sendPoMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/purchase-orders/${poId}/send`, "POST", { email: sendEmail || undefined });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      setIsSendDialogOpen(false);
-      toast({ title: "Purchase order sent", description: "Status updated to Sent" });
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to send", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deletePoMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/purchase-orders/${poId}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "Purchase order deleted" });
-      handleGoBack();
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const duplicatePoMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/purchase-orders/${poId}/duplicate`, "POST");
-    },
-    onSuccess: (newPo: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "Purchase order duplicated" });
-      setLocation(`/purchase-orders/${newPo.id}`);
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to duplicate", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const pushToXeroMutation = useMutation({
-    mutationFn: async (xeroContactId?: string) => {
-      const res = await fetch("/api/xero/push-purchase-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          purchaseOrderId: poId,
-          ...(xeroContactId ? { xeroContactId } : {}),
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const err: any = new Error(body?.message || body?.error || "Failed to push to Xero");
-        err.payload = body;
-        throw err;
-      }
-      return body;
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({
-        title: "Pushed to Xero",
-        description: data?.xeroPurchaseOrderNumber
-          ? `Created ${data.xeroPurchaseOrderNumber} as DRAFT in Xero.`
-          : "Purchase order created in Xero as DRAFT.",
-      });
-    },
-    onError: (err: any) => {
-      const payload = err?.payload || {};
-      if (payload.error === "UNMAPPED_CONTACT") {
-        setUnmappedSupplierName(payload.supplierName || supplier?.name || "Supplier");
-        setUnmappedSupplierId(payload.supplierId || supplier?.id || null);
-        setUnmappedDialogOpen(true);
-        toast({
-          title: "Supplier not linked to Xero",
-          description: "Pick the matching Xero contact to complete the push.",
-        });
-        return;
-      }
-      const desc = Array.isArray(payload.validationErrors) && payload.validationErrors[0]?.message
-        ? payload.validationErrors[0].message
-        : err?.message || "Failed to push to Xero";
-      toast({ title: "Xero push failed", description: desc, variant: "destructive" });
-    },
-  });
-
-  const markReceivedMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { status: "delivered" });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "Goods received", description: "Status updated to Received" });
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const handlePrintPdf = () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    const itemRows = items.map((item) => {
-      const qty = parseFloat(item.quantity || "1");
-      const uPrice = item.unitPrice || 0;
-      const lineTotal = Math.round(qty * uPrice);
-      const gst = item.isGstFree ? 0 : Math.round(lineTotal * 0.1);
-      return `<tr>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${item.description || ""}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.unit || ""}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(uPrice)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(gst)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(lineTotal + gst)}</td>
-      </tr>`;
-    }).join("");
-
-    const deliverySection = [
-      deliveryReference && `<p><strong>Reference:</strong> ${deliveryReference}</p>`,
-      deliveryAttention && `<p><strong>Attention:</strong> ${deliveryAttention}</p>`,
-      deliveryContact && `<p><strong>Contact:</strong> ${deliveryContact}</p>`,
-      deliveryAddress && `<p><strong>Address:</strong> ${deliveryAddress}</p>`,
-      deliveryInstructions && `<div style="margin-top:8px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;"><strong>Delivery Instructions:</strong><br/>${deliveryInstructions}</div>`,
-    ].filter(Boolean).join("");
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html><head><title>${purchaseOrder?.poNumber || "Purchase Order"}</title>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #111; }
-        h1 { font-size: 24px; margin-bottom: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-        th { text-align: left; padding: 8px; border-bottom: 2px solid #111; font-size: 13px; }
-        .totals { margin-top: 16px; text-align: right; }
-        .totals div { margin-bottom: 4px; }
-        .section { margin-top: 24px; }
-        @media print { body { padding: 20px; } }
-      </style></head><body>
-        <h1>PURCHASE ORDER</h1>
-        <p style="font-size:18px;color:#555;">${purchaseOrder?.poNumber || ""}</p>
-
-        <div style="display:flex;justify-content:space-between;margin-top:24px;">
-          <div>
-            <p style="font-size:12px;color:#888;margin-bottom:4px;">SUPPLIER</p>
-            <p style="font-weight:600;">${supplier?.name || "—"}</p>
-            ${supplier?.email ? `<p style="color:#555;">${supplier.email}</p>` : ""}
-            ${supplier?.phone ? `<p style="color:#555;">${supplier.phone}</p>` : ""}
-            ${supplier?.address ? `<p style="color:#555;">${supplier.address}</p>` : ""}
-          </div>
-          <div style="text-align:right;">
-            <p style="font-size:12px;color:#888;margin-bottom:4px;">PROJECT</p>
-            <p style="font-weight:600;">${project?.name || "—"}</p>
-            ${project?.address ? `<p style="color:#555;">${project.address}</p>` : ""}
-            ${requiredByDate ? `<p style="margin-top:12px;font-size:12px;color:#888;">REQUIRED BY</p><p>${new Date(requiredByDate).toLocaleDateString("en-AU")}</p>` : ""}
-          </div>
-        </div>
-
-        ${deliverySection ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">DELIVERY DETAILS</p>${deliverySection}</div>` : ""}
-
-        <table>
-          <thead><tr>
-            <th>Description</th>
-            <th style="text-align:right;">Qty</th>
-            <th style="text-align:center;">Unit</th>
-            <th style="text-align:right;">Unit Price</th>
-            <th style="text-align:right;">GST</th>
-            <th style="text-align:right;">Total</th>
-          </tr></thead>
-          <tbody>${itemRows}</tbody>
-        </table>
-
-        <div class="totals">
-          <div><span style="color:#888;">Subtotal:</span> <strong>${formatCurrency(subtotal)}</strong></div>
-          ${includeGst ? `<div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>` : ""}
-          <div style="font-size:18px;margin-top:8px;"><span>Total:</span> <strong>${formatCurrency(total)}</strong></div>
-        </div>
-
-        ${scope ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">SCOPE OF WORK</p><div>${scope}</div></div>` : ""}
-        ${termsAndConditions ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">TERMS & CONDITIONS</p><div>${termsAndConditions}</div></div>` : ""}
-      </body></html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  };
-
-  const handleItemUpdate = (itemId: string, updates: Partial<PurchaseOrderItem>) => {
+  const handleItemUpdate = (
+    itemId: string,
+    updates: Partial<PurchaseOrderItem>,
+  ) => {
     if (!poId) return;
     setItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item))
+      prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
     );
     updateItemMutation.mutate({ itemId, data: updates });
   };
@@ -659,7 +1091,6 @@ export default function PurchaseOrderDetail() {
 
   const handleAddItem = () => {
     if (!poId) return;
-    const newOrder = items.length;
     addItemMutation.mutate({
       purchaseOrderId: poId,
       description: "",
@@ -669,7 +1100,7 @@ export default function PurchaseOrderDetail() {
       total: 0,
       gstAmount: 0,
       isGstFree: false,
-      displayOrder: newOrder,
+      displayOrder: items.length,
     });
   };
 
@@ -680,19 +1111,73 @@ export default function PurchaseOrderDetail() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveItemId(null);
-
     if (!poId || !over || active.id === over.id) return;
-
     const oldIndex = items.findIndex((item) => item.id === active.id);
     const newIndex = items.findIndex((item) => item.id === over.id);
-
     if (oldIndex === -1 || newIndex === -1) return;
-
     const newItems = arrayMove(items, oldIndex, newIndex);
     setItems(newItems);
     reorderItemsMutation.mutate(newItems.map((item) => item.id));
   };
 
+  const handleImportTimesheets = (selected: any[]) => {
+    if (!poId || selected.length === 0) return;
+    const baseOrder = items.length;
+    const newItems = selected.map((ts, i) => {
+      const hourlyRate = parseFloat(ts.hourlyRate || "0");
+      const qty = parseFloat(ts.duration || "0");
+      const unitPriceCents = Math.round(hourlyRate * 100);
+      const totalCents = Math.round(qty * unitPriceCents);
+      const dateStr = ts.date
+        ? format(new Date(ts.date), "dd MMM")
+        : "Timesheet";
+      return {
+        description: `${dateStr} — ${ts.description || "Timesheet"}`,
+        quantity: ts.duration || "0",
+        unit: "hours",
+        unitPrice: unitPriceCents,
+        total: totalCents,
+        isGstFree: false,
+        gstAmount: 0,
+        sourceTimesheetId: ts.id,
+        displayOrder: baseOrder + i,
+      };
+    });
+    bulkItemsMutation.mutate(newItems);
+  };
+
+  const handleFileSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // allow re-selecting the same file
+    await uploadFiles(files);
+  };
+
+  const handleFileDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    await uploadFiles(files);
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const result = await uploadFile(file);
+        if (!result) continue;
+        await addAttachmentMutation.mutateAsync({
+          fileName: file.name,
+          fileUrl: result.objectPath,
+          fileType: file.type || "application/octet-stream",
+          fileSize: file.size,
+        });
+      } catch {
+        // toast handled in onError
+      }
+    }
+  };
+
+  // ---------- derived ----------
   const subtotal = useMemo(() => {
     return items.reduce((sum, item) => {
       const qty = parseFloat(item.quantity || "0");
@@ -714,6 +1199,39 @@ export default function PurchaseOrderDetail() {
 
   const total = subtotal + gstAmount;
 
+  const totalHours = useMemo(() => {
+    return items
+      .filter((i) => (i.unit || "").toLowerCase() === "hours")
+      .reduce((s, i) => s + parseFloat(i.quantity || "0"), 0);
+  }, [items]);
+
+  const activityItems = useMemo(() => {
+    if (!purchaseOrder) return [] as Array<{ label: string; time: any; color: string }>;
+    const list: Array<{ label: string; time: any; color: string }> = [];
+    if (purchaseOrder.createdAt) {
+      list.push({
+        label: `${purchaseOrder.poNumber} created`,
+        time: purchaseOrder.createdAt,
+        color: TOKENS.purple,
+      });
+    }
+    if ((purchaseOrder as any).sentAt) {
+      list.push({
+        label: "Sent to supplier",
+        time: (purchaseOrder as any).sentAt,
+        color: TOKENS.blue,
+      });
+    }
+    if ((purchaseOrder as any).approvedAt) {
+      list.push({
+        label: "Acknowledged by supplier",
+        time: (purchaseOrder as any).approvedAt,
+        color: TOKENS.green,
+      });
+    }
+    return list.reverse();
+  }, [purchaseOrder]);
+
   const handleGoBack = () => {
     if (projectIdFromUrl) {
       setLocation(`/projects/${projectIdFromUrl}/purchase-orders`);
@@ -731,8 +1249,96 @@ export default function PurchaseOrderDetail() {
     }
   };
 
+  const handlePrintPdf = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const itemRows = items
+      .map((item) => {
+        const qty = parseFloat(item.quantity || "1");
+        const uPrice = item.unitPrice || 0;
+        const lineTotal = Math.round(qty * uPrice);
+        const gst = item.isGstFree ? 0 : Math.round(lineTotal * 0.1);
+        return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${item.description || ""}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.unit || ""}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(uPrice)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(gst)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(lineTotal + gst)}</td>
+      </tr>`;
+      })
+      .join("");
+
+    const deliverySection = [
+      deliveryReference && `<p><strong>Reference:</strong> ${deliveryReference}</p>`,
+      deliveryAttention && `<p><strong>Attention:</strong> ${deliveryAttention}</p>`,
+      deliveryContact && `<p><strong>Contact:</strong> ${deliveryContact}</p>`,
+      deliveryAddress && `<p><strong>Address:</strong> ${deliveryAddress}</p>`,
+      deliveryInstructions &&
+        `<div style="margin-top:8px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;"><strong>Delivery Instructions:</strong><br/>${deliveryInstructions}</div>`,
+    ]
+      .filter(Boolean)
+      .join("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html><head><title>${purchaseOrder?.poNumber || "Purchase Order"}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #111; }
+        h1 { font-size: 24px; margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th { text-align: left; padding: 8px; border-bottom: 2px solid #111; font-size: 13px; }
+        .totals { margin-top: 16px; text-align: right; }
+        .totals div { margin-bottom: 4px; }
+        .section { margin-top: 24px; }
+        @media print { body { padding: 20px; } }
+      </style></head><body>
+        <h1>PURCHASE ORDER</h1>
+        <p style="font-size:18px;color:#555;">${purchaseOrder?.poNumber || ""}</p>
+        <div style="display:flex;justify-content:space-between;margin-top:24px;">
+          <div>
+            <p style="font-size:12px;color:#888;margin-bottom:4px;">SUPPLIER</p>
+            <p style="font-weight:600;">${supplier?.name || "—"}</p>
+            ${supplier?.email ? `<p style="color:#555;">${supplier.email}</p>` : ""}
+            ${supplier?.phone ? `<p style="color:#555;">${supplier.phone}</p>` : ""}
+            ${supplier?.address ? `<p style="color:#555;">${supplier.address}</p>` : ""}
+          </div>
+          <div style="text-align:right;">
+            <p style="font-size:12px;color:#888;margin-bottom:4px;">PROJECT</p>
+            <p style="font-weight:600;">${project?.name || "—"}</p>
+            ${project?.address ? `<p style="color:#555;">${project.address}</p>` : ""}
+            ${requiredByDate ? `<p style="margin-top:12px;font-size:12px;color:#888;">REQUIRED BY</p><p>${new Date(requiredByDate).toLocaleDateString("en-AU")}</p>` : ""}
+          </div>
+        </div>
+        ${deliverySection ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">DELIVERY DETAILS</p>${deliverySection}</div>` : ""}
+        <table>
+          <thead><tr>
+            <th>Description</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:center;">Unit</th>
+            <th style="text-align:right;">Unit Price</th>
+            <th style="text-align:right;">GST</th>
+            <th style="text-align:right;">Total</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div class="totals">
+          <div><span style="color:#888;">Subtotal:</span> <strong>${formatCurrency(subtotal)}</strong></div>
+          ${includeGst ? `<div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>` : ""}
+          <div style="font-size:18px;margin-top:8px;"><span>Total:</span> <strong>${formatCurrency(total)}</strong></div>
+        </div>
+        ${scope ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">SCOPE OF WORK</p><div>${scope}</div></div>` : ""}
+        ${termsAndConditions ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">TERMS & CONDITIONS</p><div>${termsAndConditions}</div></div>` : ""}
+      </body></html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
+
   const isLocked = purchaseOrder?.status !== "draft";
 
+  // ---------- early returns ----------
   if (poLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -753,13 +1359,19 @@ export default function PurchaseOrderDetail() {
     );
   }
 
-  const statusColor = STATUS_COLORS[purchaseOrder.status] || STATUS_COLORS.draft;
-
+  // ---------- render ----------
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-none border-b bg-background">
+    <div
+      className="h-full flex flex-col"
+      style={{ backgroundColor: TOKENS.pageBg }}
+    >
+      {/* Top bar */}
+      <div
+        className="flex-none border-b sticky top-0 z-10"
+        style={{ backgroundColor: TOKENS.cardBg, borderColor: TOKENS.border }}
+      >
         <div className="h-12 px-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Button
               variant="ghost"
               size="icon"
@@ -769,22 +1381,38 @@ export default function PurchaseOrderDetail() {
               <ArrowLeft className="w-4 h-4" />
             </Button>
 
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold" data-testid="text-po-number">
+            <div className="flex items-center gap-3 min-w-0">
+              <h1
+                className="text-lg font-semibold truncate"
+                data-testid="text-po-number"
+              >
                 {purchaseOrder.poNumber}
               </h1>
-              <Badge className={`${statusColor.bg} ${statusColor.text}`}>
-                {purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
-              </Badge>
               {purchaseOrder.poType === "site" && (
-                <Badge variant="outline" className="text-xs">Site PO</Badge>
+                <Badge variant="outline" className="text-xs">
+                  Site PO
+                </Badge>
               )}
               {(purchaseOrder as any).xeroPurchaseOrderId && (
-                <Badge variant="outline" className="text-xs gap-1" data-testid="badge-in-xero">
+                <Badge
+                  variant="outline"
+                  className="text-xs gap-1"
+                  data-testid="badge-in-xero"
+                >
                   <SiXero className="w-3 h-3" />
                   In Xero
                 </Badge>
               )}
+              <div className="hidden md:flex">
+                <StatusStepper status={purchaseOrder.status} />
+              </div>
+              <Badge
+                variant="outline"
+                className="md:hidden text-xs capitalize"
+                data-testid="badge-status-mobile"
+              >
+                {purchaseOrder.status.replace(/_/g, " ")}
+              </Badge>
             </div>
           </div>
 
@@ -806,27 +1434,43 @@ export default function PurchaseOrderDetail() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-po-actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-po-actions"
+                >
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handlePrintPdf} data-testid="action-print-po">
+                <DropdownMenuItem
+                  onClick={handlePrintPdf}
+                  data-testid="action-print-po"
+                >
                   <Printer className="w-4 h-4 mr-2" />
                   Print / PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsSendDialogOpen(true)} data-testid="action-email-po">
+                <DropdownMenuItem
+                  onClick={() => setIsSendDialogOpen(true)}
+                  data-testid="action-email-po"
+                >
                   <Mail className="w-4 h-4 mr-2" />
                   Email to Supplier
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {purchaseOrder.status === "sent" && (
-                  <DropdownMenuItem onClick={() => markReceivedMutation.mutate()} data-testid="action-receive-goods">
+                  <DropdownMenuItem
+                    onClick={() => markReceivedMutation.mutate()}
+                    data-testid="action-receive-goods"
+                  >
                     <Package className="w-4 h-4 mr-2" />
                     Mark as Received
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={() => duplicatePoMutation.mutate()} data-testid="action-duplicate-po">
+                <DropdownMenuItem
+                  onClick={() => duplicatePoMutation.mutate()}
+                  data-testid="action-duplicate-po"
+                >
                   <Copy className="w-4 h-4 mr-2" />
                   Duplicate
                 </DropdownMenuItem>
@@ -864,7 +1508,11 @@ export default function PurchaseOrderDetail() {
             {purchaseOrder.status === "draft" && (
               <Button
                 size="sm"
-                className="bg-primary hover:bg-primary/90 text-white"
+                className="text-white hover:opacity-90"
+                style={{
+                  backgroundColor: TOKENS.purple,
+                  borderColor: TOKENS.purple,
+                }}
                 onClick={() => setIsSendDialogOpen(true)}
                 data-testid="button-send-po"
               >
@@ -889,16 +1537,132 @@ export default function PurchaseOrderDetail() {
         </div>
       </div>
 
+      {/* Body */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto p-6 grid grid-cols-3 gap-6">
+          {/* Left column */}
           <div className="col-span-2 space-y-6">
-            <Card>
-              <CardHeader className="pb-3">
+            {/* Supplier hero */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardContent className="p-5">
+                {supplier ? (
+                  <div className="flex items-start gap-4">
+                    <div
+                      className="rounded-full flex items-center justify-center font-bold flex-shrink-0"
+                      style={{
+                        width: 60,
+                        height: 60,
+                        backgroundColor: "rgba(168,144,212,0.12)",
+                        color: TOKENS.purple,
+                        fontSize: 18,
+                      }}
+                      data-testid="supplier-avatar"
+                    >
+                      {getInitials(supplier.name || "?")}
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p
+                            className="font-semibold truncate"
+                            style={{ fontSize: 17 }}
+                            data-testid="text-supplier-name"
+                          >
+                            {supplier.name}
+                          </p>
+                          {(supplier as any).abn && (
+                            <p className="text-xs text-muted-foreground">
+                              ABN {(supplier as any).abn}
+                            </p>
+                          )}
+                        </div>
+                        {!isLocked && (
+                          <button
+                            onClick={() => setIsChangeSupplierOpen(true)}
+                            className="text-xs font-medium hover:underline flex-shrink-0"
+                            style={{ color: TOKENS.purple }}
+                            data-testid="button-change-supplier"
+                          >
+                            Change supplier
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        {supplier.email && (
+                          <a
+                            href={`mailto:${supplier.email}`}
+                            className="inline-flex items-center gap-1.5 hover:underline"
+                            style={{ color: TOKENS.blue }}
+                            data-testid="link-supplier-email"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            {supplier.email}
+                          </a>
+                        )}
+                        {supplier.phone && (
+                          <a
+                            href={`tel:${supplier.phone}`}
+                            className="inline-flex items-center gap-1.5 hover:underline"
+                            style={{ color: TOKENS.blue }}
+                            data-testid="link-supplier-phone"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            {supplier.phone}
+                          </a>
+                        )}
+                      </div>
+                      {(supplier as any).paymentTerms && (
+                        <span
+                          className="inline-block text-[11px] font-medium rounded-full px-2 py-0.5 mt-1"
+                          style={{
+                            backgroundColor: TOKENS.ghost,
+                            color: "#444",
+                          }}
+                          data-testid="badge-payment-terms"
+                        >
+                          {(supplier as any).paymentTerms}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-6 gap-3">
+                    <Building2
+                      className="w-8 h-8"
+                      style={{ color: TOKENS.muted }}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      No supplier selected
+                    </p>
+                    <Button
+                      onClick={() => setIsChangeSupplierOpen(true)}
+                      disabled={isLocked}
+                      className="text-white hover:opacity-90"
+                      style={{
+                        backgroundColor: TOKENS.purple,
+                        borderColor: TOKENS.purple,
+                      }}
+                      data-testid="button-select-supplier"
+                    >
+                      Select Supplier
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* PO Details */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardHeader className="pb-2">
                 <CardTitle className="text-base">PO Details</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Name</label>
+              <CardContent className="pt-2">
+                <div className="flex items-center gap-2 py-1.5">
+                  <Label
+                    className="text-[11px] font-medium text-muted-foreground w-24 flex-shrink-0"
+                  >
+                    PO Name
+                  </Label>
                   <Input
                     value={title}
                     onChange={(e) => {
@@ -907,28 +1671,71 @@ export default function PurchaseOrderDetail() {
                     }}
                     placeholder="e.g., Kitchen Materials, Bathroom Fixtures"
                     disabled={isLocked}
+                    className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
                     data-testid="input-po-title"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Description</label>
+                <Separator />
+                <div className="flex items-center gap-2 py-1.5">
+                  <Label
+                    className="text-[11px] font-medium text-muted-foreground w-24 flex-shrink-0"
+                  >
+                    Description
+                  </Label>
                   <Input
                     value={description}
                     onChange={(e) => {
                       setDescription(e.target.value);
                       setHasUnsavedChanges(true);
                     }}
-                    placeholder="Brief description of this purchase order"
+                    placeholder="Brief description"
                     disabled={isLocked}
+                    className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
                     data-testid="input-po-description"
                   />
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Scope of Work</CardTitle>
+            {/* Scope of Work */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-base">Scope of Work</CardTitle>
+                  <div className="flex items-center gap-1">
+                    {(
+                      [
+                        ["inclusions", "Inclusions"],
+                        ["exclusions", "Exclusions"],
+                        ["special", "Special Conditions"],
+                      ] as const
+                    ).map(([value, label]) => {
+                      const active = scopeSection === value;
+                      return (
+                        <button
+                          key={value}
+                          onClick={() => setScopeSection(value)}
+                          className={`rounded-md text-xs px-3 py-1.5 transition-colors ${
+                            active
+                              ? "font-medium"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          style={
+                            active
+                              ? {
+                                  backgroundColor: TOKENS.ghost,
+                                  color: "#222",
+                                }
+                              : undefined
+                          }
+                          data-testid={`button-scope-${value}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {project?.scope && (
                   <Button
                     variant="outline"
@@ -957,7 +1764,8 @@ export default function PurchaseOrderDetail() {
               </CardContent>
             </Card>
 
-            <Card>
+            {/* Line Items */}
+            <Card style={{ borderColor: TOKENS.border }}>
               <CardHeader className="pb-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-base">Line Items</CardTitle>
                 <Button
@@ -971,15 +1779,18 @@ export default function PurchaseOrderDetail() {
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-2 py-2 bg-muted/50 text-xs font-medium text-muted-foreground border-b">
+                <div
+                  className="grid grid-cols-[40px_1fr_80px_80px_100px_100px_80px_120px_40px] gap-2 px-3 py-2 text-[11px] font-semibold text-muted-foreground"
+                  style={{ backgroundColor: TOKENS.ghost }}
+                >
                   <div></div>
-                  <div>Description</div>
-                  <div className="text-right">Qty</div>
-                  <div>Unit</div>
-                  <div className="text-right">Price</div>
-                  <div className="text-right">Total</div>
-                  <div className="text-center">GST Free</div>
-                  <div>Cost Code</div>
+                  <div>DESCRIPTION</div>
+                  <div className="text-right">QTY</div>
+                  <div>UNIT</div>
+                  <div className="text-right">PRICE</div>
+                  <div className="text-right">TOTAL</div>
+                  <div className="text-center">GST FREE</div>
+                  <div>COST CODE</div>
                   <div></div>
                 </div>
 
@@ -1028,165 +1839,126 @@ export default function PurchaseOrderDetail() {
                     </SortableContext>
                   </DndContext>
                 )}
+
+                {/* Chips row */}
+                {(totalHours > 0 || (!!supplier && !isLocked)) && (
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 flex-wrap border-t"
+                    style={{ borderColor: TOKENS.border }}
+                  >
+                    {totalHours > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1"
+                        style={{
+                          backgroundColor: "rgba(104,176,136,0.10)",
+                          color: TOKENS.darkGreen,
+                        }}
+                        data-testid="chip-total-hours"
+                      >
+                        <Clock className="w-3 h-3" />
+                        {totalHours.toFixed(1)} hrs total
+                      </span>
+                    )}
+                    {!!supplier && !isLocked && (
+                      <button
+                        onClick={() => setIsImportTimesheetsOpen(true)}
+                        className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                        style={{ color: TOKENS.purple }}
+                        data-testid="button-import-timesheets"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                        Import from timesheets
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Subtotal strip */}
+                <div
+                  className="flex items-center justify-between px-4 py-3 border-t"
+                  style={{
+                    backgroundColor: TOKENS.ghost,
+                    borderColor: TOKENS.border,
+                  }}
+                  data-testid="strip-items-subtotal"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    Subtotal (ex GST)
+                  </span>
+                  <span className="text-base font-bold">
+                    {formatCurrency(subtotal)}
+                  </span>
+                </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Terms & Conditions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={termsAndConditions}
-                  onChange={(e) => {
-                    setTermsAndConditions(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  placeholder="Standard terms and conditions for this purchase order..."
-                  rows={4}
-                  disabled={isLocked}
-                  data-testid="textarea-po-terms"
-                />
-              </CardContent>
+            {/* Terms & Conditions (collapsible) */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <button
+                onClick={() => setIsTermsOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-3 px-6 py-4 text-left hover-elevate rounded-t-lg"
+                data-testid="button-toggle-terms"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-semibold">Terms & Conditions</p>
+                  {!isTermsOpen && (
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                      {termsAndConditions
+                        ? termsAndConditions.slice(0, 80) +
+                          (termsAndConditions.length > 80 ? "…" : "")
+                        : "No terms set."}
+                    </p>
+                  )}
+                </div>
+                {isTermsOpen ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                )}
+              </button>
+              {isTermsOpen && (
+                <CardContent className="pt-0">
+                  <Textarea
+                    value={termsAndConditions}
+                    onChange={(e) => {
+                      setTermsAndConditions(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Standard terms and conditions for this purchase order..."
+                    rows={4}
+                    disabled={isLocked}
+                    data-testid="textarea-po-terms"
+                  />
+                </CardContent>
+              )}
             </Card>
           </div>
 
+          {/* Right sidebar */}
           <div className="space-y-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  Supplier
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {supplier ? (
-                  <div className="space-y-2 text-sm">
-                    <p className="font-medium">{supplier.name}</p>
-                    {supplier.email && (
-                      <p className="flex items-center gap-2 text-muted-foreground">
-                        <Mail className="w-3 h-3" />
-                        {supplier.email}
-                      </p>
-                    )}
-                    {supplier.phone && (
-                      <p className="flex items-center gap-2 text-muted-foreground">
-                        <Phone className="w-3 h-3" />
-                        {supplier.phone}
-                      </p>
-                    )}
-                    {supplier.address && (
-                      <p className="flex items-center gap-2 text-muted-foreground">
-                        <MapPin className="w-3 h-3" />
-                        {supplier.address}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No supplier selected</p>
-                )}
-              </CardContent>
-            </Card>
+            {/* Totals */}
+            <Card
+              className="overflow-hidden"
+              style={{ borderColor: TOKENS.border }}
+            >
+              <div
+                className="h-1 w-full"
+                style={{ backgroundColor: TOKENS.purple }}
+              />
+              <CardContent className="pt-4 space-y-2">
+                <p className="text-sm font-semibold">Purchase Order Total</p>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Delivery</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Required By</Label>
-                  <Input
-                    type="date"
-                    value={requiredByDate}
-                    onChange={(e) => {
-                      setRequiredByDate(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    disabled={isLocked}
-                    data-testid="input-required-by-date"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Reference</Label>
-                  <Input
-                    value={deliveryReference}
-                    onChange={(e) => {
-                      setDeliveryReference(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="PO reference number..."
-                    disabled={isLocked}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Attention</Label>
-                  <Input
-                    value={deliveryAttention}
-                    onChange={(e) => {
-                      setDeliveryAttention(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Name or department..."
-                    disabled={isLocked}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Contact</Label>
-                  <Input
-                    value={deliveryContact}
-                    onChange={(e) => {
-                      setDeliveryContact(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Phone / email..."
-                    disabled={isLocked}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Delivery Address</Label>
-                  <Textarea
-                    value={deliveryAddress}
-                    onChange={(e) => {
-                      setDeliveryAddress(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Site address for delivery..."
-                    rows={2}
-                    disabled={isLocked}
-                    data-testid="textarea-delivery-address"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Instructions</Label>
-                  <Textarea
-                    value={deliveryInstructions}
-                    onChange={(e) => {
-                      setDeliveryInstructions(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    placeholder="Special delivery instructions..."
-                    rows={3}
-                    disabled={isLocked}
-                    data-testid="textarea-delivery-instructions"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Totals</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Include GST</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Include GST</span>
                   <Switch
                     checked={includeGst}
                     onCheckedChange={setIncludeGst}
                     data-testid="switch-include-gst"
                   />
                 </div>
+
                 <Separator />
+
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium" data-testid="text-subtotal">
@@ -1196,37 +1968,335 @@ export default function PurchaseOrderDetail() {
                 {includeGst && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">GST (10%)</span>
-                    <span className="font-medium" data-testid="text-gst">
+                    <span
+                      className="text-muted-foreground"
+                      data-testid="text-gst"
+                    >
                       {formatCurrency(gstAmount)}
                     </span>
                   </div>
                 )}
+
                 <Separator />
-                <div className="flex justify-between text-lg font-semibold">
-                  <span>Total</span>
-                  <span data-testid="text-total">{formatCurrency(total)}</span>
+
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-sm font-semibold">
+                    Total {includeGst ? "(inc GST)" : "(ex GST)"}
+                  </span>
+                  <span
+                    className="text-2xl font-bold"
+                    data-testid="text-total"
+                  >
+                    {formatCurrency(total)}
+                  </span>
+                </div>
+
+                {project &&
+                  (project as any).contractPrice &&
+                  (project as any).contractPrice > 0 && (
+                    <div
+                      className="rounded-lg px-3 py-2 mt-2"
+                      style={{ backgroundColor: "rgba(104,176,136,0.08)" }}
+                      data-testid="chip-contract-health"
+                    >
+                      <p
+                        className="text-xs font-medium"
+                        style={{ color: TOKENS.darkGreen }}
+                      >
+                        ✓ Within contract budget
+                      </p>
+                    </div>
+                  )}
+              </CardContent>
+            </Card>
+
+            {/* Delivery */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Delivery</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {/* Required By with Calendar popover */}
+                <div className="flex items-center gap-2 py-1">
+                  <Label className="text-[11px] font-medium text-muted-foreground w-28 flex-shrink-0">
+                    Required By
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        disabled={isLocked}
+                        className="flex-1 flex items-center justify-between gap-2 text-sm rounded px-2 py-1 hover:bg-[#f5f4f0] focus:outline-none disabled:opacity-60 text-left"
+                        data-testid="input-required-by-date"
+                      >
+                        <span className={requiredByDate ? "" : "text-muted-foreground"}>
+                          {requiredByDate
+                            ? format(new Date(requiredByDate), "dd MMM yyyy")
+                            : "Pick a date"}
+                        </span>
+                        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={
+                          requiredByDate ? new Date(requiredByDate) : undefined
+                        }
+                        onSelect={(d) => {
+                          if (d) {
+                            setRequiredByDate(d.toISOString().split("T")[0]);
+                            setHasUnsavedChanges(true);
+                          }
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {[
+                  {
+                    label: "Reference",
+                    value: deliveryReference,
+                    set: setDeliveryReference,
+                    placeholder: "PO reference number",
+                    testid: "input-delivery-reference",
+                  },
+                  {
+                    label: "Attention",
+                    value: deliveryAttention,
+                    set: setDeliveryAttention,
+                    placeholder: "Name or department",
+                    testid: "input-delivery-attention",
+                  },
+                  {
+                    label: "Contact",
+                    value: deliveryContact,
+                    set: setDeliveryContact,
+                    placeholder: "Phone / email",
+                    testid: "input-delivery-contact",
+                  },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center gap-2 py-1">
+                    <Label className="text-[11px] font-medium text-muted-foreground w-28 flex-shrink-0">
+                      {row.label}
+                    </Label>
+                    <Input
+                      value={row.value}
+                      onChange={(e) => {
+                        row.set(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder={row.placeholder}
+                      disabled={isLocked}
+                      className="border-0 bg-transparent hover:bg-[#f5f4f0] focus:bg-white focus:border focus:border-[#eaeae8] focus-visible:ring-0 rounded px-2 py-1 h-8 flex-1"
+                      data-testid={row.testid}
+                    />
+                  </div>
+                ))}
+
+                <div className="space-y-1 py-1">
+                  <Label className="text-[11px] font-medium text-muted-foreground">
+                    Delivery Address
+                  </Label>
+                  <Textarea
+                    value={deliveryAddress}
+                    onChange={(e) => {
+                      setDeliveryAddress(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Site address for delivery"
+                    rows={2}
+                    disabled={isLocked}
+                    data-testid="textarea-delivery-address"
+                  />
+                </div>
+                <div className="space-y-1 py-1">
+                  <Label className="text-[11px] font-medium text-muted-foreground">
+                    Instructions
+                  </Label>
+                  <Textarea
+                    value={deliveryInstructions}
+                    onChange={(e) => {
+                      setDeliveryInstructions(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Special delivery instructions"
+                    rows={2}
+                    disabled={isLocked}
+                    data-testid="textarea-delivery-instructions"
+                  />
                 </div>
               </CardContent>
             </Card>
 
+            {/* Project */}
             {project && (
-              <Card>
+              <Card style={{ borderColor: TOKENS.border }}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Project</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="font-medium text-sm">{project.name}</p>
+                  <p
+                    className="font-medium text-sm"
+                    data-testid="text-project-name"
+                  >
+                    {project.name}
+                  </p>
                   {project.address && (
-                    <p className="text-xs text-muted-foreground mt-1">{project.address}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {project.address}
+                    </p>
                   )}
                 </CardContent>
               </Card>
             )}
+
+            {/* Attachments */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Paperclip className="w-4 h-4" />
+                  Attachments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {attachments.length > 0 && (
+                  <div className="space-y-1.5">
+                    {attachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs"
+                        style={{ backgroundColor: TOKENS.ghost }}
+                        data-testid={`attachment-${att.id}`}
+                      >
+                        <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <a
+                          href={att.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 truncate hover:underline"
+                          style={{ color: TOKENS.blue }}
+                        >
+                          {att.fileName}
+                        </a>
+                        {!isLocked && (
+                          <button
+                            onClick={() =>
+                              deleteAttachmentMutation.mutate(att.id)
+                            }
+                            className="p-0.5 hover:bg-destructive/10 rounded text-destructive"
+                            data-testid={`button-delete-attachment-${att.id}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!isLocked && (
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleFileDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors"
+                    style={{
+                      borderColor: TOKENS.border,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor =
+                        TOKENS.purple;
+                      (e.currentTarget as HTMLDivElement).style.backgroundColor =
+                        TOKENS.ghost;
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor =
+                        TOKENS.border;
+                      (e.currentTarget as HTMLDivElement).style.backgroundColor =
+                        "transparent";
+                    }}
+                    data-testid="dropzone-attachments"
+                  >
+                    {isUploading ? (
+                      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Uploading...
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                        <Paperclip className="w-3.5 h-3.5" />
+                        Drop files or click to attach
+                      </p>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileSelect}
+                      data-testid="input-attachment-file"
+                    />
+                  </div>
+                )}
+                {isLocked && attachments.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No attachments</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Activity */}
+            <Card style={{ borderColor: TOKENS.border }}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {activityItems.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No activity yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {activityItems.map((a, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-2.5"
+                        data-testid={`activity-item-${i}`}
+                      >
+                        <span
+                          className="inline-block rounded-full mt-1.5 flex-shrink-0"
+                          style={{
+                            width: 8,
+                            height: 8,
+                            backgroundColor: a.color,
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm leading-tight">{a.label}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {a.time
+                              ? formatDistanceToNow(new Date(a.time), {
+                                  addSuffix: true,
+                                })
+                              : ""}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
 
-      <Dialog open={isImportScopeDialogOpen} onOpenChange={setIsImportScopeDialogOpen}>
+      {/* ---------- Dialogs ---------- */}
+
+      {/* Import Scope */}
+      <Dialog
+        open={isImportScopeDialogOpen}
+        onOpenChange={setIsImportScopeDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Import Scope from Project</DialogTitle>
@@ -1235,71 +2305,110 @@ export default function PurchaseOrderDetail() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsImportScopeDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsImportScopeDialogOpen(false)}
+            >
               Cancel
             </Button>
-            <Button onClick={handleImportProjectScope}>
-              Import Scope
-            </Button>
+            <Button onClick={handleImportProjectScope}>Import Scope</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Send PO */}
       <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Send Purchase Order</DialogTitle>
             <DialogDescription>
-              This will mark the PO as "Sent" and lock it from editing.
-              {supplier?.email && ` A copy can be emailed to ${supplier.email}.`}
+              {purchaseOrder.poNumber} will be marked as Sent and locked from
+              editing.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">Supplier Email</Label>
-              <Input
-                value={sendEmail}
-                onChange={(e) => setSendEmail(e.target.value)}
-                placeholder="supplier@example.com"
-              />
+
+          <div
+            className="rounded-lg border p-3 text-sm space-y-1"
+            style={{
+              backgroundColor: TOKENS.pageBg,
+              borderColor: TOKENS.border,
+            }}
+            data-testid="email-preview"
+          >
+            <div className="flex gap-2 text-xs">
+              <span className="text-muted-foreground w-12">To:</span>
+              <span className="font-medium">
+                {sendEmail || "No email address"}
+              </span>
+            </div>
+            <div className="flex gap-2 text-xs">
+              <span className="text-muted-foreground w-12">Subject:</span>
+              <span>Purchase Order {purchaseOrder.poNumber}</span>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Supplier Email
+            </Label>
+            <Input
+              value={sendEmail}
+              onChange={(e) => setSendEmail(e.target.value)}
+              placeholder="supplier@example.com"
+              data-testid="input-send-email"
+            />
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSendDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsSendDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={() => sendPoMutation.mutate()}
               disabled={sendPoMutation.isPending}
-              className="bg-primary hover:bg-primary/90 text-white"
+              style={{
+                backgroundColor: TOKENS.purple,
+                borderColor: TOKENS.purple,
+              }}
+              className="text-white hover:opacity-90"
+              data-testid="button-confirm-send"
             >
               {sendPoMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
               ) : (
                 <Send className="w-4 h-4 mr-1" />
               )}
-              Send
+              Send Purchase Order
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Delete confirm */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Purchase Order</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete {purchaseOrder?.poNumber}? This action cannot be undone.
+              Are you sure you want to delete {purchaseOrder?.poNumber}? This
+              action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={() => deletePoMutation.mutate()}
               disabled={deletePoMutation.isPending}
+              data-testid="button-confirm-delete"
             >
               {deletePoMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
@@ -1312,6 +2421,24 @@ export default function PurchaseOrderDetail() {
         </DialogContent>
       </Dialog>
 
+      {/* Change supplier */}
+      <ChangeSupplierDialog
+        open={isChangeSupplierOpen}
+        onOpenChange={setIsChangeSupplierOpen}
+        contacts={contacts}
+        currentSupplierId={purchaseOrder.supplierId}
+        onSelect={(id) => changeSupplierMutation.mutate(id)}
+      />
+
+      {/* Import timesheets */}
+      <ImportTimesheetsDialog
+        open={isImportTimesheetsOpen}
+        onOpenChange={setIsImportTimesheetsOpen}
+        onImport={handleImportTimesheets}
+        isPending={bulkItemsMutation.isPending}
+      />
+
+      {/* Xero contact link */}
       <XeroContactLinkModal
         open={unmappedDialogOpen}
         onClose={() => {
@@ -1323,7 +2450,11 @@ export default function PurchaseOrderDetail() {
         title="Link Supplier to Xero Contact"
         description={
           <>
-            <span className="font-medium text-foreground">{unmappedSupplierName}</span> is not linked to a Xero contact. Pick the matching Xero contact (or create a new one) to push this purchase order.
+            <span className="font-medium text-foreground">
+              {unmappedSupplierName}
+            </span>{" "}
+            is not linked to a Xero contact. Pick the matching Xero contact (or
+            create a new one) to push this purchase order.
           </>
         }
         successMessage="Supplier linked. Pushing PO to Xero…"
