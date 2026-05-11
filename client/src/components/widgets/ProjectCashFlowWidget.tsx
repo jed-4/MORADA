@@ -112,15 +112,35 @@ function formatCurrencyShort(v: number): string {
 function CashFlowTooltip({ active, payload }: any) {
   if (!active || !payload || payload.length === 0) return null;
   const row: PeriodRow = payload[0].payload;
+  const totalIn = (row.moneyIn || 0) + (row.invoicedNotPaid || 0);
+  const totalOut = (row.moneyOut || 0) + (row.committedNotPaid || 0);
   const net = (row.moneyIn || 0) - (row.moneyOut || 0);
   return (
-    <div className="bg-[hsl(var(--bp-card))] border border-[hsl(var(--bp-border))] rounded-md p-2 text-xs shadow-sm">
+    <div className="bg-[hsl(var(--bp-card))] border border-[hsl(var(--bp-border))] rounded-md p-2 text-xs shadow-sm min-w-[160px]">
       <p className="font-semibold text-[hsl(var(--bp-card-foreground))] mb-1">{row.label}</p>
-      <p className="text-[hsl(var(--bp-green))]">Received: {formatCurrency(row.moneyIn || 0)}</p>
-      <p className="text-[hsl(var(--bp-coral))]">Paid out: {formatCurrency(row.moneyOut || 0)}</p>
-      <p className={cn("font-medium mt-0.5", net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]")}>
-        Net: {formatCurrency(net)}
-      </p>
+      {row.moneyIn > 0 && (
+        <p className="text-[hsl(var(--bp-green))]">Received: {formatCurrency(row.moneyIn)}</p>
+      )}
+      {row.invoicedNotPaid > 0 && (
+        <p className="text-[hsl(var(--bp-green))] opacity-60">Invoiced (unpaid): {formatCurrency(row.invoicedNotPaid)}</p>
+      )}
+      {totalIn > 0 && row.invoicedNotPaid > 0 && (
+        <p className="text-[hsl(var(--bp-green))] font-medium">Total in: {formatCurrency(totalIn)}</p>
+      )}
+      {row.moneyOut > 0 && (
+        <p className="text-[hsl(var(--bp-coral))]">Paid out: {formatCurrency(row.moneyOut)}</p>
+      )}
+      {row.committedNotPaid > 0 && (
+        <p className="text-[hsl(var(--bp-coral))] opacity-60">Committed (unpaid): {formatCurrency(row.committedNotPaid)}</p>
+      )}
+      {totalOut > 0 && row.committedNotPaid > 0 && (
+        <p className="text-[hsl(var(--bp-coral))] font-medium">Total out: {formatCurrency(totalOut)}</p>
+      )}
+      {(totalIn > 0 || totalOut > 0) && (
+        <p className={cn("font-medium mt-1 border-t border-[hsl(var(--bp-border))] pt-1", net >= 0 ? "text-[hsl(var(--bp-green))]" : "text-[hsl(var(--bp-coral))]")}>
+          Cash net: {formatCurrency(net)}
+        </p>
+      )}
     </div>
   );
 }
@@ -319,8 +339,14 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                   width={52}
                 />
                 <Tooltip content={<CashFlowTooltip />} cursor={{ fill: "hsl(var(--bp-border))", opacity: 0.2 }} />
-                <Bar dataKey="moneyIn" name="Received" fill="url(#bp-cf-gradIn)" radius={[3, 3, 0, 0]} maxBarSize={32} />
-                <Bar dataKey="moneyOut" name="Paid out" fill="url(#bp-cf-gradOut)" radius={[3, 3, 0, 0]} maxBarSize={32} />
+                {/* Received (actual) — solid green, stacked below pending */}
+                <Bar dataKey="moneyIn" name="Received" stackId="in" fill="url(#bp-cf-gradIn)" radius={[0, 0, 0, 0]} maxBarSize={32} />
+                {/* Invoiced but not yet received — lighter green on top */}
+                <Bar dataKey="invoicedNotPaid" name="Invoiced (pending)" stackId="in" fill="hsl(var(--bp-green))" fillOpacity={0.28} radius={[3, 3, 0, 0]} maxBarSize={32} />
+                {/* Paid out (actual) — solid coral */}
+                <Bar dataKey="moneyOut" name="Paid out" stackId="out" fill="url(#bp-cf-gradOut)" radius={[0, 0, 0, 0]} maxBarSize={32} />
+                {/* Committed but not yet paid — lighter coral on top */}
+                <Bar dataKey="committedNotPaid" name="Committed (pending)" stackId="out" fill="hsl(var(--bp-coral))" fillOpacity={0.28} radius={[3, 3, 0, 0]} maxBarSize={32} />
                 {config.showContractCeiling && data.contractCeiling > 0 && (
                   <ReferenceLine
                     y={data.contractCeiling}
@@ -449,14 +475,37 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 ml-auto text-[10px] text-[hsl(var(--bp-muted))]">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
-            Received
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))]" />
-            Paid out
-          </span>
+          {config.chartType === "bar" ? (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
+                Received
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))] opacity-30" />
+                Invoiced
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))]" />
+                Paid out
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))] opacity-30" />
+                Committed
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-green))]" />
+                Received
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--bp-coral))]" />
+                Paid out
+              </span>
+            </>
+          )}
           {config.chartType === "scurve" && config.showPlannedCurve && (
             <span className="flex items-center gap-1">
               <span className="inline-block h-px w-3 border-t border-dashed border-[hsl(var(--bp-purple))]" />
