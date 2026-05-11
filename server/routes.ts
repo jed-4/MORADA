@@ -8115,6 +8115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             roleName: user.roleName,
             userCategory: user.userCategory,
             isSubcontractor: !!user.isSubcontractor,
+            isGstRegistered: user.isGstRegistered !== false,
             xeroContactId: user.xeroContactId || null,
           };
         });
@@ -26497,6 +26498,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       let supplierName = (po as any).supplierName || "Unknown Supplier";
       let supplierXeroContactId: string | undefined;
       let supplierDefaultAccountCode: string | undefined;
+      let supplierIsGstFree = false; // Forces taxType="NONE" on every line when supplier user is not GST registered
       const poSupplierUserId: string | undefined = (po as any).supplierUserId || undefined;
       if ((po as any).supplierId) {
         try {
@@ -26521,6 +26523,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
               supplierName;
             supplierXeroContactId = (u as any).xeroContactId || undefined;
             supplierDefaultAccountCode = (u as any).xeroDefaultAccountCode || undefined;
+            // Non-GST-registered subbie → all lines push as GST-free regardless of item flag
+            if ((u as any).isGstRegistered === false) {
+              supplierIsGstFree = true;
+            }
           }
         } catch {}
       }
@@ -26663,7 +26669,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           description: item.description || "",
           quantity: Number.isFinite(qty) ? qty : 1,
           unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
-          taxType: item.isGstFree ? "NONE" : "INPUT",
+          taxType: (supplierIsGstFree || item.isGstFree) ? "NONE" : "INPUT",
           accountCode: lineAccountCode,
           tracking: tracking.length > 0 ? tracking : undefined,
         };

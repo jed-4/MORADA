@@ -103,6 +103,7 @@ export const users = pgTable("users", {
   
   // Subcontractor & rate fields (management-only visibility)
   isSubcontractor: boolean("is_subcontractor").notNull().default(false),
+  isGstRegistered: boolean("is_gst_registered").notNull().default(true), // When false, PO/bill lines for this user push to Xero with taxType "NONE" (GST-free)
   hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Pay rate - cost to company per hour
   chargeRate: numeric("charge_rate", { precision: 10, scale: 2 }), // Charge rate - what you charge the client per hour
 

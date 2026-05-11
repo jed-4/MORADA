@@ -243,7 +243,7 @@ export default function UserProfileView() {
   });
 
   const updateSubcontractorMutation = useMutation({
-    mutationFn: async (data: { isSubcontractor?: boolean; hourlyRate?: string | null; chargeRate?: string | null }) => {
+    mutationFn: async (data: { isSubcontractor?: boolean; isGstRegistered?: boolean; hourlyRate?: string | null; chargeRate?: string | null }) => {
       return await apiRequest(`/api/users/${userId}`, "PATCH", data);
     },
     onSuccess: () => {
@@ -611,6 +611,23 @@ export default function UserProfileView() {
 
               {user.isSubcontractor && (
                 <>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <label className="text-sm font-medium">GST Registered</label>
+                      <p className="text-xs text-muted-foreground">
+                        Turn off if this subcontractor is not registered for GST. Their PO/bill lines will push to Xero as GST-free.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={(user as any).isGstRegistered !== false}
+                      onCheckedChange={(checked) => {
+                        updateSubcontractorMutation.mutate({ isGstRegistered: checked });
+                      }}
+                      disabled={updateSubcontractorMutation.isPending}
+                      data-testid="switch-gst-registered"
+                    />
+                  </div>
                   <Separator />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">

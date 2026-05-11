@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Check, Plus, Search, Loader2 } from "lucide-react";
+import { Check, Plus, Search, Loader2, AlertTriangle } from "lucide-react";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -55,7 +56,11 @@ export function XeroContactLinkModal({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
 
-  const { data: xeroContacts = [], isLoading } = useQuery<XeroContact[]>({
+  const {
+    data: xeroContacts = [],
+    isLoading,
+    error: contactsError,
+  } = useQuery<XeroContact[]>({
     queryKey: ["/api/xero/contacts", { includeArchived }],
     queryFn: async () => {
       const url = includeArchived
@@ -65,7 +70,17 @@ export function XeroContactLinkModal({
     },
     enabled: open,
     staleTime: 30_000,
+    retry: false,
   });
+
+  // Detect the most common production failure: a revoked/expired Xero refresh token.
+  // The Xero identity server returns 403 from /connect/token, which our API surfaces as
+  // a 500 with a "Failed to refresh token" message. Without this detection the modal
+  // looks like it just loaded zero contacts.
+  const errMessage = (contactsError as any)?.message || "";
+  const isReconnectError =
+    /refresh token|invalid_grant|reconnect|403/i.test(errMessage) ||
+    /not connected/i.test(errMessage);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -174,6 +189,32 @@ export function XeroContactLinkModal({
               Show archived
             </label>
           </div>
+
+          {contactsError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                {isReconnectError ? (
+                  <>
+                    <div className="font-medium text-destructive">Xero connection expired</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Your Xero refresh token has been revoked or expired. Reconnect Xero to load contacts.
+                    </div>
+                    <Link href="/settings">
+                      <Button variant="outline" size="sm" className="mt-2" onClick={handleClose}>
+                        Open Settings
+                      </Button>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-medium text-destructive">Couldn't load Xero contacts</div>
+                    <div className="text-xs text-muted-foreground mt-1 break-words">{errMessage}</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           <ScrollArea className="h-72 rounded-md border">
             {isLoading ? (
