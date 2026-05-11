@@ -1005,14 +1005,14 @@ export default function Timesheets() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Breadcrumb — only shown on the global Timesheets page (no projectId) */}
-      {!projectId && (
-        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-          <span className="text-xs text-muted-foreground">All Projects</span>
-          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-          <span className="text-xs font-medium text-foreground">Timesheets</span>
-        </div>
-      )}
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {projectId && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Timesheets</span>
+      </div>
       {/* Header Panel — single condensed row */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         <div className="h-8 flex items-center gap-2 px-3">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { useProject } from "@/contexts/ProjectContext";
 import { PinRowButton } from "@/components/widgets/PinRowButton";
 import { Input } from "@/components/ui/input";
 import {
@@ -58,6 +59,7 @@ const HIDE_STATS_KEY = "defects-hide-stats";
 
 export default function Defects() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { currentProject } = useProject();
   const { toast } = useToast();
 
   const [currentView, setCurrentView] = useState<ViewMode>(() => {
@@ -190,13 +192,13 @@ export default function Defects() {
   return (
     <div className="flex flex-col h-full">
       {/* Breadcrumb */}
-      {!projectId && (
-        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-          <span className="text-xs text-muted-foreground">All Projects</span>
-          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-          <span className="text-xs font-medium text-foreground">Defects</span>
-        </div>
-      )}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {projectId && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Defects</span>
+      </div>
       {/* Toolbar */}
       <div className="h-9 bg-background flex items-center justify-between px-6 gap-3 border-b border-border flex-shrink-0">
         {/* Left: View toggle (icon only) + search + filter */}

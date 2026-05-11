@@ -216,7 +216,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [templateSearch, setTemplateSearch] = useState("");
 
   const { toast } = useToast();
-  useProject(); // keeps ProjectContext in sync
+  const { currentProject } = useProject();
   const params = useParams<NotesParams>();
   usePageTitle({ pageName: "Notes" });
 
@@ -607,7 +607,16 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full" data-testid="notes-page">
+    <div className="flex flex-col h-full" data-testid="notes-page">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {effectiveProjectId && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Notes</span>
+      </div>
+      <div className="flex flex-1 min-h-0">
       {/* ── LEFT PANEL ─────────────────────────────────────────────────── */}
       <div className="w-72 shrink-0 border-r flex flex-col overflow-hidden">
         {/* header */}
@@ -961,6 +970,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {/* ── CREATE GROUP DIALOG ───────────────────────────────────────── */}

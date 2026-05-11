@@ -43,6 +43,7 @@ import {
   Users as UsersIcon,
   Building2,
   Pencil,
+  ChevronRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -200,6 +201,14 @@ export default function Minutes() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {projectId && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Minutes</span>
+      </div>
       {/* Single h-9 Header Row */}
       <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: Title + Count */}

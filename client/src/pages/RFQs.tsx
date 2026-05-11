@@ -38,6 +38,7 @@ import {
   EyeOff,
   ImageIcon,
   FileIcon,
+  ChevronRight,
 } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
@@ -556,6 +557,14 @@ export default function RFQs() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-rfqs">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">RFQs</span>
+      </div>
 
       {/* Toolbar — flush h-9 row with bottom divider */}
       <div className="h-9 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">

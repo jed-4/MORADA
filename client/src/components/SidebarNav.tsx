@@ -149,6 +149,7 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
       { title: "Purchase Orders", url: "/purchase-orders", icon: Receipt },
       { title: "Variations", url: "/variations", icon: FileText },
       { title: "Client Invoices", url: "/client-invoices", icon: Receipt },
+      { title: "Site Diary", url: "/site-diary", icon: BookOpen },
     ],
   },
   system: {
