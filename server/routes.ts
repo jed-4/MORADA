@@ -29039,23 +29039,34 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       let contractCeiling =
         Number((project as any).contractPrice) || Number((project as any).contractCost) || 0;
 
-      // Fallback: when the project's contractPrice/contractCost isn't set
-      // (e.g. estimate was promoted to contract via a path that didn't sync
-      // the project field, or the project predates that sync), derive the
-      // ceiling from the contract estimate's total.
+      // Fallback: when the project's contractPrice/contractCost isn't set,
+      // derive the ceiling from the selected estimate or any contract-status
+      // estimate. getEstimateSummary returns dollars so we convert ×100 to
+      // match the cents-denominated bill/invoice amounts used on the chart.
       if (contractCeiling <= 0) {
         try {
-          const { estimates: estimatesTbl } = await import("@shared/schema");
-          const contractEstimateRows = await db
-            .select()
-            .from(estimatesTbl)
-            .where(and(eq(estimatesTbl.projectId, projectId), eq(estimatesTbl.status, "contract")))
-            .limit(1);
-          const contractEstimate = contractEstimateRows[0];
-          if (contractEstimate) {
-            const summary = await storage.getEstimateSummary(contractEstimate.id);
+          // Prefer the project's selected estimate (same source as Budget page).
+          const selectedEstId =
+            (project as any).selectedEstimateId as string | null | undefined;
+          let fallbackEstimateId: string | undefined = selectedEstId || undefined;
+
+          if (!fallbackEstimateId) {
+            const { estimates: estimatesTbl } = await import("@shared/schema");
+            const contractEstimateRows = await db
+              .select()
+              .from(estimatesTbl)
+              .where(and(eq(estimatesTbl.projectId, projectId), eq(estimatesTbl.status, "contract")))
+              .limit(1);
+            if (contractEstimateRows[0]) {
+              fallbackEstimateId = contractEstimateRows[0].id;
+            }
+          }
+
+          if (fallbackEstimateId) {
+            const summary = await storage.getEstimateSummary(fallbackEstimateId);
+            // summary.total is in dollars; convert to cents to match chart scale.
             if (summary && Number(summary.total) > 0) {
-              contractCeiling = Number(summary.total);
+              contractCeiling = Math.round(Number(summary.total) * 100);
             }
           }
         } catch (e) {

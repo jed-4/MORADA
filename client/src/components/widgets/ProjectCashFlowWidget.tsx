@@ -353,6 +353,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     stroke="hsl(var(--bp-muted))"
                     strokeDasharray="4 4"
                     strokeWidth={1}
+                    ifOverflow="extendDomain"
                     label={{ value: "Contract", position: "right", fontSize: 9, fill: "hsl(var(--bp-muted))" }}
                   />
                 )}
@@ -362,6 +363,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     stroke="hsl(var(--bp-purple))"
                     strokeDasharray="4 4"
                     strokeWidth={1}
+                    ifOverflow="extendDomain"
                     label={{ value: "Contract + Vars", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
                   />
                 )}
@@ -428,6 +430,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     stroke="hsl(var(--bp-muted))"
                     strokeDasharray="4 4"
                     strokeWidth={1}
+                    ifOverflow="extendDomain"
                     label={{ value: "Contract", position: "right", fontSize: 9, fill: "hsl(var(--bp-muted))" }}
                   />
                 )}
@@ -437,6 +440,7 @@ export default function ProjectCashFlowWidget({ widget, onUpdate, isConfiguring,
                     stroke="hsl(var(--bp-purple))"
                     strokeDasharray="4 4"
                     strokeWidth={1}
+                    ifOverflow="extendDomain"
                     label={{ value: "+Variations", position: "right", fontSize: 9, fill: "hsl(var(--bp-purple))" }}
                   />
                 )}
