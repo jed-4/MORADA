@@ -26416,6 +26416,268 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // Xero: Push BuildPro purchase order as Xero PurchaseOrder (DRAFT)
+  app.post("/api/xero/push-purchase-order", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const { purchaseOrderId, xeroContactId: overrideXeroContactId } = req.body || {};
+      if (!purchaseOrderId) {
+        return res.status(400).json({ error: "purchaseOrderId is required" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.status(400).json({ error: "Xero is not connected" });
+      }
+
+      const po = await storage.getPurchaseOrder(purchaseOrderId);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      if ((po as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - PO does not belong to your company" });
+      }
+
+      const poItems = await storage.getPurchaseOrderItems(purchaseOrderId);
+      if (!poItems || poItems.length === 0) {
+        return res.status(400).json({ error: "Purchase order has no line items to push" });
+      }
+
+      // Resolve supplier + Xero contact (mirror push-bill behaviour)
+      let supplierName = (po as any).supplierName || "Unknown Supplier";
+      let supplierXeroContactId: string | undefined;
+      let supplierDefaultAccountCode: string | undefined;
+      if ((po as any).supplierId) {
+        try {
+          const contact = await storage.getContact((po as any).supplierId, companyId);
+          if (contact) {
+            supplierName =
+              (contact as any).company ||
+              (contact as any).name ||
+              `${(contact as any).firstName || ""} ${(contact as any).lastName || ""}`.trim() ||
+              supplierName;
+            supplierXeroContactId = (contact as any).xeroContactId || undefined;
+            supplierDefaultAccountCode = (contact as any).xeroDefaultAccountCode || undefined;
+          }
+        } catch {}
+      }
+
+      if (overrideXeroContactId) {
+        supplierXeroContactId = overrideXeroContactId;
+        if ((po as any).supplierId) {
+          try {
+            await storage.updateContact(
+              (po as any).supplierId,
+              companyId,
+              { xeroContactId: overrideXeroContactId } as any,
+            );
+          } catch (e) {
+            console.error("Failed to save Xero contact link on PO push:", e);
+          }
+        }
+      }
+
+      if (!supplierXeroContactId) {
+        return res.status(422).json({
+          error: "UNMAPPED_CONTACT",
+          message: "Supplier is not linked to a Xero contact",
+          supplierId: (po as any).supplierId,
+          supplierName,
+        });
+      }
+
+      // Project tracking option (TC2) — same flow as bill push
+      let projectXeroTrackingOptionId: string | undefined;
+      let projectName: string | undefined;
+      let projectDeliveryAddress: string | undefined;
+      if ((po as any).projectId) {
+        try {
+          const project = await storage.getProject((po as any).projectId);
+          if (project) {
+            projectName = project.name;
+            projectDeliveryAddress = (project as any).address || undefined;
+            if ((connection as any).trackingCategory2Id) {
+              if ((project as any).xeroTrackingOptionId) {
+                projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
+              } else {
+                try {
+                  const option = await xeroService.createTrackingOption(
+                    connection.id,
+                    (connection as any).trackingCategory2Id,
+                    project.name,
+                  );
+                  if (option?.TrackingOptionID) {
+                    projectXeroTrackingOptionId = option.TrackingOptionID;
+                    await storage.updateProject((po as any).projectId, {
+                      xeroTrackingOptionId: option.TrackingOptionID,
+                      xeroTrackingOptionName: project.name,
+                    } as any);
+                  }
+                } catch (e) {
+                  console.error("Failed to create/get Xero tracking option for project:", e);
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Cost code tracking (TC1) — same flow as bill push
+      const costCodeMap: Record<string, any> = {};
+      if ((connection as any).trackingCategory1Id) {
+        try {
+          const allCostCodes = await storage.getCostCodes(companyId);
+          for (const cc of allCostCodes) costCodeMap[cc.id] = cc;
+        } catch (e) {
+          console.error("Failed to load cost codes for PO tracking:", e);
+        }
+      }
+
+      // Default account code resolution: cost code → supplier default →
+      // Xero account named "Subcontractors" → company bill default.
+      let subcontractorsAccountCode: string | undefined;
+      try {
+        const accounts = await xeroService.getAccounts(connection.id);
+        const match = (accounts as any[]).find(
+          (a) =>
+            typeof a?.Name === "string" &&
+            a.Name.trim().toLowerCase() === "subcontractors" &&
+            (!a.Status || a.Status === "ACTIVE"),
+        );
+        if (match?.Code) subcontractorsAccountCode = match.Code;
+      } catch (e) {
+        console.warn("[push-purchase-order] could not load Xero accounts:", (e as any)?.message || e);
+      }
+
+      let companyDefaultAccountCode: string | undefined;
+      try {
+        const settings = await storage.getCompanySettings();
+        companyDefaultAccountCode = (settings as any)?.billDefaultXeroAccount || undefined;
+      } catch {}
+
+      const formatDate = (d: Date | string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split("T")[0];
+        const date = d instanceof Date ? d : new Date(d);
+        return date.toISOString().split("T")[0];
+      };
+
+      const taxMode: "inclusive" | "exclusive" =
+        (po as any).gstMode === "inclusive" ? "inclusive" : "exclusive";
+
+      const xeroLineItems = poItems.map((item: any) => {
+        const tracking: Array<{ TrackingCategoryID: string; TrackingOptionID: string }> = [];
+        if (item.costCodeId && (connection as any).trackingCategory1Id) {
+          const cc = costCodeMap[item.costCodeId];
+          if (cc?.xeroTrackingOptionId) {
+            tracking.push({
+              TrackingCategoryID: (connection as any).trackingCategory1Id,
+              TrackingOptionID: cc.xeroTrackingOptionId,
+            });
+          }
+        }
+        if (projectXeroTrackingOptionId && (connection as any).trackingCategory2Id) {
+          tracking.push({
+            TrackingCategoryID: (connection as any).trackingCategory2Id,
+            TrackingOptionID: projectXeroTrackingOptionId,
+          });
+        }
+
+        const lineCostCode = item.costCodeId ? costCodeMap[item.costCodeId] : null;
+        const lineAccountCode =
+          (lineCostCode as any)?.xeroAccountCode ||
+          supplierDefaultAccountCode ||
+          subcontractorsAccountCode ||
+          companyDefaultAccountCode ||
+          undefined;
+
+        const qty = typeof item.quantity === "string" ? parseFloat(item.quantity) : item.quantity;
+        return {
+          description: item.description || "",
+          quantity: Number.isFinite(qty) ? qty : 1,
+          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+          taxType: item.isGstFree ? "NONE" : "INPUT",
+          accountCode: lineAccountCode,
+          tracking: tracking.length > 0 ? tracking : undefined,
+        };
+      });
+
+      const missingAcctIdx = xeroLineItems
+        .map((li, i) => (li.accountCode ? -1 : i))
+        .filter((i) => i >= 0);
+      if (missingAcctIdx.length > 0) {
+        return res.status(422).json({
+          error: "MISSING_ACCOUNT_CODE",
+          message:
+            "No default account code resolved. Add a 'Subcontractors' account in Xero, set a default on the supplier, or set the company-wide default in Settings → Documents → Default Xero Account.",
+          validationErrors: missingAcctIdx.map((i) => ({
+            scope: "lineItem",
+            lineIndex: i,
+            message: `Line ${i + 1}: missing AccountCode.`,
+          })),
+        });
+      }
+
+      const reference = projectName
+        ? `${projectName}${(po as any).title ? " — " + (po as any).title : ""}`
+        : (po as any).title || undefined;
+
+      let xeroPo: any;
+      try {
+        xeroPo = await xeroService.createPurchaseOrder(connection.id, {
+          supplierName,
+          supplierXeroContactId,
+          poDate: formatDate((po as any).poDate),
+          deliveryDate: (po as any).requiredByDate ? formatDate((po as any).requiredByDate) : undefined,
+          reference,
+          poNumber: (po as any).poNumber,
+          attentionTo: (po as any).deliveryAttention || undefined,
+          deliveryAddress: (po as any).deliveryAddress || projectDeliveryAddress,
+          deliveryInstructions: (po as any).deliveryInstructions || undefined,
+          taxMode,
+          lineItems: xeroLineItems,
+          status: "DRAFT",
+        });
+      } catch (error: any) {
+        if (error instanceof XeroValidationError) {
+          const summary = error.validationErrors[0]?.message || error.message;
+          return res.status(400).json({
+            error: "XERO_VALIDATION",
+            message: summary,
+            validationErrors: error.validationErrors,
+          });
+        }
+        const msg = error?.message || "Failed to push purchase order to Xero";
+        console.error("[push-purchase-order] error:", msg);
+        return res.status(500).json({ error: "XERO_API_ERROR", message: msg });
+      }
+
+      if (xeroPo?.PurchaseOrderID) {
+        try {
+          await storage.updatePurchaseOrder(purchaseOrderId, {
+            xeroPurchaseOrderId: xeroPo.PurchaseOrderID,
+            xeroPurchaseOrderNumber: xeroPo.PurchaseOrderNumber || null,
+          } as any);
+        } catch (e) {
+          console.error("[push-purchase-order] failed to save Xero IDs:", e);
+        }
+      }
+
+      return res.json({
+        success: true,
+        xeroPurchaseOrderId: xeroPo?.PurchaseOrderID,
+        xeroPurchaseOrderNumber: xeroPo?.PurchaseOrderNumber,
+      });
+    } catch (error: any) {
+      console.error("Error pushing PO to Xero:", error);
+      return res.status(500).json({ error: error?.message || "Failed to push PO to Xero" });
+    }
+  });
+
   // Xero: Push client invoice as AR invoice
   app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {
     try {

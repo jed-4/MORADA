@@ -84,6 +84,8 @@ import {
 } from "@/components/ui/tooltip";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
+import { SiXero } from "react-icons/si";
 import type {
   PurchaseOrder,
   PurchaseOrderItem,
@@ -292,6 +294,9 @@ export default function PurchaseOrderDetail() {
   const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sendEmail, setSendEmail] = useState("");
+  const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
+  const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(null);
+  const [unmappedDialogOpen, setUnmappedDialogOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -486,6 +491,54 @@ export default function PurchaseOrderDetail() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to duplicate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const pushToXeroMutation = useMutation({
+    mutationFn: async (xeroContactId?: string) => {
+      const res = await fetch("/api/xero/push-purchase-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          purchaseOrderId: poId,
+          ...(xeroContactId ? { xeroContactId } : {}),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err: any = new Error(body?.message || body?.error || "Failed to push to Xero");
+        err.payload = body;
+        throw err;
+      }
+      return body;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({
+        title: "Pushed to Xero",
+        description: data?.xeroPurchaseOrderNumber
+          ? `Created ${data.xeroPurchaseOrderNumber} as DRAFT in Xero.`
+          : "Purchase order created in Xero as DRAFT.",
+      });
+    },
+    onError: (err: any) => {
+      const payload = err?.payload || {};
+      if (payload.error === "UNMAPPED_CONTACT") {
+        setUnmappedSupplierName(payload.supplierName || supplier?.name || "Supplier");
+        setUnmappedSupplierId(payload.supplierId || supplier?.id || null);
+        setUnmappedDialogOpen(true);
+        toast({
+          title: "Supplier not linked to Xero",
+          description: "Pick the matching Xero contact to complete the push.",
+        });
+        return;
+      }
+      const desc = Array.isArray(payload.validationErrors) && payload.validationErrors[0]?.message
+        ? payload.validationErrors[0].message
+        : err?.message || "Failed to push to Xero";
+      toast({ title: "Xero push failed", description: desc, variant: "destructive" });
     },
   });
 
@@ -726,6 +779,12 @@ export default function PurchaseOrderDetail() {
               {purchaseOrder.poType === "site" && (
                 <Badge variant="outline" className="text-xs">Site PO</Badge>
               )}
+              {(purchaseOrder as any).xeroPurchaseOrderId && (
+                <Badge variant="outline" className="text-xs gap-1" data-testid="badge-in-xero">
+                  <SiXero className="w-3 h-3" />
+                  In Xero
+                </Badge>
+              )}
             </div>
           </div>
 
@@ -770,6 +829,21 @@ export default function PurchaseOrderDetail() {
                 <DropdownMenuItem onClick={() => duplicatePoMutation.mutate()} data-testid="action-duplicate-po">
                   <Copy className="w-4 h-4 mr-2" />
                   Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => pushToXeroMutation.mutate(undefined)}
+                  disabled={pushToXeroMutation.isPending}
+                  data-testid="action-push-po-to-xero"
+                >
+                  {pushToXeroMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <SiXero className="w-4 h-4 mr-2" />
+                  )}
+                  {(purchaseOrder as any).xeroPurchaseOrderId
+                    ? "Re-push to Xero"
+                    : "Push to Xero (Draft)"}
                 </DropdownMenuItem>
                 {purchaseOrder.status === "draft" && (
                   <>
@@ -1237,6 +1311,28 @@ export default function PurchaseOrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <XeroContactLinkModal
+        open={unmappedDialogOpen}
+        onClose={() => {
+          setUnmappedDialogOpen(false);
+          setUnmappedSupplierId(null);
+        }}
+        clientId={unmappedSupplierId}
+        clientName={unmappedSupplierName}
+        title="Link Supplier to Xero Contact"
+        description={
+          <>
+            <span className="font-medium text-foreground">{unmappedSupplierName}</span> is not linked to a Xero contact. Pick the matching Xero contact (or create a new one) to push this purchase order.
+          </>
+        }
+        successMessage="Supplier linked. Pushing PO to Xero…"
+        onLinked={async (xeroContactId) => {
+          setUnmappedDialogOpen(false);
+          setUnmappedSupplierId(null);
+          pushToXeroMutation.mutate(xeroContactId);
+        }}
+      />
     </div>
   );
 }

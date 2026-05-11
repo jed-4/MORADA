@@ -497,6 +497,96 @@ export class XeroService {
     }
   }
 
+  async createPurchaseOrder(
+    connectionId: string,
+    poData: {
+      supplierName: string;
+      supplierXeroContactId?: string;
+      poDate: string;
+      deliveryDate?: string;
+      reference?: string;
+      poNumber?: string;
+      attentionTo?: string;
+      deliveryAddress?: string;
+      deliveryInstructions?: string;
+      taxMode: "inclusive" | "exclusive";
+      lineItems: Array<{
+        description: string;
+        quantity: number;
+        unitAmount: number;
+        taxType?: string;
+        accountCode?: string;
+        tracking?: Array<{ TrackingCategoryID: string; TrackingOptionID: string }>;
+      }>;
+      status?: "DRAFT" | "SUBMITTED" | "AUTHORISED";
+    },
+  ): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    let contactId: string;
+    if (poData.supplierXeroContactId) {
+      contactId = poData.supplierXeroContactId;
+    } else {
+      const contact = await this.findOrCreateContact(
+        accessToken,
+        connection.tenantId,
+        poData.supplierName,
+      );
+      contactId = contact.ContactID;
+    }
+
+    const xeroLineItems = poData.lineItems.map((item) => {
+      const lineItem: any = {
+        Description: item.description,
+        Quantity: item.quantity,
+        UnitAmount: item.unitAmount,
+      };
+      if (item.taxType) lineItem.TaxType = item.taxType;
+      if (item.accountCode) lineItem.AccountCode = item.accountCode;
+      if (item.tracking && item.tracking.length > 0) {
+        lineItem.Tracking = item.tracking.map((t) => ({
+          TrackingCategoryID: t.TrackingCategoryID,
+          TrackingOptionID: t.TrackingOptionID,
+        }));
+      }
+      return lineItem;
+    });
+
+    const poPayload: any = {
+      Contact: { ContactID: contactId },
+      Date: poData.poDate,
+      LineItems: xeroLineItems,
+      LineAmountTypes: poData.taxMode === "inclusive" ? "Inclusive" : "Exclusive",
+      Status: poData.status || "DRAFT",
+    };
+    if (poData.deliveryDate) poPayload.DeliveryDate = poData.deliveryDate;
+    if (poData.reference) poPayload.Reference = poData.reference;
+    if (poData.poNumber) poPayload.PurchaseOrderNumber = poData.poNumber;
+    if (poData.attentionTo) poPayload.AttentionTo = poData.attentionTo;
+    if (poData.deliveryAddress) poPayload.DeliveryAddress = poData.deliveryAddress;
+    if (poData.deliveryInstructions) poPayload.DeliveryInstructions = poData.deliveryInstructions;
+
+    const response = await fetch(`${XERO_API_BASE}/PurchaseOrders`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ PurchaseOrders: [poPayload] }),
+    });
+
+    if (!response.ok) {
+      throw await xeroErrorFromResponse(response, "Failed to create Xero purchase order");
+    }
+
+    const data = (await response.json()) as any;
+    return data.PurchaseOrders?.[0] || data;
+  }
+
   async createBill(connectionId: string, billData: XeroBillData): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

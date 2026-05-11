@@ -4994,7 +4994,11 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Source tracking (for imports)
   sourceEstimateId: varchar("source_estimate_id").references(() => estimates.id),
   sourceQuoteIds: json("source_quote_ids").default([]), // Array of RFQ quote IDs if converted from quotes
-  
+
+  // Xero integration
+  xeroPurchaseOrderId: text("xero_purchase_order_id"), // Linked Xero PurchaseOrderID
+  xeroPurchaseOrderNumber: text("xero_purchase_order_number"), // Linked Xero PurchaseOrderNumber
+
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   
