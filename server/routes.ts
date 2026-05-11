@@ -26746,6 +26746,8 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           await storage.updatePurchaseOrder(purchaseOrderId, {
             xeroPurchaseOrderId: xeroPo.PurchaseOrderID,
             xeroPurchaseOrderNumber: xeroPo.PurchaseOrderNumber || null,
+            xeroStatus: xeroPo.Status || "DRAFT",
+            xeroLastSyncAt: new Date(),
           } as any);
         } catch (e) {
           console.error("[push-purchase-order] failed to save Xero IDs:", e);
@@ -26756,10 +26758,49 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         success: true,
         xeroPurchaseOrderId: xeroPo?.PurchaseOrderID,
         xeroPurchaseOrderNumber: xeroPo?.PurchaseOrderNumber,
+        xeroStatus: xeroPo?.Status || "DRAFT",
       });
     } catch (error: any) {
       console.error("Error pushing PO to Xero:", error);
       return res.status(500).json({ error: error?.message || "Failed to push PO to Xero" });
+    }
+  });
+
+  // Xero: Pull current Xero status for one PO and mirror it back into BuildPro.
+  // Used both by the per-PO "Refresh from Xero" button and by the polling job.
+  app.post("/api/xero/sync-purchase-order/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized - no company context" });
+
+      const po = await storage.getPurchaseOrder(req.params.id);
+      if (!po) return res.status(404).json({ error: "Purchase order not found" });
+      if ((po as any).companyId !== companyId) {
+        return res.status(403).json({ error: "Forbidden - PO does not belong to your company" });
+      }
+      if (!(po as any).xeroPurchaseOrderId) {
+        return res.status(400).json({ error: "PO has not been pushed to Xero yet" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const { syncOneXeroPurchaseOrder } = await import("./utils/xeroPoStatusSync");
+      const result = await syncOneXeroPurchaseOrder(req.params.id, connection.id);
+
+      if (result.error) {
+        return res.status(502).json({
+          error: "XERO_SYNC_FAILED",
+          message: result.error,
+          xeroStatus: result.xeroStatus,
+        });
+      }
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error("Error syncing PO from Xero:", error);
+      return res.status(500).json({ error: error?.message || "Failed to sync from Xero" });
     }
   });
 

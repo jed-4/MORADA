@@ -119,11 +119,24 @@ export function useProjectMetrics() {
     enabled: !!projectId,
   });
 
+  // Prefer the selected estimate's items so widget metrics match the
+  // contract-metrics endpoint used by the Budget page. Fall back to all
+  // project estimate items only when no selected estimate is set.
+  const selectedEstimateIdForItems =
+    (currentProject as any)?.selectedEstimateId || null;
   const { data: estimateItems = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
-    queryKey: ["/api/projects", projectId, "estimate-items"],
+    queryKey: [
+      "/api/projects",
+      projectId,
+      "estimate-items",
+      { selectedEstimateId: selectedEstimateIdForItems },
+    ],
     queryFn: async () => {
       if (!projectId) return [];
-      const response = await fetch(`/api/estimate-items?projectId=${projectId}`, { credentials: "include" });
+      const url = selectedEstimateIdForItems
+        ? `/api/estimates/${selectedEstimateIdForItems}/items`
+        : `/api/projects/${projectId}/estimate-items`;
+      const response = await fetch(url, { credentials: "include" });
       if (!response.ok) return [];
       return response.json();
     },
@@ -246,11 +259,18 @@ export function useProjectMetrics() {
     const contractMetrics = computeContractMetrics(
       estimateItems.map((i) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
       variations.map((v) => {
-        const row = v as Variation & { subtotal?: number | null; totalAmount?: number | null; status?: string | null };
+        const row = v as Variation & {
+          subtotal?: number | null;
+          totalAmount?: number | null;
+          totalIncTax?: number | null;
+          status?: string | null;
+        };
         return {
           status: row.status ?? null,
           subtotal: row.subtotal ?? null,
-          totalAmount: row.totalAmount ?? null,
+          // Match server contract-metrics fallback so legacy rows that only
+          // populated totalIncTax still contribute to the inc-GST total.
+          totalAmount: row.totalAmount ?? row.totalIncTax ?? null,
         };
       }),
       projectMarkupPercent,

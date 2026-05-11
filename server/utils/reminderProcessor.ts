@@ -175,6 +175,13 @@ export async function processReminders() {
     await processTimesheetOvertimeReminders();
     await cleanupArchivedContacts();
     await syncOverheadActualsNightly();
+
+    try {
+      const { pollXeroPurchaseOrderStatuses } = await import("./xeroPoStatusSync");
+      await pollXeroPurchaseOrderStatuses();
+    } catch (err) {
+      console.error("[ReminderProcessor] Xero PO poll failed:", err);
+    }
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {

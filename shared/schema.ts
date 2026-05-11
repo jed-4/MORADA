@@ -5005,6 +5005,8 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Xero integration
   xeroPurchaseOrderId: text("xero_purchase_order_id"), // Linked Xero PurchaseOrderID
   xeroPurchaseOrderNumber: text("xero_purchase_order_number"), // Linked Xero PurchaseOrderNumber
+  xeroStatus: text("xero_status"), // Last status mirrored from Xero (DRAFT|SUBMITTED|AUTHORISED|BILLED|DELETED)
+  xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful Xero PO push or status pull
 
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),

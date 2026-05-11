@@ -587,6 +587,31 @@ export class XeroService {
     return data.PurchaseOrders?.[0] || data;
   }
 
+  async getPurchaseOrder(connectionId: string, xeroPurchaseOrderId: string): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await fetch(
+      `${XERO_API_BASE}/PurchaseOrders/${xeroPurchaseOrderId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Xero-Tenant-Id": connection.tenantId,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw await xeroErrorFromResponse(response, "Failed to fetch Xero purchase order");
+    }
+
+    const data = (await response.json()) as any;
+    return data.PurchaseOrders?.[0] || null;
+  }
+
   async createBill(connectionId: string, billData: XeroBillData): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);

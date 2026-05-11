@@ -49,6 +49,7 @@ import {
   Clock,
   ArrowUp,
   Building2,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1102,6 +1103,40 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  const refreshFromXeroMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/xero/sync-purchase-order/${poId}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.message || body?.error || "Failed to refresh from Xero");
+      }
+      return body;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      const xeroLabel = data?.xeroStatus
+        ? `${data.xeroStatus.charAt(0)}${data.xeroStatus.slice(1).toLowerCase()}`
+        : "unknown";
+      toast({
+        title: data?.changed ? "Updated from Xero" : "Already in sync",
+        description: data?.changed
+          ? `Status updated to match Xero (${xeroLabel}).`
+          : `Xero status: ${xeroLabel}.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Refresh failed",
+        description: err?.message || "Could not pull status from Xero",
+        variant: "destructive",
+      });
+    },
+  });
+
   const markReceivedMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
@@ -1615,6 +1650,20 @@ export default function PurchaseOrderDetail() {
                     ? "Re-push to Xero"
                     : "Push to Xero (Draft)"}
                 </DropdownMenuItem>
+                {(purchaseOrder as any).xeroPurchaseOrderId && (
+                  <DropdownMenuItem
+                    onClick={() => refreshFromXeroMutation.mutate()}
+                    disabled={refreshFromXeroMutation.isPending}
+                    data-testid="action-refresh-po-from-xero"
+                  >
+                    {refreshFromXeroMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                    )}
+                    Refresh status from Xero
+                  </DropdownMenuItem>
+                )}
                 {purchaseOrder.status === "draft" && (
                   <>
                     <DropdownMenuSeparator />

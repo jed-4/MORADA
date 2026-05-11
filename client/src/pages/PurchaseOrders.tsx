@@ -417,22 +417,33 @@ export default function PurchaseOrders() {
         cell: ({ row }) => {
           const xeroId = (row.original as any).xeroPurchaseOrderId as string | null;
           const xeroNum = (row.original as any).xeroPurchaseOrderNumber as string | null;
+          const xeroStatus = (row.original as any).xeroStatus as string | null;
           if (!xeroId) {
             return <span className="text-xs text-muted-foreground">-</span>;
           }
+          const statusLabel = xeroStatus
+            ? xeroStatus.charAt(0) + xeroStatus.slice(1).toLowerCase()
+            : null;
           return (
             <span
-              className="inline-flex items-center gap-1 text-xs"
-              title={xeroNum ? `Linked to Xero PO ${xeroNum}` : "Linked to Xero"}
+              className="inline-flex items-center gap-1 text-xs min-w-0"
+              title={
+                xeroNum
+                  ? `Xero PO ${xeroNum}${xeroStatus ? ` — ${xeroStatus}` : ""}`
+                  : "Linked to Xero"
+              }
               data-testid={`cell-xero-${row.original.id}`}
             >
-              <SiXero className="w-3 h-3 text-[#13B5EA]" />
-              <span className="truncate text-muted-foreground">{xeroNum || "Linked"}</span>
+              <SiXero className="w-3 h-3 text-[#13B5EA] flex-shrink-0" />
+              <span className="truncate text-muted-foreground">
+                {xeroNum || "Linked"}
+                {statusLabel ? ` · ${statusLabel}` : ""}
+              </span>
             </span>
           );
         },
-        size: 110,
-        meta: { defaultWidth: 110, headerLabel: "Xero" },
+        size: 140,
+        meta: { defaultWidth: 140, headerLabel: "Xero" },
       },
     ];
     return cols;
