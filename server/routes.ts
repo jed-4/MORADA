@@ -26681,8 +26681,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           undefined;
 
         const qty = typeof item.quantity === "string" ? parseFloat(item.quantity) : item.quantity;
+        // Prefix the project name on every line description so it's
+        // visible in Xero (Xero PO line items don't show the PO-level
+        // Reference next to each line).
+        const baseDesc = item.description || "";
+        const descWithProject = projectName
+          ? (baseDesc ? `[${projectName}] ${baseDesc}` : `[${projectName}]`)
+          : baseDesc;
         return {
-          description: item.description || "",
+          description: descWithProject,
           quantity: Number.isFinite(qty) ? qty : 1,
           unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
           taxType: (supplierIsGstFree || item.isGstFree) ? "NONE" : "INPUT",
