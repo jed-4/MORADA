@@ -289,6 +289,7 @@ export default function Timesheets() {
       apiRequest("/api/timesheets/bulk-action", "POST", data),
     onSuccess: (result: { success: number; errors: string[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/subcontractor/awaiting-po"] });
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
