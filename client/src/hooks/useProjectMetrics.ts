@@ -233,8 +233,16 @@ export function useProjectMetrics() {
     if (!projectId) return defaults;
 
     // Centralised contract derivation (ex-GST + inc-GST variants).
-    // priceIncTax / taxAmount on estimate items are line totals in cents;
+    // priceIncTax / taxAmount on estimate items are line totals in DOLLARS (2dp);
     // variations.subtotal is ex-GST cents and variations.totalAmount is inc-GST cents.
+    // computeContractMetricsCents converts the dollar amounts and applies the
+    // selected estimate's project_markup_percent on top.
+    const selectedEstimateId = (currentProject as any)?.selectedEstimateId;
+    const selectedEstimate = selectedEstimateId
+      ? (estimates as any[]).find((e) => e.id === selectedEstimateId)
+      : null;
+    const projectMarkupPercent =
+      (selectedEstimate as any)?.projectMarkupPercent ?? 0;
     const contractMetrics = computeContractMetrics(
       estimateItems.map((i) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
       variations.map((v) => {
@@ -245,6 +253,7 @@ export function useProjectMetrics() {
           totalAmount: row.totalAmount ?? null,
         };
       }),
+      projectMarkupPercent,
     );
 
     // Contract Price (legacy alias — inc-GST dollars)

@@ -36,14 +36,28 @@ export function isApprovedVariationStatus(status: string | null | undefined): bo
 export function computeContractMetricsCents(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],
+  projectMarkupPercent: number | null | undefined = 0,
 ): ContractMetricsCents {
-  let originalIncGst = 0;
-  let originalTax = 0;
+  // estimate_items.priceIncTax / taxAmount are stored as dollars (double precision,
+  // 2dp) — convert to cents here. variations.subtotal / totalAmount are integer
+  // cents already.
+  let itemsIncGstCents = 0;
+  let itemsTaxCents = 0;
   for (const item of estimateItems) {
-    originalIncGst += Number(item.priceIncTax) || 0;
-    originalTax += Number(item.taxAmount) || 0;
+    itemsIncGstCents += Math.round((Number(item.priceIncTax) || 0) * 100);
+    itemsTaxCents += Math.round((Number(item.taxAmount) || 0) * 100);
   }
-  const originalExGst = originalIncGst - originalTax;
+  const itemsExGstCents = itemsIncGstCents - itemsTaxCents;
+
+  // Apply project-level builder margin on top of the line items to get the true
+  // contracted (sell) price. The percent is applied to ex-GST, then GST is added
+  // back at the same effective rate the items used.
+  const margin = (Number(projectMarkupPercent) || 0) / 100;
+  const originalExGst = Math.round(itemsExGstCents * (1 + margin));
+  // Preserve the items' effective tax rate (handles non-10% or zero-rated items).
+  const effectiveTaxRate =
+    itemsExGstCents > 0 ? itemsTaxCents / itemsExGstCents : 0;
+  const originalIncGst = Math.round(originalExGst * (1 + effectiveTaxRate));
 
   let varExGst = 0;
   let varIncGst = 0;
@@ -78,6 +92,9 @@ export function toContractMetrics(c: ContractMetricsCents): ContractMetrics {
 export function computeContractMetrics(
   estimateItems: EstimateItemForMetrics[],
   variations: VariationForMetrics[],
+  projectMarkupPercent: number | null | undefined = 0,
 ): ContractMetrics {
-  return toContractMetrics(computeContractMetricsCents(estimateItems, variations));
+  return toContractMetrics(
+    computeContractMetricsCents(estimateItems, variations, projectMarkupPercent),
+  );
 }

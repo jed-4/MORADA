@@ -3109,6 +3109,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? await storage.getEstimateItems(project.selectedEstimateId)
         : [];
       const variations = await storage.getVariations(req.params.id);
+      const selectedEstimate = project.selectedEstimateId
+        ? await storage.getEstimate(project.selectedEstimateId)
+        : null;
+      const projectMarkupPercent =
+        (selectedEstimate as any)?.projectMarkupPercent ?? 0;
 
       const metrics = computeContractMetrics(
         items.map((i: any) => ({ priceIncTax: i.priceIncTax, taxAmount: i.taxAmount })),
@@ -3117,6 +3122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           subtotal: v.subtotal ?? null,
           totalAmount: v.totalAmount ?? v.totalIncTax ?? null,
         })),
+        projectMarkupPercent,
       );
       res.json(metrics);
     } catch (error) {

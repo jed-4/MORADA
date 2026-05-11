@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { SiXero } from "react-icons/si";
 import type { PurchaseOrder, Project, Contact } from "@shared/schema";
 
 const STATUS_OPTIONS = [
@@ -409,6 +410,30 @@ export default function PurchaseOrders() {
         size: 110,
         meta: { defaultWidth: 110, align: "right", headerLabel: "Amount" },
       },
+      {
+        id: "xero",
+        header: "Xero",
+        accessorFn: (po) => ((po as any).xeroPurchaseOrderId ? 1 : 0),
+        cell: ({ row }) => {
+          const xeroId = (row.original as any).xeroPurchaseOrderId as string | null;
+          const xeroNum = (row.original as any).xeroPurchaseOrderNumber as string | null;
+          if (!xeroId) {
+            return <span className="text-xs text-muted-foreground">-</span>;
+          }
+          return (
+            <span
+              className="inline-flex items-center gap-1 text-xs"
+              title={xeroNum ? `Linked to Xero PO ${xeroNum}` : "Linked to Xero"}
+              data-testid={`cell-xero-${row.original.id}`}
+            >
+              <SiXero className="w-3 h-3 text-[#13B5EA]" />
+              <span className="truncate text-muted-foreground">{xeroNum || "Linked"}</span>
+            </span>
+          );
+        },
+        size: 110,
+        meta: { defaultWidth: 110, headerLabel: "Xero" },
+      },
     ];
     return cols;
   }, [projectsMap, suppliersMap]);
@@ -423,6 +448,7 @@ export default function PurchaseOrders() {
       { id: "date", label: "Date" },
       { id: "status", label: "Status" },
       { id: "amount", label: "Amount" },
+      { id: "xero", label: "Xero" },
     ],
     [],
   );
