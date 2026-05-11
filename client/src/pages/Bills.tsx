@@ -102,33 +102,42 @@ type XeroBillPreview = {
   total?: number;
   amountDue?: number;
   amountPaid?: number;
+  trackingOptionId?: string;
+  trackingOptionName?: string;
   alreadyImported: boolean;
   localBillId?: string | null;
 };
+
+type XeroTrackingOption = { id: string; name: string };
 
 function ImportFromXeroDialog({
   open,
   onOpenChange,
   projects,
   defaultProjectId,
-  onProjectChange,
-  selectedIds,
-  onSelectedIdsChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projects: Project[];
   defaultProjectId: string;
-  onProjectChange: (id: string) => void;
-  selectedIds: Set<string>;
-  onSelectedIdsChange: (ids: Set<string>) => void;
 }) {
   const { toast } = useToast();
   const [sinceDate, setSinceDate] = useState<string>("");
   const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
   const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("draft");
   const [supplierFilter, setSupplierFilter] = useState<string>("");
-  const { data: previewData, isLoading, error, refetch } = useQuery<{ bills: XeroBillPreview[]; page: number }>({
+  const [trackingFilter, setTrackingFilter] = useState<string>("__all__");
+
+  // Per-row project assignments: xeroInvoiceId → projectId
+  const [projectMap, setProjectMap] = useState<Map<string, string>>(new Map());
+  // Tracks which rows the user explicitly overrode (so bulk default changes don't clobber them)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { data: previewData, isLoading, error, refetch } = useQuery<{
+    bills: XeroBillPreview[];
+    page: number;
+    trackingOptions: XeroTrackingOption[];
+  }>({
     queryKey: ["/api/xero/bills/import-preview", sinceDate],
     queryFn: async () => {
       const qs = sinceDate ? `?since=${encodeURIComponent(sinceDate)}` : "";
@@ -139,8 +148,40 @@ function ImportFromXeroDialog({
     enabled: open,
   });
 
+  const allXeroBills = previewData?.bills || [];
+  const trackingOptions: XeroTrackingOption[] = previewData?.trackingOptions || [];
+
+  // Seed projectMap when bills load or defaultProjectId changes.
+  useEffect(() => {
+    if (allXeroBills.length === 0) return;
+    setProjectMap(prev => {
+      const next = new Map(prev);
+      for (const b of allXeroBills) {
+        if (!next.has(b.xeroInvoiceId)) {
+          next.set(b.xeroInvoiceId, defaultProjectId);
+        }
+      }
+      return next;
+    });
+  }, [allXeroBills, defaultProjectId]);
+
+  // When the dialog opens, reset state.
+  useEffect(() => {
+    if (open) {
+      setSelectedIds(new Set());
+      setProjectMap(new Map());
+      setSupplierFilter("");
+      setTrackingFilter("__all__");
+    }
+  }, [open]);
+
   const importMutation = useMutation({
-    mutationFn: async (payload: { xeroInvoiceIds: string[]; projectId: string; unmappedSupplierAction: "skip" | "create"; importStatus: "draft" | "awaiting_approval" | "from_xero" }) => {
+    mutationFn: async (payload: {
+      xeroInvoiceIds: string[];
+      projectAssignments: Record<string, string>;
+      unmappedSupplierAction: "skip" | "create";
+      importStatus: "draft" | "awaiting_approval" | "from_xero";
+    }) => {
       return await apiRequest("/api/xero/bills/import", "POST", payload);
     },
     onSuccess: (data: any) => {
@@ -148,7 +189,7 @@ function ImportFromXeroDialog({
         title: "Import complete",
         description: `${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed.`,
       });
-      onSelectedIdsChange(new Set());
+      setSelectedIds(new Set());
       onOpenChange(false);
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
     },
@@ -157,94 +198,135 @@ function ImportFromXeroDialog({
     },
   });
 
-  const allXeroBills = previewData?.bills || [];
-  const xeroBills = supplierFilter
-    ? allXeroBills.filter(b => (b.contactName || "").toLowerCase().includes(supplierFilter.toLowerCase()))
-    : allXeroBills;
-  const importableBills = xeroBills.filter(b => !b.alreadyImported);
+  const visibleBills = useMemo(() => {
+    return allXeroBills.filter(b => {
+      if (supplierFilter && !(b.contactName || "").toLowerCase().includes(supplierFilter.toLowerCase())) return false;
+      if (trackingFilter !== "__all__" && b.trackingOptionId !== trackingFilter) return false;
+      return true;
+    });
+  }, [allXeroBills, supplierFilter, trackingFilter]);
+
+  const importableBills = visibleBills.filter(b => !b.alreadyImported);
 
   const toggleAll = (checked: boolean) => {
     if (checked) {
-      onSelectedIdsChange(new Set(importableBills.map(b => b.xeroInvoiceId)));
+      setSelectedIds(new Set(importableBills.map(b => b.xeroInvoiceId)));
     } else {
-      onSelectedIdsChange(new Set());
+      setSelectedIds(new Set());
     }
   };
 
   const toggleOne = (id: string, checked: boolean) => {
-    const next = new Set(selectedIds);
-    if (checked) next.add(id); else next.delete(id);
-    onSelectedIdsChange(next);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
   };
 
-  // Xero ships dates as either "/Date(1234567890)/" or ISO. Normalise the
-  // legacy form, then defer to the shared formatter.
-  const formatXeroDate = (d?: string) => {
-    if (!d) return "—";
-    const match = d.match(/\/Date\((\d+)/);
-    return formatDate(match ? new Date(parseInt(match[1])) : d, "dd MMM yyyy");
+  const setRowProject = (xeroInvoiceId: string, pid: string) => {
+    setProjectMap(prev => new Map(prev).set(xeroInvoiceId, pid));
   };
 
-  // Xero amounts are already in dollars (not cents).
+  const setDefaultForAll = (pid: string) => {
+    setProjectMap(prev => {
+      const next = new Map(prev);
+      for (const b of allXeroBills) next.set(b.xeroInvoiceId, pid);
+      return next;
+    });
+  };
+
+  // Check if every selected bill has a project assigned.
+  const missingProject = Array.from(selectedIds).some(id => !projectMap.get(id));
+
   const formatMoney = (n?: number) => formatCurrency(n, { fromDollars: true });
+
+  const handleImport = () => {
+    const ids = Array.from(selectedIds);
+    const assignments: Record<string, string> = {};
+    for (const id of ids) {
+      const pid = projectMap.get(id);
+      if (pid) assignments[id] = pid;
+    }
+    importMutation.mutate({
+      xeroInvoiceIds: ids,
+      projectAssignments: assignments,
+      unmappedSupplierAction: unmappedAction,
+      importStatus,
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" data-testid="dialog-import-xero-bills">
+      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col" data-testid="dialog-import-xero-bills">
         <DialogHeader>
           <DialogTitle>Import bills from Xero</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2 py-2">
-          <span className="text-xs text-muted-foreground">Assign to project:</span>
-          <Select value={defaultProjectId} onValueChange={onProjectChange}>
-            <SelectTrigger className="h-8 w-56" data-testid="select-import-project">
-              <SelectValue placeholder="Select project..." />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground ml-2">From date:</span>
-          <Input
-            type="date"
-            value={sinceDate}
-            onChange={(e) => setSinceDate(e.target.value)}
-            className="h-8 w-40"
-            data-testid="input-import-since"
-          />
-          <span className="text-xs text-muted-foreground ml-2">Unmapped suppliers:</span>
-          <Select value={unmappedAction} onValueChange={(v) => setUnmappedAction(v as "skip" | "create")}>
-            <SelectTrigger className="h-8 w-36" data-testid="select-unmapped-action">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="skip">Skip</SelectItem>
-              <SelectItem value="create">Auto-create</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground ml-2">Supplier:</span>
-          <Input
-            type="text"
-            placeholder="Filter by name..."
-            value={supplierFilter}
-            onChange={(e) => setSupplierFilter(e.target.value)}
-            className="h-8 w-44"
-            data-testid="input-supplier-filter"
-          />
-          <span className="text-xs text-muted-foreground ml-2">Import as:</span>
-          <Select value={importStatus} onValueChange={(v) => setImportStatus(v as any)}>
-            <SelectTrigger className="h-8 w-44" data-testid="select-import-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="awaiting_approval">Awaiting approval</SelectItem>
-              <SelectItem value="from_xero">Match Xero status</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Default project:</span>
+            <Select value={projectMap.get("__default__") || defaultProjectId} onValueChange={setDefaultForAll}>
+              <SelectTrigger className="h-8 w-48" data-testid="select-import-project">
+                <SelectValue placeholder="Set for all rows..." />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">From date:</span>
+            <Input type="date" value={sinceDate} onChange={(e) => setSinceDate(e.target.value)} className="h-8 w-36" data-testid="input-import-since" />
+          </div>
+          {trackingOptions.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Tracking:</span>
+              <Select value={trackingFilter} onValueChange={setTrackingFilter}>
+                <SelectTrigger className="h-8 w-44" data-testid="select-tracking-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All jobs</SelectItem>
+                  {trackingOptions.map(o => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Supplier:</span>
+            <Input type="text" placeholder="Filter..." value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} className="h-8 w-36" data-testid="input-supplier-filter" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Import as:</span>
+            <Select value={importStatus} onValueChange={(v) => setImportStatus(v as any)}>
+              <SelectTrigger className="h-8 w-40" data-testid="select-import-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="awaiting_approval">Awaiting approval</SelectItem>
+                <SelectItem value="from_xero">Match Xero status</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">New suppliers:</span>
+            <Select value={unmappedAction} onValueChange={(v) => setUnmappedAction(v as "skip" | "create")}>
+              <SelectTrigger className="h-8 w-32" data-testid="select-unmapped-action">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="skip">Skip</SelectItem>
+                <SelectItem value="create">Auto-create</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="ml-auto">
             {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Refresh"}
           </Button>
@@ -260,11 +342,11 @@ function ImportFromXeroDialog({
               <AlertCircle className="w-4 h-4" />
               {(error as Error).message || "Failed to load Xero bills"}
             </div>
-          ) : xeroBills.length === 0 ? (
+          ) : visibleBills.length === 0 ? (
             <div className="p-6 text-sm text-muted-foreground text-center">No bills found in Xero.</div>
           ) : (
             <Table>
-              <TableHeader className="sticky top-0 bg-background">
+              <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
@@ -273,16 +355,18 @@ function ImportFromXeroDialog({
                       data-testid="checkbox-import-select-all"
                     />
                   </TableHead>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-xs">Invoice #</TableHead>
+                  <TableHead className="text-xs">Supplier</TableHead>
+                  <TableHead className="text-xs">Reference</TableHead>
+                  {trackingOptions.length > 0 && <TableHead className="text-xs">Tracking</TableHead>}
+                  <TableHead className="text-xs">Date</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs text-right">Total</TableHead>
+                  <TableHead className="text-xs">Project</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {xeroBills.map((b) => (
+                {visibleBills.map((b) => (
                   <TableRow key={b.xeroInvoiceId} className={b.alreadyImported ? "opacity-50" : ""}>
                     <TableCell>
                       <Checkbox
@@ -295,6 +379,9 @@ function ImportFromXeroDialog({
                     <TableCell className="text-xs font-mono">{b.invoiceNumber || "—"}</TableCell>
                     <TableCell className="text-xs">{b.contactName || "—"}</TableCell>
                     <TableCell className="text-xs">{b.reference || "—"}</TableCell>
+                    {trackingOptions.length > 0 && (
+                      <TableCell className="text-xs text-muted-foreground">{b.trackingOptionName || "—"}</TableCell>
+                    )}
                     <TableCell className="text-xs">{formatDate(b.date)}</TableCell>
                     <TableCell>
                       {b.alreadyImported ? (
@@ -304,6 +391,25 @@ function ImportFromXeroDialog({
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-right">{formatMoney(b.total)}</TableCell>
+                    <TableCell>
+                      {b.alreadyImported ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <Select
+                          value={projectMap.get(b.xeroInvoiceId) || ""}
+                          onValueChange={(v) => setRowProject(b.xeroInvoiceId, v)}
+                        >
+                          <SelectTrigger className="h-7 w-40 text-xs" data-testid={`select-project-${b.xeroInvoiceId}`}>
+                            <SelectValue placeholder="Select project..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projects.map((p) => (
+                              <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -311,12 +417,17 @@ function ImportFromXeroDialog({
           )}
         </div>
 
-        <DialogFooter>
-          <span className="text-xs text-muted-foreground mr-auto">{selectedIds.size} selected</span>
+        <DialogFooter className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground mr-auto">
+            {selectedIds.size} selected
+            {missingProject && selectedIds.size > 0 && (
+              <span className="text-destructive ml-2">— some selected bills have no project assigned</span>
+            )}
+          </span>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
-            disabled={selectedIds.size === 0 || !defaultProjectId || importMutation.isPending}
-            onClick={() => importMutation.mutate({ xeroInvoiceIds: Array.from(selectedIds), projectId: defaultProjectId, unmappedSupplierAction: unmappedAction, importStatus })}
+            disabled={selectedIds.size === 0 || missingProject || importMutation.isPending}
+            onClick={handleImport}
             data-testid="button-confirm-import"
           >
             {importMutation.isPending ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" /> Importing...</> : `Import ${selectedIds.size}`}
@@ -348,7 +459,6 @@ export default function Bills() {
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importProjectId, setImportProjectId] = useState<string>("");
-  const [selectedXeroBillIds, setSelectedXeroBillIds] = useState<Set<string>>(new Set());
 
   const { toast } = useToast();
 
@@ -828,7 +938,6 @@ export default function Bills() {
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
               onClick={() => {
                 setImportProjectId(projectIdFromUrl || "");
-                setSelectedXeroBillIds(new Set());
                 setImportDialogOpen(true);
               }}
               data-testid="button-import-from-xero"
@@ -967,9 +1076,6 @@ export default function Bills() {
         onOpenChange={setImportDialogOpen}
         projects={projects}
         defaultProjectId={importProjectId}
-        onProjectChange={setImportProjectId}
-        selectedIds={selectedXeroBillIds}
-        onSelectedIdsChange={setSelectedXeroBillIds}
       />
 
       {/* ── Content ── */}

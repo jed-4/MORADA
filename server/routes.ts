@@ -27410,10 +27410,44 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const sinceParam = (req.query.since || req.query.modifiedSince) as string | undefined;
       const modifiedSince = sinceParam ? new Date(sinceParam) : undefined;
       const supplierContactId = req.query.supplierContactId as string | undefined;
+      const trackingOptionIdFilter = req.query.trackingOptionId as string | undefined;
+
+      // Fetch TC2 (Jobs) tracking options from Xero so the UI can offer a filter dropdown.
+      const tc2Id = (connection as any).trackingCategory2Id as string | null | undefined;
+      let trackingOptions: { id: string; name: string }[] = [];
+      if (tc2Id) {
+        try {
+          const allCategories = await xeroService.getTrackingCategories(connection.id);
+          const tc2 = allCategories.find((tc: any) => tc.TrackingCategoryID === tc2Id);
+          if (tc2) {
+            trackingOptions = ((tc2.Options || []) as any[])
+              .filter((o: any) => o.Status === "ACTIVE")
+              .map((o: any) => ({ id: o.TrackingOptionID, name: o.Name }));
+          }
+        } catch (e) {
+          // Non-fatal — tracking filter just won't show options.
+        }
+      }
+
+      // Helper: extract TC2 tracking option from the first line item that has it.
+      const extractTrackingOption = (xb: any): { trackingOptionId?: string; trackingOptionName?: string } => {
+        if (!tc2Id) return {};
+        for (const line of (xb.LineItems || [])) {
+          for (const tc of (line.TrackingCategories || [])) {
+            if (tc.TrackingCategoryID === tc2Id) {
+              return { trackingOptionId: tc.TrackingOptionID, trackingOptionName: tc.Option };
+            }
+          }
+        }
+        return {};
+      };
 
       let xeroBills = await xeroService.listBills(connection.id, { page, modifiedSince });
       if (supplierContactId) {
         xeroBills = xeroBills.filter((xb: any) => xb.Contact?.ContactID === supplierContactId);
+      }
+      if (trackingOptionIdFilter) {
+        xeroBills = xeroBills.filter((xb: any) => extractTrackingOption(xb).trackingOptionId === trackingOptionIdFilter);
       }
 
       // Mark which Xero bills already exist locally
@@ -27422,6 +27456,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           const localBill = xb.InvoiceID
             ? await storage.getBillByXeroId(xb.InvoiceID, companyId).catch(() => null)
             : null;
+          const tracking = extractTrackingOption(xb);
           return {
             xeroInvoiceId: xb.InvoiceID,
             invoiceNumber: xb.InvoiceNumber,
@@ -27435,13 +27470,15 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             amountDue: xb.AmountDue,
             amountPaid: xb.AmountPaid,
             currencyCode: xb.CurrencyCode,
+            trackingOptionId: tracking.trackingOptionId,
+            trackingOptionName: tracking.trackingOptionName,
             alreadyImported: !!localBill,
             localBillId: localBill?.id || null,
           };
         }),
       );
 
-      res.json({ bills: enriched, page });
+      res.json({ bills: enriched, page, trackingOptions });
     } catch (error: any) {
       console.error("Error previewing Xero bills:", error);
       res.status(500).json({ error: error.message || "Failed to load Xero bills" });
@@ -27458,9 +27495,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const companyId = user?.companyId;
       if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { xeroInvoiceIds, projectId, unmappedSupplierAction, defaultCostCodeId, importStatus } = req.body as {
+      const { xeroInvoiceIds, projectId, projectAssignments, unmappedSupplierAction, defaultCostCodeId, importStatus } = req.body as {
         xeroInvoiceIds: string[];
-        projectId: string;
+        projectId?: string;
+        projectAssignments?: Record<string, string>; // xeroInvoiceId → projectId (per-row overrides)
         unmappedSupplierAction?: "skip" | "create";
         defaultCostCodeId?: string;
         importStatus?: "draft" | "awaiting_approval" | "from_xero";
@@ -27470,14 +27508,18 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!Array.isArray(xeroInvoiceIds) || xeroInvoiceIds.length === 0) {
         return res.status(400).json({ error: "xeroInvoiceIds is required (non-empty array)" });
       }
-      if (!projectId) {
-        return res.status(400).json({ error: "projectId is required for imported bills" });
-      }
 
-      const project = await storage.getProject(projectId);
-      if (!project || (project as any).companyId !== companyId) {
-        return res.status(403).json({ error: "Project not found in your company" });
-      }
+      // Cache of validated projects to avoid repeated DB lookups.
+      const validatedProjects = new Map<string, boolean>();
+      const resolveProjectId = async (xeroInvoiceId: string): Promise<string | null> => {
+        const pid = (projectAssignments && projectAssignments[xeroInvoiceId]) || projectId || null;
+        if (!pid) return null;
+        if (validatedProjects.has(pid)) return validatedProjects.get(pid) ? pid : null;
+        const proj = await storage.getProject(pid);
+        const valid = !!(proj && (proj as any).companyId === companyId);
+        validatedProjects.set(pid, valid);
+        return valid ? pid : null;
+      };
 
       const connection = await storage.getXeroConnectionByCompanyId(companyId);
       if (!connection) return res.status(400).json({ error: "Xero is not connected" });
@@ -27588,10 +27630,16 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             else if (xeroStatus === "DRAFT" || xeroStatus === "SUBMITTED") status = "awaiting_approval";
           }
 
+          const billProjectId = await resolveProjectId(xeroInvoiceId);
+          if (!billProjectId) {
+            results.push({ xeroInvoiceId, ok: false, error: "No valid project assigned for this bill" });
+            continue;
+          }
+
           const billNumber = await storage.getNextBillNumber();
           const newBill = await storage.createBill({
             billNumber,
-            projectId,
+            projectId: billProjectId,
             supplierId: supplierId as any,
             billType: "bill",
             status,
