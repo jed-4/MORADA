@@ -7119,6 +7119,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Bill Inbox Gmail Polling ─────────────────────────────────────────────
+
+  app.get('/api/bill-inbox/status', requireAuth, async (req: any, res) => {
+    try {
+      const settings = await storage.getCompanySettings();
+      if (!settings) {
+        return res.json({ connected: false, pollingEnabled: false, email: null, lastPolledAt: null });
+      }
+      res.json({
+        connected: !!(settings.billInboxGmailEmail && settings.billInboxGmailAccessToken && settings.billInboxGmailRefreshToken),
+        pollingEnabled: settings.billInboxPollingEnabled,
+        email: settings.billInboxGmailEmail || null,
+        lastPolledAt: settings.billInboxLastPolledAt || null,
+        connectedAt: settings.billInboxGmailConnectedAt || null,
+        defaultUserId: settings.billInboxDefaultUserId || null,
+      });
+    } catch (error) {
+      console.error('[BillInbox] Error fetching status:', error);
+      res.status(500).json({ message: 'Failed to fetch bill inbox status' });
+    }
+  });
+
+  app.get('/api/bill-inbox/auth-url', requireAuth, async (req: any, res) => {
+    try {
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      const state = Buffer.from(JSON.stringify({ action: 'bill-inbox', timestamp: Date.now() })).toString('base64');
+      const authUrl = oauthService.generateBillInboxAuthUrl(state);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('[BillInbox] Error generating auth URL:', error);
+      res.status(500).json({ message: 'Failed to generate auth URL' });
+    }
+  });
+
+  app.get('/api/bill-inbox/callback', async (req: any, res) => {
+    try {
+      const { code, error } = req.query;
+      if (error) {
+        return res.redirect(`/settings?tab=integrations&bill_inbox_error=${encodeURIComponent(error)}`);
+      }
+      if (!code) {
+        return res.redirect('/settings?tab=integrations&bill_inbox_error=missing_code');
+      }
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      const result = await oauthService.handleBillInboxCallback(code as string);
+
+      await storage.updateCompanySettings({
+        billInboxGmailEmail: result.email,
+        billInboxGmailAccessToken: result.accessToken,
+        billInboxGmailRefreshToken: result.refreshToken,
+        billInboxGmailTokenExpiry: result.tokenExpiry,
+        billInboxGmailConnectedAt: new Date(),
+        billInboxPollingEnabled: true,
+      });
+
+      console.log('[BillInbox] Connected Gmail account:', result.email);
+      res.redirect('/settings?tab=integrations&bill_inbox_success=true');
+    } catch (error: any) {
+      console.error('[BillInbox] OAuth callback error:', error.message);
+      res.redirect(`/settings?tab=integrations&bill_inbox_error=${encodeURIComponent(error.message || 'callback_failed')}`);
+    }
+  });
+
+  app.post('/api/bill-inbox/disconnect', requireAuth, async (req: any, res) => {
+    try {
+      await storage.updateCompanySettings({
+        billInboxGmailEmail: null,
+        billInboxGmailAccessToken: null,
+        billInboxGmailRefreshToken: null,
+        billInboxGmailTokenExpiry: null,
+        billInboxGmailConnectedAt: null,
+        billInboxPollingEnabled: false,
+        billInboxLastPolledAt: null,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[BillInbox] Error disconnecting:', error);
+      res.status(500).json({ message: 'Failed to disconnect bill inbox' });
+    }
+  });
+
+  app.post('/api/bill-inbox/toggle-polling', requireAuth, async (req: any, res) => {
+    try {
+      const { enabled } = req.body;
+      await storage.updateCompanySettings({ billInboxPollingEnabled: !!enabled });
+      res.json({ success: true, pollingEnabled: !!enabled });
+    } catch (error) {
+      console.error('[BillInbox] Error toggling polling:', error);
+      res.status(500).json({ message: 'Failed to toggle polling' });
+    }
+  });
+
+  app.post('/api/bill-inbox/set-default-user', requireAuth, async (req: any, res) => {
+    try {
+      const { userId } = req.body;
+      await storage.updateCompanySettings({ billInboxDefaultUserId: userId || null });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[BillInbox] Error setting default user:', error);
+      res.status(500).json({ message: 'Failed to set default user' });
+    }
+  });
+
+  app.post('/api/bill-inbox/poll-now', requireAuth, async (req: any, res) => {
+    try {
+      const { pollBillInbox } = await import('./services/gmailBillPoller');
+      const result = await pollBillInbox();
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('[BillInbox] Manual poll error:', error.message);
+      res.status(500).json({ message: error.message || 'Poll failed' });
+    }
+  });
+
   // Get Google Calendar events
   app.get('/api/google-calendar/events', requireAuth, async (req: any, res) => {
     try {

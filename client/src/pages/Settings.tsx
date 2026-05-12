@@ -653,7 +653,239 @@ export default function Settings() {
 
         {/* Xero Integration */}
         <XeroIntegrationCard />
+
+        {/* Bill Inbox Integration */}
+        <BillInboxCard />
       </div>
+    );
+  };
+
+  const BillInboxCard = () => {
+    const { toast } = useToast();
+
+    const { data: status, isLoading, refetch } = useQuery<{
+      connected: boolean;
+      pollingEnabled: boolean;
+      email: string | null;
+      lastPolledAt: string | null;
+      connectedAt: string | null;
+      defaultUserId: string | null;
+    }>({
+      queryKey: ["/api/bill-inbox/status"],
+    });
+
+    const { data: allUsers } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>({
+      queryKey: ["/api/users"],
+    });
+
+    const connectMutation = useMutation({
+      mutationFn: async () => {
+        const res = await apiRequest("/api/bill-inbox/auth-url", "GET");
+        return res;
+      },
+      onSuccess: (data) => {
+        if (data.authUrl) window.location.href = data.authUrl;
+      },
+      onError: (err: any) => {
+        toast({ title: "Failed to connect", description: err.message, variant: "destructive" });
+      },
+    });
+
+    const disconnectMutation = useMutation({
+      mutationFn: () => apiRequest("/api/bill-inbox/disconnect", "POST"),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
+        toast({ title: "Bill inbox disconnected" });
+      },
+      onError: (err: any) => {
+        toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" });
+      },
+    });
+
+    const toggleMutation = useMutation({
+      mutationFn: (enabled: boolean) => apiRequest("/api/bill-inbox/toggle-polling", "POST", { enabled }),
+      onSuccess: (_, enabled) => {
+        queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
+        toast({ title: enabled ? "Polling enabled" : "Polling paused" });
+      },
+      onError: (err: any) => {
+        toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+      },
+    });
+
+    const setUserMutation = useMutation({
+      mutationFn: (userId: string) => apiRequest("/api/bill-inbox/set-default-user", "POST", { userId }),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
+        toast({ title: "Default user updated" });
+      },
+      onError: (err: any) => {
+        toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+      },
+    });
+
+    const pollNowMutation = useMutation({
+      mutationFn: () => apiRequest("/api/bill-inbox/poll-now", "POST"),
+      onSuccess: (data: any) => {
+        queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
+        toast({
+          title: `Poll complete`,
+          description: data.processed > 0
+            ? `${data.processed} new bill(s) created from your inbox`
+            : "No new invoices found in inbox",
+        });
+      },
+      onError: (err: any) => {
+        toast({ title: "Poll failed", description: err.message, variant: "destructive" });
+      },
+    });
+
+    useEffect(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("bill_inbox_success")) {
+        toast({ title: "Bill inbox connected", description: "BuildPro will now check this inbox every 5 minutes for new invoices." });
+        refetch();
+        window.history.replaceState({}, "", window.location.pathname + "?tab=integrations");
+      }
+      if (params.get("bill_inbox_error")) {
+        toast({
+          title: "Failed to connect bill inbox",
+          description: decodeURIComponent(params.get("bill_inbox_error") || ""),
+          variant: "destructive",
+        });
+        window.history.replaceState({}, "", window.location.pathname + "?tab=integrations");
+      }
+    }, []);
+
+    const userName = (u: { firstName: string | null; lastName: string | null; email: string }) =>
+      [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
+              <Receipt className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2 flex-wrap">
+                Bill Inbox
+                {status?.connected && status?.pollingEnabled && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Active
+                  </Badge>
+                )}
+                {status?.connected && !status?.pollingEnabled && (
+                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                    Paused
+                  </Badge>
+                )}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Forward supplier invoices to a Gmail address — BuildPro polls it every 5 minutes and creates draft bills automatically
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!status?.connected && (
+            <div className="space-y-3">
+              <div className="border rounded-lg p-4 bg-muted/30 space-y-2">
+                <h4 className="font-medium text-sm">How it works</h4>
+                <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Connect a Gmail account below (e.g. <code className="bg-background px-1 rounded">bills@gmail.com</code>)</li>
+                  <li>Give that address to your suppliers to forward invoices to</li>
+                  <li>BuildPro checks the inbox every 5 minutes and runs the AI Bill Reader on any PDF or image attachments</li>
+                  <li>New bills appear in your Bills list as drafts, ready to review</li>
+                </ol>
+              </div>
+              <Button
+                onClick={() => connectMutation.mutate()}
+                disabled={connectMutation.isPending || isLoading}
+              >
+                {connectMutation.isPending ? (
+                  <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Connecting...</>
+                ) : (
+                  <><Mail className="h-4 w-4 mr-2" />Connect Gmail Inbox</>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {status?.connected && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
+                    <CheckCircle2 className="h-5 w-5 text-status-success dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{status.email}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {status.lastPolledAt
+                        ? `Last checked: ${new Date(status.lastPolledAt).toLocaleString()}`
+                        : "Not yet polled"}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => disconnectMutation.mutate()}
+                  disabled={disconnectMutation.isPending}
+                >
+                  {disconnectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Disconnect"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Auto-polling</p>
+                  <p className="text-xs text-muted-foreground">Check inbox every 5 minutes</p>
+                </div>
+                <Switch
+                  checked={status.pollingEnabled}
+                  onCheckedChange={(v) => toggleMutation.mutate(v)}
+                  disabled={toggleMutation.isPending}
+                />
+              </div>
+
+              <div className="p-3 border rounded-lg space-y-2">
+                <p className="text-sm font-medium">Default user for new bills</p>
+                <p className="text-xs text-muted-foreground">Bills created from the inbox will be attributed to this user</p>
+                <Select
+                  value={status.defaultUserId || ""}
+                  onValueChange={(v) => setUserMutation.mutate(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(allUsers || []).map(u => (
+                      <SelectItem key={u.id} value={u.id}>{userName(u)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => pollNowMutation.mutate()}
+                  disabled={pollNowMutation.isPending}
+                >
+                  {pollNowMutation.isPending ? (
+                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Checking inbox...</>
+                  ) : (
+                    <><RefreshCw className="h-4 w-4 mr-2" />Check inbox now</>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">Manually trigger a poll</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     );
   };
 

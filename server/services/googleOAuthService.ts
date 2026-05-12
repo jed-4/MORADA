@@ -10,6 +10,12 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
+const BILL_INBOX_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
 const userClientCache = new Map<string, { client: any; expiresAt: number }>();
 const TOKEN_PERSIST_DEBOUNCE = new Map<string, NodeJS.Timeout>();
 
@@ -401,6 +407,107 @@ export class GoogleOAuthService {
     };
   }
   
+  generateBillInboxAuthUrl(state: string): string {
+    const authUrl = this.oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: BILL_INBOX_SCOPES,
+      state,
+      prompt: 'consent',
+    });
+    return authUrl;
+  }
+
+  async handleBillInboxCallback(code: string): Promise<{ email: string; accessToken: string; refreshToken: string; tokenExpiry: Date }> {
+    const { tokens } = await this.oauth2Client.getToken(code);
+
+    if (!tokens.access_token || !tokens.refresh_token) {
+      throw new Error('Missing tokens from Google OAuth response for bill inbox');
+    }
+
+    this.oauth2Client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+    const email = userInfo.data.email;
+
+    if (!email) {
+      throw new Error('Unable to retrieve email from Google for bill inbox');
+    }
+
+    const expiryDate = tokens.expiry_date
+      ? new Date(tokens.expiry_date)
+      : new Date(Date.now() + 3600 * 1000);
+
+    return {
+      email,
+      accessToken: encryptToken(tokens.access_token),
+      refreshToken: encryptToken(tokens.refresh_token),
+      tokenExpiry: expiryDate,
+    };
+  }
+
+  async getBillInboxGmailClient(settings: {
+    billInboxGmailAccessToken: string;
+    billInboxGmailRefreshToken: string;
+    billInboxGmailTokenExpiry?: Date | null;
+  }): Promise<any> {
+    let accessToken: string;
+    let refreshToken: string;
+
+    try {
+      accessToken = decryptToken(settings.billInboxGmailAccessToken);
+      refreshToken = decryptToken(settings.billInboxGmailRefreshToken);
+    } catch (e: any) {
+      throw new Error('Bill inbox Gmail tokens corrupted. Please reconnect the bill inbox account.');
+    }
+
+    const client = this.createBillInboxOAuth2Client();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expiry_date: settings.billInboxGmailTokenExpiry?.getTime(),
+    });
+
+    const shouldRefresh = !settings.billInboxGmailTokenExpiry ||
+      settings.billInboxGmailTokenExpiry.getTime() < Date.now() + 60 * 1000;
+
+    if (shouldRefresh) {
+      try {
+        const { credentials } = await Promise.race([
+          client.refreshAccessToken(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Token refresh timed out')), 10000)
+          ),
+        ]);
+        if (credentials.access_token) {
+          client.setCredentials(credentials);
+          const encryptedNew = encryptToken(credentials.access_token);
+          const newExpiry = credentials.expiry_date
+            ? new Date(credentials.expiry_date)
+            : new Date(Date.now() + 3600 * 1000);
+          await this.storage.updateCompanySettings({
+            billInboxGmailAccessToken: encryptedNew,
+            billInboxGmailTokenExpiry: newExpiry,
+          });
+        }
+      } catch (err: any) {
+        console.log('[BillInbox] Token refresh failed, using existing credentials:', err.message);
+      }
+    }
+
+    return google.gmail({ version: 'v1', auth: client });
+  }
+
+  private createBillInboxOAuth2Client(): any {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    const redirectUri = this.getBillInboxRedirectUri();
+    return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  }
+
+  getBillInboxRedirectUri(): string {
+    return 'https://buildpro4.replit.app/api/bill-inbox/callback';
+  }
+
   async getGmailClient(userId: string): Promise<any> {
     const user = await this.storage.getUser(userId);
     

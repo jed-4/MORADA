@@ -1087,6 +1087,16 @@ export const companySettings = pgTable("company_settings", {
   // Financial Targets
   annualRevenueTarget: numeric("annual_revenue_target", { precision: 15, scale: 2 }),
 
+  // Gmail Bill Inbox — company-level Google account used for polling inbound bills
+  billInboxGmailEmail: text("bill_inbox_gmail_email"),
+  billInboxGmailAccessToken: text("bill_inbox_gmail_access_token"),
+  billInboxGmailRefreshToken: text("bill_inbox_gmail_refresh_token"),
+  billInboxGmailTokenExpiry: timestamp("bill_inbox_gmail_token_expiry"),
+  billInboxGmailConnectedAt: timestamp("bill_inbox_gmail_connected_at"),
+  billInboxPollingEnabled: boolean("bill_inbox_polling_enabled").notNull().default(false),
+  billInboxLastPolledAt: timestamp("bill_inbox_last_polled_at"),
+  billInboxDefaultUserId: varchar("bill_inbox_default_user_id"), // userId whose company/project context to use for new bills
+
   // Xero Defaults
   // Fallback Xero AccountCode applied to bill line items that don't have an
   // account on the line and where the supplier has no xeroDefaultAccountCode.

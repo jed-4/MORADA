@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { startReminderProcessor } from "./utils/reminderProcessor";
 import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcessor";
+import { startGmailBillPoller } from "./services/gmailBillPoller";
 import { healContactNames } from "./utils/healContactNames";
 import { storage } from "./storage";
 import path from "path";
@@ -196,6 +197,7 @@ app.use((req, res, next) => {
     
     startReminderProcessor(1);
     startScheduledMessageProcessor(1);
+    startGmailBillPoller(5);
 
     // One-time data heal for trade/supplier contacts whose `name` was
     // overwritten by the old key-person fallback. Idempotent — safe to
