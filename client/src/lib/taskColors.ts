@@ -14,12 +14,16 @@ export const TYPE_COLORS = {
 } as const;
 
 export const TYPE_COLORS_HEX = {
-  task:       '#A890D4', // lavender
-  milestone:  '#D4B670', // amber
-  inspection: '#82C8A2', // sage
-  delivery:   '#70CAD0', // teal
-  meeting:    '#DA988A', // coral
-  leave:      '#D08AAF', // rose
+  task:              '#a890d4', // --bp-purple
+  milestone:         '#e8952a', // --bp-amber
+  inspection:        '#68b088', // --bp-green
+  delivery:          '#4a90d4', // --bp-blue
+  meeting:           '#e85b5b', // --bp-coral
+  leave:             '#9b9b9b', // --bp-muted
+  schedule:          '#68b088', // --bp-green
+  timesheet:         '#e8952a', // --bp-amber
+  "google-calendar": '#4a90d4', // --bp-blue
+  site_diary:        '#68b088', // --bp-green
 } as const;
 
 export type ScheduleItemType = keyof typeof TYPE_COLORS;
@@ -162,11 +166,11 @@ export function generateNotionColors(hexColor: string | null | undefined): {
       throw new Error('Invalid HSL values');
     }
     
-    // Pastel background: Keep hue, reduce saturation to 60%, increase lightness to 92%
-    const pastelBg = hslToHex(hsl.h, Math.min(hsl.s, 60), 92);
+    // Pastel background: Keep hue, reduce saturation to 65%, increase lightness to 88%
+    const pastelBg = hslToHex(hsl.h, Math.min(hsl.s, 65), 88);
     
-    // Dark text: Keep hue, moderate saturation, low lightness (30%)
-    const darkText = hslToHex(hsl.h, Math.min(hsl.s * 0.9, 70), 30);
+    // Dark text: Keep hue, moderate saturation, low lightness (28%)
+    const darkText = hslToHex(hsl.h, Math.min(hsl.s * 0.9, 70), 28);
     
     return {
       pastelBg,

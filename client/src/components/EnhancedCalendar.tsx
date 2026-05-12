@@ -162,14 +162,12 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-table mb-0.5 transition-all overflow-hidden shadow-sm",
-        showResizeHandles && "h-full",
-        !isReadOnlyEvent && "touch-none",
-        !isReadOnlyEvent && !showResizeHandles && "cursor-move hover:shadow-md",
-        showResizeHandles && !isReadOnlyEvent && "cursor-move hover:shadow-md",
-        isReadOnlyEvent && "cursor-pointer hover:shadow-md",
-        isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg"
+        "group relative flex items-center gap-1.5 px-2 py-1 rounded-[4px] mb-0.5 transition-all overflow-hidden",
+        showResizeHandles && "h-full items-start",
+        !isReadOnlyEvent && "touch-none cursor-move",
+        isReadOnlyEvent && "cursor-pointer",
+        isCompleted && "opacity-55",
+        isDragging && "opacity-50 scale-[0.98] shadow-md"
       )}
       style={{
         backgroundColor: notionColors.pastelBg,
@@ -195,31 +193,41 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           data-testid={`checkbox-complete-${event.id}`}
           onClick={(e) => onToggleComplete?.(e, event)}
           onPointerDown={(e) => e.stopPropagation()}
-          className="flex-shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center transition-all"
+          className="flex-shrink-0 w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-all"
           style={{
             borderColor: notionColors.darkText,
             backgroundColor: isCompleted ? notionColors.darkText : 'transparent',
             color: isCompleted ? notionColors.pastelBg : notionColors.darkText,
+            opacity: isCompleted ? 1 : 0.7,
           }}
         >
-          {isCompleted && <Check className="w-2 h-2" />}
+          {isCompleted && <Check className="w-2.5 h-2.5" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
-        <div className="flex items-center gap-1 w-full">
-          <div 
+      <div className="flex-1 min-w-0 overflow-hidden">
+        {/* Title + time on the same line — Notion style */}
+        <div className="flex items-baseline gap-1 w-full min-w-0">
+          <span
             className={cn(
-              "font-semibold truncate flex-1 text-data leading-tight",
+              "font-medium truncate flex-shrink text-[11px] leading-tight",
               isCompleted && "line-through opacity-60"
             )}
             style={{ color: notionColors.darkText }}
           >
             {event.title}
-          </div>
+          </span>
+          {showTime && (displayOptions?.showTime !== false) && (
+            <span
+              className="flex-shrink-0 text-[10px] leading-tight opacity-75 whitespace-nowrap"
+              style={{ color: notionColors.darkText }}
+            >
+              {event.startTime}{event.endTime && `–${event.endTime}`}
+            </span>
+          )}
           {isRecurring && (
-            <Badge 
-              variant="outline" 
-              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-green-500 border-none text-white font-bold"
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-green-500 border-none text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
               title="Recurring template task"
               data-testid={`recurring-badge-${event.id}`}
             >
@@ -227,9 +235,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             </Badge>
           )}
           {event.isModified && (
-            <Badge 
-              variant="outline" 
-              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold"
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
               title="Task has been rescheduled"
               data-testid={`moved-badge-${event.id}`}
             >
@@ -237,33 +245,27 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             </Badge>
           )}
         </div>
-        {showTime && (displayOptions?.showTime !== false) && (
-          <div 
-            className="text-label font-normal opacity-80 leading-tight"
-            style={{ color: notionColors.darkText }}
-          >
-            {event.startTime}{event.endTime && ` - ${event.endTime}`}
-          </div>
-        )}
-        {displayOptions?.showProject && event.projectName && (
-          <div 
-            className="text-label font-normal opacity-70 leading-tight truncate w-full"
+
+        {/* Project, assignee, status — only when not in timed resize mode */}
+        {!showResizeHandles && displayOptions?.showProject && event.projectName && (
+          <div
+            className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
           >
             {event.projectName}
           </div>
         )}
-        {displayOptions?.showAssignee && event.assigneeName && (
-          <div 
-            className="text-label font-normal opacity-70 leading-tight truncate w-full"
+        {!showResizeHandles && displayOptions?.showAssignee && event.assigneeName && (
+          <div
+            className="text-[10px] opacity-65 truncate leading-tight"
             style={{ color: notionColors.darkText }}
           >
             {event.assigneeName}
           </div>
         )}
-        {displayOptions?.showStatus && event.status && (
-          <div 
-            className="text-label font-normal opacity-70 leading-tight truncate w-full capitalize"
+        {!showResizeHandles && displayOptions?.showStatus && event.status && (
+          <div
+            className="text-[10px] opacity-65 truncate leading-tight capitalize"
             style={{ color: notionColors.darkText }}
           >
             {event.status}
