@@ -134,12 +134,19 @@ function isUnassignedItem(item: WeekScheduleItem): boolean {
 // indicator. Orphaned assignments (assignedToId set but contact no longer
 // exists, so contactType comes back null) still count as company so the row
 // never silently appears empty when "Company only" is on.
+// Name-only assignments (assignedToName set, no contact id) are also treated
+// as company work — external trades are virtually always linked via a contact
+// record, whereas in-house/company tasks are often name-only.
 function isCompanyItem(item: WeekScheduleItem): boolean {
   if (isUnassignedItem(item)) return false;
-  if (!item.assignedToId) return false;
-  if (item.assignedToId.startsWith('company:')) return true;
+  // Legacy company:* sentinel IDs always count as company
+  if (item.assignedToId?.startsWith('company:')) return true;
+  // Items assigned to internal team contacts
   if (item.assignedToContactType === 'team') return true;
-  if (item.assignedToContactType === null) return true;
+  // Name-only assignment — no linked contact record; treat as in-house work
+  if (!item.assignedToId && item.assignedToName) return true;
+  // Orphaned contact reference (contact was deleted) — keep in company view
+  if (item.assignedToId && item.assignedToContactType === null) return true;
   return false;
 }
 
@@ -160,11 +167,22 @@ function darkenHex(hex: string, amount = 0.35): string {
   return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
 }
 
-function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor, onNavigate, dragHandleProps, items: providedItems }: {
+interface ItemSpan {
+  item: WeekScheduleItem;
+  colStart: number;
+  colEnd: number;
+  clippedLeft: boolean;
+  clippedRight: boolean;
+  lane: number;
+}
+
+function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, hideParents, hideSubItems, companyColor, onNavigate, dragHandleProps, items: providedItems }: {
   project: BusinessProject;
   weekDays: Date[];
   todayStr: string;
   companyOnly: boolean;
+  hideParents: boolean;
+  hideSubItems: boolean;
   companyColor: string;
   onNavigate: (id: string) => void;
   dragHandleProps?: { attributes: any; listeners: any };
@@ -180,20 +198,62 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
   });
   const items = providedItems ?? fetchedItems;
 
-  // Show all items except group/summary headers (which have no meaningful date span of their own)
+  // Filter items
   const baseItems = items.filter(item => item.type !== 'group');
-  const leafItems = companyOnly ? baseItems.filter(isCompanyItem) : baseItems;
+  let filteredItems = companyOnly ? baseItems.filter(isCompanyItem) : baseItems;
+  if (hideSubItems) filteredItems = filteredItems.filter(item => !item.parentItemId);
+  if (hideParents) {
+    const parentIds = new Set(baseItems.map(i => i.parentItemId).filter(Boolean) as string[]);
+    filteredItems = filteredItems.filter(item => !parentIds.has(item.id));
+  }
 
-  const maxPerDay = Math.max(1, ...weekDays.map(day => {
-    return leafItems.filter(item => {
-      if (!item.startDate || !item.endDate) return false;
-      const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
-      const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
-      const d = new Date(day); d.setHours(12, 0, 0, 0);
-      return d >= s && d <= e;
-    }).length;
-  }));
-  const rowH = Math.max(ROW_HEIGHT + 8, maxPerDay * (WEEK_ITEM_H + WEEK_ITEM_GAP) + WEEK_ROW_PAD * 2);
+  // Compute spanning info for each item overlapping this week
+  const weekStartD = new Date(weekDays[0]); weekStartD.setHours(0, 0, 0, 0);
+  const weekEndD = new Date(weekDays[weekDays.length - 1]); weekEndD.setHours(23, 59, 59, 999);
+
+  const spans: ItemSpan[] = [];
+  for (const item of filteredItems) {
+    if (!item.startDate || !item.endDate) continue;
+    const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
+    const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
+    if (s > weekEndD || e < weekStartD) continue;
+
+    const colStart = Math.max(0, differenceInDays(s, weekStartD));
+    const colEnd = Math.max(colStart, Math.min(6, 6 - Math.max(0, differenceInDays(weekEndD, e))));
+
+    spans.push({
+      item,
+      colStart,
+      colEnd,
+      clippedLeft: s < weekStartD,
+      clippedRight: e > weekEndD,
+      lane: 0,
+    });
+  }
+
+  // Sort by start col then by span width (wider first for better packing)
+  spans.sort((a, b) => a.colStart - b.colStart || (b.colEnd - b.colStart) - (a.colEnd - a.colStart));
+
+  // Greedy lane assignment
+  const laneEnds: number[] = [];
+  for (const span of spans) {
+    let assigned = false;
+    for (let l = 0; l < laneEnds.length; l++) {
+      if (laneEnds[l] < span.colStart) {
+        span.lane = l;
+        laneEnds[l] = span.colEnd;
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      span.lane = laneEnds.length;
+      laneEnds.push(span.colEnd);
+    }
+  }
+
+  const numLanes = spans.length > 0 ? Math.max(...spans.map(s => s.lane)) + 1 : 1;
+  const rowH = Math.max(ROW_HEIGHT + 8, numLanes * (WEEK_ITEM_H + WEEK_ITEM_GAP) + WEEK_ROW_PAD * 2);
 
   return (
     <div className="flex flex-shrink-0" style={{ minHeight: rowH }}>
@@ -220,89 +280,92 @@ function ProjectWeekRow({ project, weekDays, todayStr, companyOnly, companyColor
         <span className="text-xs font-medium truncate flex-1">{project.name}</span>
         <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover/row:text-muted-foreground/60 shrink-0 mt-0.5 transition-colors" />
       </div>
-      {/* Day cells */}
-      {weekDays.map((day, colIdx) => {
-        const dayStr = format(day, 'yyyy-MM-dd');
-        const isToday = dayStr === todayStr;
-        const isWknd = day.getDay() === 0 || day.getDay() === 6;
-        const activeItems = leafItems.filter(item => {
-          if (!item.startDate || !item.endDate) return false;
-          const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
-          const e = new Date(item.endDate); e.setHours(23, 59, 59, 999);
-          const d = new Date(day); d.setHours(12, 0, 0, 0);
-          return d >= s && d <= e;
-        });
-        return (
-          <div
-            key={colIdx}
-            className={cn(
-              "flex-1 min-w-[80px] border-r border-b-2 border-r-border/30 border-b-border flex flex-col px-1 gap-[3px]",
-              isWknd ? "bg-muted/20" : "",
-              isToday ? "bg-primary/5" : ""
-            )}
-            style={{ minHeight: rowH, paddingTop: WEEK_ROW_PAD, paddingBottom: WEEK_ROW_PAD }}
-          >
-            {activeItems.map(item => {
-              const isUnassigned = isUnassignedItem(item);
-              const isCompany = !isUnassigned && isCompanyItem(item);
-              const fill = project.color || TYPE_COLORS_HEX.task;
-              return (
-                <Tooltip key={item.id}>
-                  <TooltipTrigger asChild>
-                    {isUnassigned ? (
-                      <div
-                        className="w-full rounded-sm flex items-center overflow-hidden shrink-0 border border-dashed border-muted-foreground/50"
-                        style={{
-                          height: WEEK_ITEM_H,
-                          backgroundColor: 'transparent',
-                          backgroundImage:
-                            'repeating-linear-gradient(45deg, hsl(var(--muted)) 0, hsl(var(--muted)) 4px, transparent 4px, transparent 8px)',
-                          paddingLeft: 6,
-                          paddingRight: 6,
-                        }}
-                        data-testid={`week-item-${item.id}`}
-                      >
-                        <span className="text-table text-muted-foreground font-medium truncate leading-none">{item.name}</span>
-                      </div>
-                    ) : (
-                      <div
-                        className="w-full rounded-sm flex items-center overflow-hidden shrink-0 relative gap-1.5"
-                        style={{
-                          height: WEEK_ITEM_H,
+
+      {/* Day columns (background only) + absolute spanning item bars */}
+      <div className="flex-1 flex relative border-b-2 border-border" style={{ minHeight: rowH }}>
+        {/* Day background columns — colour only, no items rendered here */}
+        {weekDays.map((day, colIdx) => {
+          const dayStr = format(day, 'yyyy-MM-dd');
+          const isToday = dayStr === todayStr;
+          const isWknd = day.getDay() === 0 || day.getDay() === 6;
+          return (
+            <div
+              key={colIdx}
+              className={cn(
+                "flex-1 min-w-[80px] border-r border-r-border/30",
+                isWknd ? "bg-muted/20" : "",
+                isToday ? "bg-primary/5" : ""
+              )}
+              style={{ minHeight: rowH }}
+            />
+          );
+        })}
+
+        {/* Absolutely-positioned spanning bars */}
+        {spans.map(({ item, colStart, colEnd, clippedLeft, clippedRight, lane }) => {
+          const isUnassigned = isUnassignedItem(item);
+          const isCompany = !isUnassigned && isCompanyItem(item);
+          const fill = project.color || TYPE_COLORS_HEX.task;
+
+          const leftPct = (colStart / 7) * 100;
+          const widthPct = ((colEnd - colStart + 1) / 7) * 100;
+
+          // Square off the edge for items that continue beyond this week
+          const rLeft = clippedLeft ? '0' : '3px';
+          const rRight = clippedRight ? '0' : '3px';
+          const borderRadius = `${rLeft} ${rRight} ${rRight} ${rLeft}`;
+
+          return (
+            <Tooltip key={item.id}>
+              <TooltipTrigger asChild>
+                <div
+                  className="absolute flex items-center overflow-hidden"
+                  style={{
+                    left: `calc(${leftPct}% + 3px)`,
+                    width: `calc(${widthPct}% - 6px)`,
+                    top: WEEK_ROW_PAD + lane * (WEEK_ITEM_H + WEEK_ITEM_GAP),
+                    height: WEEK_ITEM_H,
+                    borderRadius,
+                    ...(isUnassigned
+                      ? {
+                          backgroundColor: 'hsl(var(--muted) / 0.5)',
+                          border: '1px dashed hsl(var(--muted-foreground) / 0.35)',
+                        }
+                      : {
                           backgroundColor: fill,
-                          opacity: isCompany ? 1 : 0.85,
-                          paddingLeft: isCompany ? 0 : 6,
-                          paddingRight: 6,
-                        }}
-                        data-testid={`week-item-${item.id}`}
-                      >
-                        {isCompany && (
-                          <span
-                            className="rounded-sm shrink-0"
-                            style={{
-                              width: WEEK_ITEM_H,
-                              height: WEEK_ITEM_H,
-                              backgroundColor: darkenHex(fill, 0.4),
-                            }}
-                            aria-hidden="true"
-                          />
-                        )}
-                        <span className="text-table text-white font-medium truncate leading-none">{item.name}</span>
-                      </div>
+                          opacity: isCompany ? 1 : 0.62,
+                        }),
+                  }}
+                  data-testid={`week-item-${item.id}`}
+                >
+                  {/* Company: slim left accent stripe */}
+                  {isCompany && (
+                    <span
+                      className="shrink-0 self-stretch"
+                      style={{ width: 3, backgroundColor: darkenHex(fill, 0.38) }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      "text-table font-medium truncate leading-none",
+                      isUnassigned ? "text-muted-foreground px-1.5" : "text-white px-1.5"
                     )}
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-muted-foreground">
-                      {isUnassigned ? 'Unassigned' : isCompany ? 'Company' : (item.assignedToName || 'Assigned')}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </div>
-        );
-      })}
+                  >
+                    {item.name}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                <div className="font-medium">{item.name}</div>
+                <div className="text-muted-foreground">
+                  {isUnassigned ? 'Unassigned' : isCompany ? 'Company' : (item.assignedToName || 'Assigned')}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -380,6 +443,8 @@ export default function BusinessSchedule() {
   const [weekViewDate, setWeekViewDate] = useState(new Date());
   const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">("project");
   const [weekCompanyOnly, setWeekCompanyOnly] = useState(false);
+  const [weekHideParents, setWeekHideParents] = useState(false);
+  const [weekHideSubItems, setWeekHideSubItems] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<"week" | "month">("week");
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -539,6 +604,8 @@ export default function BusinessSchedule() {
   );
   const activeFilterCount =
     (weekCompanyOnly ? 1 : 0) +
+    (weekHideParents ? 1 : 0) +
+    (weekHideSubItems ? 1 : 0) +
     (showOnline ? 0 : 1) +
     (showProspective ? 0 : 1) +
     (showOffline ? 1 : 0) +
@@ -551,6 +618,8 @@ export default function BusinessSchedule() {
   // each control and then unhide projects on the server.
   const resetWeekFilters = useCallback(async () => {
     setWeekCompanyOnly(false);
+    setWeekHideParents(false);
+    setWeekHideSubItems(false);
     setShowOnline(true);
     setShowOffline(false);
     setShowProspective(true);
@@ -736,8 +805,13 @@ export default function BusinessSchedule() {
     const projectsWithItemsThisWeek = orderedVisibleProjects.filter(p => {
       const items = weekItemsByProject.get(p.id);
       if (!items) return true;
-      const candidates = (weekCompanyOnly ? items.filter(isCompanyItem) : items)
-        .filter(i => i.type !== 'group');
+      const baseItems = items.filter(i => i.type !== 'group');
+      let candidates = weekCompanyOnly ? baseItems.filter(isCompanyItem) : baseItems;
+      if (weekHideSubItems) candidates = candidates.filter(i => !i.parentItemId);
+      if (weekHideParents) {
+        const parentIds = new Set(baseItems.map(i => i.parentItemId).filter(Boolean) as string[]);
+        candidates = candidates.filter(i => !parentIds.has(i.id));
+      }
       return candidates.some(item => {
         if (!item.startDate || !item.endDate) return false;
         const s = new Date(item.startDate); s.setHours(0, 0, 0, 0);
@@ -823,6 +897,22 @@ export default function BusinessSchedule() {
                       checked={weekCompanyOnly}
                       onCheckedChange={setWeekCompanyOnly}
                       data-testid="switch-week-company-only"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Hide parent items</span>
+                    <Switch
+                      checked={weekHideParents}
+                      onCheckedChange={setWeekHideParents}
+                      data-testid="switch-week-hide-parents"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-1 cursor-pointer">
+                    <span className="text-xs">Hide sub-items</span>
+                    <Switch
+                      checked={weekHideSubItems}
+                      onCheckedChange={setWeekHideSubItems}
+                      data-testid="switch-week-hide-sub-items"
                     />
                   </label>
                 </div>
@@ -957,6 +1047,8 @@ export default function BusinessSchedule() {
                     weekDays={weekDays}
                     todayStr={todayStr}
                     companyOnly={weekCompanyOnly}
+                    hideParents={weekHideParents}
+                    hideSubItems={weekHideSubItems}
                     companyColor=""
                     onNavigate={(id) => navigate(`/projects/${id}/schedule`)}
                     items={weekItemsByProject.get(project.id)}
