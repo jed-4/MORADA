@@ -17017,7 +17017,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async clockIn(projectId: string, userId: string, costCodeId?: string): Promise<Timesheet> {
+  async clockIn(projectId: string | null, userId: string, costCodeId?: string): Promise<Timesheet> {
     try {
       // First, clock out any existing active timesheet
       const activeTimesheet = await this.getActiveTimesheet(userId);

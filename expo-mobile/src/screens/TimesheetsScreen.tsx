@@ -25,9 +25,11 @@ import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
 import { useTheme, lightTheme, darkTheme } from '../theme';
 
+const BUSINESS_ID = '__business__';
+
 interface Timesheet {
   id: string;
-  projectId: string;
+  projectId: string | null;
   userId: string;
   date: string;
   startTime: string | null;
@@ -163,7 +165,11 @@ function getSortedProjectItems(projects: Project[]): { id: string; label: string
     return a.name.localeCompare(b.name);
   });
 
-  const items: { id: string; label: string; isHeader?: boolean }[] = [];
+  // "Business (Overhead)" always appears first — selecting it bills the time
+  // to the business with no project attached (projectId = null).
+  const items: { id: string; label: string; isHeader?: boolean }[] = [
+    { id: BUSINESS_ID, label: 'Business (Overhead)' },
+  ];
   let currentPhase = '';
   for (const p of visible) {
     const phase = p.currentSystemPhase || 'lead';
@@ -218,7 +224,7 @@ interface WeeklyTimeGridProps {
   weekEnd: Date;
   setWeekOffset: (fn: (w: number) => number) => void;
   totalHours: number;
-  getProjectName: (id: string) => string;
+  getProjectName: (id: string | null) => string;
   getCostCodeName: (id: string | null) => string | null;
   onSelectTimesheet: (ts: Timesheet) => void;
   colors: {
@@ -787,17 +793,18 @@ export default function TimesheetsScreen() {
 
   const handleClockIn = async () => {
     if (!clockInProjectId || !clockInCostCodeId) {
-      Alert.alert('Missing Fields', 'Please select a project and cost code to clock in.');
+      Alert.alert('Missing Fields', 'Please select a project (or Business) and cost code to clock in.');
       return;
     }
     setClockingIn(true);
+    const resolvedClockInProjectId = clockInProjectId === BUSINESS_ID ? null : clockInProjectId;
     let networkError = false;
     try {
       const online = await isOnline();
       if (!online) {
         await addToQueue({
           type: 'clock-in',
-          payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
+          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId },
         });
         Alert.alert('Saved Offline', 'Your clock-in has been queued and will sync when you have a connection.');
         setClockInProjectId('');
@@ -807,7 +814,7 @@ export default function TimesheetsScreen() {
 
       let res: Response;
       try {
-        res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
+        res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId });
       } catch {
         networkError = true;
         throw new Error('Network error');
@@ -827,7 +834,7 @@ export default function TimesheetsScreen() {
       if (networkError) {
         await addToQueue({
           type: 'clock-in',
-          payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
+          payload: { projectId: resolvedClockInProjectId, costCodeId: clockInCostCodeId },
         });
         Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
         setClockInProjectId('');
@@ -909,7 +916,7 @@ export default function TimesheetsScreen() {
     setShowDetail(false);
     setIsEditMode(true);
     setEditingId(ts.id);
-    setFormProjectId(ts.projectId);
+    setFormProjectId(ts.projectId ?? BUSINESS_ID);
     // Use local date (not UTC) so Australian timezone doesn't shift the date back a day
     setFormDate(toLocalDateStr(new Date(ts.date)));
     setFormStartTime(ts.startTime || '07:00');
@@ -936,7 +943,7 @@ export default function TimesheetsScreen() {
 
   const handleSubmitTimesheet = async () => {
     if (!formProjectId) {
-      Alert.alert('Missing Project', 'Please select a project.');
+      Alert.alert('Missing Project', 'Please select a project or Business (Overhead).');
       return;
     }
     if (!formCostCodeId) {
@@ -945,11 +952,12 @@ export default function TimesheetsScreen() {
     }
 
     setSubmitting(true);
+    const resolvedProjectId = formProjectId === BUSINESS_ID ? null : formProjectId;
     try {
       const duration = calculateDuration(formStartTime, formEndTime, formBreakDuration);
 
       const body: any = {
-        projectId: formProjectId,
+        projectId: resolvedProjectId,
         date: new Date(formDate).toISOString(),
         startTime: formStartTime,
         endTime: formEndTime,
@@ -1010,7 +1018,7 @@ export default function TimesheetsScreen() {
         await addToQueue({
           type: 'log-hours',
           payload: {
-            projectId: formProjectId,
+            projectId: resolvedProjectId,
             date: new Date(formDate).toISOString(),
             startTime: formStartTime,
             endTime: formEndTime,
@@ -1076,7 +1084,8 @@ export default function TimesheetsScreen() {
     [filteredTimesheets],
   );
 
-  const getProjectName = useCallback((pid: string) => {
+  const getProjectName = useCallback((pid: string | null) => {
+    if (!pid || pid === BUSINESS_ID) return 'Business (Overhead)';
     const p = projects.find(p => p.id === pid);
     if (!p) return 'Unknown';
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
@@ -1320,14 +1329,14 @@ export default function TimesheetsScreen() {
                   <>
                     <View style={styles.clockInRow}>
                       <Ionicons name="time-outline" size={18} color={colors.secondary} />
-                      <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project and clock in</Text>
+                      <Text style={[styles.clockInLabel, { color: colors.secondary }]}>Select a project or Business to clock in</Text>
                     </View>
                     <TouchableOpacity
                       style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                       onPress={() => setShowProjectPicker(true)}
                     >
                       <Text style={[styles.projectSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]}>
-                        {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
+                        {clockInProjectId ? getProjectName(clockInProjectId) : 'Select project or Business...'}
                       </Text>
                       <Ionicons name="chevron-down" size={18} color={colors.secondary} />
                     </TouchableOpacity>
@@ -1549,14 +1558,14 @@ export default function TimesheetsScreen() {
                 );
               })()}
 
-              {/* Project */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Project</Text>
+              {/* Project / Business */}
+              <Text style={[styles.formLabel, { color: colors.secondary }]}>Project / Business</Text>
               <TouchableOpacity
                 style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                 onPress={() => setShowFormProjectPicker(true)}
               >
                 <Text style={[styles.formPickerText, { color: formProjectId ? colors.text : colors.secondary }]}>
-                  {formProjectId ? getProjectName(formProjectId) : 'Select project...'}
+                  {formProjectId ? getProjectName(formProjectId) : 'Select project or Business...'}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>

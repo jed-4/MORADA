@@ -19602,10 +19602,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "User not found in database" });
       }
       const { projectId, costCodeId } = req.body;
-      if (!projectId) {
-        return res.status(400).json({ error: "projectId is required" });
-      }
-      const timesheet = await storage.clockIn(projectId, user.id, costCodeId);
+      // projectId may be null for business-level (overhead) timesheets
+      const resolvedProjectId = projectId || null;
+      const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId);
       res.status(201).json(timesheet);
     } catch (error) {
       console.error("Error clocking in:", error);
