@@ -436,16 +436,54 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
   );
 }
 
+const bsLS = {
+  get: <T>(key: string, fallback: T): T => {
+    try {
+      const v = localStorage.getItem(`biz-schedule-${key}`);
+      return v !== null ? JSON.parse(v) : fallback;
+    } catch { return fallback; }
+  },
+  set: (key: string, val: unknown) => {
+    try { localStorage.setItem(`biz-schedule-${key}`, JSON.stringify(val)); } catch {}
+  },
+};
+
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">("week");
-  const [weekViewDate, setWeekViewDate] = useState(new Date());
-  const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">("project");
-  const [weekCompanyOnly, setWeekCompanyOnly] = useState(false);
-  const [weekHideParents, setWeekHideParents] = useState(false);
-  const [weekHideSubItems, setWeekHideSubItems] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState<"week" | "month">("week");
+
+  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">(
+    () => bsLS.get("viewMode", "week")
+  );
+  const [weekViewDate, setWeekViewDate] = useState<Date>(() => {
+    const stored = bsLS.get<string | null>("weekViewDate", null);
+    if (stored) { const d = new Date(stored); if (!isNaN(d.getTime())) return d; }
+    return new Date();
+  });
+  const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">(
+    () => bsLS.get("weekSwimlaneGroup", "project")
+  );
+  const [weekCompanyOnly, setWeekCompanyOnly] = useState<boolean>(
+    () => bsLS.get("weekCompanyOnly", false)
+  );
+  const [weekHideParents, setWeekHideParents] = useState<boolean>(
+    () => bsLS.get("weekHideParents", false)
+  );
+  const [weekHideSubItems, setWeekHideSubItems] = useState<boolean>(
+    () => bsLS.get("weekHideSubItems", false)
+  );
+  const [zoomLevel, setZoomLevel] = useState<"week" | "month">(
+    () => bsLS.get("zoomLevel", "week")
+  );
+
+  useEffect(() => { bsLS.set("viewMode", viewMode); }, [viewMode]);
+  useEffect(() => { bsLS.set("weekViewDate", weekViewDate.toISOString()); }, [weekViewDate]);
+  useEffect(() => { bsLS.set("weekSwimlaneGroup", weekSwimlaneGroup); }, [weekSwimlaneGroup]);
+  useEffect(() => { bsLS.set("weekCompanyOnly", weekCompanyOnly); }, [weekCompanyOnly]);
+  useEffect(() => { bsLS.set("weekHideParents", weekHideParents); }, [weekHideParents]);
+  useEffect(() => { bsLS.set("weekHideSubItems", weekHideSubItems); }, [weekHideSubItems]);
+  useEffect(() => { bsLS.set("zoomLevel", zoomLevel); }, [zoomLevel]);
+
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
