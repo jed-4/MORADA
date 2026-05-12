@@ -982,6 +982,13 @@ export default function Bills() {
               <Download className="w-3.5 h-3.5 mr-2" />
               Import from Xero
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => setLocation("/settings?tab=integrations")}
+              data-testid="menu-item-bill-inbox-settings"
+            >
+              <Settings2 className="w-3.5 h-3.5 mr-2" />
+              Bill Inbox Settings
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

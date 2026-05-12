@@ -18,7 +18,7 @@ export interface AutoBillResult {
 
 export interface AutoBillOptions {
   defaultProjectId?: string;
-  defaultUserId: string;
+  defaultUserId?: string | null;
   companyId?: string;
   autoMatch: boolean;
 }
@@ -157,7 +157,7 @@ export class AutoBillCreatorService {
       ocrProcessed: true,
       ocrData: invoiceData as any,
       attachmentUrls: [],
-      createdById: options.defaultUserId,
+      createdById: options.defaultUserId || null,
     };
 
     const createdBill = await storage.createBill(billData);

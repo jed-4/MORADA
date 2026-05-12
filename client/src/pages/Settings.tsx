@@ -674,10 +674,6 @@ export default function Settings() {
       queryKey: ["/api/bill-inbox/status"],
     });
 
-    const { data: allUsers } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>({
-      queryKey: ["/api/users"],
-    });
-
     const connectMutation = useMutation({
       mutationFn: async () => {
         const res = await apiRequest("/api/bill-inbox/auth-url", "GET");
@@ -707,17 +703,6 @@ export default function Settings() {
       onSuccess: (_, enabled) => {
         queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
         toast({ title: enabled ? "Polling enabled" : "Polling paused" });
-      },
-      onError: (err: any) => {
-        toast({ title: "Failed to update", description: err.message, variant: "destructive" });
-      },
-    });
-
-    const setUserMutation = useMutation({
-      mutationFn: (userId: string) => apiRequest("/api/bill-inbox/set-default-user", "POST", { userId }),
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/bill-inbox/status"] });
-        toast({ title: "Default user updated" });
       },
       onError: (err: any) => {
         toast({ title: "Failed to update", description: err.message, variant: "destructive" });
@@ -756,9 +741,6 @@ export default function Settings() {
         window.history.replaceState({}, "", window.location.pathname + "?tab=integrations");
       }
     }, []);
-
-    const userName = (u: { firstName: string | null; lastName: string | null; email: string }) =>
-      [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
 
     return (
       <Card>
@@ -848,24 +830,6 @@ export default function Settings() {
                   onCheckedChange={(v) => toggleMutation.mutate(v)}
                   disabled={toggleMutation.isPending}
                 />
-              </div>
-
-              <div className="p-3 border rounded-lg space-y-2">
-                <p className="text-sm font-medium">Default user for new bills</p>
-                <p className="text-xs text-muted-foreground">Bills created from the inbox will be attributed to this user</p>
-                <Select
-                  value={status.defaultUserId || ""}
-                  onValueChange={(v) => setUserMutation.mutate(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a user..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(allUsers || []).map(u => (
-                      <SelectItem key={u.id} value={u.id}>{userName(u)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="flex items-center gap-2">

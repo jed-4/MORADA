@@ -33,11 +33,6 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     return { processed: 0, errors: [] };
   }
 
-  if (!settings.billInboxDefaultUserId) {
-    console.log('[BillInbox] No default user configured for bill creation — skipping');
-    return { processed: 0, errors: [] };
-  }
-
   console.log(`[BillInbox] Polling ${settings.billInboxGmailEmail} for new invoices...`);
 
   let gmail: any;
@@ -111,7 +106,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       };
 
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
-        defaultUserId: settings.billInboxDefaultUserId!,
+        defaultUserId: null,
         autoMatch: true,
       });
 
