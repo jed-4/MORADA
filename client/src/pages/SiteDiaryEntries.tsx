@@ -1466,6 +1466,7 @@ function EntryFormWithTemplateSelector({
           key={selectedTemplate.id}
           template={selectedTemplate}
           projectId={projectId}
+          projectName={projectName}
           onSuccess={onSuccess}
         />
       </CardContent>
@@ -1657,11 +1658,13 @@ function SiteDiaryFileUpload({
 
 function EntryFormFields({ 
   template, 
-  projectId, 
+  projectId,
+  projectName,
   onSuccess 
 }: { 
   template: SiteDiaryTemplate; 
   projectId: string;
+  projectName?: string;
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
@@ -1728,7 +1731,9 @@ function EntryFormFields({
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      title: "",
+      title: projectName
+        ? `${projectName} - ${template.name} - ${format(new Date(), 'dd/MM')}`
+        : `${template.name} - ${format(new Date(), 'dd/MM')}`,
       entryDateTime: format(new Date(), 'yyyy-MM-dd'),
       ...templateFields.reduce((acc, field) => {
         if (field.type === 'checkbox') acc[field.id] = false;

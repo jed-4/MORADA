@@ -333,9 +333,21 @@ const colors = {
     }
   };
 
+  const buildDefaultTitle = (t: SiteDiaryTemplate | null): string => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const dateStr = `${day}/${month}`;
+    const templateName = t?.name || '';
+    return projectName ? `${projectName} - ${templateName} - ${dateStr}` : `${templateName} - ${dateStr}`;
+  };
+
   const switchTemplate = (t: SiteDiaryTemplate) => {
     setActiveTemplate(t);
     applyTemplateDefaults(t);
+    if (!isEditMode) {
+      setFormTitle(buildDefaultTitle(t));
+    }
     setShowTemplatePicker(false);
   };
 
@@ -343,6 +355,7 @@ const colors = {
     resetForm();
     setActiveTemplate(template);
     applyTemplateDefaults(template);
+    setFormTitle(buildDefaultTitle(template));
     setShowEntryModal(true);
   };
 
