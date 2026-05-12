@@ -1095,7 +1095,10 @@ export const companySettings = pgTable("company_settings", {
   billInboxGmailConnectedAt: timestamp("bill_inbox_gmail_connected_at"),
   billInboxPollingEnabled: boolean("bill_inbox_polling_enabled").notNull().default(false),
   billInboxLastPolledAt: timestamp("bill_inbox_last_polled_at"),
-  billInboxDefaultUserId: varchar("bill_inbox_default_user_id"), // userId whose company/project context to use for new bills
+  billInboxDefaultUserId: varchar("bill_inbox_default_user_id"),
+  billInboxStatus: text("bill_inbox_status"), // null = ok, 'error' = token failed
+  billInboxLastError: text("bill_inbox_last_error"),
+  billInboxLastErrorAt: timestamp("bill_inbox_last_error_at"),
 
   // Xero Defaults
   // Fallback Xero AccountCode applied to bill line items that don't have an
@@ -1832,7 +1835,8 @@ export const bills = pgTable("bills", {
   attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

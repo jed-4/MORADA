@@ -690,6 +690,7 @@ export interface IStorage {
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
   getBillById(id: string): Promise<Bill | null>;
   getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null>;
+  getBillByGmailMessageId(messageId: string): Promise<Bill | null>;
   getNextBillNumber(): Promise<string>;
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
@@ -13721,6 +13722,19 @@ export class DbStorage implements IStorage {
       return bills[0] || null;
     } catch (error) {
       console.error("Database error in getBillByXeroId:", error);
+      throw error;
+    }
+  }
+
+  async getBillByGmailMessageId(messageId: string): Promise<Bill | null> {
+    try {
+      const result = await db.select()
+        .from(schema.bills)
+        .where(eq(schema.bills.gmailMessageId, messageId))
+        .limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in getBillByGmailMessageId:", error);
       throw error;
     }
   }

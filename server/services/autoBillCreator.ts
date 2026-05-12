@@ -21,6 +21,7 @@ export interface AutoBillOptions {
   defaultUserId?: string | null;
   companyId?: string;
   autoMatch: boolean;
+  gmailMessageId?: string;
 }
 
 export class AutoBillCreatorService {
@@ -158,6 +159,7 @@ export class AutoBillCreatorService {
       ocrData: invoiceData as any,
       attachmentUrls: [],
       createdById: options.defaultUserId || null,
+      gmailMessageId: options.gmailMessageId || null,
     };
 
     const createdBill = await storage.createBill(billData);

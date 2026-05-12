@@ -43,7 +43,12 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       billInboxGmailTokenExpiry: settings.billInboxGmailTokenExpiry,
     });
   } catch (err: any) {
-    console.error('[BillInbox] Failed to get Gmail client:', err.message);
+    console.error('[BillInbox] Failed to get Gmail client (token error):', err.message);
+    await storage.updateCompanySettings({
+      billInboxStatus: 'error',
+      billInboxLastError: err.message,
+      billInboxLastErrorAt: new Date(),
+    });
     return { processed: 0, errors: [err.message] };
   }
 
@@ -56,12 +61,24 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     });
     messageIds = (listRes.data.messages || []).map((m: any) => m.id);
   } catch (err: any) {
+    const isAuthError = err.code === 401 || err.code === 403 || /invalid_grant|token.*expired|unauthorized/i.test(err.message);
     console.error('[BillInbox] Failed to list messages:', err.message);
+    if (isAuthError) {
+      await storage.updateCompanySettings({
+        billInboxStatus: 'error',
+        billInboxLastError: err.message,
+        billInboxLastErrorAt: new Date(),
+      });
+    }
     return { processed: 0, errors: [err.message] };
   }
 
   if (messageIds.length === 0) {
-    await storage.updateCompanySettings({ billInboxLastPolledAt: new Date() });
+    await storage.updateCompanySettings({
+      billInboxLastPolledAt: new Date(),
+      billInboxStatus: null,
+      billInboxLastError: null,
+    });
     return { processed: 0, errors: [] };
   }
 
@@ -73,6 +90,14 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
 
   for (const messageId of messageIds) {
     try {
+      // Fix 1: Duplicate prevention — skip if already imported
+      const existing = await storage.getBillByGmailMessageId(messageId);
+      if (existing) {
+        console.log(`[BillInbox] Message ${messageId} already imported as bill ${existing.billNumber} — marking read and skipping`);
+        await markRead(gmail, messageId);
+        continue;
+      }
+
       const msgRes = await gmail.users.messages.get({
         userId: 'me',
         id: messageId,
@@ -87,7 +112,6 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       const subject = getHeader('subject') || '(no subject)';
       const from = getHeader('from') || '';
       const to = getHeader('to') || '';
-      const date = getHeader('date') || '';
 
       const attachments = await extractAttachments(gmail, messageId, msg.payload);
 
@@ -108,6 +132,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
         defaultUserId: null,
         autoMatch: true,
+        gmailMessageId: messageId,
       });
 
       const anySuccess = results.some(r => r.success);
@@ -126,7 +151,13 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     }
   }
 
-  await storage.updateCompanySettings({ billInboxLastPolledAt: new Date() });
+  // Fix 2: Clear error state on a successful poll cycle
+  await storage.updateCompanySettings({
+    billInboxLastPolledAt: new Date(),
+    billInboxStatus: null,
+    billInboxLastError: null,
+  });
+
   console.log(`[BillInbox] Poll complete — ${processed} bill(s) created, ${errors.length} error(s)`);
   return { processed, errors };
 }

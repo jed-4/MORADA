@@ -572,6 +572,11 @@ export default function Bills() {
     queryKey: ["/api/suppliers"],
   });
 
+  const { data: companySettings } = useQuery<any>({
+    queryKey: ["/api/company-settings"],
+  });
+  const billInboxError = companySettings?.billInboxStatus === 'error';
+
   const currentProject = projectIdFromUrl ? projects.find((p) => p.id === projectIdFromUrl) : null;
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
   const getSupplierName = (supplierId: string, bill?: any) => {
@@ -702,6 +707,9 @@ export default function Bills() {
             {row.original.billNumber}
             {row.original.billType === "credit" && (
               <Badge variant="outline" className="text-data px-1 py-0 text-status-success border-status-success/40">Credit</Badge>
+            )}
+            {!row.original.createdById && row.original.ocrProcessed && (
+              <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" title="Auto-imported from Bill Inbox" />
             )}
           </div>
         ),
@@ -1037,6 +1045,24 @@ export default function Bills() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Bill Inbox error banner ── */}
+      {billInboxError && (
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+            <span className="text-foreground">
+              Bill Inbox disconnected — invoices are no longer being imported.{" "}
+              <a
+                href="/settings?tab=integrations"
+                className="underline text-primary hover:text-primary/80"
+              >
+                Reconnect in Settings
+              </a>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── Bulk selection action bar ── */}
       {selectedBills.size > 0 && (
