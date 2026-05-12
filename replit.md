@@ -50,8 +50,17 @@ BuildPro is a project management software for Australian residential builders, s
 ## User preferences
 Preferred communication style: Simple, everyday language.
 
+## Production database setup (task #225 investigation findings)
+BuildPro's database setup uses `DATABASE_URL` exclusively. Here is what each environment actually connects to:
+
+- **Development workspace** (`host=helium db=heliumdb`): Replit's internal PostgreSQL connection pooler. This is a proxy managed by Replit's `javascript_database` integration.
+- **Production deployment** (`host=ep-delicate-flower-aeoexpyq.c-2.us-east-2.aws.neon.tech db=neondb`): A Replit-managed Neon PostgreSQL database. This endpoint is **stable** — every republish uses the same Neon endpoint and the production data is never wiped by a deployment.
+- **`NEON_DATABASE_URL`** (secret) — points to a **separate, older Neon database** (`ep-muddy-sunset-aelsjwoz...`) with a stale schema. Do NOT use this. Switching to it breaks the app because it is missing many columns added in later migrations.
+- **Startup log**: every boot prints `[DB] connected — host=... db=... env=...` so you can confirm which database is active. Production should always show `ep-delicate-flower-aeoexpyq...`; if it ever shows a different host after a republish, that is the data-loss trigger.
+- **No destructive startup code**: all startup hooks (`seedMissingBuiltInCategories`, `healContactNames`, `repairDuplicateScopeStages`) are idempotent upserts. No `DROP`/`TRUNCATE`/`DELETE` runs on boot. The deploy build (`npm run build`) does not run `drizzle-kit push`.
+
 ## Gotchas
-- **Production Database**: The production deployment *must* point to the same Neon database/branch as the development workspace. Verify `[DB] connected` logs for matching host and database name. A silent override of `DATABASE_URL` can lead to data appearing lost.
+- **Production Database**: The production deployment consistently uses `ep-delicate-flower-aeoexpyq.c-2.us-east-2.aws.neon.tech` as its Neon endpoint. Republishing does not change this. If data appears lost after a republish, check the `[DB] connected` log in deployment logs first — a host change is the only code-level cause of data loss.
 - **Destructive DB Operations**: Never introduce destructive database queries (`DELETE`, `TRUNCATE`, `DROP`) or `drizzle-kit` commands into the deploy build. Only additive migrations are allowed in production.
 - **DataTable Storage**: When multiple `DataTable` instances on a page should share column state, ensure they use the same `storageKey`.
 - **LineItemTable Inputs**: For cells with embedded inputs/selects in `LineItemTable`, set `truncate: false` to prevent input collapse.
