@@ -11,20 +11,51 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Startup safety log (#225 — publish data-loss investigation):
+// Startup safety log + guard (#225 — publish data-loss investigation):
 // Print the host + database name (NEVER credentials) so deployment logs
 // always show which Neon endpoint the running instance is bound to. If
 // the deployed app silently swaps to a different DB on a republish (a
 // suspected root cause of past "half the data disappears" incidents),
 // this line in the deploy logs will reveal it immediately.
+//
+// The guard also hard-blocks two known-bad endpoints so the app refuses
+// to boot silently in a broken state:
+//   - "helium" — Replit's dev-workspace proxy; must never reach production
+//   - "ep-muddy-sunset-aelsjwoz..." — the stale NEON_DATABASE_URL database
+//     (separate from production, many columns missing from later migrations)
 try {
   const u = new URL(process.env.DATABASE_URL);
   const dbName = u.pathname.replace(/^\//, "") || "(default)";
   // u.hostname encodes the Neon project + branch — safe to log; password is on u.password.
   console.log(`[DB] connected — host=${u.hostname} db=${dbName} env=${process.env.NODE_ENV ?? "unknown"}`);
-} catch {
-  // If DATABASE_URL is malformed we still want the app to fail loudly via the Pool,
-  // so swallow parse errors here rather than crash on the log line.
+
+  if (process.env.NODE_ENV === "production") {
+    // "helium" is Replit's dev-only proxy. If it appears in production the
+    // deployment is wired to the wrong database and data written here will
+    // never reach the real Neon endpoint (and vice-versa).
+    if (u.hostname === "helium") {
+      throw new Error(
+        "[DB] FATAL: Production is connecting to the development Helium proxy " +
+        "(host=helium). DATABASE_URL must point to the Neon production endpoint. " +
+        "Check your Replit deployment secrets."
+      );
+    }
+    // ep-muddy-sunset-aelsjwoz is the stale NEON_DATABASE_URL database — it is
+    // missing many schema columns and will surface as hundreds of "column does
+    // not exist" errors on every API call.
+    if (u.hostname.startsWith("ep-muddy-sunset-aelsjwoz")) {
+      throw new Error(
+        "[DB] FATAL: Production is connected to the stale NEON_DATABASE_URL database " +
+        `(host=${u.hostname}). This database has an outdated schema. ` +
+        "Use DATABASE_URL pointing to the live Neon endpoint instead."
+      );
+    }
+  }
+} catch (err) {
+  // Re-throw hard-blocked endpoint errors so the process exits immediately.
+  if (err instanceof Error && err.message.startsWith("[DB] FATAL:")) throw err;
+  // For all other parse/URL errors: let the Pool fail loudly on first query
+  // rather than crashing on the log line itself.
   console.warn("[DB] could not parse DATABASE_URL for startup log");
 }
 
