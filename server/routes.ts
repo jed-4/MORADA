@@ -25256,7 +25256,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.id) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const notification = await storage.markNotificationAsRead(req.params.id, user.id);
+      const notification = await storage.markReminderNotificationAsRead(req.params.id, user.id);
       if (!notification) {
         return res.status(404).json({ error: "Notification not found" });
       }
@@ -25272,7 +25272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.id) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const count = await storage.markAllNotificationsAsRead(user.id);
+      const count = await storage.markAllReminderNotificationsAsRead(user.id);
       res.json({ markedAsRead: count });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to mark all notifications as read", details: error.message });

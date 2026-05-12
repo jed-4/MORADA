@@ -6544,7 +6544,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  private async seedOptionsForCategory(category: any, now: Date): Promise<void> {
+  private async _seedOptionsForCategoryV1(category: any, now: Date): Promise<void> {
     let optionsToInsert: any[] = [];
 
     switch (category.key) {
@@ -21001,7 +21001,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUnreadNotificationCount(userId: string): Promise<number> {
+  async getUnreadReminderNotificationCount(userId: string): Promise<number> {
     try {
       const result = await db.select({ count: sql<number>`count(*)::int` })
         .from(schema.reminderNotifications)
@@ -21016,7 +21016,7 @@ export class DbStorage implements IStorage {
         );
       return result[0]?.count || 0;
     } catch (error) {
-      console.error("Database error in getUnreadNotificationCount:", error);
+      console.error("Database error in getUnreadReminderNotificationCount:", error);
       throw error;
     }
   }
@@ -21033,7 +21033,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async markNotificationAsRead(id: string, userId: string): Promise<schema.ReminderNotification | null> {
+  async markReminderNotificationAsRead(id: string, userId: string): Promise<schema.ReminderNotification | null> {
     try {
       const result = await db.update(schema.reminderNotifications)
         .set({ 
@@ -21049,12 +21049,12 @@ export class DbStorage implements IStorage {
         .returning();
       return result[0] || null;
     } catch (error) {
-      console.error("Database error in markNotificationAsRead:", error);
+      console.error("Database error in markReminderNotificationAsRead:", error);
       throw error;
     }
   }
 
-  async markAllNotificationsAsRead(userId: string): Promise<number> {
+  async markAllReminderNotificationsAsRead(userId: string): Promise<number> {
     try {
       const result = await db.update(schema.reminderNotifications)
         .set({ 
@@ -21073,7 +21073,7 @@ export class DbStorage implements IStorage {
         .returning();
       return result.length;
     } catch (error) {
-      console.error("Database error in markAllNotificationsAsRead:", error);
+      console.error("Database error in markAllReminderNotificationsAsRead:", error);
       throw error;
     }
   }
