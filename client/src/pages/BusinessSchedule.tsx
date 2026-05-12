@@ -437,7 +437,7 @@ function SortableProjectRow({ project, onNavigate, onSettings, onContextMenu }: 
 }
 
 const bsLS = {
-  get: <T>(key: string, fallback: T): T => {
+  get: <T,>(key: string, fallback: T): T => {
     try {
       const v = localStorage.getItem(`biz-schedule-${key}`);
       return v !== null ? JSON.parse(v) : fallback;
