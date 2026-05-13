@@ -127,6 +127,8 @@ export function TimesheetDialog({
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showBreakTimes, setShowBreakTimes] = useState(false);
   const [showCostCodeSplit, setShowCostCodeSplit] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
 
   // Drawer mount/animation state
   const [isMounted, setIsMounted] = useState(open);
@@ -264,6 +266,17 @@ export function TimesheetDialog({
       });
     }
   }, [open, timesheet, defaultProjectId, currentUser, form]);
+
+  // Auto-expand description when editing a timesheet that already has one; reset on close
+  useEffect(() => {
+    if (open && timesheet?.description) {
+      setShowDescription(true);
+    }
+    if (!open) {
+      setShowLabels(false);
+      setShowDescription(false);
+    }
+  }, [open, timesheet?.description]);
 
   // Helper: Parse time string to minutes
   const timeToMinutes = (time: string): number => {
@@ -519,6 +532,11 @@ export function TimesheetDialog({
     (parseFloat(watchedHourlyRate || "0") || 0)
   ).toFixed(2);
 
+  const totalHoursVal = parseFloat(watchedDuration || '0') || 0;
+  const displayHrs = Math.floor(totalHoursVal);
+  const displayMins = Math.round((totalHoursVal - displayHrs) * 60);
+  const displayHoursStr = `${displayHrs}h ${String(displayMins).padStart(2, '0')}m`;
+
   const displayId = timesheet?.id ? `#TS-${timesheet.id.slice(0, 8)}` : "New entry";
   const headerTitle = readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet";
 
@@ -537,7 +555,7 @@ export function TimesheetDialog({
 
   const labelClass = "text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 block";
   const inputClass =
-    "w-full h-8 rounded-md border border-border bg-muted/30 px-2.5 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
+    "w-full h-10 rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
 
   const drawer = (
     <>
@@ -598,7 +616,7 @@ export function TimesheetDialog({
             className="flex flex-col flex-1 min-h-0"
           >
             {/* Scrollable body */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-5">
               <fieldset disabled={readonly} className="space-y-0">
                 {readonly && (
                   <p className="text-[11px] text-muted-foreground mb-3">
@@ -607,7 +625,7 @@ export function TimesheetDialog({
                 )}
 
                 {/* Project | Date */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[2fr_1fr] gap-3">
                   <FormField
                     control={form.control}
                     name="projectId"
@@ -663,7 +681,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Employee — full width */}
-                <div className="mt-3">
+                <div className="mt-4">
                   <FormField
                     control={form.control}
                     name="userId"
@@ -703,7 +721,7 @@ export function TimesheetDialog({
                               field.onChange(value);
                             }}
                             placeholder="Start"
-                            defaultScrollTime={companySettings?.standardWorkStart || "06:00"}
+                            defaultScrollTime={companySettings?.standardWorkStart || "07:00"}
                             showIcon={false}
                             data-testid="select-start-time"
                           />
@@ -751,7 +769,7 @@ export function TimesheetDialog({
                           }}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-8 text-[12px]" data-testid="input-break-duration">
+                            <SelectTrigger className="h-10 text-sm" data-testid="input-break-duration">
                               <SelectValue placeholder="Break" />
                             </SelectTrigger>
                           </FormControl>
@@ -770,10 +788,10 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Duration — read-only auto-calc */}
-                <div className="mt-3">
+                <div className="mt-4">
                   <Label className={labelClass}>Duration</Label>
                   <div
-                    className="bg-muted/20 rounded-md border border-border h-8 px-3 flex items-center justify-between"
+                    className="bg-muted/20 rounded-md border border-border h-10 px-3 flex items-center justify-between"
                     data-testid="display-duration"
                   >
                     <span className={cn("text-[12px] font-semibold", displayDuration ? "text-primary" : "text-muted-foreground")}>
@@ -787,7 +805,7 @@ export function TimesheetDialog({
                 <button
                   type="button"
                   onClick={() => setShowBreakTimes((s) => !s)}
-                  className="mt-3 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  className="mt-4 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   data-testid="toggle-break-times"
                 >
                   <ChevronDown
@@ -842,7 +860,7 @@ export function TimesheetDialog({
                 <div className="border-t border-border my-4" />
 
                 {/* Cost Code | Rate */}
-                <div className="grid grid-cols-[3fr_2fr] gap-3">
+                <div className="grid grid-cols-[2fr_1fr] gap-3">
                   <FormField
                     control={form.control}
                     name="costCodeId"
@@ -883,18 +901,25 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                {/* Total strip */}
+                {/* Total strip — hours primary, cost secondary */}
                 <div
-                  className="mt-3 bg-primary/10 rounded-lg px-4 py-2.5 flex items-center justify-between"
+                  className="mt-4 rounded-lg flex items-baseline justify-between"
+                  style={{ padding: '12px 16px', background: '#f5f4f0', borderRadius: '8px' }}
                   data-testid="display-total"
                 >
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Total</span>
-                  <span className="text-[18px] font-bold text-primary">${displayTotal}</span>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: 600, color: '#a890d4', lineHeight: 1.2 }}>{displayHoursStr}</div>
+                    <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>Total hours</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#9b9b9b' }}>${displayTotal}</div>
+                    <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>Total cost</div>
+                  </div>
                 </div>
 
                 {/* Cost Code Split (new entries only — opt-in) */}
                 {!timesheet && (
-                  <div className="mt-3">
+                  <div className="mt-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -986,50 +1011,81 @@ export function TimesheetDialog({
 
                 <div className="border-t border-border my-4" />
 
-                {/* Labels — token-based pill chips */}
+                {/* Work Types — collapsible */}
                 {labelOptions.length > 0 && (
-                  <div>
-                    <Label className={labelClass}>Labels</Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {labelOptions.map((option) => {
-                        const isSelected = watchedLabels?.includes(option.key);
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            onClick={() => toggleLabel(option.key)}
-                            className={cn(
-                              "rounded-full text-[11px] font-medium px-3 py-1 border transition-colors cursor-pointer",
-                              getLabelChipClasses(option.key, !!isSelected),
-                            )}
-                            data-testid={`timesheet-label-${option.key}`}
-                          >
-                            {option.name}
-                            {isSelected && <Check className="inline h-3 w-3 ml-1" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowLabels((s) => !s)}
+                      className="w-full flex items-center gap-2 py-1 cursor-pointer"
+                      style={{ color: '#9b9b9b' }}
+                    >
+                      <div className="flex-1 h-px bg-border" />
+                      <ChevronDown
+                        className={cn("h-3 w-3 transition-transform shrink-0", !showLabels && "-rotate-90")}
+                      />
+                      <span style={{ fontSize: '12px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                        Work Types
+                      </span>
+                      <div className="flex-1 h-px bg-border" />
+                    </button>
+                    {showLabels && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {labelOptions.map((option) => {
+                          const isSelected = watchedLabels?.includes(option.key);
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              onClick={() => toggleLabel(option.key)}
+                              className={cn(
+                                "rounded-full text-[11px] font-medium px-3 py-1 border transition-colors cursor-pointer",
+                                getLabelChipClasses(option.key, !!isSelected),
+                              )}
+                              data-testid={`timesheet-label-${option.key}`}
+                            >
+                              {option.name}
+                              {isSelected && <Check className="inline h-3 w-3 ml-1" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="my-3" />
+                  </>
                 )}
 
-                {labelOptions.length > 0 && <div className="border-t border-border my-4" />}
-
-                {/* Description */}
+                {/* Description — collapsible */}
                 <FormField
                   control={form.control}
                   name="description"
                   render={({ field }) => (
                     <FormItem className="space-y-0">
-                      <Label className={labelClass}>Description</Label>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          placeholder="What did you work on?"
-                          className="min-h-[80px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
-                          data-testid="textarea-description"
+                      <button
+                        type="button"
+                        onClick={() => setShowDescription((s) => !s)}
+                        className="w-full flex items-center gap-2 py-1 cursor-pointer"
+                        style={{ color: '#9b9b9b' }}
+                      >
+                        <div className="flex-1 h-px bg-border" />
+                        <ChevronDown
+                          className={cn("h-3 w-3 transition-transform shrink-0", !showDescription && "-rotate-90")}
                         />
-                      </FormControl>
+                        <span style={{ fontSize: '12px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          Description
+                        </span>
+                        <div className="flex-1 h-px bg-border" />
+                      </button>
+                      {showDescription && (
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder="What did you work on?"
+                            className="mt-2 min-h-[80px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
+                            data-testid="textarea-description"
+                          />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
