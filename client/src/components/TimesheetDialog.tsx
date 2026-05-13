@@ -706,7 +706,7 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                <div className="border-t border-border mt-6 mb-4" />
+                <div className="border-t border-border mt-8 mb-4" />
 
                 {/* Start | End | Break */}
                 <div className="grid grid-cols-3 gap-3">
