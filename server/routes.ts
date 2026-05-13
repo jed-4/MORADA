@@ -16336,6 +16336,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Run OCR on an attachment that is already stored in object storage.
+  // Used by the bill detail page when the bill was auto-imported from email
+  // and already has an attachment but ocrProcessed is still false.
+  app.post("/api/bills/:id/ocr-from-attachment", requireAuth, async (req, res) => {
+    try {
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+
+      const userCompanyId = (req as any).user?.companyId;
+      const userRole = (req as any).user?.role;
+      if (bill.projectId) {
+        const project = await storage.getProject(bill.projectId);
+        if (!project) return res.status(403).json({ error: "Forbidden" });
+        if (userRole !== "admin" && project.companyId !== userCompanyId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      } else if (userRole !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      // Find first processable attachment (PDF or image)
+      type Att = string | { objectPath?: string; filename?: string; mimeType?: string };
+      const attachments: Att[] = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as Att[]) : [];
+
+      let objectPath: string | null = null;
+      let filename = "invoice";
+      let mimeType = "application/pdf";
+
+      for (const att of attachments) {
+        const path = typeof att === "string" ? att : (att?.objectPath || "");
+        const ext = path.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase() || "";
+        if (["pdf", "jpg", "jpeg", "png"].includes(ext)) {
+          objectPath = path;
+          filename =
+            typeof att === "object" && att?.filename
+              ? att.filename
+              : decodeURIComponent(path.split("/").pop() || "invoice");
+          mimeType =
+            typeof att === "object" && att?.mimeType
+              ? att.mimeType
+              : ext === "pdf"
+              ? "application/pdf"
+              : ["jpg", "jpeg"].includes(ext)
+              ? "image/jpeg"
+              : "image/png";
+          break;
+        }
+      }
+
+      if (!objectPath) {
+        return res.status(400).json({ error: "No processable attachment found (PDF or image)" });
+      }
+
+      // Strip /objects/company/<cid> prefix to get the path for getObjectEntityFile
+      let storagePath = objectPath;
+      const companyPrefixMatch = storagePath.match(/^\/objects\/company\/[^/]+(\/.*)?$/);
+      if (companyPrefixMatch) {
+        const remainder = companyPrefixMatch[1] || "/";
+        storagePath = `/objects${remainder}`;
+      }
+
+      const { ObjectStorageService } = await import(
+        "./replit_integrations/object_storage/objectStorage"
+      );
+      const objectStorage = new ObjectStorageService();
+
+      let fileBuffer: Buffer;
+      try {
+        const objectFile = await objectStorage.getObjectEntityFile(storagePath);
+        const [downloaded] = await objectFile.download();
+        fileBuffer = downloaded as Buffer;
+      } catch (dlErr: any) {
+        console.error("[ocr-from-attachment] Download failed:", dlErr.message);
+        return res.status(404).json({ error: "Attachment file not found in storage" });
+      }
+
+      const base64 = fileBuffer.toString("base64");
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+
+      const { processInvoiceWithAI } = await import("./services/aiBillReader");
+      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      try {
+        const result = await processInvoiceWithAI(dataUrl, filename);
+        res.json({ ...result, attachment: attachmentMeta });
+      } catch (aiErr: any) {
+        console.error("[ocr-from-attachment] AI failed:", aiErr.message);
+        res.status(502).json({
+          error: aiErr?.message || "AI extraction failed",
+          attachment: attachmentMeta,
+        });
+      }
+    } catch (error: any) {
+      console.error("[ocr-from-attachment] Unexpected error:", error);
+      res.status(500).json({ error: error?.message || "Failed to process attachment" });
+    }
+  });
+
   // Promote a bill from `needs_review` (AI-extracted, awaiting human sign-off)
   // to `awaiting_approval` (in the approver's queue).
   app.post("/api/bills/:id/confirm-extraction", requireAuth, async (req, res) => {

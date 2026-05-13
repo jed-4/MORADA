@@ -1241,6 +1241,29 @@ export default function BillDetail() {
     },
   });
 
+  // OCR from an attachment already stored in object storage (e.g. email-imported draft)
+  const ocrFromAttachmentMutation = useMutation({
+    mutationFn: async (objectPath: string) => {
+      const response = await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", { objectPath });
+      return response;
+    },
+    onSuccess: (data: any) => {
+      setOcrResults(data);
+      setOcrPreviewOpen(true);
+      toast({
+        title: "Invoice processed",
+        description: "Extracted invoice data — review and apply to this bill.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "AI extraction failed",
+        description: error?.message || "Couldn't extract invoice details. Fill the bill in manually.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const performSubmit = (data: BillFormData) => {
     if (isEditMode) {
       updateMutation.mutate(data);
@@ -1923,8 +1946,51 @@ export default function BillDetail() {
 
               <div className="space-y-3">
                 <Card className="p-3">
-                  <h3 className="text-xs font-semibold mb-2">Upload Invoice (OCR)</h3>
+                  <h3 className="text-xs font-semibold mb-2">AI Bill Reader</h3>
                   <div className="space-y-2">
+                    {(() => {
+                      const firstProcessable = attachmentUrls.find((u) =>
+                        /\.(pdf|jpe?g|png)$/i.test(u.split("?")[0].split("#")[0])
+                      );
+                      const showAutoRead =
+                        isEditMode &&
+                        !uploadedFile &&
+                        !ocrResults &&
+                        !!firstProcessable &&
+                        !bill?.ocrProcessed;
+                      if (!showAutoRead) return null;
+                      const attName = decodeURIComponent(
+                        firstProcessable.split("/").pop() || "attachment"
+                      );
+                      return (
+                        <div
+                          className="flex items-center gap-2 p-2 border rounded-md bg-muted/20"
+                          data-testid="card-auto-read-attachment"
+                        >
+                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground truncate flex-1">{attName}</span>
+                          <Button
+                            size="sm"
+                            onClick={() => ocrFromAttachmentMutation.mutate(firstProcessable)}
+                            disabled={ocrFromAttachmentMutation.isPending}
+                            data-testid="button-read-attachment-ai"
+                          >
+                            {ocrFromAttachmentMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                                Reading...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-3 w-3 mr-1.5" />
+                                Read with AI
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })()}
+
                     {!uploadedFile ? (
                       <div
                         className="border-2 border-dashed rounded-md p-3 text-center hover-elevate cursor-pointer transition-colors"
@@ -1935,7 +2001,9 @@ export default function BillDetail() {
                       >
                         <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
                         <p className="text-data text-muted-foreground">
-                          Drop or click to browse (PDF, JPG, PNG)
+                          {isEditMode && attachmentUrls.length > 0
+                            ? "Or upload a different file (PDF, JPG, PNG)"
+                            : "Drop or click to browse (PDF, JPG, PNG)"}
                         </p>
                         <input
                           id="file-upload"
@@ -2004,8 +2072,10 @@ export default function BillDetail() {
                             )}
                           </Button>
                         )}
+                      </div>
+                    )}
 
-                        {ocrResults && (
+                    {ocrResults && (
                           <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
                             <CollapsibleTrigger asChild>
                               <Button
@@ -2098,8 +2168,6 @@ export default function BillDetail() {
                             </CollapsibleContent>
                           </Collapsible>
                         )}
-                      </div>
-                    )}
                   </div>
                 </Card>
 
