@@ -593,6 +593,8 @@ export interface IStorage {
   createClientSelection(selection: InsertClientSelection): Promise<ClientSelection>;
   deleteClientSelection(id: string): Promise<boolean>;
 
+  getFirstCompanyId(): Promise<string | undefined>;
+
   // Suppliers CRUD
   getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]>;
   getSupplierById(id: string): Promise<Supplier | null>;
@@ -12330,6 +12332,11 @@ export class DbStorage implements IStorage {
     // Get first (and only) company settings record
     const [settings] = await db.select().from(schema.companySettings).limit(1);
     return settings;
+  }
+
+  async getFirstCompanyId(): Promise<string | undefined> {
+    const [company] = await db.select({ id: schema.companies.id }).from(schema.companies).limit(1);
+    return company?.id;
   }
   
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {

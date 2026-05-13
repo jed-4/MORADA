@@ -103,8 +103,11 @@ export class AutoBillCreatorService {
     let supplierId: string | undefined;
     let supplierName = invoiceData.supplierName || emailParser.extractSupplierHint(email) || "Unknown Supplier";
 
+    const companyId = options.companyId || await storage.getFirstCompanyId();
+    if (!companyId) throw new Error("No company found — cannot create bill.");
+
     if (options.autoMatch && invoiceData.supplierName) {
-      const suppliers = await storage.getSuppliers();
+      const suppliers = await storage.getSuppliers(companyId);
       const result = matchSupplier(
         invoiceData.supplierName,
         suppliers.map((s: any) => ({
@@ -124,12 +127,13 @@ export class AutoBillCreatorService {
           phone: invoiceData.supplierPhone,
           address: invoiceData.supplierAddress,
           isActive: true,
+          companyId,
         });
         supplierId = newSupplier.id;
         supplierName = newSupplier.name;
       }
     } else {
-      const suppliers = await storage.getSuppliers();
+      const suppliers = await storage.getSuppliers(companyId);
       if (suppliers.length > 0) {
         supplierId = suppliers[0].id;
         supplierName = suppliers[0].name;

@@ -129,10 +129,12 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         attachments,
       };
 
+      const companyId = await storage.getFirstCompanyId();
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
         defaultUserId: null,
         autoMatch: true,
         gmailMessageId: messageId,
+        companyId,
       });
 
       const anySuccess = results.some(r => r.success);
