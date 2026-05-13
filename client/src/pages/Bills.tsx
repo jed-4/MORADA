@@ -676,7 +676,7 @@ export default function Bills() {
   };
 
   const pollNowMutation = useMutation({
-    mutationFn: () => apiRequest("/api/bill-inbox/poll", "POST"),
+    mutationFn: () => apiRequest("/api/bill-inbox/poll-now", "POST"),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       const count = data?.processed ?? 0;
