@@ -7174,6 +7174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         billInboxGmailTokenExpiry: result.tokenExpiry,
         billInboxGmailConnectedAt: new Date(),
         billInboxPollingEnabled: true,
+        billInboxStatus: null,
+        billInboxLastError: null,
+        billInboxLastErrorAt: null,
       });
 
       console.log('[BillInbox] Connected Gmail account:', result.email);
