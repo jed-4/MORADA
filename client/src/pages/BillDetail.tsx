@@ -1312,6 +1312,11 @@ export default function BillDetail() {
               source: "manual",
             });
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+            // Auto-trigger AI reading for PDF/image attachments on unprocessed bills
+            const isPdfOrImage = /\.(pdf|jpg|jpeg|png|webp)$/i.test(file.name);
+            if (isPdfOrImage && !bill?.ocrProcessed && !ocrResults) {
+              ocrFromAttachmentMutation.mutate(uploadResult.objectPath);
+            }
           } catch (postErr: unknown) {
             const msg = postErr instanceof Error ? postErr.message : "Please try again from the Attachments tab.";
             toast({ variant: "destructive", title: "Attachment not saved", description: msg });
@@ -1948,226 +1953,108 @@ export default function BillDetail() {
                 <Card className="p-3">
                   <h3 className="text-xs font-semibold mb-2">AI Bill Reader</h3>
                   <div className="space-y-2">
-                    {(() => {
-                      const firstProcessable = attachmentUrls.find((u) =>
-                        /\.(pdf|jpe?g|png)$/i.test(u.split("?")[0].split("#")[0])
-                      );
-                      const showAutoRead =
-                        isEditMode &&
-                        !uploadedFile &&
-                        !ocrResults &&
-                        !!firstProcessable &&
-                        !bill?.ocrProcessed;
-                      if (!showAutoRead) return null;
-                      const attName = decodeURIComponent(
-                        firstProcessable.split("/").pop() || "attachment"
-                      );
-                      return (
-                        <div
-                          className="flex items-center gap-2 p-2 border rounded-md bg-muted/20"
-                          data-testid="card-auto-read-attachment"
-                        >
-                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className="text-xs text-muted-foreground truncate flex-1">{attName}</span>
-                          <Button
-                            size="sm"
-                            onClick={() => ocrFromAttachmentMutation.mutate(firstProcessable)}
-                            disabled={ocrFromAttachmentMutation.isPending}
-                            data-testid="button-read-attachment-ai"
-                          >
-                            {ocrFromAttachmentMutation.isPending ? (
-                              <>
-                                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                                Reading...
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="h-3 w-3 mr-1.5" />
-                                Read with AI
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      );
-                    })()}
-
-                    {!uploadedFile ? (
-                      <div
-                        className="border-2 border-dashed rounded-md p-3 text-center hover-elevate cursor-pointer transition-colors"
-                        onDrop={handleDrop}
-                        onDragOver={(e) => e.preventDefault()}
-                        onClick={() => document.getElementById('file-upload')?.click()}
-                        data-testid="dropzone-upload"
-                      >
-                        <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                        <p className="text-data text-muted-foreground">
-                          {isEditMode && attachmentUrls.length > 0
-                            ? "Or upload a different file (PDF, JPG, PNG)"
-                            : "Drop or click to browse (PDF, JPG, PNG)"}
-                        </p>
-                        <input
-                          id="file-upload"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={handleFileUpload}
-                          className="hidden"
-                          data-testid="input-file-upload"
-                        />
+                    {ocrFromAttachmentMutation.isPending ? (
+                      <div className="flex flex-col items-center justify-center py-4 gap-1.5">
+                        <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#a890d4' }} />
+                        <p className="text-xs" style={{ color: '#a890d4' }}>Reading bill with AI...</p>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between p-2 border rounded-md" data-testid="card-uploaded-file">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium truncate" data-testid="text-filename">{uploadedFile.name}</p>
-                              <p className="text-data text-muted-foreground" data-testid="text-filesize">
-                                {formatFileSize(uploadedFile.size)}
-                              </p>
-                            </div>
-                          </div>
+                    ) : ocrResults ? (
+                      <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
+                        <CollapsibleTrigger asChild>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setUploadedFile(null);
-                              setOcrResults(null);
-                              setOcrPreviewOpen(false);
-                            }}
-                            data-testid="button-remove-file"
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-between"
+                            data-testid="button-toggle-ocr-preview"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <span className="text-xs">AI Extracted Data</span>
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
                           </Button>
-                        </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
+                          <div className="border rounded-md p-2 space-y-1.5 text-table">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <p className="text-muted-foreground">Supplier</p>
+                                <p className="font-medium" data-testid="text-ocr-supplier">
+                                  {ocrResults.supplierName || "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Invoice #</p>
+                                <p className="font-medium" data-testid="text-ocr-invoice-number">
+                                  {ocrResults.invoiceNumber || "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Date</p>
+                                <p className="font-medium" data-testid="text-ocr-invoice-date">
+                                  {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Due</p>
+                                <p className="font-medium" data-testid="text-ocr-due-date">
+                                  {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
+                                </p>
+                              </div>
+                            </div>
 
-                        {ocrFilePreviewUrl && (
-                          <div className="rounded-md border overflow-hidden bg-muted/20" data-testid="card-ocr-file-preview">
-                            <DocumentPreview
-                              src={ocrFilePreviewUrl}
-                              mimeType={ocrFileIsImage ? "image/*" : "application/pdf"}
-                              filename={uploadedFile?.name}
-                              height={260}
-                            />
+                            <div className="border-t pt-1.5">
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <div>
+                                  <p className="text-muted-foreground">Subtotal</p>
+                                  <p className="font-medium" data-testid="text-ocr-subtotal">
+                                    {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Tax</p>
+                                  <p className="font-medium" data-testid="text-ocr-tax">
+                                    {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Total</p>
+                                  <p className="font-medium" data-testid="text-ocr-total">
+                                    {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
+                              <div className="border-t pt-1.5">
+                                <p className="font-medium mb-1">Line Items</p>
+                                <div className="space-y-0.5">
+                                  {ocrResults.lineItems.map((item: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-data" data-testid={`text-ocr-line-item-${idx}`}>
+                                      <span className="truncate mr-2">{item.description || "Unknown"}</span>
+                                      <span className="font-medium shrink-0">
+                                        {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
 
-                        {!ocrResults && (
                           <Button
-                            onClick={handleProcessOCR}
-                            disabled={ocrMutation.isPending}
+                            onClick={handleApplyOCR}
                             className="w-full"
                             size="sm"
-                            data-testid="button-process-ocr"
+                            data-testid="button-apply-ocr"
                           >
-                            {ocrMutation.isPending ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                                Reading bill...
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                                Read with AI
-                              </>
-                            )}
+                            Apply to Bill
                           </Button>
-                        )}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : (
+                      <div style={{ textAlign: 'center', color: '#9b9b9b', fontSize: '13px', padding: '20px 0' }}>
+                        Add a PDF attachment below to read with AI
                       </div>
                     )}
-
-                    {ocrResults && (
-                          <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
-                            <CollapsibleTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full justify-between"
-                                data-testid="button-toggle-ocr-preview"
-                              >
-                                <span className="text-xs">AI Extracted Data</span>
-                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
-                              </Button>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
-                              <div className="border rounded-md p-2 space-y-1.5 text-table">
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  <div>
-                                    <p className="text-muted-foreground">Supplier</p>
-                                    <p className="font-medium" data-testid="text-ocr-supplier">
-                                      {ocrResults.supplierName || "Not detected"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Invoice #</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-number">
-                                      {ocrResults.invoiceNumber || "Not detected"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Date</p>
-                                    <p className="font-medium" data-testid="text-ocr-invoice-date">
-                                      {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Due</p>
-                                    <p className="font-medium" data-testid="text-ocr-due-date">
-                                      {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="border-t pt-1.5">
-                                  <div className="grid grid-cols-3 gap-1.5">
-                                    <div>
-                                      <p className="text-muted-foreground">Subtotal</p>
-                                      <p className="font-medium" data-testid="text-ocr-subtotal">
-                                        {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Tax</p>
-                                      <p className="font-medium" data-testid="text-ocr-tax">
-                                        {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Total</p>
-                                      <p className="font-medium" data-testid="text-ocr-total">
-                                        {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
-                                  <div className="border-t pt-1.5">
-                                    <p className="font-medium mb-1">Line Items</p>
-                                    <div className="space-y-0.5">
-                                      {ocrResults.lineItems.map((item: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-data" data-testid={`text-ocr-line-item-${idx}`}>
-                                          <span className="truncate mr-2">{item.description || "Unknown"}</span>
-                                          <span className="font-medium shrink-0">
-                                            {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              <Button
-                                onClick={handleApplyOCR}
-                                className="w-full"
-                                size="sm"
-                                data-testid="button-apply-ocr"
-                              >
-                                Apply to Bill
-                              </Button>
-                            </CollapsibleContent>
-                          </Collapsible>
-                        )}
                   </div>
                 </Card>
 
@@ -2250,6 +2137,17 @@ export default function BillDetail() {
                                   <span className="truncate">{decodeURIComponent(fileName)}</span>
                                 </button>
                                 <div className="flex items-center gap-0.5 shrink-0">
+                                  {(isImage || isPdf) && isEditMode && (
+                                    <button
+                                      type="button"
+                                      onClick={() => ocrFromAttachmentMutation.mutate(url)}
+                                      disabled={ocrFromAttachmentMutation.isPending}
+                                      style={{ fontSize: '11px', color: '#a890d4', border: '1px solid #a890d4', borderRadius: '4px', padding: '2px 8px', background: 'transparent', cursor: 'pointer' }}
+                                      data-testid={`button-read-ai-attachment-${idx}`}
+                                    >
+                                      Read with AI
+                                    </button>
+                                  )}
                                   {canPreview && (
                                     <Button
                                       variant="ghost"
