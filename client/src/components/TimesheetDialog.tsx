@@ -683,7 +683,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Employee — full width */}
-                <div className="mt-3">
+                <div className="mt-3 pb-5">
                   <FormField
                     control={form.control}
                     name="userId"
