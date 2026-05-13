@@ -138,15 +138,17 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       });
 
       const anySuccess = results.some(r => r.success);
-      if (anySuccess) {
-        processed++;
-        console.log(`[BillInbox] Created bill(s) from message "${subject}" (from: ${from})`);
-      }
-
       const allErrors = results.filter(r => !r.success).map(r => r.error || 'Unknown error');
       errors.push(...allErrors);
 
-      await markRead(gmail, messageId);
+      if (anySuccess) {
+        processed++;
+        console.log(`[BillInbox] Created bill(s) from message "${subject}" (from: ${from})`);
+        // Only mark as read once at least one bill was successfully created
+        await markRead(gmail, messageId);
+      } else {
+        console.warn(`[BillInbox] All attachments failed for message "${subject}" — leaving as unread for retry. Errors: ${allErrors.join('; ')}`);
+      }
     } catch (err: any) {
       console.error(`[BillInbox] Error processing message ${messageId}:`, err.message);
       errors.push(err.message);
