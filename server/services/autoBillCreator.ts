@@ -111,13 +111,13 @@ export class AutoBillCreatorService {
     let supplierName = supplierHint || "Unknown Supplier";
 
     if (options.autoMatch && supplierHint) {
-      const suppliers = await storage.getSuppliers(companyId);
+      const contacts = await storage.getContacts(companyId, "supplier");
       const result = matchSupplier(
         supplierHint,
-        suppliers.map((s: any) => ({
-          id: s.id,
-          names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
-          raw: s,
+        contacts.map((c: any) => ({
+          id: c.id,
+          names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
+          raw: c,
         })),
       );
       if (result.match) {
@@ -195,13 +195,13 @@ export class AutoBillCreatorService {
       let aiSupplierName = invoiceData.supplierName || supplierName;
 
       if (options.autoMatch && invoiceData.supplierName) {
-        const suppliers = await storage.getSuppliers(companyId);
+        const contacts = await storage.getContacts(companyId, "supplier");
         const result = matchSupplier(
           invoiceData.supplierName,
-          suppliers.map((s: any) => ({
-            id: s.id,
-            names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
-            raw: s,
+          contacts.map((c: any) => ({
+            id: c.id,
+            names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
+            raw: c,
           })),
         );
 
@@ -209,17 +209,17 @@ export class AutoBillCreatorService {
           aiSupplierId = result.match.candidate.id;
           aiSupplierName = (result.match.candidate as any).raw?.name || invoiceData.supplierName;
         } else {
-          // Auto-create the supplier from AI-extracted data
-          const newSupplier = await storage.createSupplier({
+          // Auto-create the supplier as a contact
+          const newContact = await storage.createContact({
             name: invoiceData.supplierName,
-            email: invoiceData.supplierEmail,
-            phone: invoiceData.supplierPhone,
-            address: invoiceData.supplierAddress,
-            isActive: true,
+            email: invoiceData.supplierEmail || null,
+            phone: invoiceData.supplierPhone || null,
+            address: invoiceData.supplierAddress || null,
+            contactType: "supplier",
             companyId,
           });
-          aiSupplierId = newSupplier.id;
-          aiSupplierName = newSupplier.name;
+          aiSupplierId = newContact.id;
+          aiSupplierName = newContact.name;
         }
       }
 
