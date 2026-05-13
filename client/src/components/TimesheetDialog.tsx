@@ -613,7 +613,7 @@ export function TimesheetDialog({
           >
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-              <fieldset disabled={readonly} className="flex flex-col gap-4">
+              <fieldset disabled={readonly} className="flex flex-col gap-3">
                 {readonly && (
                   <p className="text-[11px] text-muted-foreground mb-3">
                     You don't have permission to edit this timesheet.
@@ -787,20 +787,6 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                {/* Duration — read-only auto-calc */}
-                <div>
-                  <Label className={labelClass}>Duration</Label>
-                  <div
-                    className="bg-muted/20 rounded-md border border-border h-9 px-3 flex items-center justify-between"
-                    data-testid="display-duration"
-                  >
-                    <span className={cn("text-[12px] font-semibold", displayDuration ? "text-primary" : "text-muted-foreground")}>
-                      {displayDuration ? `${displayDuration} hrs` : "—"}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">auto-calculated</span>
-                  </div>
-                </div>
-
                 {/* Break start/end collapsible */}
                 <button
                   type="button"
@@ -902,19 +888,32 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                {/* Total strip — hours primary, cost secondary */}
-                <div
-                  className="rounded-lg flex items-baseline justify-between"
-                  style={{ padding: '12px 16px', background: '#f5f4f0', borderRadius: '8px' }}
-                  data-testid="display-total"
-                >
+                {/* Duration & Total cost — 2-column */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, color: '#a890d4', lineHeight: 1.2 }}>{displayHoursStr}</div>
-                    <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>Total hours</div>
+                    <Label className={labelClass}>Duration</Label>
+                    <div
+                      className="rounded-md border border-border bg-muted/30 px-4 py-2"
+                      data-testid="display-duration"
+                    >
+                      <div style={{ fontSize: '20px', fontWeight: 600, color: displayHoursStr ? '#a890d4' : undefined, lineHeight: 1.2 }}
+                           className={displayHoursStr ? '' : 'text-muted-foreground'}>
+                        {displayHoursStr || "—"}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total hours</div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#9b9b9b' }}>${displayTotal}</div>
-                    <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>Total cost</div>
+                  <div>
+                    <Label className={labelClass}>Total cost</Label>
+                    <div
+                      className="rounded-md border border-border bg-muted/30 px-4 py-2"
+                      data-testid="display-total"
+                    >
+                      <div style={{ fontSize: '20px', fontWeight: 600, lineHeight: 1.2 }} className="text-muted-foreground">
+                        ${displayTotal}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total cost</div>
+                    </div>
                   </div>
                 </div>
 
@@ -1062,7 +1061,7 @@ export function TimesheetDialog({
                         <Textarea
                           {...field}
                           placeholder="What did you work on?"
-                          className="min-h-[80px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
+                          className="min-h-[104px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
                           data-testid="textarea-description"
                         />
                       </FormControl>
