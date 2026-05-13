@@ -551,7 +551,7 @@ export function TimesheetDialog({
   const labelClass = "text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 block";
   const inputClass =
     "w-full h-9 rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
-  const selectTriggerClass = "h-9 bg-muted/30 border-border text-sm font-normal";
+  const selectTriggerClass = "h-9 border border-border bg-muted/30 text-sm font-normal";
 
   const drawer = (
     <>
