@@ -34,6 +34,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
   }
 
   console.log(`[BillInbox] Polling ${settings.billInboxGmailEmail} for new invoices...`);
+  console.log(`[BillInbox] Token present: accessToken=${!!settings.billInboxGmailAccessToken} refreshToken=${!!settings.billInboxGmailRefreshToken} expiry=${settings.billInboxGmailTokenExpiry}`);
 
   let gmail: any;
   try {
@@ -42,6 +43,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       billInboxGmailRefreshToken: settings.billInboxGmailRefreshToken,
       billInboxGmailTokenExpiry: settings.billInboxGmailTokenExpiry,
     });
+    console.log('[BillInbox] Gmail client obtained successfully');
   } catch (err: any) {
     console.error('[BillInbox] Failed to get Gmail client (token error):', err.message);
     await storage.updateCompanySettings({
@@ -52,6 +54,14 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
     return { processed: 0, errors: [err.message] };
   }
 
+  // Confirm which Google account we're actually reading
+  try {
+    const profileRes = await gmail.users.getProfile({ userId: 'me' });
+    console.log(`[BillInbox] Authenticated as Gmail account: ${profileRes.data.emailAddress} (total messages: ${profileRes.data.messagesTotal})`);
+  } catch (err: any) {
+    console.warn('[BillInbox] Could not fetch Gmail profile:', err.message);
+  }
+
   let messageIds: string[] = [];
   try {
     const listRes = await gmail.users.messages.list({
@@ -59,10 +69,12 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
       q: 'is:unread has:attachment',
       maxResults: 20,
     });
-    messageIds = (listRes.data.messages || []).map((m: any) => m.id);
+    const messages = listRes.data.messages || [];
+    messageIds = messages.map((m: any) => m.id);
+    console.log(`[BillInbox] Gmail query "is:unread has:attachment" returned ${messageIds.length} message(s). ResultSizeEstimate: ${listRes.data.resultSizeEstimate}`);
   } catch (err: any) {
     const isAuthError = err.code === 401 || err.code === 403 || /invalid_grant|token.*expired|unauthorized/i.test(err.message);
-    console.error('[BillInbox] Failed to list messages:', err.message);
+    console.error('[BillInbox] Failed to list messages:', err.message, 'code:', err.code, 'status:', err.status);
     if (isAuthError) {
       await storage.updateCompanySettings({
         billInboxStatus: 'error',
@@ -74,6 +86,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
   }
 
   if (messageIds.length === 0) {
+    console.log('[BillInbox] No unread messages with attachments found — inbox is clear or email is in a label/spam');
     await storage.updateCompanySettings({
       billInboxLastPolledAt: new Date(),
       billInboxStatus: null,
