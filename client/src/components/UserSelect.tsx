@@ -57,7 +57,6 @@ export function UserSelect({
       opts.push({
         value: user.id,
         label: displayName,
-        description: user.email || undefined,
         icon: showAvatar ? (
           <Avatar className="h-5 w-5">
             <AvatarImage src={user.avatarUrl || undefined} alt={displayName} />
