@@ -683,7 +683,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Employee — full width */}
-                <div className="mt-3 pb-[15px]">
+                <div className="mt-3 pb-1">
                   <FormField
                     control={form.control}
                     name="userId"
@@ -706,7 +706,7 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                <div className="border-t border-border mt-8 mb-4" />
+                <div className="border-t border-border mt-0 mb-1" />
 
                 {/* Start | End | Break */}
                 <div className="grid grid-cols-3 gap-3">
@@ -1017,23 +1017,19 @@ export function TimesheetDialog({
 
                 <div className="border-t border-border my-4" />
 
-                {/* Work Types — collapsible */}
+                {/* Labels — collapsible */}
                 {labelOptions.length > 0 && (
                   <>
                     <button
                       type="button"
                       onClick={() => setShowLabels((s) => !s)}
-                      className="w-full flex items-center gap-2 py-1 cursor-pointer"
-                      style={{ color: '#9b9b9b' }}
+                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                      data-testid="toggle-labels"
                     >
-                      <div className="flex-1 h-px bg-border" />
                       <ChevronDown
                         className={cn("h-3 w-3 transition-transform shrink-0", !showLabels && "-rotate-90")}
                       />
-                      <span style={{ fontSize: '12px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                        Work Types
-                      </span>
-                      <div className="flex-1 h-px bg-border" />
+                      Labels
                     </button>
                     {showLabels && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
