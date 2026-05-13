@@ -889,7 +889,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Duration & Total cost — 2-column */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[2fr_1fr] gap-3">
                   <div>
                     <Label className={labelClass}>Duration</Label>
                     <div
