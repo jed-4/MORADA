@@ -61,11 +61,13 @@ import {
   Loader2,
   AlertCircle,
   MoreHorizontal,
+  RefreshCw,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
@@ -673,6 +675,21 @@ export default function Bills() {
     toast({ title: "Copied to clipboard", description: "Webhook URL has been copied to your clipboard." });
   };
 
+  const pollNowMutation = useMutation({
+    mutationFn: () => apiRequest("/api/bill-inbox/poll", "POST"),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      const count = data?.processed ?? 0;
+      toast({
+        title: count > 0 ? `${count} bill${count === 1 ? "" : "s"} imported` : "Inbox checked",
+        description: count > 0 ? "New bills have been imported from your inbox." : "No new invoices found.",
+      });
+    },
+    onError: () => {
+      toast({ title: "Check failed", description: "Could not reach the bill inbox. Try reconnecting in Settings.", variant: "destructive" });
+    },
+  });
+
   // ── DataTable column defs ───────────────────────────────────────────────
   const billColumns = useMemo<ColumnDef<Bill, unknown>[]>(() => {
     const cols: (ColumnDef<Bill, unknown> & { meta?: DataTableColumnMeta })[] = [
@@ -975,7 +992,18 @@ export default function Bills() {
               <MoreHorizontal className="w-3.5 h-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onSelect={() => pollNowMutation.mutate()}
+              disabled={pollNowMutation.isPending}
+              data-testid="menu-item-check-inbox-now"
+            >
+              {pollNowMutation.isPending
+                ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
+              Check inbox now
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setEmailSetupOpen(true)} data-testid="menu-item-email-setup">
               <Mail className="w-3.5 h-3.5 mr-2" />
               Email Setup
