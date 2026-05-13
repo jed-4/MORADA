@@ -21,7 +21,7 @@ import {
   useDroppable,
 } from "@dnd-kit/core";
 
-const HOUR_HEIGHT = 40; // pixels per hour in week/day view
+const HOUR_HEIGHT = 60; // pixels per hour in week/day view
 
 export interface CalendarEvent {
   id: string;
@@ -162,8 +162,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-center gap-1.5 px-2 py-1 rounded-[4px] mb-px transition-all overflow-hidden",
-        showResizeHandles && "h-full items-start",
+        "group relative flex gap-1.5 rounded-[4px] transition-all overflow-hidden",
+        showResizeHandles ? "px-1.5 py-0 h-full items-start" : "items-center px-2 py-1",
         !isReadOnlyEvent && "touch-none cursor-move",
         isReadOnlyEvent && "cursor-pointer",
         isCompleted && "opacity-55",
@@ -205,19 +205,18 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </button>
       )}
       <div className="flex-1 min-w-0 overflow-hidden">
-        {/* Single-line inline layout for all timed grid events */}
         {showResizeHandles ? (
-          <div className="flex items-baseline gap-1 min-w-0 overflow-hidden">
+          <div className="flex items-center gap-1 min-w-0 overflow-hidden w-full">
             <span
-              className="font-medium truncate shrink"
-              style={{ color: notionColors.darkText, fontSize: '11px', lineHeight: '1.2' }}
+              className="truncate shrink min-w-0"
+              style={{ color: notionColors.darkText, fontSize: '11px', fontWeight: 500, lineHeight: 1, whiteSpace: 'nowrap' }}
             >
               {event.title}
             </span>
             {event.startTime && (
               <span
-                className="whitespace-nowrap shrink-0"
-                style={{ color: notionColors.darkText, fontSize: '10px', opacity: 0.75, lineHeight: '1.2' }}
+                className="shrink-0 whitespace-nowrap"
+                style={{ color: notionColors.darkText, fontSize: '10px', opacity: 0.65, lineHeight: 1 }}
               >
                 {event.startTime}
               </span>
@@ -1327,16 +1326,14 @@ export function EnhancedCalendar({
                             // Calculate position and height with fixed gap for visual separation
                             const top = (startMinutes / 60) * HOUR_HEIGHT;
                             const durationMinutes = endMinutes - startMinutes;
-                            const fullHeight = (durationMinutes / 60) * HOUR_HEIGHT;
-                            const gap = HOUR_HEIGHT * 0.05; // Fixed gap (5% of one hour)
-                            const height = fullHeight - gap;
-                            
+                            const eventHeight = Math.max(14, Math.floor((durationMinutes / 60) * HOUR_HEIGHT) - 2);
+
                             return {
                               event,
                               startMinutes,
                               endMinutes,
                               top,
-                              height: Math.max(height, 15), // Minimum 15px height
+                              height: eventHeight,
                               isResizing,
                             };
                           });
