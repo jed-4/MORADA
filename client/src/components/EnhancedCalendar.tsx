@@ -162,7 +162,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-center gap-1.5 px-2 py-1 rounded-[4px] mb-0.5 transition-all overflow-hidden",
+        "group relative flex items-center gap-1.5 px-2 py-1 rounded-[4px] mb-px transition-all overflow-hidden",
         showResizeHandles && "h-full items-start",
         !isReadOnlyEvent && "touch-none cursor-move",
         isReadOnlyEvent && "cursor-pointer",
@@ -205,48 +205,35 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </button>
       )}
       <div className="flex-1 min-w-0 overflow-hidden">
-        {/* Title + time on the same line — Notion style */}
-        <div className="flex items-baseline gap-1 w-full min-w-0">
-          <span
-            className={cn(
-              "font-medium truncate flex-shrink text-[11px] leading-tight",
-              isCompleted && "line-through opacity-60"
+        {/* Single-line inline layout for all timed grid events */}
+        {showResizeHandles ? (
+          <div className="flex items-baseline gap-1 min-w-0 overflow-hidden">
+            <span
+              className="font-medium truncate shrink"
+              style={{ color: notionColors.darkText, fontSize: '11px', lineHeight: '1.2' }}
+            >
+              {event.title}
+            </span>
+            {event.startTime && (
+              <span
+                className="whitespace-nowrap shrink-0"
+                style={{ color: notionColors.darkText, fontSize: '10px', opacity: 0.75, lineHeight: '1.2' }}
+              >
+                {event.startTime}
+              </span>
             )}
-            style={{ color: notionColors.darkText }}
+          </div>
+        ) : (
+          /* Keep existing all-day / month-view layout unchanged */
+          <span
+            className="font-medium truncate block"
+            style={{ color: notionColors.darkText, fontSize: '11px' }}
           >
             {event.title}
           </span>
-          {showTime && (displayOptions?.showTime !== false) && (
-            <span
-              className="flex-shrink-0 text-[10px] leading-tight opacity-75 whitespace-nowrap"
-              style={{ color: notionColors.darkText }}
-            >
-              {event.startTime}{event.endTime && `–${event.endTime}`}
-            </span>
-          )}
-          {isRecurring && (
-            <Badge
-              variant="outline"
-              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-green-500 border-none text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Recurring template task"
-              data-testid={`recurring-badge-${event.id}`}
-            >
-              R
-            </Badge>
-          )}
-          {event.isModified && (
-            <Badge
-              variant="outline"
-              className="flex-shrink-0 text-2xs px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Task has been rescheduled"
-              data-testid={`moved-badge-${event.id}`}
-            >
-              M
-            </Badge>
-          )}
-        </div>
+        )}
 
-        {/* Project, assignee, status — only when not in timed resize mode */}
+        {/* Project, assignee, status — only in month/all-day views */}
         {!showResizeHandles && displayOptions?.showProject && event.projectName && (
           <div
             className="text-[10px] opacity-65 truncate leading-tight"
