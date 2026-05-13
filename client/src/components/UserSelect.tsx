@@ -14,6 +14,7 @@ interface UserSelectProps {
   noneLabel?: string;
   showAvatar?: boolean;
   className?: string;
+  triggerClassName?: string;
   "data-testid"?: string;
 }
 
@@ -27,6 +28,7 @@ export function UserSelect({
   noneLabel = "Unassigned",
   showAvatar = true,
   className,
+  triggerClassName,
   "data-testid": testId,
 }: UserSelectProps) {
   const { data: users = [], isLoading } = useQuery<User[]>({
@@ -87,6 +89,7 @@ export function UserSelect({
       disabled={disabled || isLoading}
       allowClear={allowClear}
       className={className}
+      triggerClassName={triggerClassName}
       data-testid={testId}
     />
   );

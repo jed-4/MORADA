@@ -555,7 +555,8 @@ export function TimesheetDialog({
 
   const labelClass = "text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1 block";
   const inputClass =
-    "w-full h-10 rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
+    "w-full h-9 rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
+  const selectTriggerClass = "h-9 bg-muted/30 border-border text-sm font-normal";
 
   const drawer = (
     <>
@@ -616,7 +617,7 @@ export function TimesheetDialog({
             className="flex flex-col flex-1 min-h-0"
           >
             {/* Scrollable body */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
               <fieldset disabled={readonly} className="space-y-0">
                 {readonly && (
                   <p className="text-[11px] text-muted-foreground mb-3">
@@ -638,6 +639,7 @@ export function TimesheetDialog({
                             onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
                             placeholder="Select project"
                             allowNone={true}
+                            className={selectTriggerClass}
                             data-testid="select-project"
                           />
                         </FormControl>
@@ -681,7 +683,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Employee — full width */}
-                <div className="mt-4">
+                <div className="mt-3">
                   <FormField
                     control={form.control}
                     name="userId"
@@ -694,6 +696,7 @@ export function TimesheetDialog({
                             onValueChange={field.onChange}
                             placeholder="Select employee"
                             allowNone={false}
+                            triggerClassName={selectTriggerClass}
                             data-testid="select-user"
                           />
                         </FormControl>
@@ -703,7 +706,7 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                <div className="border-t border-border my-4" />
+                <div className="border-t border-border mt-6 mb-4" />
 
                 {/* Start | End | Break */}
                 <div className="grid grid-cols-3 gap-3">
@@ -723,6 +726,7 @@ export function TimesheetDialog({
                             placeholder="Start"
                             defaultScrollTime={companySettings?.standardWorkStart || "07:00"}
                             showIcon={false}
+                            className={selectTriggerClass}
                             data-testid="select-start-time"
                           />
                         </FormControl>
@@ -747,6 +751,7 @@ export function TimesheetDialog({
                             placeholder="End"
                             defaultScrollTime={companySettings?.standardWorkEnd || "15:30"}
                             showIcon={false}
+                            className={selectTriggerClass}
                             data-testid="select-end-time"
                           />
                         </FormControl>
@@ -769,7 +774,7 @@ export function TimesheetDialog({
                           }}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-10 text-sm" data-testid="input-break-duration">
+                            <SelectTrigger className={cn("h-9 text-sm", selectTriggerClass)} data-testid="input-break-duration">
                               <SelectValue placeholder="Break" />
                             </SelectTrigger>
                           </FormControl>
@@ -788,10 +793,10 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Duration — read-only auto-calc */}
-                <div className="mt-4">
+                <div className="mt-3">
                   <Label className={labelClass}>Duration</Label>
                   <div
-                    className="bg-muted/20 rounded-md border border-border h-10 px-3 flex items-center justify-between"
+                    className="bg-muted/20 rounded-md border border-border h-9 px-3 flex items-center justify-between"
                     data-testid="display-duration"
                   >
                     <span className={cn("text-[12px] font-semibold", displayDuration ? "text-primary" : "text-muted-foreground")}>
@@ -805,7 +810,7 @@ export function TimesheetDialog({
                 <button
                   type="button"
                   onClick={() => setShowBreakTimes((s) => !s)}
-                  className="mt-4 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  className="mt-3 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   data-testid="toggle-break-times"
                 >
                   <ChevronDown
@@ -857,7 +862,7 @@ export function TimesheetDialog({
                   </div>
                 )}
 
-                <div className="border-t border-border my-4" />
+                <div className="border-t border-border mt-6 mb-4" />
 
                 {/* Cost Code | Rate */}
                 <div className="grid grid-cols-[2fr_1fr] gap-3">
@@ -872,6 +877,7 @@ export function TimesheetDialog({
                             value={field.value}
                             onValueChange={field.onChange}
                             placeholder="Select cost code"
+                            triggerClassName={selectTriggerClass}
                             data-testid="select-cost-code"
                           />
                         </FormControl>
@@ -903,7 +909,7 @@ export function TimesheetDialog({
 
                 {/* Total strip — hours primary, cost secondary */}
                 <div
-                  className="mt-4 rounded-lg flex items-baseline justify-between"
+                  className="mt-3 rounded-lg flex items-baseline justify-between"
                   style={{ padding: '12px 16px', background: '#f5f4f0', borderRadius: '8px' }}
                   data-testid="display-total"
                 >
@@ -919,7 +925,7 @@ export function TimesheetDialog({
 
                 {/* Cost Code Split (new entries only — opt-in) */}
                 {!timesheet && (
-                  <div className="mt-4">
+                  <div className="mt-3">
                     <button
                       type="button"
                       onClick={() => {
