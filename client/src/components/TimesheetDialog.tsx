@@ -128,7 +128,6 @@ export function TimesheetDialog({
   const [showBreakTimes, setShowBreakTimes] = useState(false);
   const [showCostCodeSplit, setShowCostCodeSplit] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
-  const [showDescription, setShowDescription] = useState(false);
 
   // Drawer mount/animation state
   const [isMounted, setIsMounted] = useState(open);
@@ -267,16 +266,12 @@ export function TimesheetDialog({
     }
   }, [open, timesheet, defaultProjectId, currentUser, form]);
 
-  // Auto-expand description when editing a timesheet that already has one; reset on close
+  // Reset labels on close
   useEffect(() => {
-    if (open && timesheet?.description) {
-      setShowDescription(true);
-    }
     if (!open) {
       setShowLabels(false);
-      setShowDescription(false);
     }
-  }, [open, timesheet?.description]);
+  }, [open]);
 
   // Helper: Parse time string to minutes
   const timeToMinutes = (time: string): number => {
@@ -618,7 +613,7 @@ export function TimesheetDialog({
           >
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-              <fieldset disabled={readonly} className="space-y-0">
+              <fieldset disabled={readonly} className="flex flex-col gap-4">
                 {readonly && (
                   <p className="text-[11px] text-muted-foreground mb-3">
                     You don't have permission to edit this timesheet.
@@ -683,7 +678,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Employee — full width */}
-                <div className="mt-3 pb-1">
+                <div>
                   <FormField
                     control={form.control}
                     name="userId"
@@ -706,7 +701,7 @@ export function TimesheetDialog({
                   />
                 </div>
 
-                <div className="border-t border-border mt-0 mb-1" />
+                <div className="border-t border-border" />
 
                 {/* Start | End | Break */}
                 <div className="grid grid-cols-3 gap-3">
@@ -793,7 +788,7 @@ export function TimesheetDialog({
                 </div>
 
                 {/* Duration — read-only auto-calc */}
-                <div className="mt-3">
+                <div>
                   <Label className={labelClass}>Duration</Label>
                   <div
                     className="bg-muted/20 rounded-md border border-border h-9 px-3 flex items-center justify-between"
@@ -810,7 +805,7 @@ export function TimesheetDialog({
                 <button
                   type="button"
                   onClick={() => setShowBreakTimes((s) => !s)}
-                  className="mt-3 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   data-testid="toggle-break-times"
                 >
                   <ChevronDown
@@ -822,7 +817,7 @@ export function TimesheetDialog({
                   Break start/end times (optional)
                 </button>
                 {showBreakTimes && (
-                  <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="grid grid-cols-2 gap-3">
                     <FormField
                       control={form.control}
                       name="breakStartTime"
@@ -862,7 +857,7 @@ export function TimesheetDialog({
                   </div>
                 )}
 
-                <div className="border-t border-border mt-6 mb-4" />
+                <div className="border-t border-border" />
 
                 {/* Cost Code | Rate */}
                 <div className="grid grid-cols-[2fr_1fr] gap-3">
@@ -909,7 +904,7 @@ export function TimesheetDialog({
 
                 {/* Total strip — hours primary, cost secondary */}
                 <div
-                  className="mt-3 rounded-lg flex items-baseline justify-between"
+                  className="rounded-lg flex items-baseline justify-between"
                   style={{ padding: '12px 16px', background: '#f5f4f0', borderRadius: '8px' }}
                   data-testid="display-total"
                 >
@@ -925,7 +920,7 @@ export function TimesheetDialog({
 
                 {/* Cost Code Split (new entries only — opt-in) */}
                 {!timesheet && (
-                  <div className="mt-3">
+                  <div>
                     <button
                       type="button"
                       onClick={() => {
@@ -1015,7 +1010,7 @@ export function TimesheetDialog({
                   </div>
                 )}
 
-                <div className="border-t border-border my-4" />
+                <div className="border-t border-border" />
 
                 {/* Labels — collapsible */}
                 {labelOptions.length > 0 && (
@@ -1053,41 +1048,24 @@ export function TimesheetDialog({
                         })}
                       </div>
                     )}
-                    <div className="my-3" />
                   </>
                 )}
 
-                {/* Description — collapsible */}
+                {/* Description */}
                 <FormField
                   control={form.control}
                   name="description"
                   render={({ field }) => (
                     <FormItem className="space-y-0">
-                      <button
-                        type="button"
-                        onClick={() => setShowDescription((s) => !s)}
-                        className="w-full flex items-center gap-2 py-1 cursor-pointer"
-                        style={{ color: '#9b9b9b' }}
-                      >
-                        <div className="flex-1 h-px bg-border" />
-                        <ChevronDown
-                          className={cn("h-3 w-3 transition-transform shrink-0", !showDescription && "-rotate-90")}
+                      <Label className={labelClass}>Description</Label>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          placeholder="What did you work on?"
+                          className="min-h-[80px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
+                          data-testid="textarea-description"
                         />
-                        <span style={{ fontSize: '12px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                          Description
-                        </span>
-                        <div className="flex-1 h-px bg-border" />
-                      </button>
-                      {showDescription && (
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder="What did you work on?"
-                            className="mt-2 min-h-[80px] resize-none rounded-md border border-border bg-muted/30 text-[12px] focus-visible:ring-1 focus-visible:ring-primary/50"
-                            data-testid="textarea-description"
-                          />
-                        </FormControl>
-                      )}
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1096,7 +1074,7 @@ export function TimesheetDialog({
                 {/* Clocked in / out */}
                 {timesheet?.actualStartTime && (
                   <div
-                    className="mt-3 bg-muted/20 rounded-md px-3 py-1.5 text-[11px] text-muted-foreground flex items-center gap-2"
+                    className="bg-muted/20 rounded-md px-3 py-1.5 text-[11px] text-muted-foreground flex items-center gap-2"
                     data-testid="display-clocked-times"
                   >
                     <Clock className="h-3 w-3 flex-shrink-0" />
@@ -1116,7 +1094,7 @@ export function TimesheetDialog({
                 {timesheet && (timesheet.status === "approved" || timesheet.status === "rejected") && timesheet.approvedById && (
                   <div
                     className={cn(
-                      "mt-3 flex flex-col gap-1 px-3 py-2 rounded-md text-[11px]",
+                      "flex flex-col gap-1 px-3 py-2 rounded-md text-[11px]",
                       timesheet.status === "approved"
                         ? "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))]"
                         : "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))]",
