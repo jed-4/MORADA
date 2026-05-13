@@ -22,6 +22,7 @@ export interface AutoBillOptions {
   companyId?: string;
   autoMatch: boolean;
   gmailMessageId?: string;
+  existingBillId?: string;
 }
 
 export class AutoBillCreatorService {
@@ -153,37 +154,59 @@ export class AutoBillCreatorService {
       console.error("autoBillCreator: failed to upload invoice attachment:", uploadErr.message);
     }
 
-    // ── STEP 1: Create draft bill with attachment ─────────────────────────────
-    const billNumber = await storage.getNextBillNumber();
+    // ── STEP 1: Create draft bill (or reuse existing unprocessed draft) ──────
+    let createdBill: import("@shared/schema").Bill;
 
-    const draftBillData: InsertBill = {
-      billNumber,
-      projectId,
-      supplierId,
-      billType: "bill",
-      status: "draft",
-      billDate: new Date(),
-      notes: `Auto-created from email: ${email.subject}\nFrom: ${email.from}`,
-      subtotal: 0,
-      tax: 0,
-      total: 0,
-      paidAmount: 0,
-      sendToXero: false,
-      ocrProcessed: false,
-      attachmentUrls: [],
-      createdById: options.defaultUserId || null,
-      gmailMessageId: options.gmailMessageId || null,
-    };
+    if (options.existingBillId) {
+      // Reuse the draft that was created in a previous failed attempt
+      const existing = await storage.getBillById(options.existingBillId);
+      if (!existing) throw new Error(`Existing bill ${options.existingBillId} not found`);
+      createdBill = existing;
+      console.log(`[autoBillCreator] Reusing existing draft bill ${existing.billNumber} for AI processing`);
 
-    const createdBill = await storage.createBill(draftBillData);
+      // Upload attachment if not already present
+      if (attachmentUrl) {
+        const existingUrls = (createdBill.attachmentUrls as any[]) || [];
+        if (existingUrls.length === 0) {
+          await storage.appendBillAttachment(createdBill.id, {
+            objectPath: attachmentUrl,
+            source: "email",
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+      }
+    } else {
+      const billNumber = await storage.getNextBillNumber();
 
-    // Attach the uploaded file immediately so it's accessible even if AI fails
-    if (attachmentUrl) {
-      await storage.appendBillAttachment(createdBill.id, {
-        objectPath: attachmentUrl,
-        source: "email",
-        uploadedAt: new Date().toISOString(),
-      });
+      const draftBillData: InsertBill = {
+        billNumber,
+        projectId,
+        supplierId,
+        billType: "bill",
+        status: "draft",
+        billDate: new Date(),
+        notes: `Auto-created from email: ${email.subject}\nFrom: ${email.from}`,
+        subtotal: 0,
+        tax: 0,
+        total: 0,
+        paidAmount: 0,
+        sendToXero: false,
+        ocrProcessed: false,
+        attachmentUrls: [],
+        createdById: options.defaultUserId || null,
+        gmailMessageId: options.gmailMessageId || null,
+      };
+
+      createdBill = await storage.createBill(draftBillData);
+
+      // Attach the uploaded file immediately so it's accessible even if AI fails
+      if (attachmentUrl) {
+        await storage.appendBillAttachment(createdBill.id, {
+          objectPath: attachmentUrl,
+          source: "email",
+          uploadedAt: new Date().toISOString(),
+        });
+      }
     }
 
     // ── STEP 2: Run AI on attachment, update bill → awaiting_approval ─────────

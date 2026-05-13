@@ -103,12 +103,15 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
 
   for (const messageId of messageIds) {
     try {
-      // Fix 1: Duplicate prevention — skip if already imported
+      // Duplicate prevention — skip if already fully processed; retry AI if still a draft
       const existing = await storage.getBillByGmailMessageId(messageId);
       if (existing) {
-        console.log(`[BillInbox] Message ${messageId} already imported as bill ${existing.billNumber} — marking read and skipping`);
-        await markRead(gmail, messageId);
-        continue;
+        if (existing.ocrProcessed) {
+          console.log(`[BillInbox] Message ${messageId} already fully processed as bill ${existing.billNumber} — marking read`);
+          await markRead(gmail, messageId);
+          continue;
+        }
+        console.log(`[BillInbox] Message ${messageId} has an unprocessed draft bill ${existing.billNumber} — re-running AI`);
       }
 
       const msgRes = await gmail.users.messages.get({
@@ -148,6 +151,7 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         autoMatch: true,
         gmailMessageId: messageId,
         companyId,
+        existingBillId: existing?.id,
       });
 
       const anySuccess = results.some(r => r.success);
