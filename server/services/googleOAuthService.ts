@@ -408,7 +408,8 @@ export class GoogleOAuthService {
   }
   
   generateBillInboxAuthUrl(state: string): string {
-    const authUrl = this.oauth2Client.generateAuthUrl({
+    const client = this.createBillInboxOAuth2Client();
+    const authUrl = client.generateAuthUrl({
       access_type: 'offline',
       scope: BILL_INBOX_SCOPES,
       state,
@@ -418,14 +419,15 @@ export class GoogleOAuthService {
   }
 
   async handleBillInboxCallback(code: string): Promise<{ email: string; accessToken: string; refreshToken: string; tokenExpiry: Date }> {
-    const { tokens } = await this.oauth2Client.getToken(code);
+    const client = this.createBillInboxOAuth2Client();
+    const { tokens } = await client.getToken(code);
 
     if (!tokens.access_token || !tokens.refresh_token) {
       throw new Error('Missing tokens from Google OAuth response for bill inbox');
     }
 
-    this.oauth2Client.setCredentials(tokens);
-    const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
+    client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: 'v2', auth: client });
     const userInfo = await oauth2.userinfo.get();
     const email = userInfo.data.email;
 
