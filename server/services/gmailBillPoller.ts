@@ -66,12 +66,12 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
   try {
     const listRes = await gmail.users.messages.list({
       userId: 'me',
-      q: 'is:unread has:attachment',
+      q: 'is:unread has:attachment in:anywhere',
       maxResults: 20,
     });
     const messages = listRes.data.messages || [];
     messageIds = messages.map((m: any) => m.id);
-    console.log(`[BillInbox] Gmail query "is:unread has:attachment" returned ${messageIds.length} message(s). ResultSizeEstimate: ${listRes.data.resultSizeEstimate}`);
+    console.log(`[BillInbox] Gmail query "is:unread has:attachment in:anywhere" returned ${messageIds.length} message(s). ResultSizeEstimate: ${listRes.data.resultSizeEstimate}`);
   } catch (err: any) {
     const isAuthError = err.code === 401 || err.code === 403 || /invalid_grant|token.*expired|unauthorized/i.test(err.message);
     console.error('[BillInbox] Failed to list messages:', err.message, 'code:', err.code, 'status:', err.status);
