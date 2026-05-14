@@ -1695,14 +1695,19 @@ export default function BillDetail() {
                           disabled={!isEditMode && !!projectId}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-project">
-                              {selectedProject?.color && (
-                                <span
-                                  className="h-2.5 w-2.5 rounded-full shrink-0 mr-1"
-                                  style={{ backgroundColor: selectedProject.color }}
-                                />
-                              )}
-                              <SelectValue placeholder="Select project..." />
+                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal overflow-hidden" data-testid="select-project">
+                              <span className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                                {selectedProject?.color && (
+                                  <span
+                                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: selectedProject.color }}
+                                  />
+                                )}
+                                <span className="truncate">
+                                  {selectedProject ? selectedProject.name + ((selectedProject as any).isBusiness ? ' (Business)' : '') : <span className="text-muted-foreground">Select project...</span>}
+                                </span>
+                              </span>
+                              <SelectValue className="hidden" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
