@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileText, Download, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { FileText, Download, AlertTriangle, Loader2 } from "lucide-react";
 
 type Props = {
   src: string;
@@ -14,7 +14,6 @@ function detectKind(src: string, mimeType?: string): "image" | "pdf" | "other" {
     if (mimeType.startsWith("image/")) return "image";
     if (mimeType === "application/pdf") return "pdf";
   }
-  // Strip query string + fragment so signed URLs (with ?token=...) still match
   const path = src.split("?")[0].split("#")[0];
   if (/\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path)) return "image";
   if (/\.pdf$/i.test(path)) return "pdf";
@@ -25,8 +24,54 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
   const kind = detectKind(src, mimeType);
   const displayName = filename || decodeURIComponent(src.split("/").pop() || "document");
   const heightStyle = typeof height === "number" ? `${height}px` : height;
+
   const [imgError, setImgError] = useState(false);
   const [pdfError, setPdfError] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const prevBlobUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (kind !== "pdf") return;
+    setBlobUrl(null);
+    setPdfError(false);
+    setPdfLoading(true);
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    fetch(src)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) {
+          if (prevBlobUrl.current) URL.revokeObjectURL(prevBlobUrl.current);
+          prevBlobUrl.current = objectUrl;
+          setBlobUrl(objectUrl);
+        } else {
+          URL.revokeObjectURL(objectUrl);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPdfError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setPdfLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src, kind]);
+
+  useEffect(() => {
+    return () => {
+      if (prevBlobUrl.current) URL.revokeObjectURL(prevBlobUrl.current);
+    };
+  }, []);
 
   if (kind === "image") {
     if (imgError) {
@@ -72,13 +117,26 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
         </div>
       );
     }
+
+    if (pdfLoading || !blobUrl) {
+      return (
+        <div
+          className="flex flex-col items-center justify-center gap-2"
+          style={{ height: heightStyle }}
+          data-testid="document-preview-pdf-loading"
+        >
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Loading preview…</span>
+        </div>
+      );
+    }
+
     return (
-      <div className="relative" style={{ height: heightStyle }} data-testid="document-preview-pdf">
-        <iframe
-          src={src}
-          title={displayName}
-          className={className || "w-full h-full border-0"}
-          onError={() => setPdfError(true)}
+      <div className="relative w-full" style={{ height: heightStyle }} data-testid="document-preview-pdf">
+        <embed
+          src={blobUrl}
+          type="application/pdf"
+          className="w-full h-full"
         />
         <div className="absolute bottom-1 right-1">
           <a
@@ -95,7 +153,11 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
   }
 
   return (
-    <div className={className || "flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"} style={{ minHeight: heightStyle }} data-testid="document-preview-other">
+    <div
+      className={className || "flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"}
+      style={{ minHeight: heightStyle }}
+      data-testid="document-preview-other"
+    >
       <FileText className="h-8 w-8 text-muted-foreground" />
       <span className="text-xs text-muted-foreground truncate max-w-full">{displayName}</span>
       <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1 underline">

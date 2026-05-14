@@ -1643,7 +1643,7 @@ export default function BillDetail() {
                           <Input
                             {...field}
                             readOnly
-                            className="bg-muted/50 border-border text-sm"
+                            className="bg-muted/50 border border-border text-sm"
                             data-testid="input-bill-number"
                           />
                         </FormControl>
@@ -1663,7 +1663,7 @@ export default function BillDetail() {
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-9 border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
+                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
                               <SelectValue placeholder="Select type..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1690,7 +1690,7 @@ export default function BillDetail() {
                           disabled={!isEditMode && !!projectId}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-9 border-border bg-muted/30 text-sm font-normal" data-testid="select-project">
+                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-project">
                               <SelectValue placeholder="Select project..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1752,13 +1752,13 @@ export default function BillDetail() {
                                 type="button"
                                 variant="outline"
                                 role="combobox"
-                                className="w-full h-9 justify-between border-border bg-muted/30 text-sm font-normal"
+                                className="w-full h-9 justify-between border border-border bg-muted/30 text-sm font-normal overflow-hidden"
                                 data-testid="select-supplier"
                               >
-                                <span className={selected ? "" : "text-muted-foreground"}>
+                                <span className={`truncate flex-1 min-w-0 text-left ${selected ? "" : "text-muted-foreground"}`}>
                                   {selected?.name || "Select supplier..."}
                                 </span>
-                                <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                                <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0 ml-1" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -1834,7 +1834,7 @@ export default function BillDetail() {
                           <Input
                             type="date"
                             {...field}
-                            className="bg-muted/30 border-border text-sm"
+                            className="bg-muted/30 border border-border text-sm"
                             data-testid="input-bill-date"
                           />
                         </FormControl>
@@ -1857,7 +1857,7 @@ export default function BillDetail() {
                               dueDateManuallySet.current = true;
                               field.onChange(e);
                             }}
-                            className="bg-muted/30 border-border text-sm"
+                            className="bg-muted/30 border border-border text-sm"
                             data-testid="input-due-date"
                           />
                         </FormControl>
@@ -1876,7 +1876,7 @@ export default function BillDetail() {
                           <Input
                             {...field}
                             placeholder="Enter reference..."
-                            className="bg-muted/30 border-border text-sm"
+                            className="bg-muted/30 border border-border text-sm"
                             data-testid="input-bill-reference"
                           />
                         </FormControl>
@@ -1926,7 +1926,7 @@ export default function BillDetail() {
                             {...field}
                             placeholder="Add notes..."
                             rows={2}
-                            className="bg-muted/30 border-border text-sm resize-none"
+                            className="bg-muted/30 border border-border text-sm resize-none"
                             data-testid="textarea-notes"
                           />
                         </FormControl>
@@ -1945,7 +1945,7 @@ export default function BillDetail() {
                             {...field}
                             placeholder="Add reminders..."
                             rows={2}
-                            className="bg-muted/30 border-border text-sm resize-none"
+                            className="bg-muted/30 border border-border text-sm resize-none"
                             data-testid="textarea-reminders"
                           />
                         </FormControl>
