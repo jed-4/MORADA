@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileText, Download, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { FileText, Download, AlertTriangle, Loader2 } from "lucide-react";
 
 type Props = {
   src: string;
@@ -20,7 +20,6 @@ function detectKind(src: string, mimeType?: string): "image" | "pdf" | "other" {
   return "other";
 }
 
-/** Returns true for same-origin URLs (relative paths or matching origin). */
 function isSameOrigin(url: string): boolean {
   return url.startsWith("/") || url.startsWith(window.location.origin + "/");
 }
@@ -30,6 +29,38 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
   const displayName = filename || decodeURIComponent(src.split("/").pop() || "document");
   const heightStyle = typeof height === "number" ? `${height}px` : height;
   const [imgError, setImgError] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (kind !== "pdf" || !isSameOrigin(src)) return;
+
+    let objectUrl: string | null = null;
+    setPdfLoading(true);
+    setPdfError(null);
+    setPdfBlobUrl(null);
+
+    fetch(src, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setPdfBlobUrl(objectUrl);
+      })
+      .catch((err) => {
+        setPdfError(err.message);
+      })
+      .finally(() => {
+        setPdfLoading(false);
+      });
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src, kind]);
 
   if (kind === "image") {
     if (imgError) {
@@ -60,36 +91,65 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
   }
 
   if (kind === "pdf") {
-    const sameOrigin = isSameOrigin(src);
-
-    if (sameOrigin) {
+    if (!isSameOrigin(src)) {
       return (
         <div
-          className="flex flex-col w-full"
-          style={{ height: heightStyle }}
-          data-testid="document-preview-pdf"
+          className="flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"
+          style={{ minHeight: heightStyle }}
+          data-testid="document-preview-pdf-fallback"
         >
-          <iframe
-            src={src}
-            title={displayName}
-            className="flex-1 w-full border-0"
-            style={{ height: "100%" }}
-          />
+          <AlertTriangle className="h-6 w-6 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground text-center">PDF preview unavailable</span>
+          <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1 underline">
+            <Download className="h-3 w-3" /> Open PDF
+          </a>
+        </div>
+      );
+    }
+
+    if (pdfLoading) {
+      return (
+        <div
+          className="flex flex-col items-center justify-center gap-2 bg-muted/20"
+          style={{ height: heightStyle }}
+          data-testid="document-preview-pdf-loading"
+        >
+          <Loader2 className="h-6 w-6 text-muted-foreground animate-spin" />
+          <span className="text-xs text-muted-foreground">Loading PDF...</span>
+        </div>
+      );
+    }
+
+    if (pdfError || !pdfBlobUrl) {
+      return (
+        <div
+          className="flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"
+          style={{ minHeight: heightStyle }}
+          data-testid="document-preview-pdf-error"
+        >
+          <AlertTriangle className="h-6 w-6 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground text-center">
+            {pdfError ? `Could not load PDF: ${pdfError}` : "PDF unavailable"}
+          </span>
+          <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1 underline">
+            <Download className="h-3 w-3" /> Open PDF
+          </a>
         </div>
       );
     }
 
     return (
       <div
-        className="flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"
-        style={{ minHeight: heightStyle }}
-        data-testid="document-preview-pdf-fallback"
+        className="flex flex-col w-full"
+        style={{ height: heightStyle }}
+        data-testid="document-preview-pdf"
       >
-        <AlertTriangle className="h-6 w-6 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground text-center">PDF preview unavailable</span>
-        <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1 underline">
-          <Download className="h-3 w-3" /> Open PDF
-        </a>
+        <iframe
+          src={pdfBlobUrl}
+          title={displayName}
+          className="flex-1 w-full border-0"
+          style={{ height: "100%" }}
+        />
       </div>
     );
   }

@@ -267,7 +267,9 @@ export default function BillDetail() {
       ]);
       if (!suppliersRes.ok || !tradesRes.ok) throw new Error("Failed to fetch contacts");
       const [supplierList, tradeList] = await Promise.all([suppliersRes.json(), tradesRes.json()]);
-      return [...supplierList, ...tradeList].sort((a, b) => a.name.localeCompare(b.name));
+      const combined = [...supplierList, ...tradeList];
+      const deduped = Array.from(new Map(combined.map((c: any) => [c.id, c])).values());
+      return deduped.sort((a: any, b: any) => a.name.localeCompare(b.name));
     },
   });
 
@@ -1680,7 +1682,10 @@ export default function BillDetail() {
                   <FormField
                     control={form.control}
                     name="projectId"
-                    render={({ field }) => (
+                    render={({ field }) => {
+                      const allProjects = businessProject ? [businessProject, ...projects.filter(p => !(p as any).isBusiness)] : projects.filter(p => !(p as any).isBusiness);
+                      const selectedProject = allProjects.find(p => p.id === field.value);
+                      return (
                       <FormItem className="space-y-1">
                         <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Project *</FormLabel>
                         <Select
@@ -1691,6 +1696,12 @@ export default function BillDetail() {
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal" data-testid="select-project">
+                              {selectedProject?.color && (
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full shrink-0 mr-1"
+                                  style={{ backgroundColor: selectedProject.color }}
+                                />
+                              )}
                               <SelectValue placeholder="Select project..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1698,21 +1709,32 @@ export default function BillDetail() {
                             {businessProject && (
                               <>
                                 <SelectItem key={businessProject.id} value={businessProject.id}>
-                                  {businessProject.name} (Business)
+                                  <span className="flex items-center gap-2">
+                                    {(businessProject as any).color && (
+                                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: (businessProject as any).color }} />
+                                    )}
+                                    {businessProject.name} (Business)
+                                  </span>
                                 </SelectItem>
                                 <div className="border-b border-border my-1" />
                               </>
                             )}
                             {projects.filter(p => !(p as any).isBusiness).map((project) => (
                               <SelectItem key={project.id} value={project.id}>
-                                {project.name}
+                                <span className="flex items-center gap-2">
+                                  {(project as any).color && (
+                                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: (project as any).color }} />
+                                  )}
+                                  {project.name}
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
                       </FormItem>
-                    )}
+                      );
+                    }}
                   />
 
                   <FormField

@@ -218,7 +218,16 @@ export class AutoBillCreatorService {
       let aiSupplierName = invoiceData.supplierName || supplierName;
 
       if (options.autoMatch && invoiceData.supplierName) {
-        const contacts = await storage.getContacts(companyId, "supplier");
+        const [supplierContacts, tradeContacts] = await Promise.all([
+          storage.getContacts(companyId, "supplier"),
+          storage.getContacts(companyId, "trade"),
+        ]);
+        const seenIds = new Set<string>();
+        const contacts = [...supplierContacts, ...tradeContacts].filter((c: any) => {
+          if (seenIds.has(c.id)) return false;
+          seenIds.add(c.id);
+          return true;
+        });
         const result = matchSupplier(
           invoiceData.supplierName,
           contacts.map((c: any) => ({
