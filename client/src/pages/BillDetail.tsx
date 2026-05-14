@@ -1721,24 +1721,22 @@ export default function BillDetail() {
                     render={({ field }) => {
                       const selected = suppliers.find((s: any) => s.id === field.value);
                       return (
-                      <FormItem className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Pay to *</FormLabel>
-                          {selected && (
-                            <button
-                              type="button"
-                              className="text-data text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                              onClick={() => {
-                                setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
-                                setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
-                                setSupplierDefaultsOpen(true);
-                              }}
-                              data-testid="button-open-supplier-defaults"
-                            >
-                              <Settings className="h-3 w-3" /> Defaults
-                            </button>
-                          )}
-                        </div>
+                      <FormItem className="space-y-1 relative">
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Pay to *</FormLabel>
+                        {selected && (
+                          <button
+                            type="button"
+                            className="absolute top-0 right-0 text-data text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                            onClick={() => {
+                              setSupplierDefaultsCostCode(selected.defaultCostCodeId || "");
+                              setSupplierDefaultsAccount(selected.xeroDefaultAccountCode || selected.xeroDefaultAccount || "");
+                              setSupplierDefaultsOpen(true);
+                            }}
+                            data-testid="button-open-supplier-defaults"
+                          >
+                            <Settings className="h-3 w-3" /> Defaults
+                          </button>
+                        )}
                         <Popover
                           open={supplierPickerOpen}
                           onOpenChange={(open) => {
