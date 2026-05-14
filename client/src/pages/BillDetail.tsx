@@ -1630,7 +1630,7 @@ export default function BillDetail() {
         <div className="flex-1 overflow-auto p-4">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
+            <div className={`grid grid-cols-1 gap-3 ${sheetPreviewUrl ? 'lg:grid-cols-[1fr_140px]' : 'lg:grid-cols-[1fr_280px]'}`}>
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <FormField
@@ -1752,8 +1752,7 @@ export default function BillDetail() {
                                 type="button"
                                 variant="outline"
                                 role="combobox"
-                                size="sm"
-                                className="w-full justify-between text-xs font-normal"
+                                className="w-full h-9 justify-between border-border bg-muted/30 text-sm font-normal"
                                 data-testid="select-supplier"
                               >
                                 <span className={selected ? "" : "text-muted-foreground"}>
@@ -1965,9 +1964,6 @@ export default function BillDetail() {
                         <div className="flex items-center gap-1.5">
                           <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-xs font-medium">Attachments</span>
-                          {attachmentUrls.length > 0 && (
-                            <Badge variant="secondary" className="text-data px-1">{attachmentUrls.length}</Badge>
-                          )}
                         </div>
                         <label className="cursor-pointer">
                           <input
@@ -2013,17 +2009,6 @@ export default function BillDetail() {
                                   <span className="truncate">{decodeURIComponent(fileName)}</span>
                                 </button>
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                  {(isImage || isPdf) && isEditMode && (
-                                    <button
-                                      type="button"
-                                      onClick={() => ocrFromAttachmentMutation.mutate(url)}
-                                      disabled={ocrFromAttachmentMutation.isPending}
-                                      style={{ fontSize: '11px', color: '#a890d4', border: '1px solid #a890d4', borderRadius: '4px', padding: '2px 8px', background: 'transparent', cursor: 'pointer' }}
-                                      data-testid={`button-read-ai-attachment-${idx}`}
-                                    >
-                                      Read with AI
-                                    </button>
-                                  )}
                                   {canPreview && (
                                     <Button
                                       variant="ghost"
@@ -2852,7 +2837,7 @@ export default function BillDetail() {
         </Form>
         </div>
         {sheetPreviewUrl && (
-          <div className="w-[45vw] shrink-0 flex flex-col border-l bg-background">
+          <div className="w-[31vw] shrink-0 flex flex-col border-l bg-background">
             <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 gap-2">
               <span className="text-sm font-medium truncate flex-1">{sheetPreviewFilename || "Attachment"}</span>
               <div className="flex items-center gap-1 shrink-0">
