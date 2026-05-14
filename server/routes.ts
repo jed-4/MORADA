@@ -16366,21 +16366,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const att of attachments) {
         const path = typeof att === "string" ? att : (att?.objectPath || "");
-        const ext = path.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase() || "";
-        if (["pdf", "jpg", "jpeg", "png"].includes(ext)) {
+        const fname = typeof att === "object" && att?.filename ? att.filename : "";
+        const mime = typeof att === "object" && att?.mimeType ? att.mimeType : "";
+        const extFromPath = path.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase() || "";
+        const extFromName = fname.split(".").pop()?.toLowerCase() || "";
+        const ext = ["pdf", "jpg", "jpeg", "png"].includes(extFromPath)
+          ? extFromPath
+          : ["pdf", "jpg", "jpeg", "png"].includes(extFromName)
+          ? extFromName
+          : "";
+        const isMimeOk = /^(application\/pdf|image\/(jpeg|jpg|png|webp))/.test(mime);
+        if (ext || isMimeOk) {
           objectPath = path;
-          filename =
-            typeof att === "object" && att?.filename
-              ? att.filename
-              : decodeURIComponent(path.split("/").pop() || "invoice");
-          mimeType =
-            typeof att === "object" && att?.mimeType
-              ? att.mimeType
-              : ext === "pdf"
-              ? "application/pdf"
-              : ["jpg", "jpeg"].includes(ext)
-              ? "image/jpeg"
-              : "image/png";
+          filename = fname || decodeURIComponent(path.split("/").pop() || "invoice");
+          mimeType = mime || (
+            ext === "pdf" ? "application/pdf"
+            : ["jpg", "jpeg"].includes(ext) ? "image/jpeg"
+            : "image/png"
+          );
           break;
         }
       }

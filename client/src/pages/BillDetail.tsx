@@ -200,6 +200,9 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [attachmentMeta, setAttachmentMeta] = useState<Record<string, { filename: string; mimeType?: string }>>({});
+  const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
+  const [sheetPreviewFilename, setSheetPreviewFilename] = useState<string>("");
   const [duplicateWarning, setDuplicateWarning] = useState<{ existingBillNumber: string; reference: string } | null>(null);
   const pendingSubmitDataRef = useRef<BillFormData | null>(null);
   const [unmatchedSupplierDialogOpen, setUnmatchedSupplierDialogOpen] = useState(false);
@@ -390,12 +393,19 @@ export default function BillDetail() {
       // attachment record objects ({objectPath, filename, mimeType, ...}).
       // Normalize down to a string[] of object paths for the existing UI;
       // richer metadata is rendered as a follow-up.
-      type AttachmentEntry = string | { objectPath?: string };
+      type AttachmentEntry = string | { objectPath?: string; filename?: string; mimeType?: string };
       const raw: AttachmentEntry[] = Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as AttachmentEntry[]) : [];
       const paths = raw
         .map((a) => (typeof a === "string" ? a : a?.objectPath))
         .filter((p): p is string => typeof p === "string" && p.length > 0);
       setAttachmentUrls(paths);
+      const meta: Record<string, { filename: string; mimeType?: string }> = {};
+      raw.forEach((a) => {
+        if (typeof a === "object" && a?.objectPath) {
+          meta[a.objectPath] = { filename: a.filename || "", mimeType: a.mimeType };
+        }
+      });
+      setAttachmentMeta(meta);
     }
   }, [bill, isEditMode]);
 
@@ -1173,6 +1183,7 @@ export default function BillDetail() {
       }
     }
     setAttachmentUrls((prev) => (prev.includes(attachment.objectPath) ? prev : [...prev, attachment.objectPath]));
+    if (filename) setAttachmentMeta(prev => ({ ...prev, [attachment.objectPath]: { filename, mimeType } }));
     setPendingAttachments((prev) =>
       prev.some((p) => p.objectPath === attachment.objectPath)
         ? prev
@@ -1312,11 +1323,7 @@ export default function BillDetail() {
               source: "manual",
             });
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-            // Auto-trigger AI reading for PDF/image attachments on unprocessed bills
-            const isPdfOrImage = /\.(pdf|jpg|jpeg|png|webp)$/i.test(file.name);
-            if (isPdfOrImage && !bill?.ocrProcessed && !ocrResults) {
-              ocrFromAttachmentMutation.mutate(uploadResult.objectPath);
-            }
+            setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
           } catch (postErr: unknown) {
             const msg = postErr instanceof Error ? postErr.message : "Please try again from the Attachments tab.";
             toast({ variant: "destructive", title: "Attachment not saved", description: msg });
@@ -1953,12 +1960,40 @@ export default function BillDetail() {
                 <Card className="p-3">
                   <h3 className="text-xs font-semibold mb-2">AI Bill Reader</h3>
                   <div className="space-y-2">
-                    {ocrFromAttachmentMutation.isPending ? (
-                      <div className="flex flex-col items-center justify-center py-4 gap-1.5">
-                        <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#a890d4' }} />
-                        <p className="text-xs" style={{ color: '#a890d4' }}>Reading bill with AI...</p>
-                      </div>
-                    ) : ocrResults ? (
+                    {(() => {
+                      const firstProcessable = attachmentUrls.find((u) => {
+                        const path = u.split("?")[0].split("#")[0];
+                        const extFromPath = path.split(".").pop()?.toLowerCase() || "";
+                        const meta = attachmentMeta[u];
+                        const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
+                        const mimeOk = /^(application\/pdf|image\/)/.test(meta?.mimeType || "");
+                        return ["pdf","jpg","jpeg","png","webp"].includes(extFromPath)
+                          || ["pdf","jpg","jpeg","png","webp"].includes(extFromMeta)
+                          || mimeOk;
+                      });
+                      return (
+                        <Button
+                          className="w-full"
+                          size="sm"
+                          disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
+                          onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
+                          data-testid="button-read-attachment-ai"
+                        >
+                          {ocrFromAttachmentMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              Reading...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                              Read with AI
+                            </>
+                          )}
+                        </Button>
+                      );
+                    })()}
+                    {ocrResults && (
                       <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
                         <CollapsibleTrigger asChild>
                           <Button
@@ -2050,10 +2085,6 @@ export default function BillDetail() {
                           </Button>
                         </CollapsibleContent>
                       </Collapsible>
-                    ) : (
-                      <div style={{ textAlign: 'center', color: '#9b9b9b', fontSize: '13px', padding: '20px 0' }}>
-                        Add a PDF attachment below to read with AI
-                      </div>
                     )}
                   </div>
                 </Card>
@@ -2088,45 +2119,21 @@ export default function BillDetail() {
                       </div>
                       {attachmentUrls.length > 0 ? (
                         <div className="space-y-1">
-                          {previewAttachment && (
-                            <div className="relative rounded-md border overflow-hidden bg-muted/20 mb-2">
-                              <div className="flex items-center justify-between px-2 py-1 border-b bg-muted/30">
-                                <span className="text-data text-muted-foreground truncate">
-                                  {decodeURIComponent(previewAttachment.split('/').pop() || 'Preview')}
-                                </span>
-                                <div className="flex items-center gap-0.5">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setFullscreenPreview(true)}
-                                  >
-                                    <Maximize2 className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setPreviewAttachment(null)}
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                              <DocumentPreview src={previewAttachment} height={300} />
-                            </div>
-                          )}
                           {attachmentUrls.map((url, idx) => {
-                            // Strip query string + fragment so signed URLs (?token=...) still match
                             const path = url.split('?')[0].split('#')[0];
-                            const fileName = path.split('/').pop() || `Attachment ${idx + 1}`;
-                            const isImage = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path);
-                            const isPdf = /\.(pdf)$/i.test(path);
+                            const meta = attachmentMeta[url];
+                            const fileName = meta?.filename || path.split('/').pop() || `Attachment ${idx + 1}`;
+                            const extFromPath = path.split('.').pop()?.toLowerCase() || '';
+                            const extFromMeta = meta?.filename?.split('.').pop()?.toLowerCase() || '';
+                            const mimeFromMeta = meta?.mimeType || '';
+                            const isImage = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(path) || /^(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(extFromMeta) || mimeFromMeta.startsWith('image/');
+                            const isPdf = /\.(pdf)$/i.test(path) || extFromMeta === 'pdf' || mimeFromMeta === 'application/pdf';
                             const canPreview = isImage || isPdf;
-                            const isActive = previewAttachment === url;
                             return (
-                              <div key={idx} className={`flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-table ${isActive ? 'border-primary bg-primary/5' : ''}`}>
+                              <div key={idx} className="flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-table">
                                 <button
                                   type="button"
-                                  onClick={() => canPreview ? setPreviewAttachment(isActive ? null : url) : window.open(url, '_blank')}
+                                  onClick={() => canPreview ? (setSheetPreviewUrl(url), setSheetPreviewFilename(fileName)) : window.open(url, '_blank')}
                                   className="flex items-center gap-1.5 text-foreground hover:underline truncate text-left"
                                 >
                                   {isImage ? (
@@ -2152,7 +2159,7 @@ export default function BillDetail() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => setPreviewAttachment(isActive ? null : url)}
+                                      onClick={() => { setSheetPreviewUrl(url); setSheetPreviewFilename(fileName); }}
                                     >
                                       <Eye className="h-3 w-3" />
                                     </Button>
@@ -2161,11 +2168,9 @@ export default function BillDetail() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={async () => {
-                                      // Optimistic local removal
                                       const prev = attachmentUrls;
                                       setAttachmentUrls(curr => curr.filter((_, i) => i !== idx));
-                                      if (previewAttachment === url) setPreviewAttachment(null);
-                                      // For existing bills, persist removal via dedicated endpoint
+                                      if (sheetPreviewUrl === url) setSheetPreviewUrl(null);
                                       if (isEditMode && id) {
                                         try {
                                           await apiRequest(
@@ -2174,7 +2179,6 @@ export default function BillDetail() {
                                           );
                                           queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
                                         } catch (err: unknown) {
-                                          // Revert local state on failure
                                           setAttachmentUrls(prev);
                                           const msg = err instanceof Error ? err.message : "Could not remove attachment";
                                           toast({ variant: "destructive", title: "Remove failed", description: msg });
@@ -3167,21 +3171,26 @@ export default function BillDetail() {
         </DialogContent>
       </Dialog>
 
-      {fullscreenPreview && previewAttachment && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={() => setFullscreenPreview(false)}>
-          <div className="relative w-[90vw] h-[90vh]" onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2 z-10 bg-black/50 text-white"
-              onClick={() => setFullscreenPreview(false)}
-            >
-              <X className="h-5 w-5" />
-            </Button>
+      {sheetPreviewUrl && (
+        <div className="fixed right-0 top-0 h-full w-[55vw] z-50 flex flex-col bg-background border-l shadow-xl">
+          <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 gap-2">
+            <span className="text-sm font-medium truncate flex-1">{sheetPreviewFilename || "Attachment"}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => window.open(sheetPreviewUrl, '_blank')}>
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setSheetPreviewUrl(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden">
             <DocumentPreview
-              src={previewAttachment}
+              src={sheetPreviewUrl}
+              mimeType={attachmentMeta[sheetPreviewUrl]?.mimeType}
+              filename={sheetPreviewFilename}
               height="100%"
-              className="w-full h-full border-0 rounded-md object-contain bg-black"
+              className="w-full h-full"
             />
           </div>
         </div>
