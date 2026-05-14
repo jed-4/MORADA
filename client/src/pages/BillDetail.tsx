@@ -1626,7 +1626,8 @@ export default function BillDetail() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-auto p-4">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
@@ -1637,12 +1638,12 @@ export default function BillDetail() {
                     name="billNumber"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Bill ID</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Bill ID</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
                             readOnly
-                            className="bg-muted text-xs"
+                            className="bg-muted/50 border-border text-sm"
                             data-testid="input-bill-number"
                           />
                         </FormControl>
@@ -1656,13 +1657,13 @@ export default function BillDetail() {
                     name="billType"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Type</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Type</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger className="text-xs" data-testid="select-bill-type">
+                            <SelectTrigger className="h-9 border-border bg-muted/30 text-sm font-normal" data-testid="select-bill-type">
                               <SelectValue placeholder="Select type..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1681,7 +1682,7 @@ export default function BillDetail() {
                     name="projectId"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Project *</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Project *</FormLabel>
                         <Select
                           key={`project-${field.value}-${projects.length}-${businessProject?.id ?? ''}`}
                           onValueChange={field.onChange}
@@ -1689,7 +1690,7 @@ export default function BillDetail() {
                           disabled={!isEditMode && !!projectId}
                         >
                           <FormControl>
-                            <SelectTrigger className="text-xs" data-testid="select-project">
+                            <SelectTrigger className="h-9 border-border bg-muted/30 text-sm font-normal" data-testid="select-project">
                               <SelectValue placeholder="Select project..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1722,7 +1723,7 @@ export default function BillDetail() {
                       return (
                       <FormItem className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <FormLabel className="text-xs">Pay to *</FormLabel>
+                          <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Pay to *</FormLabel>
                           {selected && (
                             <button
                               type="button"
@@ -1829,12 +1830,12 @@ export default function BillDetail() {
                     name="billDate"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Date *</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Date *</FormLabel>
                         <FormControl>
                           <Input
                             type="date"
                             {...field}
-                            className="text-xs"
+                            className="bg-muted/30 border-border text-sm"
                             data-testid="input-bill-date"
                           />
                         </FormControl>
@@ -1848,7 +1849,7 @@ export default function BillDetail() {
                     name="dueDate"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Due date</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Due date</FormLabel>
                         <FormControl>
                           <Input
                             type="date"
@@ -1857,7 +1858,7 @@ export default function BillDetail() {
                               dueDateManuallySet.current = true;
                               field.onChange(e);
                             }}
-                            className="text-xs"
+                            className="bg-muted/30 border-border text-sm"
                             data-testid="input-due-date"
                           />
                         </FormControl>
@@ -1871,12 +1872,12 @@ export default function BillDetail() {
                     name="billReference"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Reference</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Reference</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
                             placeholder="Enter reference..."
-                            className="text-xs"
+                            className="bg-muted/30 border-border text-sm"
                             data-testid="input-bill-reference"
                           />
                         </FormControl>
@@ -1897,7 +1898,7 @@ export default function BillDetail() {
                             data-testid="checkbox-send-to-xero"
                           />
                         </FormControl>
-                        <FormLabel className="!mt-0 text-xs">Sync with Xero</FormLabel>
+                        <FormLabel className="!mt-0 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Sync with Xero</FormLabel>
                       </FormItem>
                     )}
                   />
@@ -1920,13 +1921,13 @@ export default function BillDetail() {
                     name="notes"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Notes</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Notes</FormLabel>
                         <FormControl>
                           <Textarea
                             {...field}
                             placeholder="Add notes..."
                             rows={2}
-                            className="text-xs resize-none"
+                            className="bg-muted/30 border-border text-sm resize-none"
                             data-testid="textarea-notes"
                           />
                         </FormControl>
@@ -1939,13 +1940,13 @@ export default function BillDetail() {
                     name="reminders"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="text-xs">Reminders</FormLabel>
+                        <FormLabel className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Reminders</FormLabel>
                         <FormControl>
                           <Textarea
                             {...field}
                             placeholder="Add reminders..."
                             rows={2}
-                            className="text-xs resize-none"
+                            className="bg-muted/30 border-border text-sm resize-none"
                             data-testid="textarea-reminders"
                           />
                         </FormControl>
@@ -1957,138 +1958,6 @@ export default function BillDetail() {
               </Card>
 
               <div className="space-y-3">
-                <Card className="p-3">
-                  <h3 className="text-xs font-semibold mb-2">AI Bill Reader</h3>
-                  <div className="space-y-2">
-                    {(() => {
-                      const firstProcessable = attachmentUrls.find((u) => {
-                        const path = u.split("?")[0].split("#")[0];
-                        const extFromPath = path.split(".").pop()?.toLowerCase() || "";
-                        const meta = attachmentMeta[u];
-                        const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
-                        const mimeOk = /^(application\/pdf|image\/)/.test(meta?.mimeType || "");
-                        return ["pdf","jpg","jpeg","png","webp"].includes(extFromPath)
-                          || ["pdf","jpg","jpeg","png","webp"].includes(extFromMeta)
-                          || mimeOk;
-                      });
-                      return (
-                        <Button
-                          className="w-full"
-                          size="sm"
-                          disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
-                          onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
-                          data-testid="button-read-attachment-ai"
-                        >
-                          {ocrFromAttachmentMutation.isPending ? (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                              Reading...
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                              Read with AI
-                            </>
-                          )}
-                        </Button>
-                      );
-                    })()}
-                    {ocrResults && (
-                      <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full justify-between"
-                            data-testid="button-toggle-ocr-preview"
-                          >
-                            <span className="text-xs">AI Extracted Data</span>
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
-                          </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
-                          <div className="border rounded-md p-2 space-y-1.5 text-table">
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <div>
-                                <p className="text-muted-foreground">Supplier</p>
-                                <p className="font-medium" data-testid="text-ocr-supplier">
-                                  {ocrResults.supplierName || "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Invoice #</p>
-                                <p className="font-medium" data-testid="text-ocr-invoice-number">
-                                  {ocrResults.invoiceNumber || "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Date</p>
-                                <p className="font-medium" data-testid="text-ocr-invoice-date">
-                                  {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">Due</p>
-                                <p className="font-medium" data-testid="text-ocr-due-date">
-                                  {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="border-t pt-1.5">
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <div>
-                                  <p className="text-muted-foreground">Subtotal</p>
-                                  <p className="font-medium" data-testid="text-ocr-subtotal">
-                                    {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Tax</p>
-                                  <p className="font-medium" data-testid="text-ocr-tax">
-                                    {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Total</p>
-                                  <p className="font-medium" data-testid="text-ocr-total">
-                                    {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
-                              <div className="border-t pt-1.5">
-                                <p className="font-medium mb-1">Line Items</p>
-                                <div className="space-y-0.5">
-                                  {ocrResults.lineItems.map((item: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-data" data-testid={`text-ocr-line-item-${idx}`}>
-                                      <span className="truncate mr-2">{item.description || "Unknown"}</span>
-                                      <span className="font-medium shrink-0">
-                                        {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <Button
-                            onClick={handleApplyOCR}
-                            className="w-full"
-                            size="sm"
-                            data-testid="button-apply-ocr"
-                          >
-                            Apply to Bill
-                          </Button>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    )}
-                  </div>
-                </Card>
-
                 <Card className="p-3">
                   <div className="space-y-3">
                     <div>
@@ -2197,6 +2066,138 @@ export default function BillDetail() {
                       ) : (
                         <p className="text-data text-muted-foreground">No attachments</p>
                       )}
+                    </div>
+
+                    <div className="border-t pt-2">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium">AI Bill Reader</span>
+                      </div>
+                      <div className="space-y-2">
+                        {(() => {
+                          const firstProcessable = attachmentUrls.find((u) => {
+                            const path = u.split("?")[0].split("#")[0];
+                            const extFromPath = path.split(".").pop()?.toLowerCase() || "";
+                            const meta = attachmentMeta[u];
+                            const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
+                            const mimeOk = /^(application\/pdf|image\/)/.test(meta?.mimeType || "");
+                            return ["pdf","jpg","jpeg","png","webp"].includes(extFromPath)
+                              || ["pdf","jpg","jpeg","png","webp"].includes(extFromMeta)
+                              || mimeOk;
+                          });
+                          return (
+                            <Button
+                              className="w-full"
+                              size="sm"
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
+                              onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
+                              data-testid="button-read-attachment-ai"
+                            >
+                              {ocrFromAttachmentMutation.isPending ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                  Reading...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                                  Read with AI
+                                </>
+                              )}
+                            </Button>
+                          );
+                        })()}
+                        {ocrResults && (
+                          <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
+                            <CollapsibleTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full justify-between"
+                                data-testid="button-toggle-ocr-preview"
+                              >
+                                <span className="text-xs">AI Extracted Data</span>
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
+                              </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
+                              <div className="border rounded-md p-2 space-y-1.5 text-table">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div>
+                                    <p className="text-muted-foreground">Supplier</p>
+                                    <p className="font-medium" data-testid="text-ocr-supplier">
+                                      {ocrResults.supplierName || "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Invoice #</p>
+                                    <p className="font-medium" data-testid="text-ocr-invoice-number">
+                                      {ocrResults.invoiceNumber || "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Date</p>
+                                    <p className="font-medium" data-testid="text-ocr-invoice-date">
+                                      {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Due</p>
+                                    <p className="font-medium" data-testid="text-ocr-due-date">
+                                      {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="border-t pt-1.5">
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    <div>
+                                      <p className="text-muted-foreground">Subtotal</p>
+                                      <p className="font-medium" data-testid="text-ocr-subtotal">
+                                        {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Tax</p>
+                                      <p className="font-medium" data-testid="text-ocr-tax">
+                                        {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Total</p>
+                                      <p className="font-medium" data-testid="text-ocr-total">
+                                        {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
+                                  <div className="border-t pt-1.5">
+                                    <p className="font-medium mb-1">Line Items</p>
+                                    <div className="space-y-0.5">
+                                      {ocrResults.lineItems.map((item: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-data" data-testid={`text-ocr-line-item-${idx}`}>
+                                          <span className="truncate mr-2">{item.description || "Unknown"}</span>
+                                          <span className="font-medium shrink-0">
+                                            {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                onClick={handleApplyOCR}
+                                className="w-full"
+                                size="sm"
+                                data-testid="button-apply-ocr"
+                              >
+                                Apply to Bill
+                              </Button>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )}
+                      </div>
                     </div>
 
                     <div className="border-t pt-2">
@@ -2849,6 +2850,31 @@ export default function BillDetail() {
                 </div>
           </form>
         </Form>
+        </div>
+        {sheetPreviewUrl && (
+          <div className="w-[45vw] shrink-0 flex flex-col border-l bg-background">
+            <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 gap-2">
+              <span className="text-sm font-medium truncate flex-1">{sheetPreviewFilename || "Attachment"}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" onClick={() => window.open(sheetPreviewUrl, '_blank')}>
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setSheetPreviewUrl(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <DocumentPreview
+                src={sheetPreviewUrl}
+                mimeType={attachmentMeta[sheetPreviewUrl]?.mimeType}
+                filename={sheetPreviewFilename}
+                height="100%"
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
@@ -3171,30 +3197,6 @@ export default function BillDetail() {
         </DialogContent>
       </Dialog>
 
-      {sheetPreviewUrl && (
-        <div className="fixed right-0 top-0 h-full w-[55vw] z-50 flex flex-col bg-background border-l shadow-xl">
-          <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 gap-2">
-            <span className="text-sm font-medium truncate flex-1">{sheetPreviewFilename || "Attachment"}</span>
-            <div className="flex items-center gap-1 shrink-0">
-              <Button variant="ghost" size="icon" onClick={() => window.open(sheetPreviewUrl, '_blank')}>
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setSheetPreviewUrl(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <DocumentPreview
-              src={sheetPreviewUrl}
-              mimeType={attachmentMeta[sheetPreviewUrl]?.mimeType}
-              filename={sheetPreviewFilename}
-              height="100%"
-              className="w-full h-full"
-            />
-          </div>
-        </div>
-      )}
 
       <AlertDialog
         open={!!duplicateWarning}
