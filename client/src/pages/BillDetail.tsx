@@ -1267,11 +1267,78 @@ export default function BillDetail() {
       });
     },
     onSuccess: (data: any) => {
-      setOcrResults(data);
-      setOcrPreviewOpen(true);
+      if (data.billReference || data.invoiceNumber) {
+        form.setValue("billReference", data.billReference || data.invoiceNumber);
+      }
+      if (data.billDate || data.invoiceDate) {
+        const dateStr = data.billDate || data.invoiceDate;
+        form.setValue("billDate", format(new Date(dateStr), "yyyy-MM-dd"));
+      }
+      if (data.dueDate) {
+        form.setValue("dueDate", format(new Date(data.dueDate), "yyyy-MM-dd"));
+      }
+      if (data.supplierName) {
+        const candidates = (suppliers as any[]).map((s) => ({
+          id: s.id,
+          names: [s.company, s.name, `${s.firstName || ""} ${s.lastName || ""}`.trim()],
+          raw: s,
+        }));
+        const result = matchSupplier(data.supplierName, candidates);
+        if (result.match) {
+          form.setValue("supplierId", result.match.candidate.id);
+        } else {
+          const top: SupplierMatch<typeof candidates[number]> | undefined = result.nearMatches[0];
+          setOcrSupplierData({
+            name: data.supplierName,
+            email: data.supplierEmail,
+            phone: data.supplierPhone,
+          });
+          if (top) {
+            setOcrSupplierSuggestion({
+              id: top.candidate.id,
+              name: (top.candidate as any).raw?.name || data.supplierName,
+              confidence: top.confidence,
+            });
+            setUnmatchedSupplierSelection(top.candidate.id);
+          } else {
+            setOcrSupplierSuggestion(null);
+            setUnmatchedSupplierSelection("");
+          }
+          setUnmatchedSupplierDialogOpen(true);
+        }
+      }
+      if (data.lineItems && data.lineItems.length > 0) {
+        const firstCostCode = costCodes[0]?.id;
+        const defaultAccount = getSupplierDefaultAccount();
+        setTaxMode("inclusive");
+        const newLineItems = data.lineItems.map((item: any, index: number) => ({
+          lineType: "custom" as const,
+          description: item.description || "",
+          costCodeId: firstCostCode,
+          quantity: item.quantity || 1,
+          unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+          unit: "",
+          tax: "GST on expenses" as const,
+          account: defaultAccount,
+          total: item.totalAmount ? item.totalAmount / 100 : 0,
+          order: index,
+          appliesToAllowances: false,
+          allowanceItemId: undefined,
+        }));
+        setLineItems(newLineItems);
+      }
+      form.setValue("status", "needs_review");
+      if (isEditMode && id && bill?.status === "draft") {
+        apiRequest(`/api/bills/${id}`, "PATCH", { status: "needs_review" })
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+            queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+          })
+          .catch((err) => console.error("Failed to set bill status to needs_review:", err));
+      }
       toast({
-        title: "Invoice processed",
-        description: "Extracted invoice data — review and apply to this bill.",
+        title: "Bill updated",
+        description: "AI has populated the bill fields. Review and save when ready.",
       });
     },
     onError: (error: any) => {
@@ -2110,7 +2177,7 @@ export default function BillDetail() {
                               ) : (
                                 <>
                                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                                  Read with AI
+                                  Read & Apply
                                 </>
                               )}
                             </Button>
