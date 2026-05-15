@@ -1711,7 +1711,7 @@ export default function BillDetail() {
                                     style={{ backgroundColor: selectedProject.color }}
                                   />
                                 )}
-                                <span className="truncate">
+                                <span className="truncate min-w-0">
                                   {selectedProject ? selectedProject.name + ((selectedProject as any).isBusiness ? ' (Business)' : '') : <span className="text-muted-foreground">Select project...</span>}
                                 </span>
                               </div>
