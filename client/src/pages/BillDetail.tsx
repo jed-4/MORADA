@@ -1770,19 +1770,24 @@ export default function BillDetail() {
                           disabled={!isEditMode && !!projectId}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal overflow-hidden" data-testid="select-project">
-                              <div className="flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
+                            <SelectTrigger
+                              className="border border-border bg-muted/30 text-sm font-normal"
+                              style={{ height: '36px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}
+                              data-testid="select-project"
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 0%', minWidth: 0, overflow: 'hidden' }}>
                                 {selectedProject?.color && (
                                   <span
-                                    className="h-2.5 w-2.5 rounded-full shrink-0"
-                                    style={{ backgroundColor: selectedProject.color }}
+                                    className="rounded-full"
+                                    style={{ width: '10px', height: '10px', flexShrink: 0, backgroundColor: selectedProject.color }}
                                   />
                                 )}
-                                <span className="truncate min-w-0">
-                                  {selectedProject ? selectedProject.name + ((selectedProject as any).isBusiness ? ' (Business)' : '') : <span className="text-muted-foreground">Select project...</span>}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+                                  {selectedProject
+                                    ? selectedProject.name + ((selectedProject as any).isBusiness ? ' (Business)' : '')
+                                    : <span className="text-muted-foreground">Select project...</span>}
                                 </span>
                               </div>
-                              <SelectValue className="hidden" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
