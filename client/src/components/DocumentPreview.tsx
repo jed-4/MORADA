@@ -70,6 +70,7 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
     setPdfBlobUrl(null);
     setNumPages(0);
     setCurrentPage(1);
+    setZoom(1.0);
 
     fetch(src, { credentials: "include" })
       .then((res) => {

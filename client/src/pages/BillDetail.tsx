@@ -1310,7 +1310,10 @@ export default function BillDetail() {
       const file = files[i];
       try {
         const uploadResult = await uploadFile(file);
-        if (uploadResult?.objectPath) recordPendingAttachment(uploadResult.objectPath, file, "manual");
+        if (uploadResult?.objectPath) {
+          recordPendingAttachment(uploadResult.objectPath, file, "manual");
+          setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
+        }
         if (uploadResult?.objectPath && isEditMode && id) {
           // Persist immediately on existing bills via the dedicated endpoint
           // so the manual upload survives a page refresh and avoids racing
@@ -1324,7 +1327,6 @@ export default function BillDetail() {
               source: "manual",
             });
             queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
-            setAttachmentMeta(prev => ({ ...prev, [uploadResult.objectPath]: { filename: file.name, mimeType: file.type } }));
           } catch (postErr: unknown) {
             const msg = postErr instanceof Error ? postErr.message : "Please try again from the Attachments tab.";
             toast({ variant: "destructive", title: "Attachment not saved", description: msg });
@@ -1695,7 +1697,7 @@ export default function BillDetail() {
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal overflow-hidden" data-testid="select-project">
-                              <span className="flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
+                              <span className="!flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
                                 {selectedProject?.color && (
                                   <span
                                     className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -2089,7 +2091,7 @@ export default function BillDetail() {
                             <Button
                               className="w-full"
                               size="sm"
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !id}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >
