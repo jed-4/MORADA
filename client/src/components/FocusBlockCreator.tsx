@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { BUILDPRO_PALETTE_HEXES } from '@/lib/colors';
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -36,11 +37,6 @@ interface FocusBlockCreatorProps {
   editBlock?: FocusBlock | null;
 }
 
-const PRESET_COLORS = [
-  "#6366f1", "#3b82f6", "#22c55e", "#ef4444",
-  "#f97316", "#eab308", "#ec4899", "#14b8a6",
-  "#a855f7", "#6b7280",
-];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -52,7 +48,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
   const { toast } = useToast();
 
   const [title, setTitle] = useState("");
-  const [color, setColor] = useState(PRESET_COLORS[0]);
+  const [color, setColor] = useState(BUILDPRO_PALETTE_HEXES[0]);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [isRecurring, setIsRecurring] = useState(false);
@@ -84,7 +80,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
       setCategoryId(editBlock.categoryId || "");
     } else {
       setTitle("");
-      setColor(PRESET_COLORS[0]);
+      setColor(BUILDPRO_PALETTE_HEXES[0]);
       setStartTime("09:00");
       setEndTime("11:00");
       setIsRecurring(false);
@@ -182,7 +178,7 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
           <div className="space-y-1.5">
             <Label className="text-xs">Color</Label>
             <div className="flex gap-2 flex-wrap">
-              {PRESET_COLORS.map((c) => (
+              {BUILDPRO_PALETTE_HEXES.map((c) => (
                 <button
                   key={c}
                   onClick={() => setColor(c)}
@@ -193,6 +189,15 @@ export function FocusBlockCreator({ open, onClose, onOpenChange, onCreated, edit
                   style={{ backgroundColor: c }}
                 />
               ))}
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="color"
+                value={color?.match(/^#[0-9A-Fa-f]{6}$/) ? color : '#a890d4'}
+                onChange={e => setColor(e.target.value)}
+                className="w-6 h-6 rounded-full border border-black/10 cursor-pointer p-0.5 bg-transparent"
+              />
+              <span className="text-xs text-muted-foreground">Custom colour</span>
             </div>
           </div>
 

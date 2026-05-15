@@ -46,7 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, FieldOption, Estimate, FieldCategoryWithOptions, Contact, Company } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { PROJECT_COLORS } from "@/lib/taskColors";
+import { BUILDPRO_PALETTE_HEXES } from "@/lib/colors";
 import AddContactDialog from "@/components/AddContactDialog";
 import * as LucideIcons from "lucide-react";
 
@@ -385,7 +385,7 @@ export default function ProjectSettings() {
     );
   }
 
-  const colorOptions = PROJECT_COLORS;
+  const colorOptions = BUILDPRO_PALETTE_HEXES;
 
   return (
     <div className="p-6 space-y-6">

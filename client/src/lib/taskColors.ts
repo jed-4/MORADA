@@ -1,3 +1,5 @@
+import { BUILDPRO_PALETTE_HEXES } from './colors';
+
 // Notion-style color utilities: Generate pastel backgrounds and dark text from any hex color
 
 // Schedule / calendar event type colour palette — aligned with our organic accent system.
@@ -31,16 +33,7 @@ export type ScheduleItemType = keyof typeof TYPE_COLORS;
 // Project colour palette — used as the swatch picker in Create / Edit Project,
 // and assigned cyclically as new projects are created (see getProjectColor below).
 // Organised in four hue families so the swatch grid reads as a coherent palette.
-export const PROJECT_COLORS = [
-  // Warm
-  "#E8A0A8", "#DA988A", "#E09878", "#C87878", "#D484A0", "#E8B0C0",
-  // Earthy
-  "#E8B480", "#E09868", "#F0B964", "#EAD070", "#D4A840", "#C89050",
-  // Natural
-  "#96D4A8", "#82C8A2", "#68B088", "#80C8C0", "#70CAD0", "#58A8B0",
-  // Cool
-  "#80B8D8", "#7890C8", "#8888C4", "#A890D4", "#B0A0C8", "#C090B4",
-] as const;
+export const PROJECT_COLORS = BUILDPRO_PALETTE_HEXES;
 
 // Cyclic project-colour selector — always returns a colour from PROJECT_COLORS for any non-negative index.
 export function getProjectColor(index: number): string {
