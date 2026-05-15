@@ -16339,6 +16339,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Run OCR on an attachment that is already stored in object storage.
   // Used by the bill detail page when the bill was auto-imported from email
   // and already has an attachment but ocrProcessed is still false.
+  app.post("/api/bills/ocr-from-path", requireAuth, async (req, res) => {
+    try {
+      const { objectPath, mimeType: mimeHint, filename: filenameHint } = req.body;
+      if (!objectPath) return res.status(400).json({ error: "objectPath required" });
+
+      const userCompanyId = (req as any).user?.companyId;
+      const expectedPrefix = `/objects/company/${userCompanyId}/`;
+      if (!objectPath.startsWith(expectedPrefix)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      let storagePath = objectPath;
+      const companyPrefixMatch = storagePath.match(/^\/objects\/company\/[^/]+(\/.*)?$/);
+      if (companyPrefixMatch) {
+        const remainder = companyPrefixMatch[1] || "/";
+        storagePath = `/objects${remainder}`;
+      }
+
+      const { ObjectStorageService } = await import(
+        "./replit_integrations/object_storage/objectStorage"
+      );
+      const objectStorage = new ObjectStorageService();
+
+      let fileBuffer: Buffer;
+      try {
+        const objectFile = await objectStorage.getObjectEntityFile(storagePath);
+        const [downloaded] = await objectFile.download();
+        fileBuffer = downloaded as Buffer;
+      } catch (dlErr: any) {
+        return res.status(404).json({ error: "File not found in storage" });
+      }
+
+      const ext = objectPath.split("?")[0].split(".").pop()?.toLowerCase() || "";
+      const filenameExt = (filenameHint || "").split(".").pop()?.toLowerCase() || "";
+      const mimeType = mimeHint || (
+        ext === "pdf" || filenameExt === "pdf" ? "application/pdf"
+        : ["jpg", "jpeg"].includes(ext) || ["jpg", "jpeg"].includes(filenameExt) ? "image/jpeg"
+        : "image/png"
+      );
+      const filename = filenameHint || decodeURIComponent(objectPath.split("/").pop() || "invoice");
+
+      const base64 = fileBuffer.toString("base64");
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+
+      const { processInvoiceWithAI } = await import("./services/aiBillReader");
+      const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+      try {
+        const result = await processInvoiceWithAI(dataUrl, filename);
+        res.json({ ...result, attachment: attachmentMeta });
+      } catch (aiErr: any) {
+        res.status(502).json({
+          error: aiErr?.message || "AI extraction failed",
+          attachment: attachmentMeta,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to process file" });
+    }
+  });
+
   app.post("/api/bills/:id/ocr-from-attachment", requireAuth, async (req, res) => {
     try {
       const bill = await storage.getBillById(req.params.id);

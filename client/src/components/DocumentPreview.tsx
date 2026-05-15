@@ -54,7 +54,7 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width && width > 0) setContainerWidth(Math.floor(width) - 32);
+      if (width && width > 0) setContainerWidth(Math.floor(width));
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();

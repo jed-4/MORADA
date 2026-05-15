@@ -1256,8 +1256,15 @@ export default function BillDetail() {
   // OCR from an attachment already stored in object storage (e.g. email-imported draft)
   const ocrFromAttachmentMutation = useMutation({
     mutationFn: async (objectPath: string) => {
-      const response = await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", { objectPath });
-      return response;
+      if (id) {
+        return await apiRequest(`/api/bills/${id}/ocr-from-attachment`, "POST", { objectPath });
+      }
+      const meta = attachmentMeta[objectPath];
+      return await apiRequest(`/api/bills/ocr-from-path`, "POST", {
+        objectPath,
+        mimeType: meta?.mimeType,
+        filename: meta?.filename,
+      });
     },
     onSuccess: (data: any) => {
       setOcrResults(data);
@@ -1697,7 +1704,7 @@ export default function BillDetail() {
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal overflow-hidden" data-testid="select-project">
-                              <span className="!flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
+                              <div className="flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
                                 {selectedProject?.color && (
                                   <span
                                     className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -1707,7 +1714,7 @@ export default function BillDetail() {
                                 <span className="truncate">
                                   {selectedProject ? selectedProject.name + ((selectedProject as any).isBusiness ? ' (Business)' : '') : <span className="text-muted-foreground">Select project...</span>}
                                 </span>
-                              </span>
+                              </div>
                               <SelectValue className="hidden" />
                             </SelectTrigger>
                           </FormControl>
@@ -2091,7 +2098,7 @@ export default function BillDetail() {
                             <Button
                               className="w-full"
                               size="sm"
-                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending || !id}
+                              disabled={!firstProcessable || ocrFromAttachmentMutation.isPending}
                               onClick={() => firstProcessable && ocrFromAttachmentMutation.mutate(firstProcessable)}
                               data-testid="button-read-attachment-ai"
                             >
