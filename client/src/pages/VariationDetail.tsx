@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -183,10 +184,8 @@ export default function VariationDetail() {
   // T003: Preview / PDF / Send state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sendModalOpen, setSendModalOpen] = useState(false);
-  const [sendTo, setSendTo] = useState("");
   const [sendSubject, setSendSubject] = useState("");
   const [sendBody, setSendBody] = useState("");
-  const [sendAttachPdf, setSendAttachPdf] = useState(true);
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -249,6 +248,11 @@ export default function VariationDetail() {
   });
 
   const watchedProjectId = form.watch("projectId");
+  const selectedProject = projects.find((p) => p.id === watchedProjectId);
+  const { data: clientContact } = useQuery<{ id: string; name?: string; email?: string }>({
+    queryKey: [`/api/contacts/${(selectedProject as any)?.clientId}`],
+    enabled: !!(selectedProject as any)?.clientId,
+  });
 
   const { data: projectBills = [] } = useQuery<any[]>({
     queryKey: [`/api/bills?projectId=${watchedProjectId}`],
@@ -856,7 +860,6 @@ export default function VariationDetail() {
       const res = await apiRequest(`/api/variations/${effectiveVariationId}/portal-token`, "POST", {});
       const { portalUrl } = res;
       const fullUrl = `${window.location.origin}${portalUrl}`;
-      setSendTo("");
       setSendSubject(`Variation ${variation?.variationNumber || ""} — ${variation?.name || ""}`);
       setSendBody(`Hi,\n\nPlease review the variation below.\n\nYou can view and approve it online at:\n${fullUrl}\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`);
       setSendModalOpen(true);
@@ -865,43 +868,6 @@ export default function VariationDetail() {
     }
   };
 
-  // T003: Send email
-  const sendEmailMutation = useMutation({
-    mutationFn: async () => {
-      let pdfBase64: string | undefined;
-      if (sendAttachPdf) {
-        const blob = await pdf(
-          <VariationDocument
-            variation={variation as any}
-            items={existingCostLines}
-            bills={existingVariationBills}
-            company={companyInfo}
-            project={projects.find((p) => p.id === form.watch("projectId")) as any}
-            brandColor={companySettings?.brandColor || "#6d28d9"}
-          />
-        ).toBlob();
-        const arrayBuf = await blob.arrayBuffer();
-        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
-      }
-      const res = await apiRequest(`/api/variations/${effectiveVariationId}/send`, "POST", {
-        to: sendTo,
-        subject: sendSubject,
-        body: sendBody,
-        pdfBase64,
-        pdfFilename: `variation-${variation?.variationNumber || "export"}.pdf`,
-      });
-      if (!res.ok) throw new Error("Send failed");
-      return res.json();
-    },
-    onSuccess: () => {
-      setSendModalOpen(false);
-      toast({ title: "Email sent", description: `Variation sent to ${sendTo}` });
-      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
-    },
-    onError: () => {
-      toast({ title: "Failed to send email", variant: "destructive" });
-    },
-  });
 
   const onSubmit = (data: VariationFormData) => {
     if (isEditMode) {
@@ -2232,66 +2198,24 @@ export default function VariationDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Send to Client Modal ── */}
-      <Dialog open={sendModalOpen} onOpenChange={setSendModalOpen}>
-        <DialogContent className="max-w-lg" data-testid="dialog-send-variation">
-          <DialogHeader>
-            <DialogTitle>Send Variation to Client</DialogTitle>
-            <DialogDescription>Email the client a link to view and approve this variation online.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To</label>
-              <Input
-                value={sendTo}
-                onChange={(e) => setSendTo(e.target.value)}
-                placeholder="client@example.com"
-                className="mt-1"
-                data-testid="input-send-to"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
-              <Input
-                value={sendSubject}
-                onChange={(e) => setSendSubject(e.target.value)}
-                className="mt-1"
-                data-testid="input-send-subject"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</label>
-              <Textarea
-                value={sendBody}
-                onChange={(e) => setSendBody(e.target.value)}
-                rows={6}
-                className="mt-1"
-                data-testid="textarea-send-body"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="attach-pdf"
-                type="checkbox"
-                checked={sendAttachPdf}
-                onChange={(e) => setSendAttachPdf(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
-              <label htmlFor="attach-pdf" className="text-sm text-muted-foreground">Attach PDF copy</label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSendModalOpen(false)} data-testid="button-cancel-send">Cancel</Button>
-            <Button
-              onClick={() => sendEmailMutation.mutate()}
-              disabled={!sendTo.trim() || sendEmailMutation.isPending}
-              data-testid="button-confirm-send"
-            >
-              {sendEmailMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</> : <><Mail className="mr-2 h-4 w-4" />Send</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Send to Client Dialog ── */}
+      {variation && (
+        <SendVariationDialog
+          open={sendModalOpen}
+          onOpenChange={setSendModalOpen}
+          variation={variation}
+          variationId={effectiveVariationId!}
+          items={existingCostLines}
+          bills={existingVariationBills}
+          company={companyInfo}
+          project={projects.find((p) => p.id === form.watch("projectId")) as any}
+          brandColor={companySettings?.brandColor || "#6d28d9"}
+          clientEmail={clientContact?.email}
+          initialSubject={sendSubject}
+          initialBody={sendBody}
+          currentUser={user as any}
+        />
+      )}
 
     </div>
   );

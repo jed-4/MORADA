@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { pdf } from "@react-pdf/renderer";
+import { PurchaseOrderDocument } from "@/components/purchase-orders/pdf/PurchaseOrderDocument";
+import { SendPurchaseOrderDialog } from "@/components/purchase-orders/SendPurchaseOrderDialog";
 import { format, formatDistanceToNow } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -28,7 +31,6 @@ import {
   Plus,
   Save,
   Send,
-  Printer,
   FileText,
   Trash2,
   GripVertical,
@@ -698,7 +700,7 @@ export default function PurchaseOrderDetail() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isChangeSupplierOpen, setIsChangeSupplierOpen] = useState(false);
   const [isImportTimesheetsOpen, setIsImportTimesheetsOpen] = useState(false);
-  const [sendEmail, setSendEmail] = useState("");
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(
     null,
@@ -757,6 +759,14 @@ export default function PurchaseOrderDetail() {
 
   const { data: assignableUsers = [] } = useQuery<SupplierUser[]>({
     queryKey: ["/api/users/assignable"],
+  });
+
+  const { data: companyInfo } = useQuery<{ id: string; name: string; abn?: string; phone?: string; email?: string; address?: string }>({
+    queryKey: ["/api/company"],
+  });
+
+  const { data: companySettings } = useQuery<{ brandColor?: string; companyName?: string }>({
+    queryKey: ["/api/company-settings"],
   });
 
   // Supplier may be a contact (supplierId) OR a team-member user marked as subcontractor (supplierUserId).
@@ -820,9 +830,6 @@ export default function PurchaseOrderDetail() {
     }
   }, [purchaseOrder]);
 
-  useEffect(() => {
-    if (supplier?.email) setSendEmail(supplier.email);
-  }, [supplier]);
 
   useEffect(() => {
     setItems(rawPoItems ?? []);
@@ -975,28 +982,6 @@ export default function PurchaseOrderDetail() {
     },
   });
 
-  const sendPoMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/purchase-orders/${poId}/send`, "POST", {
-        email: sendEmail || undefined,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      setIsSendDialogOpen(false);
-      toast({ title: "Purchase order sent", description: "Status updated to Sent" });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to send",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   const deletePoMutation = useMutation({
     mutationFn: async () => {
@@ -1410,91 +1395,33 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const handlePrintPdf = () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    const itemRows = items
-      .map((item) => {
-        const qty = parseFloat(item.quantity || "1");
-        const uPrice = item.unitPrice || 0;
-        const lineTotal = Math.round(qty * uPrice);
-        const gst = item.isGstFree ? 0 : Math.round(lineTotal * 0.1);
-        return `<tr>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${item.description || ""}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.unit || ""}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(uPrice)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(gst)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(lineTotal + gst)}</td>
-      </tr>`;
-      })
-      .join("");
-
-    const deliverySection = [
-      deliveryReference && `<p><strong>Reference:</strong> ${deliveryReference}</p>`,
-      deliveryAttention && `<p><strong>Attention:</strong> ${deliveryAttention}</p>`,
-      deliveryContact && `<p><strong>Contact:</strong> ${deliveryContact}</p>`,
-      deliveryAddress && `<p><strong>Address:</strong> ${deliveryAddress}</p>`,
-      deliveryInstructions &&
-        `<div style="margin-top:8px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;"><strong>Delivery Instructions:</strong><br/>${deliveryInstructions}</div>`,
-    ]
-      .filter(Boolean)
-      .join("");
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html><head><title>${purchaseOrder?.poNumber || "Purchase Order"}</title>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #111; }
-        h1 { font-size: 24px; margin-bottom: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-        th { text-align: left; padding: 8px; border-bottom: 2px solid #111; font-size: 13px; }
-        .totals { margin-top: 16px; text-align: right; }
-        .totals div { margin-bottom: 4px; }
-        .section { margin-top: 24px; }
-        @media print { body { padding: 20px; } }
-      </style></head><body>
-        <h1>PURCHASE ORDER</h1>
-        <p style="font-size:18px;color:#555;">${purchaseOrder?.poNumber || ""}</p>
-        <div style="display:flex;justify-content:space-between;margin-top:24px;">
-          <div>
-            <p style="font-size:12px;color:#888;margin-bottom:4px;">SUPPLIER</p>
-            <p style="font-weight:600;">${supplier?.name || "—"}</p>
-            ${supplier?.email ? `<p style="color:#555;">${supplier.email}</p>` : ""}
-            ${supplier?.phone ? `<p style="color:#555;">${supplier.phone}</p>` : ""}
-            ${supplier?.address ? `<p style="color:#555;">${supplier.address}</p>` : ""}
-          </div>
-          <div style="text-align:right;">
-            <p style="font-size:12px;color:#888;margin-bottom:4px;">PROJECT</p>
-            <p style="font-weight:600;">${project?.name || "—"}</p>
-            ${project?.address ? `<p style="color:#555;">${project.address}</p>` : ""}
-            ${requiredByDate ? `<p style="margin-top:12px;font-size:12px;color:#888;">REQUIRED BY</p><p>${new Date(requiredByDate).toLocaleDateString("en-AU")}</p>` : ""}
-          </div>
-        </div>
-        ${deliverySection ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">DELIVERY DETAILS</p>${deliverySection}</div>` : ""}
-        <table>
-          <thead><tr>
-            <th>Description</th>
-            <th style="text-align:right;">Qty</th>
-            <th style="text-align:center;">Unit</th>
-            <th style="text-align:right;">Unit Price</th>
-            <th style="text-align:right;">GST</th>
-            <th style="text-align:right;">Total</th>
-          </tr></thead>
-          <tbody>${itemRows}</tbody>
-        </table>
-        <div class="totals">
-          <div><span style="color:#888;">Subtotal:</span> <strong>${formatCurrency(subtotal)}</strong></div>
-          <div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>
-          <div style="font-size:18px;margin-top:8px;"><span>Total:</span> <strong>${formatCurrency(total)}</strong></div>
-        </div>
-        ${scope ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">SCOPE OF WORK</p><div>${scope}</div></div>` : ""}
-        ${termsAndConditions ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">TERMS & CONDITIONS</p><div>${termsAndConditions}</div></div>` : ""}
-      </body></html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
+  const handleDownloadPdf = async () => {
+    if (!purchaseOrder) return;
+    setPdfGenerating(true);
+    try {
+      const blob = await pdf(
+        <PurchaseOrderDocument
+          purchaseOrder={purchaseOrder as any}
+          items={items as any}
+          company={companyInfo}
+          supplier={supplier}
+          project={project as any}
+          brandColor={companySettings?.brandColor || "#6d28d9"}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `PO-${(purchaseOrder as any).poNumber || "export"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "PDF generation failed", variant: "destructive" });
+    } finally {
+      setPdfGenerating(false);
+    }
   };
 
   const isLocked = purchaseOrder?.status !== "draft";
@@ -1605,11 +1532,16 @@ export default function PurchaseOrderDetail() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={handlePrintPdf}
+                  onClick={handleDownloadPdf}
+                  disabled={pdfGenerating}
                   data-testid="action-print-po"
                 >
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print / PDF
+                  {pdfGenerating ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Download PDF
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsSendDialogOpen(true)}
@@ -2479,75 +2411,16 @@ export default function PurchaseOrderDetail() {
       </Dialog>
 
       {/* Send PO */}
-      <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Send Purchase Order</DialogTitle>
-            <DialogDescription>
-              {purchaseOrder.poNumber} will be marked as Sent and locked from
-              editing.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div
-            className="rounded-lg border p-3 text-sm space-y-1"
-            style={{
-              backgroundColor: TOKENS.pageBg,
-              borderColor: TOKENS.border,
-            }}
-            data-testid="email-preview"
-          >
-            <div className="flex gap-2 text-xs">
-              <span className="text-muted-foreground w-12">To:</span>
-              <span className="font-medium">
-                {sendEmail || "No email address"}
-              </span>
-            </div>
-            <div className="flex gap-2 text-xs">
-              <span className="text-muted-foreground w-12">Subject:</span>
-              <span>Purchase Order {purchaseOrder.poNumber}</span>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">
-              Supplier Email
-            </Label>
-            <Input
-              value={sendEmail}
-              onChange={(e) => setSendEmail(e.target.value)}
-              placeholder="supplier@example.com"
-              data-testid="input-send-email"
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsSendDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => sendPoMutation.mutate()}
-              disabled={sendPoMutation.isPending}
-              style={{
-                backgroundColor: TOKENS.purple,
-                borderColor: TOKENS.purple,
-              }}
-              className="text-white hover:opacity-90"
-              data-testid="button-confirm-send"
-            >
-              {sendPoMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-1" />
-              ) : (
-                <Send className="w-4 h-4 mr-1" />
-              )}
-              Send Purchase Order
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SendPurchaseOrderDialog
+        open={isSendDialogOpen}
+        onOpenChange={setIsSendDialogOpen}
+        purchaseOrder={purchaseOrder}
+        items={items}
+        supplier={supplier}
+        company={companyInfo}
+        project={project as any}
+        brandColor={companySettings?.brandColor || "#6d28d9"}
+      />
 
       {/* Delete confirm */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

@@ -18,15 +18,24 @@ export function initializeEmailServices(storageInstance: IStorage, googleOAuthSe
   console.log('📧 Email services initialized with Gmail support');
 }
 
+export interface SendEmailAttachment {
+  filename: string;
+  content: string;
+  mimeType?: string;
+}
+
 interface SendEmailParams {
   to: string | string[];
   subject: string;
   html: string;
   userId?: string;
+  attachments?: SendEmailAttachment[];
+  from?: string;
+  replyTo?: string;
 }
 
 async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success: boolean; messageId?: string; sentVia: 'gmail' | 'resend' }> {
-  const { to, subject, html, userId } = params;
+  const { to, subject, html, userId, attachments, from, replyTo } = params;
   
   if (userId && gmailServiceInitialized && gmailService) {
     try {
@@ -34,7 +43,13 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
       
       if (canSend.canSend) {
         console.log(`📧 Attempting Gmail send for user ${userId} (${canSend.email})`);
-        const result = await gmailService.sendEmailAsUser(userId, { to, subject, html });
+        const result = await gmailService.sendEmailAsUser(userId, {
+          to,
+          subject,
+          html,
+          attachments,
+          replyTo,
+        } as any);
         
         if (result.success) {
           return { success: true, messageId: result.messageId, sentVia: 'gmail' };
@@ -48,12 +63,23 @@ async function sendEmailWithFallback(params: SendEmailParams): Promise<{ success
   }
   
   const toAddresses = Array.isArray(to) ? to : [to];
-  const { data, error } = await resend.emails.send({
-    from: 'BuildPro <onboarding@resend.dev>',
+
+  const resendAttachments = attachments?.map(a => ({
+    filename: a.filename,
+    content: Buffer.from(a.content, 'base64'),
+  }));
+
+  const sendParams: any = {
+    from: from || 'BuildPro <onboarding@resend.dev>',
     to: toAddresses,
     subject,
     html,
-  });
+  };
+
+  if (replyTo) sendParams.reply_to = replyTo;
+  if (resendAttachments?.length) sendParams.attachments = resendAttachments;
+
+  const { data, error } = await resend.emails.send(sendParams);
   
   if (error) {
     throw new Error(`Failed to send email: ${error.message || 'Unknown error'}`);
@@ -298,11 +324,14 @@ export async function sendReminderEmail({
   }
 }
 
-interface SendGenericEmailParams {
+export interface SendGenericEmailParams {
   to: string | string[];
   subject: string;
   html: string;
   userId?: string;
+  attachments?: SendEmailAttachment[];
+  from?: string;
+  replyTo?: string;
 }
 
 export async function sendGenericEmail(params: SendGenericEmailParams) {

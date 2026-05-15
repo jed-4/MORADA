@@ -7,6 +7,7 @@ import { z } from "zod";
 import { format, addDays } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
 import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
+import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import {
   ArrowLeft,
@@ -317,10 +318,16 @@ export default function ClientInvoiceDetail() {
   // T004: PDF + email state
   const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
   const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
-  const [invoiceSendTo, setInvoiceSendTo] = useState("");
-  const [invoiceSendSubject, setInvoiceSendSubject] = useState("");
-  const [invoiceSendBody, setInvoiceSendBody] = useState("");
-  const [invoiceSendAttachPdf, setInvoiceSendAttachPdf] = useState(true);
+  const [invoiceSendData, setInvoiceSendData] = useState<{
+    lineItems: Array<{ label: string; description?: string | null; claimPct?: number | null; amountExTax: number; gst: number; amountIncTax: number }>;
+    subtotalCents: number;
+    gstCents: number;
+    totalCents: number;
+    paidCents: number;
+    balanceDueCents: number;
+    initialSubject: string;
+    initialBody: string;
+  } | null>(null);
 
   const { data: companyInfo } = useQuery<{ id: string; name: string; abn?: string; phone?: string; email?: string; logo?: string }>({
     queryKey: ["/api/company"],
@@ -1361,52 +1368,6 @@ export default function ClientInvoiceDetail() {
     },
   });
 
-  const sendInvoiceEmailMutation = useMutation({
-    mutationFn: async () => {
-      let pdfBase64: string | undefined;
-      if (invoiceSendAttachPdf && effectiveInvoiceId) {
-        const subtotalCents = Math.round(amountExTax() * 100);
-        const gstCents = Math.round(amountTax() * 100);
-        const totalCents = Math.round(amountIncTax() * 100);
-        const paidCents = Math.round(paid * 100);
-        const blob = await pdf(
-          <InvoiceDocument
-            invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
-            issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
-            dueDate={form.watch("dueDate") || invoice?.dueDate}
-            company={companyInfo}
-            clientName={clientContact?.name}
-            projectName={currentProject?.name}
-            projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
-            lineItems={buildInvoicePdfLineItems()}
-            subtotalCents={subtotalCents}
-            gstCents={gstCents}
-            totalCents={totalCents}
-            paidCents={paidCents}
-            balanceDueCents={totalCents - paidCents}
-            brandColor={companySettings?.brandColor || "#6d28d9"}
-          />
-        ).toBlob();
-        const arrayBuf = await blob.arrayBuffer();
-        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
-      }
-      const res = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/send-email`, "POST", {
-        to: invoiceSendTo,
-        subject: invoiceSendSubject,
-        body: invoiceSendBody,
-        pdfBase64,
-        pdfFilename: `invoice-${invoice?.invoiceNumber || "export"}.pdf`,
-      });
-      if (!res.ok) throw new Error("Failed to send email");
-    },
-    onSuccess: () => {
-      toast({ title: "Email sent successfully" });
-      setInvoiceSendModalOpen(false);
-    },
-    onError: () => {
-      toast({ title: "Failed to send email", variant: "destructive" });
-    },
-  });
 
   const onSubmit = (data: InvoiceFormData) => {
     if (isEditMode) updateMutation.mutate(data);
@@ -1521,9 +1482,21 @@ export default function ClientInvoiceDetail() {
   };
 
   const handleOpenInvoiceSendModal = () => {
-    setInvoiceSendTo(clientContact?.email || "");
-    setInvoiceSendSubject(`Invoice ${form.watch("invoiceNumber") || invoice?.invoiceNumber || ""} — ${currentProject?.name || ""}`);
-    setInvoiceSendBody(`Hi ${clientContact?.name || ""},\n\nPlease find your invoice attached.\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`);
+    const subtotalCents = Math.round(amountExTax() * 100);
+    const gstCents = Math.round(amountTax() * 100);
+    const totalCents = Math.round(amountIncTax() * 100);
+    const paidCents = Math.round(paid * 100);
+    const balanceDueCents = totalCents - paidCents;
+    setInvoiceSendData({
+      lineItems: buildInvoicePdfLineItems(),
+      subtotalCents,
+      gstCents,
+      totalCents,
+      paidCents,
+      balanceDueCents,
+      initialSubject: `Invoice ${form.watch("invoiceNumber") || invoice?.invoiceNumber || ""} — ${currentProject?.name || ""}`,
+      initialBody: `Hi ${clientContact?.name || ""},\n\nPlease find your invoice attached.\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`,
+    });
     setInvoiceSendModalOpen(true);
   };
 
@@ -4364,64 +4337,28 @@ export default function ClientInvoiceDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Send Invoice Email Modal ── */}
-      <Dialog open={invoiceSendModalOpen} onOpenChange={setInvoiceSendModalOpen}>
-        <DialogContent className="max-w-lg" data-testid="dialog-send-invoice-email">
-          <DialogHeader>
-            <DialogTitle>Email Invoice</DialogTitle>
-            <DialogDescription>Send this invoice to the client by email.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To</label>
-              <Input
-                value={invoiceSendTo}
-                onChange={(e) => setInvoiceSendTo(e.target.value)}
-                placeholder="client@example.com"
-                className="mt-1"
-                data-testid="input-invoice-send-to"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
-              <Input
-                value={invoiceSendSubject}
-                onChange={(e) => setInvoiceSendSubject(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</label>
-              <Textarea
-                value={invoiceSendBody}
-                onChange={(e) => setInvoiceSendBody(e.target.value)}
-                rows={5}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="invoice-attach-pdf"
-                type="checkbox"
-                checked={invoiceSendAttachPdf}
-                onChange={(e) => setInvoiceSendAttachPdf(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
-              <label htmlFor="invoice-attach-pdf" className="text-sm text-muted-foreground">Attach PDF copy</label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInvoiceSendModalOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => sendInvoiceEmailMutation.mutate()}
-              disabled={!invoiceSendTo.trim() || sendInvoiceEmailMutation.isPending}
-              data-testid="button-confirm-send-invoice-email"
-            >
-              {sendInvoiceEmailMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</> : <><Mail className="mr-2 h-4 w-4" />Send</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Send Invoice Dialog */}
+      {invoice && invoiceSendData && (
+        <SendInvoiceDialog
+          open={invoiceSendModalOpen}
+          onOpenChange={setInvoiceSendModalOpen}
+          invoice={invoice}
+          lineItems={invoiceSendData.lineItems}
+          subtotalCents={invoiceSendData.subtotalCents}
+          gstCents={invoiceSendData.gstCents}
+          totalCents={invoiceSendData.totalCents}
+          paidCents={invoiceSendData.paidCents}
+          balanceDueCents={invoiceSendData.balanceDueCents}
+          company={companyInfo}
+          clientName={clientContact?.name}
+          projectName={currentProject?.name}
+          projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
+          brandColor={companySettings?.brandColor || "#6d28d9"}
+          clientEmail={clientContact?.email}
+          initialSubject={invoiceSendData.initialSubject}
+          initialBody={invoiceSendData.initialBody}
+        />
+      )}
 
       <XeroContactLinkModal
         open={xeroLinkModalOpen}

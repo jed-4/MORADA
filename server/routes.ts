@@ -6,7 +6,7 @@ import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
-import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
+import { sendInvitationEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { xeroService, XeroValidationError, type XeroValidationIssue } from "./services/xeroService";
@@ -13572,26 +13572,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const { GmailEmailService } = await import("./services/gmailEmailService");
-      const { GoogleOAuthService } = await import("./services/googleOAuthService");
-      const googleOAuthService = new GoogleOAuthService(storage);
-      const gmailService = new GmailEmailService(storage, googleOAuthService);
+      const settings = await storage.getCompanySettings();
+      const fromName = settings?.companyName || "BuildPro";
 
-      const result = await gmailService.sendEmailAsUser(userId, {
+      await sendGenericEmail({
         to,
         subject,
         html: body.replace(/\n/g, "<br>"),
+        from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+        replyTo: req.user.email,
+        userId,
         attachments,
       });
-
-      if (!result.success) {
-        return res.status(500).json({ error: result.error || "Failed to send email" });
-      }
 
       // Mark portalSentAt
       await storage.updateVariation(variation.id, { portalSentAt: new Date() } as any);
 
-      res.json({ success: true, messageId: result.messageId });
+      res.json({ success: true });
     } catch (error) {
       console.error("Error sending variation:", error);
       res.status(500).json({ error: "Failed to send variation" });
@@ -13854,8 +13851,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Send purchase order (change status and optionally send email)
-  app.post("/api/purchase-orders/:id/send", async (req, res) => {
+  // Send purchase order — email supplier and update status
+  app.post("/api/purchase-orders/:id/send", async (req: any, res) => {
     try {
       if (!req.user?.companyId) {
         return res.status(401).json({ error: "Not authenticated" });
@@ -13866,10 +13863,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order not found" });
       }
 
+      const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
+        to?: string;
+        subject?: string;
+        body?: string;
+        pdfBase64?: string;
+        pdfFilename?: string;
+      };
+
+      if (to) {
+        const settings = await storage.getCompanySettings();
+        const fromName = settings?.companyName || "BuildPro";
+
+        await sendGenericEmail({
+          to,
+          subject: subject || `Purchase Order ${(po as any).poNumber}`,
+          html: body ? body.replace(/\n/g, "<br>") : `<p>Please find attached Purchase Order ${(po as any).poNumber}.</p>`,
+          from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+          replyTo: req.user.email,
+          userId: req.user.id,
+          attachments: pdfBase64 ? [{
+            filename: pdfFilename || `PO-${(po as any).poNumber}.pdf`,
+            content: pdfBase64,
+            mimeType: "application/pdf",
+          }] : undefined,
+        });
+      }
+
       const updatedPo = await storage.updatePurchaseOrder(req.params.id, {
         status: "sent",
-        sentAt: new Date()
-      });
+        sentAt: new Date(),
+        sentToEmail: to || undefined,
+      } as any);
 
       res.json(updatedPo);
     } catch (error) {
@@ -15297,7 +15322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // T004: Send invoice by email (with optional PDF attachment)
+  // T004: Send invoice by email — sends email, updates status to sent, and stamps sentDate
   app.post("/api/client-invoices/:id/send-email", requireAuth, requireTeamMember, async (req: any, res) => {
     try {
       const userId = req.user.id;
@@ -15320,23 +15345,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mimeType: "application/pdf",
       }] : undefined;
 
-      const { GmailEmailService } = await import("./services/gmailEmailService");
-      const { GoogleOAuthService } = await import("./services/googleOAuthService");
-      const googleOAuthService = new GoogleOAuthService(storage);
-      const gmailService = new GmailEmailService(storage, googleOAuthService);
+      const settings = await storage.getCompanySettings();
+      const fromName = settings?.companyName || "BuildPro";
 
-      const result = await gmailService.sendEmailAsUser(userId, {
+      await sendGenericEmail({
         to,
         subject,
         html: body.replace(/\n/g, "<br>"),
+        from: `${fromName} via BuildPro <onboarding@resend.dev>`,
+        replyTo: req.user.email,
+        userId,
         attachments,
       });
 
-      if (!result.success) {
-        return res.status(500).json({ error: result.error || "Failed to send email" });
-      }
+      // Merge: mark invoice as sent in the same operation
+      await storage.updateClientInvoice(invoice.id, {
+        status: "sent",
+        sentDate: new Date(),
+      } as any);
 
-      res.json({ success: true, messageId: result.messageId });
+      res.json({ success: true });
     } catch (error) {
       console.error("Error sending invoice email:", error);
       res.status(500).json({ error: "Failed to send invoice email" });
