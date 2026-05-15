@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { FileText, Download, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import * as pdfjsLib from "pdfjs-dist";
+import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type Props = {
   src: string;
@@ -35,23 +35,35 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
 
   const [imgError, setImgError] = useState(false);
 
-  // Fetch + blob state (used for PDFs)
+  // Fetch + blob state (keeps auth cookies working)
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // PDF.js render state
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // react-pdf render state
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageWidth, setPageWidth] = useState<number>(600);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Step 1: fetch the PDF bytes and create a blob URL
+  // Measure container width for page scaling
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width && width > 0) setPageWidth(Math.floor(width) - 32);
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [pdfBlobUrl]);
+
+  // Fetch the PDF with auth cookies → blob URL
   useEffect(() => {
     if (kind !== "pdf" || !isSameOrigin(src)) return;
 
     let objectUrl: string | null = null;
-    setPdfLoading(true);
-    setPdfError(null);
+    setFetchLoading(true);
+    setFetchError(null);
     setPdfBlobUrl(null);
     setNumPages(0);
     setCurrentPage(1);
@@ -66,65 +78,16 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
         setPdfBlobUrl(objectUrl);
       })
       .catch((err) => {
-        setPdfError(err.message);
-        setPdfLoading(false);
+        setFetchError(err.message);
+      })
+      .finally(() => {
+        setFetchLoading(false);
       });
 
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src, kind]);
-
-  // Step 2: render a page via PDF.js onto the canvas
-  useEffect(() => {
-    if (!pdfBlobUrl) return;
-
-    let cancelled = false;
-
-    const renderPage = async () => {
-      try {
-        const loadingTask = pdfjsLib.getDocument(pdfBlobUrl);
-        const pdf = await loadingTask.promise;
-        if (cancelled) return;
-
-        setNumPages(pdf.numPages);
-
-        const page = await pdf.getPage(currentPage);
-        if (cancelled) return;
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const container = canvas.parentElement;
-        const containerWidth = container?.clientWidth || 680;
-        const viewport = page.getViewport({ scale: 1 });
-        const scale = containerWidth / viewport.width;
-        const scaledViewport = page.getViewport({ scale });
-
-        canvas.width = scaledViewport.width;
-        canvas.height = scaledViewport.height;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
-        if (cancelled) return;
-
-        setPdfLoading(false);
-      } catch (err: any) {
-        if (!cancelled) {
-          setPdfError(err.message || "Failed to render PDF");
-          setPdfLoading(false);
-        }
-      }
-    };
-
-    renderPage();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pdfBlobUrl, currentPage]);
 
   // --- IMAGE ---
   if (kind === "image") {
@@ -173,7 +136,7 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
       );
     }
 
-    if (pdfLoading) {
+    if (fetchLoading) {
       return (
         <div
           className="flex flex-col items-center justify-center gap-2 bg-muted/20"
@@ -186,7 +149,7 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
       );
     }
 
-    if (pdfError) {
+    if (fetchError) {
       return (
         <div
           className="flex flex-col items-center justify-center gap-2 p-6 bg-muted/20 border rounded-md"
@@ -195,7 +158,7 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
         >
           <AlertTriangle className="h-6 w-6 text-muted-foreground" />
           <span className="text-xs text-muted-foreground text-center">
-            Could not load PDF: {pdfError}
+            Could not load PDF: {fetchError}
           </span>
           <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1 underline">
             <Download className="h-3 w-3" /> Open PDF
@@ -204,18 +167,40 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
       );
     }
 
+    if (!pdfBlobUrl) return null;
+
     return (
       <div
-        className="flex flex-col w-full overflow-y-auto"
+        className="flex flex-col w-full"
         style={{ height: heightStyle }}
         data-testid="document-preview-pdf"
       >
-        <div className="flex flex-col items-center bg-muted/30 p-3 flex-1">
-          <canvas ref={canvasRef} className="shadow-md max-w-full" />
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-y-auto flex flex-col items-center bg-muted/30 p-4"
+        >
+          <Document
+            file={pdfBlobUrl}
+            onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+            onLoadError={(err) => setFetchError(err.message)}
+            loading={
+              <div className="flex flex-col items-center justify-center gap-2 py-8">
+                <Loader2 className="h-6 w-6 text-muted-foreground animate-spin" />
+                <span className="text-xs text-muted-foreground">Rendering...</span>
+              </div>
+            }
+          >
+            <Page
+              pageNumber={currentPage}
+              width={pageWidth}
+              renderAnnotationLayer={false}
+              renderTextLayer={false}
+            />
+          </Document>
         </div>
 
         {numPages > 1 && (
-          <div className="flex items-center justify-center gap-2 py-2 border-t shrink-0">
+          <div className="flex items-center justify-center gap-2 py-2 border-t shrink-0 bg-background">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
