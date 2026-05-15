@@ -8,6 +8,7 @@ import { format, addDays } from "date-fns";
 import { pdf } from "@react-pdf/renderer";
 import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
 import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
+import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { XeroContactLinkModal } from "@/components/invoices/XeroContactLinkModal";
 import {
   ArrowLeft,
@@ -317,6 +318,7 @@ export default function ClientInvoiceDetail() {
 
   // T004: PDF + email state
   const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
   const [invoiceSendData, setInvoiceSendData] = useState<{
     lineItems: Array<{ label: string; description?: string | null; claimPct?: number | null; amountExTax: number; gst: number; amountIncTax: number }>;
@@ -1554,6 +1556,15 @@ export default function ClientInvoiceDetail() {
               <div className="flex items-center gap-1.5">
                 {isEditMode && (
                   <>
+                    <button
+                      type="button"
+                      onClick={() => setInvoicePreviewOpen(true)}
+                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                      data-testid="button-preview-invoice"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Preview</span>
+                    </button>
                     <button
                       type="button"
                       onClick={handleDownloadInvoicePdf}
@@ -4336,6 +4347,34 @@ export default function ClientInvoiceDetail() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Preview Invoice PDF */}
+      {invoice && (
+        <DocumentPreviewModal
+          open={invoicePreviewOpen}
+          onOpenChange={setInvoicePreviewOpen}
+          document={
+            <InvoiceDocument
+              invoiceNumber={form.watch("invoiceNumber") || invoice.invoiceNumber || "Invoice"}
+              issueDate={form.watch("invoiceDate") || invoice.invoiceDate}
+              dueDate={form.watch("dueDate") || invoice.dueDate}
+              company={companyInfo}
+              clientName={clientContact?.name}
+              projectName={currentProject?.name}
+              projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
+              lineItems={buildInvoicePdfLineItems()}
+              subtotalCents={Math.round(amountExTax() * 100)}
+              gstCents={Math.round(amountTax() * 100)}
+              totalCents={Math.round(amountIncTax() * 100)}
+              paidCents={Math.round(paid * 100)}
+              balanceDueCents={Math.round(amountIncTax() * 100) - Math.round(paid * 100)}
+              brandColor={companySettings?.brandColor || "#6d28d9"}
+            />
+          }
+          filename={`INV-${form.watch("invoiceNumber") || invoice.invoiceNumber || "export"}.pdf`}
+          onSend={() => { setInvoicePreviewOpen(false); handleOpenInvoiceSendModal(); }}
+        />
+      )}
 
       {/* Send Invoice Dialog */}
       {invoice && invoiceSendData && (

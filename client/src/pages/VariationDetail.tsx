@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { SendVariationDialog } from "@/components/variations/SendVariationDialog";
+import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -2179,24 +2180,24 @@ export default function VariationDetail() {
       </Dialog>
 
       {/* ── Preview Modal ── */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl w-full max-h-[90vh] overflow-y-auto p-0" data-testid="dialog-variation-preview">
-          <DialogHeader className="px-6 pt-5 pb-0">
-            <DialogTitle>Variation Preview</DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6">
-            <VariationPreviewContent
+      {variation && (
+        <DocumentPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          document={
+            <VariationDocument
               variation={variation as any}
               items={existingCostLines}
               bills={existingVariationBills}
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
               brandColor={companySettings?.brandColor || "#6d28d9"}
-              mode="preview"
             />
-          </div>
-        </DialogContent>
-      </Dialog>
+          }
+          filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
+          onSend={() => { setPreviewOpen(false); setSendModalOpen(true); }}
+        />
+      )}
 
       {/* ── Send to Client Dialog ── */}
       {variation && (

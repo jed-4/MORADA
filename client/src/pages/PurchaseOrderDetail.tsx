@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { pdf } from "@react-pdf/renderer";
 import { PurchaseOrderDocument } from "@/components/purchase-orders/pdf/PurchaseOrderDocument";
 import { SendPurchaseOrderDialog } from "@/components/purchase-orders/SendPurchaseOrderDialog";
+import { DocumentPreviewModal } from "@/components/ui/DocumentPreviewModal";
 import { format, formatDistanceToNow } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +32,7 @@ import {
   Plus,
   Save,
   Send,
+  Eye,
   FileText,
   Trash2,
   GripVertical,
@@ -701,6 +703,7 @@ export default function PurchaseOrderDetail() {
   const [isChangeSupplierOpen, setIsChangeSupplierOpen] = useState(false);
   const [isImportTimesheetsOpen, setIsImportTimesheetsOpen] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [poPreviewOpen, setPoPreviewOpen] = useState(false);
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
   const [unmappedSupplierId, setUnmappedSupplierId] = useState<string | null>(
     null,
@@ -1531,6 +1534,13 @@ export default function PurchaseOrderDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setPoPreviewOpen(true)}
+                  data-testid="action-preview-po"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview PDF
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleDownloadPdf}
                   disabled={pdfGenerating}
@@ -2409,6 +2419,26 @@ export default function PurchaseOrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Preview PO PDF */}
+      {purchaseOrder && (
+        <DocumentPreviewModal
+          open={poPreviewOpen}
+          onOpenChange={setPoPreviewOpen}
+          document={
+            <PurchaseOrderDocument
+              purchaseOrder={purchaseOrder as any}
+              items={items as any}
+              company={companyInfo}
+              supplier={supplier}
+              project={project as any}
+              brandColor={companySettings?.brandColor || "#6d28d9"}
+            />
+          }
+          filename={`PO-${(purchaseOrder as any).poNumber || "export"}.pdf`}
+          onSend={() => { setPoPreviewOpen(false); setIsSendDialogOpen(true); }}
+        />
+      )}
 
       {/* Send PO */}
       <SendPurchaseOrderDialog
