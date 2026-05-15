@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { FileText, Download, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileText, Download, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -43,15 +43,18 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
   // react-pdf render state
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageWidth, setPageWidth] = useState<number>(600);
+  const [containerWidth, setContainerWidth] = useState<number>(600);
+  const [zoom, setZoom] = useState<number>(1.0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const pageWidth = Math.floor(containerWidth * zoom);
 
   // Measure container width for page scaling
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width && width > 0) setPageWidth(Math.floor(width) - 32);
+      if (width && width > 0) setContainerWidth(Math.floor(width) - 32);
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
@@ -199,27 +202,56 @@ export function DocumentPreview({ src, mimeType, filename, className, height = 3
           </Document>
         </div>
 
-        {numPages > 1 && (
-          <div className="flex items-center justify-center gap-2 py-2 border-t shrink-0 bg-background">
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t shrink-0 bg-background">
+          <div className="flex items-center gap-1">
+            {numPages > 1 && (
+              <>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center justify-center h-6 w-6 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-xs text-muted-foreground px-1 tabular-nums">
+                  {currentPage} / {numPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+                  disabled={currentPage === numPages}
+                  className="flex items-center justify-center h-6 w-6 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center justify-center h-7 w-7 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+              disabled={zoom <= 0.5}
+              className="flex items-center justify-center h-6 w-6 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+              title="Zoom out"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ZoomOut className="h-3.5 w-3.5" />
             </button>
-            <span className="text-xs text-muted-foreground">
-              Page {currentPage} of {numPages}
-            </span>
             <button
-              onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-              disabled={currentPage === numPages}
-              className="flex items-center justify-center h-7 w-7 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+              onClick={() => setZoom(1.0)}
+              className="text-xs text-muted-foreground tabular-nums hover:text-foreground px-1 min-w-[3rem] text-center"
+              title="Reset to fit width"
             >
-              <ChevronRight className="h-4 w-4" />
+              {zoom === 1.0 ? <Maximize2 className="h-3 w-3 mx-auto" /> : `${Math.round(zoom * 100)}%`}
+            </button>
+            <button
+              onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.25).toFixed(2)))}
+              disabled={zoom >= 3.0}
+              className="flex items-center justify-center h-6 w-6 rounded border border-border disabled:opacity-40 hover:bg-muted/50"
+              title="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
             </button>
           </div>
-        )}
+        </div>
       </div>
     );
   }

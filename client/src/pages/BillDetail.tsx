@@ -20,7 +20,6 @@ import {
   Loader2,
   ChevronDown,
   Settings2,
-  Eye,
   Maximize2,
   RefreshCw,
   ChevronsUpDown,
@@ -1696,7 +1695,7 @@ export default function BillDetail() {
                         >
                           <FormControl>
                             <SelectTrigger className="h-9 border border-border bg-muted/30 text-sm font-normal overflow-hidden" data-testid="select-project">
-                              <span className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                              <span className="flex items-center gap-1.5 min-w-0 w-0 flex-1 overflow-hidden">
                                 {selectedProject?.color && (
                                   <span
                                     className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -2034,15 +2033,6 @@ export default function BillDetail() {
                                   <span className="truncate">{decodeURIComponent(fileName)}</span>
                                 </button>
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                  {canPreview && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => { setSheetPreviewUrl(url); setSheetPreviewFilename(fileName); }}
-                                    >
-                                      <Eye className="h-3 w-3" />
-                                    </Button>
-                                  )}
                                   <Button
                                     variant="ghost"
                                     size="icon"
