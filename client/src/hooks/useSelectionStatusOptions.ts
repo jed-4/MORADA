@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FieldCategoryWithOptions } from "@shared/schema";
-import { FileEdit, Eye, CheckCircle2, LockKeyhole, LucideIcon } from "lucide-react";
+import { FileEdit, Eye, CheckCircle2, LockKeyhole, ShoppingCart, PackageCheck, LucideIcon } from "lucide-react";
 
 export interface SelectionStatusOption {
   key: string;
@@ -10,6 +10,7 @@ export interface SelectionStatusOption {
   description: string;
   bgClass: string;
   textClass: string;
+  isTerminal?: boolean;
 }
 
 const defaultStatuses: Record<string, SelectionStatusOption> = {
@@ -48,7 +49,27 @@ const defaultStatuses: Record<string, SelectionStatusOption> = {
     description: "Selection is complete and finalized",
     bgClass: "bg-purple-100 dark:bg-purple-900/30",
     textClass: "text-purple-600 dark:text-purple-400"
-  }
+  },
+  ordered: {
+    key: "ordered",
+    name: "Ordered",
+    color: "#4a90d4",
+    icon: ShoppingCart,
+    description: "Selection has been converted to a Purchase Order",
+    bgClass: "bg-[#4a90d4]/10 dark:bg-[#4a90d4]/20",
+    textClass: "text-[#4a90d4]",
+    isTerminal: true,
+  },
+  received: {
+    key: "received",
+    name: "Received",
+    color: "#68b088",
+    icon: PackageCheck,
+    description: "Ordered item has been received on site",
+    bgClass: "bg-[#68b088]/10 dark:bg-[#68b088]/20",
+    textClass: "text-[#68b088]",
+    isTerminal: true,
+  },
 };
 
 export function useSelectionStatusOptions() {

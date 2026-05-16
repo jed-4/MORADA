@@ -10929,6 +10929,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Convert approved selections into a single Purchase Order
+  app.post("/api/selections/create-po", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { selectionIds, projectId, supplierId, supplierName } = req.body;
+      if (!Array.isArray(selectionIds) || selectionIds.length === 0 || !projectId) {
+        return res.status(400).json({ error: "selectionIds (array) and projectId are required" });
+      }
+
+      // Fetch each selection and find its chosen option
+      const eligible: Array<{ selection: any; chosenOption: any }> = [];
+      const skipped: Array<{ id: string; reason: string }> = [];
+
+      for (const selId of selectionIds) {
+        const sel = await storage.getSelectionWithOptions(selId);
+        if (!sel) { skipped.push({ id: selId, reason: "Not found" }); continue; }
+        const chosenOption = sel.options?.find((o: any) => o.isSelectedByClient);
+        if (!chosenOption) { skipped.push({ id: selId, reason: "No client selection made" }); continue; }
+        eligible.push({ selection: sel, chosenOption });
+      }
+
+      if (eligible.length === 0) {
+        return res.status(400).json({ error: "No eligible selections — all must have a chosen option.", skipped });
+      }
+
+      // Generate PO number
+      const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
+
+      // Calculate totals (unitCost = pre-markup supplier cost in cents)
+      let subtotal = 0;
+      let gstTotal = 0;
+      for (const { chosenOption } of eligible) {
+        const unitCost = chosenOption.unitCost ?? 0;
+        const qty = chosenOption.quantity ?? 1;
+        const tax = chosenOption.unitTax ?? 0;
+        subtotal += unitCost * qty;
+        gstTotal += tax * qty;
+      }
+      const total = subtotal + gstTotal;
+
+      const itemCount = eligible.length;
+      const poData = {
+        companyId: req.user.companyId,
+        projectId,
+        poNumber,
+        poType: "main" as const,
+        supplierId: supplierId ?? null,
+        supplierName: supplierName ?? null,
+        title: `Selections Order — ${itemCount} item${itemCount !== 1 ? "s" : ""}`,
+        status: "draft" as const,
+        subtotal,
+        gstAmount: gstTotal,
+        total,
+        createdById: req.user.id,
+      };
+
+      const poValidation = insertPurchaseOrderSchema.safeParse(poData);
+      if (!poValidation.success) {
+        return res.status(400).json({ error: "PO validation failed", details: fromZodError(poValidation.error).toString() });
+      }
+
+      const po = await storage.createPurchaseOrder(poValidation.data);
+
+      // Create one line item per selection and update the selection status
+      const updatedSelections: any[] = [];
+      for (let i = 0; i < eligible.length; i++) {
+        const { selection, chosenOption } = eligible[i];
+        const unitCost = chosenOption.unitCost ?? 0;
+        const qty = chosenOption.quantity ?? 1;
+        const tax = (chosenOption.unitTax ?? 0) * qty;
+
+        const itemData = {
+          purchaseOrderId: po.id,
+          description: `${selection.name} — ${chosenOption.name}`,
+          quantity: String(qty),
+          unit: chosenOption.unitType ?? "ea",
+          unitPrice: unitCost,
+          total: unitCost * qty,
+          isGstFree: false,
+          gstAmount: tax,
+          selectionOptionId: chosenOption.id,
+          displayOrder: i,
+        };
+
+        const itemValidation = insertPurchaseOrderItemSchema.safeParse(itemData);
+        if (itemValidation.success) {
+          await storage.createPurchaseOrderItem(itemValidation.data);
+        } else {
+          console.warn("Skipping invalid PO item:", fromZodError(itemValidation.error).toString());
+        }
+
+        const updated = await storage.updateSelection(selection.id, {
+          status: "ordered",
+          purchaseOrderId: po.id,
+          orderedAt: new Date(),
+        } as any);
+        if (updated) updatedSelections.push(updated);
+      }
+
+      res.status(201).json({ purchaseOrder: po, updatedSelections, skipped });
+    } catch (error) {
+      console.error("Error creating PO from selections:", error);
+      res.status(500).json({ error: "Failed to create purchase order from selections" });
+    }
+  });
+
+  // Mark an ordered selection as received
+  app.patch("/api/selections/:id/mark-received", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+
+      const selection = await storage.getSelectionWithOptions(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      if (selection.status !== "ordered") {
+        return res.status(400).json({ error: "Selection must be in 'ordered' status to mark as received" });
+      }
+
+      const updated = await storage.updateSelection(req.params.id, {
+        status: "received",
+        receivedAt: new Date(),
+      } as any);
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error marking selection as received:", error);
+      res.status(500).json({ error: "Failed to mark selection as received" });
+    }
+  });
+
   app.patch("/api/selections/:id", async (req, res) => {
     try {
       const validationResult = insertSelectionSchema.partial().safeParse(req.body);

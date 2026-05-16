@@ -1400,6 +1400,9 @@ export const selections = pgTable("selections", {
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
+  purchaseOrderId: varchar("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }), // Set when converted to a PO
+  orderedAt: timestamp("ordered_at"), // Set when status becomes "ordered"
+  receivedAt: timestamp("received_at"), // Set when status becomes "received"
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5081,6 +5084,9 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   
   // Source tracking (if generated from subcontractor timesheet)
   sourceTimesheetId: varchar("source_timesheet_id"),
+
+  // Source tracking (if generated from a selection conversion)
+  selectionOptionId: varchar("selection_option_id").references(() => selectionOptions.id, { onDelete: "set null" }),
   
   // Order for drag-and-drop reordering
   displayOrder: integer("display_order").notNull().default(0),

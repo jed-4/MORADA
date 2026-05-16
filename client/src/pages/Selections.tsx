@@ -14,6 +14,7 @@ import {
   type SelectionWithOptions,
   type SelectionOption,
   type OptionAttachment,
+  type Contact,
 } from "@shared/schema";
 import {
   DropdownMenu,
@@ -22,6 +23,25 @@ import {
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Package,
   Plus,
@@ -38,6 +58,9 @@ import {
   MessageSquare,
   Paperclip,
   X,
+  ShoppingCart,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -45,7 +68,7 @@ import { format, differenceInCalendarDays } from "date-fns";
 // Helpers
 // ───────────────────────────────────────────────────────────────────────
 
-type DerivedStatus = "open" | "submitted" | "approved" | "overdue";
+type DerivedStatus = "open" | "submitted" | "approved" | "overdue" | "ordered" | "received";
 
 const CATEGORY_DOT_COLOURS: Record<string, string> = {
   Tiles: "#7C5CBF",
@@ -64,6 +87,8 @@ function getCategoryColour(category?: string | null): string {
 }
 
 function getDerivedStatus(sel: SelectionWithOptions): DerivedStatus {
+  if ((sel as any).status === "received") return "received";
+  if ((sel as any).status === "ordered") return "ordered";
   if (sel.status === "approved" || sel.status === "completed") return "approved";
   const isPastDue = sel.deadline && new Date(sel.deadline).getTime() < Date.now();
   if (isPastDue) return "overdue";
@@ -109,6 +134,8 @@ const STATUS_CHIP_CLASS: Record<DerivedStatus, string> = {
   submitted: "bg-[hsl(var(--amber-bg))] text-[hsl(var(--amber))] border-[hsl(var(--amber))]/30",
   approved: "bg-[hsl(var(--sage-bg))] text-[hsl(var(--sage))] border-[hsl(var(--sage))]/30",
   overdue: "bg-[hsl(var(--coral-bg))] text-[hsl(var(--coral))] border-[hsl(var(--coral))]/30",
+  ordered: "bg-[#4a90d4]/10 text-[#4a90d4] border-[#4a90d4]/30",
+  received: "bg-[#68b088]/10 text-[#68b088] border-[#68b088]/30",
 };
 
 const STATUS_LABEL: Record<DerivedStatus, string> = {
@@ -116,6 +143,8 @@ const STATUS_LABEL: Record<DerivedStatus, string> = {
   submitted: "Submitted",
   approved: "Approved",
   overdue: "Overdue",
+  ordered: "Ordered",
+  received: "Received",
 };
 
 // ───────────────────────────────────────────────────────────────────────
@@ -189,6 +218,9 @@ interface SelectionRowProps {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   isPending: boolean;
+  isChecked: boolean;
+  onCheck: (id: string, checked: boolean) => void;
+  projectId: string;
 }
 
 function SelectionRow({
@@ -199,6 +231,9 @@ function SelectionRow({
   onEdit,
   onDelete,
   isPending,
+  isChecked,
+  onCheck,
+  projectId,
 }: SelectionRowProps) {
   const derived = getDerivedStatus(selection);
   const selectedOption = getSelectedOption(selection);
@@ -208,30 +243,62 @@ function SelectionRow({
   const varianceMeta = formatVarianceCents(variance);
   const deadlineMeta = getDeadlineMeta(selection.deadline, derived);
 
+  const isOrderedOrReceived = derived === "ordered" || derived === "received";
+  const isCheckable = derived === "approved" && !!selection.clientSelection;
+
   // Use first attachment of the selected option for the row thumbnail
   const rowThumb = selectedOption?.attachments?.[0] ?? selection.options?.[0]?.attachments?.[0];
+
+  const poNumber = (selection as any).purchaseOrderId ? (selection as any).poNumber : null;
+  const purchaseOrderId = (selection as any).purchaseOrderId ?? null;
 
   return (
     <>
       <div
-        className={`grid grid-cols-[24px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
-          expanded ? "bg-[#F5F3F0] dark:bg-[#2A2720]" : "hover:bg-muted/30"
+        className={`grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
+          isChecked ? "bg-primary/5" : expanded ? "bg-[#F5F3F0] dark:bg-[#2A2720]" : "hover:bg-muted/30"
         }`}
-        onClick={onToggleExpand}
+        onClick={isOrderedOrReceived ? undefined : onToggleExpand}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* Expand toggle */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleExpand();
-          }}
-          className={`flex items-center justify-center rounded ${expanded ? "text-primary" : "text-muted-foreground"} hover-elevate w-5 h-5`}
-          data-testid={`button-expand-${selection.id}`}
-        >
-          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        </button>
+        {/* First column: checkbox for checkable rows, expand toggle otherwise */}
+        {isCheckable ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onCheck(selection.id, !isChecked); }}
+            className={`flex items-center justify-center rounded w-5 h-5 border-2 transition-colors flex-shrink-0 ${
+              isChecked ? "bg-primary border-primary" : "bg-transparent border-border hover:border-primary"
+            }`}
+            data-testid={`checkbox-${selection.id}`}
+            aria-label={isChecked ? "Deselect" : "Select for PO"}
+          >
+            {isChecked && <Check className="w-3 h-3 text-white" />}
+          </button>
+        ) : isCheckable === false && !isOrderedOrReceived ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled
+                className="flex items-center justify-center rounded w-5 h-5 border-2 border-dashed border-border/40 bg-transparent opacity-40 flex-shrink-0 cursor-not-allowed"
+                data-testid={`checkbox-disabled-${selection.id}`}
+              />
+            </TooltipTrigger>
+            <TooltipContent>Client hasn't made a selection yet</TooltipContent>
+          </Tooltip>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            className={`flex items-center justify-center rounded ${expanded ? "text-primary" : "text-muted-foreground"} hover-elevate w-5 h-5`}
+            data-testid={`button-expand-${selection.id}`}
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+        )}
 
         {/* Thumbnail */}
         <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
@@ -265,7 +332,7 @@ function SelectionRow({
         <div className="text-[11px] text-muted-foreground truncate">{selection.room || ""}</div>
 
         {/* Status */}
-        <div>
+        <div className="min-w-0">
           <span
             className={`inline-block rounded px-2 py-1 text-[10px] font-medium border ${STATUS_CHIP_CLASS[derived]}`}
             data-testid={`badge-status-${selection.id}`}
@@ -300,8 +367,22 @@ function SelectionRow({
           {varianceMeta.text}
         </div>
 
-        {/* Deadline */}
-        <div className={`text-[11px] truncate ${deadlineMeta.className}`}>{deadlineMeta.text}</div>
+        {/* Deadline / PO chip for ordered+received */}
+        <div className="min-w-0">
+          {isOrderedOrReceived && purchaseOrderId ? (
+            <a
+              href={`/projects/${projectId}/purchase-orders/${purchaseOrderId}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[10px] font-medium text-[#4a90d4] hover:underline truncate"
+              data-testid={`chip-po-${selection.id}`}
+            >
+              <ExternalLink className="w-3 h-3 shrink-0" />
+              <span className="truncate">View PO</span>
+            </a>
+          ) : (
+            <span className={`text-[11px] truncate ${deadlineMeta.className}`}>{deadlineMeta.text}</span>
+          )}
+        </div>
 
         {/* Options count badge (only when collapsed) */}
         <div className="flex justify-center">
@@ -519,6 +600,9 @@ export default function Selections() {
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [statusTab, setStatusTab] = useState<"all" | DerivedStatus>("all");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [showCreatePOModal, setShowCreatePOModal] = useState(false);
+  const [createPOSupplierId, setCreatePOSupplierId] = useState<string>("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -567,6 +651,17 @@ export default function Selections() {
   const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
   });
+
+  // Fetch contacts for supplier picker in Create PO modal
+  const { data: contacts = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts"],
+    queryFn: () => apiRequest(`/api/contacts?projectId=${projectId}`, "GET"),
+    enabled: !!projectId,
+  });
+  const supplierContacts = useMemo(
+    () => contacts.filter((c) => c.contactType === "supplier" || c.contactType === "subcontractor"),
+    [contacts],
+  );
 
   // Mutations
   const createSelectionMutation = useMutation({
@@ -627,7 +722,7 @@ export default function Selections() {
 
   // Computed stats (across the unfiltered set so they're stable)
   const stats = useMemo(() => {
-    let open = 0, submitted = 0, approved = 0, overdue = 0;
+    let open = 0, submitted = 0, approved = 0, overdue = 0, ordered = 0;
     let totalAllowance = 0, totalActual = 0, pendingAmount = 0;
     let openCount = 0;
     selectionsWithOptions.forEach((sel) => {
@@ -636,6 +731,7 @@ export default function Selections() {
       if (d === "submitted") submitted++;
       if (d === "approved") approved++;
       if (d === "overdue") overdue++;
+      if (d === "ordered" || d === "received") ordered++;
       if (sel.allowance) totalAllowance += sel.allowance;
       const a = getActualCents(sel);
       if (a !== null) totalActual += a;
@@ -647,6 +743,7 @@ export default function Selections() {
       submitted,
       approved,
       overdue,
+      ordered,
       totalAllowance,
       totalActual,
       variance: totalActual - totalAllowance,
@@ -659,7 +756,12 @@ export default function Selections() {
   const filtered = useMemo(() => {
     return selectionsWithOptions.filter((sel) => {
       const d = getDerivedStatus(sel);
-      if (statusTab !== "all" && statusTab !== d) return false;
+      // "ordered" tab shows both ordered + received
+      if (statusTab === "ordered") {
+        if (d !== "ordered" && d !== "received") return false;
+      } else if (statusTab !== "all" && statusTab !== d) {
+        return false;
+      }
       if (categoryFilter && sel.category !== categoryFilter) return false;
       if (searchTerm) {
         const t = searchTerm.toLowerCase();
@@ -715,6 +817,39 @@ export default function Selections() {
   const handleEdit = (id: string) => setLocation(`/selections/${id}`);
   const handleDelete = (id: string) => deleteSelectionMutation.mutate(id);
 
+  const handleCheck = (id: string, checked: boolean) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  // Create PO mutation
+  const createPOMutation = useMutation({
+    mutationFn: async ({ selectionIds, supplierId }: { selectionIds: string[]; supplierId: string }) => {
+      return await apiRequest("/api/selections/create-po", "POST", {
+        projectId,
+        selectionIds,
+        supplierId: supplierId || null,
+      });
+    },
+    onSuccess: (result: any) => {
+      toast({ title: `PO ${result.poNumber} created`, description: `${result.count} item(s) added to purchase order.` });
+      setCheckedIds(new Set());
+      setShowCreatePOModal(false);
+      setCreatePOSupplierId("");
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      if (result.purchaseOrderId) {
+        setLocation(`/projects/${projectId}/purchase-orders/${result.purchaseOrderId}`);
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Error creating PO", description: err?.message ?? "Something went wrong.", variant: "destructive" });
+    },
+  });
+
   if (!currentProject) {
     return (
       <div className="p-6">
@@ -733,6 +868,7 @@ export default function Selections() {
     { key: "submitted", label: "Submitted", count: stats.submitted },
     { key: "approved", label: "Approved", count: stats.approved },
     { key: "overdue", label: "Overdue", count: stats.overdue },
+    { key: "ordered", label: "Ordered", count: stats.ordered },
   ];
 
   const varianceMeta = formatVarianceCents(stats.variance);
@@ -783,6 +919,14 @@ export default function Selections() {
               active={statusTab === "overdue"}
               onClick={() => setStatusTab("overdue")}
               testId="stat-overdue"
+            />
+            <StatCard
+              value={stats.ordered}
+              label="Ordered"
+              variant="primary"
+              active={statusTab === "ordered"}
+              onClick={() => setStatusTab("ordered")}
+              testId="stat-ordered"
             />
           </div>
 
@@ -983,7 +1127,7 @@ export default function Selections() {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {/* Table header */}
-        <div className="grid grid-cols-[24px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
+        <div className="grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
           <div></div>
           <div></div>
           <div>Selection</div>
@@ -1031,11 +1175,41 @@ export default function Selections() {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 isPending={selectOptionMutation.isPending}
+                isChecked={checkedIds.has(sel.id)}
+                onCheck={handleCheck}
+                projectId={projectId!}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Bulk action toolbar */}
+      {checkedIds.size > 0 && (
+        <div className="flex-none border-t border-border bg-primary/5 flex items-center justify-between px-4 py-2 gap-3 flex-shrink-0">
+          <span className="text-sm font-medium text-foreground">
+            {checkedIds.size} selection{checkedIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCheckedIds(new Set())}
+            >
+              <X className="w-3.5 h-3.5 mr-1" />
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowCreatePOModal(true)}
+              data-testid="button-create-po"
+            >
+              <ShoppingCart className="w-3.5 h-3.5 mr-1" />
+              Convert to PO
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Sticky footer */}
       <div className="flex-none h-11 bg-muted/30 border-t border-border flex items-center justify-between px-4 text-xs text-muted-foreground flex-shrink-0">
@@ -1051,6 +1225,72 @@ export default function Selections() {
           {" open selections"}
         </span>
       </div>
+
+      {/* Create PO modal */}
+      <Dialog open={showCreatePOModal} onOpenChange={(open) => { if (!open) { setShowCreatePOModal(false); setCreatePOSupplierId(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-4 h-4" />
+              Convert Selections to Purchase Order
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              {checkedIds.size} approved selection{checkedIds.size !== 1 ? "s" : ""} will be converted into a new Purchase Order.
+              Each selection's chosen option becomes a line item.
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Supplier <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <Select value={createPOSupplierId} onValueChange={setCreatePOSupplierId}>
+                <SelectTrigger data-testid="select-po-supplier">
+                  <SelectValue placeholder="No supplier assigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No supplier</SelectItem>
+                  {supplierContacts.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-2 space-y-1 max-h-40 overflow-y-auto">
+              {[...checkedIds].map((id) => {
+                const sel = selectionsWithOptions.find((s) => s.id === id);
+                const opt = sel?.options?.find((o) => o.isSelectedByClient);
+                return sel ? (
+                  <div key={id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="font-medium truncate">{sel.name}</span>
+                    <span className="text-muted-foreground text-xs truncate">{opt?.name ?? "—"}</span>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setShowCreatePOModal(false); setCreatePOSupplierId(""); }}
+              disabled={createPOMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createPOMutation.mutate({ selectionIds: [...checkedIds], supplierId: createPOSupplierId === "none" ? "" : createPOSupplierId })}
+              disabled={createPOMutation.isPending}
+              data-testid="button-confirm-create-po"
+            >
+              {createPOMutation.isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Creating…</>
+              ) : (
+                <><ShoppingCart className="w-3.5 h-3.5 mr-1.5" />Create PO</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

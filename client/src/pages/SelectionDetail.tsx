@@ -84,6 +84,8 @@ import {
   X,
   MessageSquare,
   Send,
+  ShoppingCart,
+  PackageCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -243,6 +245,20 @@ export default function SelectionDetail() {
         description: "Failed to delete option. Please try again.",
         variant: "destructive",
       });
+    },
+  });
+
+  const markReceivedMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/selections/${id}/mark-received`, "PATCH");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
+      toast({ title: "Marked as received", description: "This selection has been marked as received." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message ?? "Failed to mark as received.", variant: "destructive" });
     },
   });
 
@@ -1208,6 +1224,71 @@ export default function SelectionDetail() {
               </div>
             )}
           </div>
+
+          {/* Procurement section — only for ordered/received */}
+          {((selection as any).status === "ordered" || (selection as any).status === "received") && (
+            <div className="surface-panel p-3" data-testid="selection-procurement">
+              <div className="flex items-center gap-2 mb-3">
+                <ShoppingCart className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-data text-muted-foreground uppercase tracking-wide">Procurement</span>
+              </div>
+              <div className="flex items-center gap-6 flex-wrap">
+                {/* PO link */}
+                {(selection as any).purchaseOrderId && (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Purchase Order</div>
+                    <a
+                      href={`/projects/${selection.projectId}/purchase-orders/${(selection as any).purchaseOrderId}`}
+                      className="inline-flex items-center gap-1 text-sm font-medium text-[#4a90d4] hover:underline"
+                      data-testid="link-procurement-po"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View PO
+                    </a>
+                  </div>
+                )}
+
+                {/* Ordered date */}
+                {(selection as any).orderedAt && (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Ordered On</div>
+                    <div className="text-sm font-medium">
+                      {format(new Date((selection as any).orderedAt), "dd MMM yyyy")}
+                    </div>
+                  </div>
+                )}
+
+                {/* Received date or Mark as Received button */}
+                {(selection as any).status === "received" && (selection as any).receivedAt ? (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Received On</div>
+                    <div className="text-sm font-medium flex items-center gap-1 text-[#68b088]">
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      {format(new Date((selection as any).receivedAt), "dd MMM yyyy")}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Delivery</div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => markReceivedMutation.mutate()}
+                      disabled={markReceivedMutation.isPending}
+                      data-testid="button-mark-received"
+                    >
+                      {markReceivedMutation.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <PackageCheck className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Mark as Received
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Comments */}
           <div className="surface-panel p-3" data-testid="selection-comments">
