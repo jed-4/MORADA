@@ -103,7 +103,7 @@ function TimelineEvent({
   
   const duration = endHour !== null ? endHour - startHour : 1;
   const top = (startHour - 6) * HOUR_HEIGHT; // Offset by start hour (6am)
-  const height = Math.max(duration * HOUR_HEIGHT, 18);
+  const height = Math.max(HOUR_HEIGHT * 0.35, duration * HOUR_HEIGHT - 2);
   
   const now = new Date();
   let isPast = false;
@@ -627,7 +627,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
           </div>
         ) : (
           /* Timeline view - events positioned by time */
-          <div className="grid grid-cols-[40px_repeat(7,1fr)] relative" style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}>
+          <div className="grid grid-cols-[40px_repeat(7,1fr)] relative" style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}>
             {/* Time labels column */}
             <div className="relative border-r border-border/30">
               {HOURS.map((hour) => (
@@ -653,7 +653,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                 <div 
                   key={day.toISOString()} 
                   className={`relative border-r last:border-r-0 ${isCurrentDay ? 'bg-primary/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
-                  style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}
+                  style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}
                 >
                   {/* Hour gridlines */}
                   {HOURS.map((hour) => (

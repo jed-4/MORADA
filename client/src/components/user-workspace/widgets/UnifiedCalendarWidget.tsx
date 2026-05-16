@@ -195,7 +195,7 @@ function DayTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns 
 
   const duration = endHour !== null ? endHour - startHour : 1;
   const top = startHour * DAY_HOUR_HEIGHT;
-  const height = Math.max(duration * DAY_HOUR_HEIGHT, 20);
+  const height = Math.max(DAY_HOUR_HEIGHT * 0.35, duration * DAY_HOUR_HEIGHT - 2);
   const isPast = isEventPast(event);
   const baseColor = getEventColor(event, colorMode);
   const notionColors = generateNotionColors(baseColor);
@@ -281,7 +281,7 @@ function WeekTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns
 
   const duration = endHour !== null ? endHour - startHour : 1;
   const top = (startHour - 6) * WEEK_HOUR_HEIGHT;
-  const height = Math.max(duration * WEEK_HOUR_HEIGHT, 18);
+  const height = Math.max(WEEK_HOUR_HEIGHT * 0.35, duration * WEEK_HOUR_HEIGHT - 2);
   const isPast = isEventPast(event);
   const baseColor = getEventColor(event, colorMode);
   const notionColors = generateNotionColors(baseColor);
@@ -1050,7 +1050,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           {isTimeline ? (
-            <div className={`grid ${gridCols} relative`} style={{ minHeight: `${WEEK_HOURS.length * WEEK_HOUR_HEIGHT}px` }}>
+            <div className={`grid ${gridCols} relative`} style={{ height: `${WEEK_HOURS.length * WEEK_HOUR_HEIGHT}px` }}>
               <div className="relative border-r border-border/30">
                 {WEEK_HOURS.map((hour) => (
                   <div
@@ -1074,7 +1074,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                   <div
                     key={day.toISOString()}
                     className={`relative border-r last:border-r-0 ${isCurrentDay ? 'bg-primary/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
-                    style={{ minHeight: `${WEEK_HOURS.length * WEEK_HOUR_HEIGHT}px` }}
+                    style={{ height: `${WEEK_HOURS.length * WEEK_HOUR_HEIGHT}px` }}
                   >
                     {WEEK_HOURS.map((hour) => (
                       <div

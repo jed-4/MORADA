@@ -80,7 +80,7 @@ function TimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; col
   
   const duration = endHour !== null ? endHour - startHour : 1;
   const top = startHour * HOUR_HEIGHT;
-  const height = Math.max(duration * HOUR_HEIGHT, 20);
+  const height = Math.max(HOUR_HEIGHT * 0.35, duration * HOUR_HEIGHT - 2);
   
   const now = new Date();
   let isPast = false;
