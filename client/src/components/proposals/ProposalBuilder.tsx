@@ -360,6 +360,8 @@ interface ProposalBuilderProps {
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
+  brandColor?: string;
+  documentStyle?: 'style1' | 'style2';
   /**
    * Optional DOM element to portal the proposal toolbar into (e.g. the page
    * header next to the Save button). When omitted, the toolbar renders
@@ -599,6 +601,8 @@ export function ProposalBuilder({
   companyLogo,
   companyName,
   primaryColor,
+  brandColor,
+  documentStyle,
   toolbarSlot,
   onEstimateRevisionPick,
 }: ProposalBuilderProps) {
@@ -800,6 +804,8 @@ export function ProposalBuilder({
             companyName={companyName}
             companyPhone={companyPhone}
             primaryColor={primaryColor}
+            brandColor={brandColor}
+            documentStyle={documentStyle}
             estimatesData={estimatesDataMap}
             milestones={milestones}
             acceptance={latestAcceptance}
@@ -840,7 +846,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, showPreview, milestones, latestAcceptance, proposalItems]);
+  }, [proposal, sections, project, client, companyLogo, companyName, companyPhone, primaryColor, brandColor, documentStyle, showPreview, milestones, latestAcceptance, proposalItems]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -866,6 +872,8 @@ export function ProposalBuilder({
       companyName={companyName}
       companyPhone={companyPhone}
       primaryColor={primaryColor}
+      brandColor={brandColor}
+      documentStyle={documentStyle}
       estimatesData={pdfEstimatesData}
       milestones={milestones}
       acceptance={latestAcceptance}

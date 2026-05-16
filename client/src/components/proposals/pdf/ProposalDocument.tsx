@@ -33,6 +33,8 @@ interface ProposalDocumentProps {
   companyName?: string;
   companyPhone?: string;
   primaryColor?: string;
+  brandColor?: string;
+  documentStyle?: 'style1' | 'style2';
   estimatesData?: Record<string, {
     estimate: Estimate;
     groups: EstimateGroup[];
@@ -52,13 +54,16 @@ export function ProposalDocument({
   companyName,
   companyPhone,
   primaryColor = '#3B82F6',
+  brandColor,
+  documentStyle = 'style1',
   estimatesData = {},
   milestones = [],
   acceptance = null,
   proposalItems = [],
 }: ProposalDocumentProps) {
-  // Pull layout-level rendering preferences off the proposal so the live PDF
-  // preview reflects pricing mode / GST / logo toggles set in the Layout tab.
+  // Resolved brand color: explicit brandColor overrides primaryColor for new-style rendering
+  const resolvedColor = brandColor ?? primaryColor;
+
   const layout = (proposal.layoutSettings as {
     pricingMode?: 'lump_sum' | 'itemised' | 'section_totals';
     showGst?: boolean;
@@ -68,14 +73,7 @@ export function ProposalDocument({
   const showGst = layout?.showGst ?? true;
   const showLogo = layout?.showLogo ?? true;
   const effectiveLogo = showLogo ? companyLogo : undefined;
-  // Compute the estimate total (inc GST, in cents) from any linked estimate
-  // section so {{estimate.total_inc_gst}} renders against real data.
-  // EstimateItem.priceIncTax is stored in dollars (doublePrecision in the
-  // schema), so we convert to integer cents for the formatter.
-  // Resolve the effective estimate id for an estimate section: prefer the
-  // explicit per-section pick, then fall back to the proposal-level
-  // estimateId so revision changes from the Revisions panel still surface
-  // in the live preview.
+
   const resolveEstimateId = (sectionContent: Record<string, unknown> | null | undefined): string | undefined => {
     const explicit = sectionContent && typeof sectionContent.estimateId === 'string' ? sectionContent.estimateId : undefined;
     return explicit || proposal.estimateId || undefined;
@@ -97,6 +95,7 @@ export function ProposalDocument({
       break;
     }
   }
+
   const placeholderCtx: PlaceholderContext = {
     proposal,
     project,
@@ -109,6 +108,15 @@ export function ProposalDocument({
   const sortedSections = [...enabledSections]
     .sort((a, b) => a.order - b.order)
     .map((s) => substituteSectionContent(s, placeholderCtx));
+
+  // Shared props forwarded to every inner-page section
+  const sharedSectionProps = {
+    companyName,
+    companyPhone,
+    logoUrl: effectiveLogo,
+    brandColor: resolvedColor,
+    documentStyle,
+  };
 
   return (
     <Document>
@@ -124,28 +132,30 @@ export function ProposalDocument({
                 client={client}
                 companyLogo={effectiveLogo}
                 companyName={companyName}
+                companyPhone={companyPhone}
                 primaryColor={primaryColor}
+                brandColor={resolvedColor}
+                documentStyle={documentStyle}
               />
             );
           case 'cover_letter':
-          case 'scope': {
+          case 'scope':
             return (
               <ScopeSection
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
-          }
           case 'summary':
             return (
               <SummarySection
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
                 showGst={showGst}
               />
@@ -157,7 +167,7 @@ export function ProposalDocument({
                 proposal={proposal}
                 section={section}
                 proposalItems={proposalItems}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -168,7 +178,7 @@ export function ProposalDocument({
                 proposal={proposal}
                 section={section}
                 milestones={milestones}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
                 showGst={showGst}
               />
@@ -179,7 +189,7 @@ export function ProposalDocument({
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -189,7 +199,7 @@ export function ProposalDocument({
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -200,7 +210,7 @@ export function ProposalDocument({
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -210,7 +220,7 @@ export function ProposalDocument({
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -221,7 +231,7 @@ export function ProposalDocument({
                 proposal={proposal}
                 section={section}
                 acceptance={acceptance}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );
@@ -237,7 +247,10 @@ export function ProposalDocument({
                 estimateData={estimateData}
                 companyLogo={effectiveLogo}
                 companyName={companyName}
+                companyPhone={companyPhone}
                 primaryColor={primaryColor}
+                brandColor={resolvedColor}
+                documentStyle={documentStyle}
                 proposalName={proposal.name}
                 proposalNumber={proposal.proposalNumber}
                 expiryDate={proposal.expiryDate ? new Date(proposal.expiryDate).toISOString() : undefined}
@@ -248,13 +261,12 @@ export function ProposalDocument({
           }
           case 'custom':
           default:
-            // Render custom (and unknown) sections via the scope renderer (rich text body)
             return (
               <ScopeSection
                 key={section.id}
                 proposal={proposal}
                 section={section}
-                companyName={companyName}
+                {...sharedSectionProps}
                 primaryColor={primaryColor}
               />
             );

@@ -1,15 +1,31 @@
 import { Page, Text, View } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { PageHeader, PageFooter, RichTextBlocks, sharedPageStyle, sharedSectionStyle } from './RichTextBlocks';
+import { RichTextBlocks, sharedSectionStyle } from './RichTextBlocks';
+import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
+import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface ScopeSectionProps {
   proposal: Proposal;
   section: ProposalSection;
   companyName?: string;
+  companyPhone?: string;
+  logoUrl?: string;
   primaryColor?: string;
+  brandColor?: string;
+  documentStyle?: 'style1' | 'style2';
 }
 
-export function ScopeSection({ proposal, section, companyName, primaryColor = '#3B82F6' }: ScopeSectionProps) {
+export function ScopeSection({
+  proposal,
+  section,
+  companyName,
+  companyPhone,
+  logoUrl,
+  primaryColor = '#3B82F6',
+  brandColor,
+  documentStyle = 'style1',
+}: ScopeSectionProps) {
+  const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
   const isCoverLetter = section.sectionType === 'cover_letter';
   const html =
@@ -19,23 +35,38 @@ export function ScopeSection({ proposal, section, companyName, primaryColor = '#
     '';
   const defaultTitle = isCoverLetter ? 'Cover Letter' : 'Scope of Work';
   const emptyMessage = isCoverLetter ? 'No cover letter content provided.' : 'No scope content provided.';
+
   return (
-    <Page size="A4" style={sharedPageStyle}>
-      <PageHeader
-        proposalName={proposal.name}
+    <Page
+      size="A4"
+      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+    >
+      <DocProposalInnerHeader
+        companyName={companyName}
+        companyPhone={companyPhone}
+        logoUrl={logoUrl}
         proposalNumber={proposal.proposalNumber}
-        expiryDate={proposal.expiryDate as Date | string | null}
-        primaryColor={primaryColor}
+        proposalName={proposal.name}
+        brandColor={resolvedColor}
+        docStyle={documentStyle}
       />
-      <View style={sharedSectionStyle.section}>
-        <Text style={[sharedSectionStyle.sectionTitle, { color: primaryColor }]}>{section.name || defaultTitle}</Text>
-        {html ? (
-          <RichTextBlocks html={html} />
-        ) : (
-          <Text style={sharedSectionStyle.muted}>{emptyMessage}</Text>
-        )}
+      <View style={{ paddingHorizontal: 40 }}>
+        <View style={sharedSectionStyle.section}>
+          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor }]}>
+            {section.name || defaultTitle}
+          </Text>
+          {html ? (
+            <RichTextBlocks html={html} />
+          ) : (
+            <Text style={sharedSectionStyle.muted}>{emptyMessage}</Text>
+          )}
+        </View>
       </View>
-      <PageFooter companyName={companyName} primaryColor={primaryColor} />
+      <DocFooter
+        companyName={companyName}
+        brandColor={resolvedColor}
+        docStyle={documentStyle}
+      />
     </Page>
   );
 }

@@ -100,6 +100,8 @@ export default function ProposalDetail() {
     companyName?: string;
     primaryColor?: string;
     proposalPrimaryColor?: string;
+    brandColor?: string;
+    documentStyle?: string;
     termsAndConditions?: string | null;
     termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor?: string[] }>;
   } | null>({
@@ -593,6 +595,8 @@ export default function ProposalDetail() {
                 companyLogo={companySettings?.logoUrl}
                 companyName={companySettings?.companyName}
                 primaryColor={(proposal?.layoutSettings as { primaryColor?: string } | null)?.primaryColor || companySettings?.proposalPrimaryColor || companySettings?.primaryColor || project?.color || undefined}
+                brandColor={companySettings?.brandColor || undefined}
+                documentStyle={(companySettings?.documentStyle as 'style1' | 'style2' | undefined) ?? 'style1'}
                 toolbarSlot={toolbarSlot}
                 onEstimateRevisionPick={handleEstimateRevisionPick}
               />

@@ -1,19 +1,33 @@
 import { Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Proposal, ProposalSection } from '@shared/schema';
-import { PageHeader, PageFooter, sharedPageStyle, sharedSectionStyle, htmlToBlocks } from './RichTextBlocks';
+import { sharedSectionStyle, htmlToBlocks } from './RichTextBlocks';
+import { DocProposalInnerHeader } from '@/components/pdf/shared/DocProposalInnerHeader';
+import { DocFooter } from '@/components/pdf/shared/DocFooter';
 
 interface ClosingSectionProps {
   proposal: Proposal;
   section: ProposalSection;
   companyName?: string;
+  companyPhone?: string;
+  logoUrl?: string;
   primaryColor?: string;
+  brandColor?: string;
+  documentStyle?: 'style1' | 'style2';
 }
 
-export function ClosingSection({ proposal, section, companyName, primaryColor = '#3B82F6' }: ClosingSectionProps) {
+export function ClosingSection({
+  proposal,
+  section,
+  companyName,
+  companyPhone,
+  logoUrl,
+  primaryColor = '#3B82F6',
+  brandColor,
+  documentStyle = 'style1',
+}: ClosingSectionProps) {
+  const resolvedColor = brandColor ?? primaryColor;
   const content = (section.content as Record<string, unknown>) || {};
   const html = (content.closingText as string) || (content.letterText as string) || '';
-  // Closing copy is rendered with centred, slightly larger, subdued type
-  // rather than the standard rich-text body so it reads as a sign-off.
   const blocks = htmlToBlocks(html);
 
   const styles = StyleSheet.create({
@@ -29,28 +43,42 @@ export function ClosingSection({ proposal, section, companyName, primaryColor = 
   });
 
   return (
-    <Page size="A4" style={sharedPageStyle}>
-      <PageHeader
-        proposalName={proposal.name}
+    <Page
+      size="A4"
+      style={{ paddingBottom: 60, fontFamily: 'Helvetica', backgroundColor: '#ffffff' }}
+    >
+      <DocProposalInnerHeader
+        companyName={companyName}
+        companyPhone={companyPhone}
+        logoUrl={logoUrl}
         proposalNumber={proposal.proposalNumber}
-        expiryDate={proposal.expiryDate}
-        primaryColor={primaryColor}
+        proposalName={proposal.name}
+        brandColor={resolvedColor}
+        docStyle={documentStyle}
       />
-      <View style={sharedSectionStyle.section}>
-        <Text style={[sharedSectionStyle.sectionTitle, { color: primaryColor, textAlign: 'center' }]}>
-          {section.name || 'Closing'}
-        </Text>
-        {blocks.length > 0 ? (
-          <View style={styles.body}>
-            {blocks.map((b, i) => (
-              <Text key={i} style={styles.paragraph}>{b.text}</Text>
-            ))}
-          </View>
-        ) : (
-          <Text style={[sharedSectionStyle.muted, { textAlign: 'center' }]}>No closing content provided.</Text>
-        )}
+      <View style={{ paddingHorizontal: 40 }}>
+        <View style={sharedSectionStyle.section}>
+          <Text style={[sharedSectionStyle.sectionTitle, { color: resolvedColor, textAlign: 'center' }]}>
+            {section.name || 'Closing'}
+          </Text>
+          {blocks.length > 0 ? (
+            <View style={styles.body}>
+              {blocks.map((b, i) => (
+                <Text key={i} style={styles.paragraph}>{b.text}</Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={[sharedSectionStyle.muted, { textAlign: 'center' }]}>
+              No closing content provided.
+            </Text>
+          )}
+        </View>
       </View>
-      <PageFooter companyName={companyName} primaryColor={primaryColor} />
+      <DocFooter
+        companyName={companyName}
+        brandColor={resolvedColor}
+        docStyle={documentStyle}
+      />
     </Page>
   );
 }
