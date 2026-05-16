@@ -27739,7 +27739,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const extractTrackingOption = (xb: any): { trackingOptionId?: string; trackingOptionName?: string } => {
         if (!tc2Id) return {};
         for (const line of (xb.LineItems || [])) {
-          for (const tc of (line.TrackingCategories || [])) {
+          for (const tc of (line.Tracking || [])) {
             if (tc.TrackingCategoryID === tc2Id) {
               return { trackingOptionId: tc.TrackingOptionID, trackingOptionName: tc.Option };
             }
