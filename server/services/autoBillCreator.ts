@@ -170,6 +170,8 @@ export class AutoBillCreatorService {
         if (existingUrls.length === 0) {
           await storage.appendBillAttachment(createdBill.id, {
             objectPath: attachmentUrl,
+            filename: fileName,
+            mimeType: contentType,
             source: "email",
             uploadedAt: new Date().toISOString(),
           });
@@ -203,6 +205,8 @@ export class AutoBillCreatorService {
       if (attachmentUrl) {
         await storage.appendBillAttachment(createdBill.id, {
           objectPath: attachmentUrl,
+          filename: fileName,
+          mimeType: contentType,
           source: "email",
           uploadedAt: new Date().toISOString(),
         });

@@ -222,6 +222,9 @@ export default function BillDetail() {
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const dueDateManuallySet = useRef(false);
+  // Tracks which bill ID we have already auto-triggered OCR for, so we only
+  // fire once per bill even if the component re-renders.
+  const autoOcrTriggeredForRef = useRef<string | null>(null);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
   const [colMenuOpen, setColMenuOpen] = useState(false);
   const [unmappedContactDialogOpen, setUnmappedContactDialogOpen] = useState(false);
@@ -1349,6 +1352,37 @@ export default function BillDetail() {
       });
     },
   });
+
+  // Auto-trigger the AI reader for email-imported bills that landed without
+  // AI extraction (server-side OCR may have failed or timed out). We fire once
+  // per bill the moment the attachment list is populated and the bill is in
+  // draft state with ocrProcessed = false.
+  useEffect(() => {
+    if (!isEditMode || !bill || !id) return;
+    // Already processed by AI — nothing to do.
+    if ((bill as any).ocrProcessed) return;
+    // Already fired for this bill in this session.
+    if (autoOcrTriggeredForRef.current === id) return;
+    // Wait until at least one attachment is available.
+    if (attachmentUrls.length === 0) return;
+    // Find the first attachment we can actually OCR (PDF or image).
+    const firstProcessable = attachmentUrls.find((u) => {
+      const pathClean = u.split("?")[0].split("#")[0];
+      const extFromPath = pathClean.split(".").pop()?.toLowerCase() || "";
+      const meta = attachmentMeta[u];
+      const extFromMeta = meta?.filename?.split(".").pop()?.toLowerCase() || "";
+      const mimeOk = /^(application\/pdf|image\/(jpeg|jpg|png|webp))/.test(meta?.mimeType || "");
+      return (
+        ["pdf", "jpg", "jpeg", "png", "webp"].includes(extFromPath) ||
+        ["pdf", "jpg", "jpeg", "png", "webp"].includes(extFromMeta) ||
+        mimeOk
+      );
+    });
+    if (!firstProcessable) return;
+    // Guard: don't double-fire.
+    autoOcrTriggeredForRef.current = id;
+    ocrFromAttachmentMutation.mutate(firstProcessable);
+  }, [bill, attachmentUrls, isEditMode, id]);
 
   const performSubmit = (data: BillFormData) => {
     if (isEditMode) {

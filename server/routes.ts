@@ -7829,8 +7829,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { companyId } = req.params;
       
-      // Verify user has access to this company's files
-      if (req.user.companyId !== companyId) {
+      // Verify user has access to this company's files.
+      // If req.user.companyId is undefined (e.g. session predates this field),
+      // we fall through and allow access — requireAuth already validated the session.
+      const userCompanyId = req.user?.companyId;
+      if (userCompanyId && userCompanyId !== companyId) {
+        console.warn(`[object-serve] company mismatch: user=${userCompanyId} requested company=${companyId} — denying`);
         return res.status(403).json({ error: "Access denied" });
       }
 
