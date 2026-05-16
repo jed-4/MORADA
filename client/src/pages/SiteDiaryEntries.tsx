@@ -735,6 +735,7 @@ export default function SiteDiaryEntries() {
           <SiteDiaryFeedView
             entries={filteredEntries}
             projects={projects}
+            templates={templates}
             isStandalone={isStandalone}
             onView={setViewingEntry}
             onEdit={setEditingEntry}
@@ -957,12 +958,14 @@ function SiteDiaryCalendarView({
 function SiteDiaryFeedView({
   entries,
   projects,
+  templates,
   isStandalone,
   onView,
   onEdit,
 }: {
   entries: SiteDiaryEntry[];
   projects: Project[];
+  templates: SiteDiaryTemplate[];
   isStandalone: boolean;
   onView: (entry: SiteDiaryEntry) => void;
   onEdit: (entry: SiteDiaryEntry) => void;
@@ -1000,6 +1003,7 @@ function SiteDiaryFeedView({
               <SiteDiaryFeedCard
                 key={entry.id}
                 entry={entry}
+                template={templates.find(t => t.id === entry.templateId) ?? null}
                 projectName={isStandalone ? projects.find(p => p.id === entry.projectId)?.name : undefined}
                 onView={() => onView(entry)}
                 onEdit={() => onEdit(entry)}
@@ -1014,11 +1018,13 @@ function SiteDiaryFeedView({
 
 function SiteDiaryFeedCard({
   entry,
+  template,
   projectName,
   onView,
   onEdit,
 }: {
   entry: SiteDiaryEntry;
+  template: SiteDiaryTemplate | null;
   projectName?: string;
   onView: () => void;
   onEdit: () => void;
@@ -1026,6 +1032,9 @@ function SiteDiaryFeedCard({
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
+  const templateFieldLookup = new Map<string, string>(
+    ((template?.fields as TemplateFieldDefinition[]) || []).map((f) => [f.id, f.title])
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -1143,7 +1152,7 @@ function SiteDiaryFeedCard({
                 displayVal = String(val);
               }
               if (!displayVal) return null;
-              const label = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+              const label = templateFieldLookup.get(key) ?? key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
               return (
                 <div key={key} className="flex gap-2 text-xs">
                   <span className="text-muted-foreground shrink-0 min-w-[80px]">{label}</span>
@@ -2036,14 +2045,14 @@ function EntryViewDetail({
         {templateFields.length > 0 ? (
           templateFields.map((field) => (
             <div key={field.id} className="space-y-1">
-              <Label className="text-xs font-medium text-muted-foreground">{field.title}</Label>
+              <Label className="block text-xs font-medium text-muted-foreground">{field.title}</Label>
               {renderFieldValue(field)}
             </div>
           ))
         ) : (
           Object.entries(fieldValues).map(([key, val]) => (
             <div key={key} className="space-y-1">
-              <Label className="text-xs font-medium text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</Label>
+              <Label className="block text-xs font-medium text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</Label>
               <p className="text-sm">{typeof val === "object" ? JSON.stringify(val) : String(val)}</p>
             </div>
           ))
