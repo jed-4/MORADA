@@ -630,170 +630,179 @@ export default function SystemConfigurationPage() {
                     </div>
                   </div>
 
-                  {/* Purchase Orders, RFQs, RFIs, Proposals */}
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Purchase Orders */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium">Purchase Orders</h3>
-                      <div className="space-y-3">
-                        <FormField
-                          control={form.control}
-                          name="purchaseOrderPrefix"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Prefix</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="PO-" data-testid="input-po-prefix" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="purchaseOrderStartNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Starting Number</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  {...field} 
-                                  type="number"
-                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                                  data-testid="input-po-start"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="text-xs text-muted-foreground">
-                          Preview: {form.watch("purchaseOrderPrefix")}{form.watch("purchaseOrderStartNumber")}
+                  {/* Purchase Orders */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Purchase Orders</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="purchaseOrderPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Prefix</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="PO-" data-testid="input-po-prefix" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="purchaseOrderStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Starting Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                type="number"
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                                data-testid="input-po-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormItem>
+                        <FormLabel>Preview</FormLabel>
+                        <div className="h-9 px-3 py-2 border rounded-md bg-muted text-muted-foreground">
+                          {form.watch("purchaseOrderPrefix")}{form.watch("purchaseOrderStartNumber")}
                         </div>
-                      </div>
+                      </FormItem>
                     </div>
+                  </div>
 
-                    {/* RFQs */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium">Request for Quotes</h3>
-                      <div className="space-y-3">
-                        <FormField
-                          control={form.control}
-                          name="rfqPrefix"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Prefix</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="RFQ-" data-testid="input-rfq-prefix" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="rfqStartNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Starting Number</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  {...field} 
-                                  type="number"
-                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                                  data-testid="input-rfq-start"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="text-xs text-muted-foreground">
-                          Preview: {form.watch("rfqPrefix")}{form.watch("rfqStartNumber")}
+                  {/* RFQs */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Request for Quotes</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="rfqPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Prefix</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="RFQ-" data-testid="input-rfq-prefix" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="rfqStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Starting Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                type="number"
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                                data-testid="input-rfq-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormItem>
+                        <FormLabel>Preview</FormLabel>
+                        <div className="h-9 px-3 py-2 border rounded-md bg-muted text-muted-foreground">
+                          {form.watch("rfqPrefix")}{form.watch("rfqStartNumber")}
                         </div>
-                      </div>
+                      </FormItem>
                     </div>
+                  </div>
 
-                    {/* RFIs */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium">Request for Information</h3>
-                      <div className="space-y-3">
-                        <FormField
-                          control={form.control}
-                          name="rfiPrefix"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Prefix</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="RFI-" data-testid="input-rfi-prefix" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="rfiStartNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Starting Number</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  {...field} 
-                                  type="number"
-                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                                  data-testid="input-rfi-start"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="text-xs text-muted-foreground">
-                          Preview: {form.watch("rfiPrefix")}{form.watch("rfiStartNumber")}
+                  {/* RFIs */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Request for Information</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="rfiPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Prefix</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="RFI-" data-testid="input-rfi-prefix" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="rfiStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Starting Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                type="number"
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                                data-testid="input-rfi-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormItem>
+                        <FormLabel>Preview</FormLabel>
+                        <div className="h-9 px-3 py-2 border rounded-md bg-muted text-muted-foreground">
+                          {form.watch("rfiPrefix")}{form.watch("rfiStartNumber")}
                         </div>
-                      </div>
+                      </FormItem>
                     </div>
+                  </div>
 
-                    {/* Proposals */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium">Proposals</h3>
-                      <div className="space-y-3">
-                        <FormField
-                          control={form.control}
-                          name="proposalPrefix"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Prefix</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="PROP-" data-testid="input-proposal-prefix" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="proposalStartNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Starting Number</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  {...field} 
-                                  type="number"
-                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                                  data-testid="input-proposal-start"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="text-xs text-muted-foreground">
-                          Preview: {form.watch("proposalPrefix")}{form.watch("proposalStartNumber")}
+                  {/* Proposals */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Proposals</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="proposalPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Prefix</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="PROP-" data-testid="input-proposal-prefix" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="proposalStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Starting Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                type="number"
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                                data-testid="input-proposal-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormItem>
+                        <FormLabel>Preview</FormLabel>
+                        <div className="h-9 px-3 py-2 border rounded-md bg-muted text-muted-foreground">
+                          {form.watch("proposalPrefix")}{form.watch("proposalStartNumber")}
                         </div>
-                      </div>
+                      </FormItem>
                     </div>
                   </div>
                 </CardContent>
