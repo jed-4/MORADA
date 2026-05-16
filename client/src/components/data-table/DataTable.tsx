@@ -607,7 +607,7 @@ function DataTableRow<TData>({
 
   return (
     <tr
-      className={cn("border-b border-border/40 hover-elevate", onRowClick && "cursor-pointer", className)}
+      className={cn("border-b border-border/40 hover-elevate group", onRowClick && "cursor-pointer", className)}
       style={{ height: rowHeight }}
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
       data-testid={`row-${row.id}`}

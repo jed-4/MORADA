@@ -44,7 +44,6 @@ import {
   Plus,
   FileText,
   Paperclip,
-  Circle,
   Mail,
   Copy,
   ChevronDown,
@@ -62,6 +61,7 @@ import {
   AlertCircle,
   MoreHorizontal,
   RefreshCw,
+  X,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -77,11 +77,11 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { SiXero } from "react-icons/si";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All" },
   { key: "draft", label: "Draft" },
-  { key: "needs_review", label: "Needs Review" },
   { key: "awaiting_approval", label: "Awaiting Approval" },
   { key: "awaiting_payment", label: "Awaiting Payment" },
   { key: "paid", label: "Paid" },
@@ -547,6 +547,16 @@ export default function Bills() {
     },
   });
 
+  const duplicateBillMutation = useMutation({
+    mutationFn: (billId: string) => apiRequest(`/api/bills/${billId}/duplicate`, "POST"),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Bill duplicated", description: "A copy has been created." });
+      setLocation(`/bills/${data.id}`);
+    },
+    onError: () => toast({ title: "Error", description: "Failed to duplicate bill", variant: "destructive" }),
+  });
+
   useEffect(() => {
     setSelectedStatus(statusFromUrl);
   }, [statusFromUrl]);
@@ -589,7 +599,8 @@ export default function Bills() {
 
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
-      if (selectedStatus !== "all" && bill.status !== selectedStatus) return false;
+      const effectiveStatus = bill.status === "needs_review" ? "draft" : bill.status;
+      if (selectedStatus !== "all" && effectiveStatus !== selectedStatus) return false;
       if (searchTerm) {
         const supplier = suppliers.find(s => s.id === bill.supplierId);
         const project = projects.find(p => p.id === bill.projectId);
@@ -608,20 +619,18 @@ export default function Bills() {
 
   const statusCounts = useMemo(() => ({
     all: bills.length,
-    draft: bills.filter((b) => b.status === "draft").length,
-    needs_review: bills.filter((b) => b.status === "needs_review").length,
+    draft: bills.filter((b) => b.status === "draft" || b.status === "needs_review").length,
     awaiting_approval: bills.filter((b) => b.status === "awaiting_approval").length,
     awaiting_payment: bills.filter((b) => b.status === "awaiting_payment").length,
     paid: bills.filter((b) => b.status === "paid").length,
   }), [bills]);
 
   const statusTotals = useMemo(() => {
-    const totals = { draft: 0, needs_review: 0, awaiting_approval: 0, awaiting_payment: 0, paid: 0 };
+    const totals = { draft: 0, awaiting_approval: 0, awaiting_payment: 0, paid: 0 };
     bills.forEach((bill) => {
       const rawAmount = bill.total / 100;
       const amount = bill.billType === "credit" ? -rawAmount : rawAmount;
-      if (bill.status === "draft") totals.draft += amount;
-      else if (bill.status === "needs_review") totals.needs_review += amount;
+      if (bill.status === "draft" || bill.status === "needs_review") totals.draft += amount;
       else if (bill.status === "awaiting_approval") totals.awaiting_approval += amount;
       else if (bill.status === "awaiting_payment") totals.awaiting_payment += amount;
       else if (bill.status === "paid") totals.paid += amount;
@@ -725,7 +734,7 @@ export default function Bills() {
             {row.original.billType === "credit" && (
               <Badge variant="outline" className="text-data px-1 py-0 text-status-success border-status-success/40">Credit</Badge>
             )}
-            {!row.original.createdById && row.original.ocrProcessed && (
+            {!!(row.original as any).gmailMessageId && (
               <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" title="Auto-imported from Bill Inbox" />
             )}
           </div>
@@ -822,7 +831,7 @@ export default function Bills() {
           return syncStatus === "failed" ? (
             <span title={tip}><AlertCircle className="h-3 w-3 inline text-destructive" /></span>
           ) : bill.xeroInvoiceId ? (
-            <span title={tip}><Circle className="h-3 w-3 inline fill-blue-500 text-blue-500" /></span>
+            <span title={tip}><SiXero className="h-3.5 w-3.5 inline text-[#13B5EA]" /></span>
           ) : null;
         },
         size: 60,
@@ -897,9 +906,55 @@ export default function Bills() {
         size: 50,
         meta: { defaultWidth: 50, align: "center", headerLabel: "Files" },
       },
+      {
+        id: "actions",
+        enableSorting: false,
+        header: () => null,
+        cell: ({ row }) => {
+          const bill = row.original;
+          return (
+            <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100"
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onSelect={() => handleRowClick(bill.id)}>
+                    Open
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => duplicateBillMutation.mutate(bill.id)}
+                    disabled={duplicateBillMutation.isPending}
+                  >
+                    Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => {
+                      setSelectedBills(new Set([bill.id]));
+                      setDeleteDialogOpen(true);
+                    }}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+        size: 48,
+        meta: { defaultWidth: 48, align: "right" },
+      },
     ];
     return cols;
-  }, [filteredBills.length, selectedBills, projectIdFromUrl, projects, suppliers]);
+  }, [filteredBills.length, selectedBills, projectIdFromUrl, projects, suppliers, duplicateBillMutation.isPending]);
 
   const billPickerColumns = useMemo(
     () => BILL_COLUMN_LABELS.filter((c) => !(c.id === "project" && projectIdFromUrl)),
@@ -1092,23 +1147,33 @@ export default function Bills() {
         </div>
       )}
 
-      {/* ── Bulk selection action bar ── */}
+      {/* ── Floating bulk action bar (fixed at bottom, doesn't push layout) ── */}
       {selectedBills.size > 0 && (
-        <div className="flex-shrink-0 bg-primary/5 border-b border-primary/20 flex items-center justify-between px-4 h-10 gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{selectedBills.size} selected</span>
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
-          </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
-              <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : "Approve"}
-            </Button>
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2 text-destructive" onClick={() => setDeleteDialogOpen(true)}>
-              <Trash2 className="w-3 h-3 mr-1" />Delete
-            </Button>
-          </div>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg border border-border bg-popover text-popover-foreground">
+          <span className="text-xs font-medium text-muted-foreground pr-1 border-r border-border mr-1">
+            {selectedBills.size} selected
+          </span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeProjectDialogOpen(true)}>
+            Change Project
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setChangeSupplierDialogOpen(true)}>
+            Change Supplier
+          </Button>
+          <Button size="sm" className="h-7 text-xs bg-status-success text-white" disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
+            <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving…" : "Approve"}
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setDeleteDialogOpen(true)}>
+            <Trash2 className="w-3 h-3 mr-1" />Delete
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 ml-0.5"
+            onClick={() => setSelectedBills(new Set())}
+            aria-label="Clear selection"
+          >
+            <X className="w-3.5 h-3.5" />
+          </Button>
         </div>
       )}
 
