@@ -48,6 +48,11 @@ interface SendInvoiceDialogProps {
   projectName?: string | null;
   projectAddress?: string | null;
   brandColor?: string;
+  documentStyle?: "style1" | "style2";
+  logoUrl?: string | null;
+  paymentDetails?: string | null;
+  termsAndConditions?: string | null;
+  status?: string | null;
   clientEmail?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -69,6 +74,11 @@ export function SendInvoiceDialog({
   projectName,
   projectAddress,
   brandColor = "#6d28d9",
+  documentStyle = "style1",
+  logoUrl,
+  paymentDetails,
+  termsAndConditions,
+  status,
   clientEmail,
   initialSubject,
   initialBody,
@@ -112,6 +122,11 @@ export function SendInvoiceDialog({
             paidCents={paidCents}
             balanceDueCents={balanceDueCents}
             brandColor={brandColor}
+            documentStyle={documentStyle}
+            logoUrl={logoUrl}
+            paymentDetails={paymentDetails}
+            termsAndConditions={termsAndConditions}
+            status={status}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

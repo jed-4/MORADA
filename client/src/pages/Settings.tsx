@@ -233,6 +233,7 @@ export default function Settings() {
   const tabParam = urlParams.get("tab");
   const [activeSection, setActiveSection] = useState(tabParam || "branding");
   const [isEditing, setIsEditing] = useState(false);
+  const [documentStyle, setDocumentStyle] = useState<"style1" | "style2">("style1");
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -273,6 +274,13 @@ export default function Settings() {
     queryKey: ["/api/companies", user?.companyId],
     enabled: !!user?.companyId,
   });
+
+  // Sync documentStyle from server
+  useEffect(() => {
+    if (companySettings && (companySettings as any).documentStyle) {
+      setDocumentStyle((companySettings as any).documentStyle as "style1" | "style2");
+    }
+  }, [companySettings]);
 
   // Update form when company settings data is loaded
   // Prioritize company's nickname for Display Name (what shows in header)
@@ -1427,6 +1435,103 @@ export default function Settings() {
                   </FormItem>
                 )}
               />
+            </CardContent>
+          </Card>
+
+          {/* Document Style */}
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Document Style</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Choose the style for your PDF documents — invoices, variations, and purchase orders.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                {/* Style 1 */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setDocumentStyle("style1");
+                    await apiRequest("/api/company-settings", "PATCH", { documentStyle: "style1" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+                    toast({ title: "Document style updated" });
+                  }}
+                  className={`flex flex-col gap-2 p-3 rounded-md border-2 cursor-pointer transition-colors w-40 ${documentStyle === "style1" ? "border-primary" : "border-border hover:border-muted-foreground"}`}
+                >
+                  {/* Mini thumbnail style 1 */}
+                  <div className="w-full h-24 bg-white border border-border rounded overflow-hidden flex flex-col">
+                    <div className="h-7 border-b border-border flex items-center px-2 gap-1.5">
+                      <div className="w-5 h-4 rounded bg-muted flex-shrink-0" />
+                      <div className="flex flex-col gap-0.5 flex-1">
+                        <div className="h-1.5 bg-muted rounded w-12" />
+                        <div className="h-1 bg-muted rounded w-8" />
+                      </div>
+                    </div>
+                    <div className="h-5 border-b border-border bg-muted/30 flex items-center px-2 gap-1">
+                      <div className="h-1 rounded bg-muted w-8" />
+                      <div className="flex-1" />
+                      <div className="h-1 rounded bg-muted w-10" />
+                    </div>
+                    <div className="flex-1 flex flex-col px-2 py-1 gap-0.5">
+                      <div className="h-3 bg-muted/50 rounded" />
+                      <div className="h-1.5 bg-muted/30 rounded w-full" />
+                      <div className="h-1.5 bg-muted/30 rounded w-5/6" />
+                      <div className="h-1.5 bg-muted/30 rounded w-4/6" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium">Classic</p>
+                    <p className="text-xs text-muted-foreground">Clean & minimal</p>
+                  </div>
+                </button>
+
+                {/* Style 2 */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setDocumentStyle("style2");
+                    await apiRequest("/api/company-settings", "PATCH", { documentStyle: "style2" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+                    toast({ title: "Document style updated" });
+                  }}
+                  className={`flex flex-col gap-2 p-3 rounded-md border-2 cursor-pointer transition-colors w-40 ${documentStyle === "style2" ? "border-primary" : "border-border hover:border-muted-foreground"}`}
+                >
+                  {/* Mini thumbnail style 2 */}
+                  <div className="w-full h-24 bg-white border border-border rounded overflow-hidden flex flex-col">
+                    <div
+                      className="h-7 flex items-center px-2 gap-1.5"
+                      style={{ backgroundColor: companySettings?.brandColor || "#3B82F6" }}
+                    >
+                      <div className="w-5 h-4 rounded opacity-40 bg-white flex-shrink-0" />
+                      <div className="flex flex-col gap-0.5 flex-1">
+                        <div className="h-1.5 bg-white/80 rounded w-12" />
+                        <div className="h-1 bg-white/50 rounded w-8" />
+                      </div>
+                    </div>
+                    <div
+                      className="h-5 border-b flex items-center px-2 gap-1"
+                      style={{
+                        backgroundColor: (companySettings?.brandColor || "#3B82F6") + "14",
+                        borderColor: (companySettings?.brandColor || "#3B82F6") + "26",
+                      }}
+                    >
+                      <div className="h-1 rounded w-8" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "80" }} />
+                      <div className="flex-1" />
+                      <div className="h-1 rounded w-10" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "80" }} />
+                    </div>
+                    <div className="flex-1 flex flex-col px-2 py-1 gap-0.5">
+                      <div className="h-3 rounded" style={{ backgroundColor: (companySettings?.brandColor || "#3B82F6") + "20" }} />
+                      <div className="h-1.5 bg-muted/30 rounded w-full" />
+                      <div className="h-1.5 bg-muted/30 rounded w-5/6" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium">Branded</p>
+                    <p className="text-xs text-muted-foreground">Uses brand colour</p>
+                  </div>
+                </button>
+              </div>
             </CardContent>
           </Card>
 

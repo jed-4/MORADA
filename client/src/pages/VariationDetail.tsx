@@ -223,9 +223,27 @@ export default function VariationDetail() {
     termsAndConditions?: string;
     termsTemplates?: Array<{ id: string; name: string; content: string }>;
     brandColor?: string;
+    documentStyle?: string;
+    logoUrl?: string;
   }>({
     queryKey: ["/api/company-settings"],
   });
+  const currentProjectId = form.watch("projectId");
+  const currentProject = projects.find((p) => p.id === currentProjectId);
+  const { data: approvedProjectVariations = [] } = useQuery<any[]>({
+    queryKey: [`/api/variations?projectId=${currentProjectId}&status=approved`],
+    enabled: !!currentProjectId,
+  });
+  const approvedVariationsTotal = (approvedProjectVariations as any[]).reduce(
+    (sum: number, v: any) => sum + (v.totalAmount ?? 0),
+    0
+  );
+  const originalContractCents = (currentProject as any)?.contractPrice ?? 0;
+  const revisedContractCents = originalContractCents + approvedVariationsTotal;
+  const varLogoUrl = companySettings?.logoUrl
+    ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)
+    : undefined;
+  const varDocStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
 
   const { data: companyInfo } = useQuery<{
     id: string; name: string; abn?: string; phone?: string; email?: string; logo?: string;
@@ -839,6 +857,10 @@ export default function VariationDetail() {
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}
+          documentStyle={varDocStyle}
+          logoUrl={varLogoUrl}
+          originalContractCents={originalContractCents}
+          revisedContractCents={revisedContractCents}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -2192,6 +2214,10 @@ export default function VariationDetail() {
               company={companyInfo}
               project={projects.find((p) => p.id === form.watch("projectId")) as any}
               brandColor={companySettings?.brandColor || "#6d28d9"}
+              documentStyle={varDocStyle}
+              logoUrl={varLogoUrl}
+              originalContractCents={originalContractCents}
+              revisedContractCents={revisedContractCents}
             />
           }
           filename={`VAR-${(variation as any).variationNumber || "export"}.pdf`}
@@ -2211,6 +2237,10 @@ export default function VariationDetail() {
           company={companyInfo}
           project={projects.find((p) => p.id === form.watch("projectId")) as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}
+          documentStyle={varDocStyle}
+          logoUrl={varLogoUrl}
+          originalContractCents={originalContractCents}
+          revisedContractCents={revisedContractCents}
           clientEmail={clientContact?.email}
           initialSubject={sendSubject}
           initialBody={sendBody}

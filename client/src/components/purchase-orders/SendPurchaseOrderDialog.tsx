@@ -48,6 +48,8 @@ interface SendPurchaseOrderDialogProps {
   company?: Company | null;
   project?: Project | null;
   brandColor?: string;
+  documentStyle?: "style1" | "style2";
+  logoUrl?: string | null;
   onSuccess?: () => void;
 }
 
@@ -60,6 +62,8 @@ export function SendPurchaseOrderDialog({
   company,
   project,
   brandColor = "#6d28d9",
+  documentStyle = "style1",
+  logoUrl,
   onSuccess,
 }: SendPurchaseOrderDialogProps) {
   const { toast } = useToast();
@@ -98,6 +102,8 @@ export function SendPurchaseOrderDialog({
             supplier={supplier}
             project={project}
             brandColor={brandColor}
+            documentStyle={documentStyle}
+            logoUrl={logoUrl}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

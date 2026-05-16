@@ -768,9 +768,13 @@ export default function PurchaseOrderDetail() {
     queryKey: ["/api/company"],
   });
 
-  const { data: companySettings } = useQuery<{ brandColor?: string; companyName?: string }>({
+  const { data: companySettings } = useQuery<{ brandColor?: string; companyName?: string; documentStyle?: string; logoUrl?: string }>({
     queryKey: ["/api/company-settings"],
   });
+  const poLogoUrl = companySettings?.logoUrl
+    ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)
+    : undefined;
+  const poDocStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
 
   // Supplier may be a contact (supplierId) OR a team-member user marked as subcontractor (supplierUserId).
   // We normalize both cases into a single shape so the supplier hero & email logic can stay simple.
@@ -1410,6 +1414,8 @@ export default function PurchaseOrderDetail() {
           supplier={supplier}
           project={project as any}
           brandColor={companySettings?.brandColor || "#6d28d9"}
+          documentStyle={poDocStyle}
+          logoUrl={poLogoUrl}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -2433,6 +2439,8 @@ export default function PurchaseOrderDetail() {
               supplier={supplier}
               project={project as any}
               brandColor={companySettings?.brandColor || "#6d28d9"}
+              documentStyle={poDocStyle}
+              logoUrl={poLogoUrl}
             />
           }
           filename={`PO-${(purchaseOrder as any).poNumber || "export"}.pdf`}
@@ -2450,6 +2458,8 @@ export default function PurchaseOrderDetail() {
         company={companyInfo}
         project={project as any}
         brandColor={companySettings?.brandColor || "#6d28d9"}
+        documentStyle={poDocStyle}
+        logoUrl={poLogoUrl}
       />
 
       {/* Delete confirm */}

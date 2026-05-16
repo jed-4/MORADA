@@ -1108,6 +1108,9 @@ export const companySettings = pgTable("company_settings", {
   // systemConfiguration (which is global / non-tenant-scoped).
   billDefaultXeroAccount: text("bill_default_xero_account"),
 
+  documentStyle: text("document_style").notNull().default("style1"),
+  paymentDetails: text("payment_details"),
+
   takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
 
   // Proposals: payment-schedule templates and full proposal templates

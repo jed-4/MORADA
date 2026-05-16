@@ -41,6 +41,10 @@ interface SendVariationDialogProps {
   company?: Company | null;
   project?: Project | null;
   brandColor?: string;
+  documentStyle?: "style1" | "style2";
+  logoUrl?: string | null;
+  originalContractCents?: number;
+  revisedContractCents?: number;
   clientEmail?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -58,6 +62,10 @@ export function SendVariationDialog({
   company,
   project,
   brandColor = "#6d28d9",
+  documentStyle = "style1",
+  logoUrl,
+  originalContractCents,
+  revisedContractCents,
   clientEmail,
   initialSubject,
   initialBody,
@@ -93,6 +101,10 @@ export function SendVariationDialog({
             company={company}
             project={project}
             brandColor={brandColor}
+            documentStyle={documentStyle}
+            logoUrl={logoUrl}
+            originalContractCents={originalContractCents}
+            revisedContractCents={revisedContractCents}
           />
         ).toBlob();
         const arrayBuf = await blob.arrayBuffer();

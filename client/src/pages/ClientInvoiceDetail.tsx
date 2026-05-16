@@ -335,9 +335,13 @@ export default function ClientInvoiceDetail() {
     queryKey: ["/api/company"],
   });
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string; clientInvoiceDefaultXeroAccount?: string | null; brandColor?: string }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string; clientInvoiceDefaultXeroAccount?: string | null; brandColor?: string; documentStyle?: string; logoUrl?: string; paymentDetails?: string | null }>({
     queryKey: ["/api/company-settings"],
   });
+  const logoUrl = companySettings?.logoUrl
+    ? (companySettings.logoUrl.startsWith("http") ? companySettings.logoUrl : `${window.location.origin}${companySettings.logoUrl}`)
+    : undefined;
+  const docStyle = (companySettings?.documentStyle as "style1" | "style2" | undefined) || "style1";
 
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
     queryKey: ["/api/xero/accounts"],
@@ -1465,6 +1469,11 @@ export default function ClientInvoiceDetail() {
           paidCents={paidCents}
           balanceDueCents={balanceDueCents}
           brandColor={companySettings?.brandColor || "#6d28d9"}
+          documentStyle={docStyle}
+          logoUrl={logoUrl}
+          paymentDetails={companySettings?.paymentDetails}
+          termsAndConditions={termsAndConditions}
+          status={invoice?.status}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -4369,6 +4378,11 @@ export default function ClientInvoiceDetail() {
               paidCents={Math.round(paid * 100)}
               balanceDueCents={Math.round(amountIncTax() * 100) - Math.round(paid * 100)}
               brandColor={companySettings?.brandColor || "#6d28d9"}
+              documentStyle={docStyle}
+              logoUrl={logoUrl}
+              paymentDetails={companySettings?.paymentDetails}
+              termsAndConditions={termsAndConditions}
+              status={invoice?.status}
             />
           }
           filename={`INV-${form.watch("invoiceNumber") || invoice.invoiceNumber || "export"}.pdf`}
@@ -4393,6 +4407,11 @@ export default function ClientInvoiceDetail() {
           projectName={currentProject?.name}
           projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
           brandColor={companySettings?.brandColor || "#6d28d9"}
+          documentStyle={docStyle}
+          logoUrl={logoUrl}
+          paymentDetails={companySettings?.paymentDetails}
+          termsAndConditions={(invoice as any).termsAndConditions}
+          status={invoice?.status}
           clientEmail={clientContact?.email}
           initialSubject={invoiceSendData.initialSubject}
           initialBody={invoiceSendData.initialBody}

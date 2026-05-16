@@ -1,5 +1,8 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View } from "@react-pdf/renderer";
 import { format } from "date-fns";
+import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
+import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
+import { DocFooter } from "@/components/pdf/shared/DocFooter";
 
 interface Company {
   name: string;
@@ -32,6 +35,11 @@ interface InvoiceDocumentProps {
   paidCents: number;
   balanceDueCents: number;
   brandColor?: string;
+  documentStyle?: "style1" | "style2";
+  logoUrl?: string | null;
+  paymentDetails?: string | null;
+  termsAndConditions?: string | null;
+  status?: string | null;
 }
 
 function formatAUD(cents: number): string {
@@ -44,79 +52,29 @@ function formatAUD(cents: number): string {
 
 function safeFormatDate(d?: string | Date | null): string {
   if (!d) return "—";
-  try { return format(new Date(d), "d MMM yyyy"); } catch { return "—"; }
+  try {
+    return format(new Date(d), "d MMM yyyy");
+  } catch {
+    return "—";
+  }
 }
 
-const createStyles = (primaryColor: string) =>
-  StyleSheet.create({
-    page: { padding: 40, fontSize: 10, fontFamily: "Helvetica", backgroundColor: "#ffffff" },
-    hero: {
-      backgroundColor: primaryColor,
-      padding: "20 24",
-      marginBottom: 20,
-      borderRadius: 4,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-    },
-    heroLeft: { flexDirection: "column" },
-    heroRight: { alignItems: "flex-end" },
-    heroTitle: { fontSize: 8, color: "rgba(255,255,255,0.7)", fontFamily: "Helvetica-Bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
-    heroCompanyName: { fontSize: 16, fontFamily: "Helvetica-Bold", color: "#ffffff" },
-    heroContact: { fontSize: 9, color: "rgba(255,255,255,0.8)", marginTop: 2 },
-    heroNum: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginBottom: 4 },
-    heroTotal: { fontSize: 22, fontFamily: "Helvetica-Bold", color: "#ffffff" },
-    metaRow: { flexDirection: "row", gap: 24, marginBottom: 16 },
-    metaBlock: { flex: 1 },
-    metaLabel: { fontSize: 8, color: "#9ca3af", marginBottom: 2 },
-    metaValue: { fontSize: 10, color: "#111827", fontFamily: "Helvetica-Bold" },
-    metaValueSm: { fontSize: 9, color: "#374151" },
-    divider: { borderBottomWidth: 1, borderBottomColor: "#e5e7eb", marginBottom: 14 },
-    sectionTitle: {
-      fontSize: 8,
-      fontFamily: "Helvetica-Bold",
-      color: "#9ca3af",
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-      marginBottom: 6,
-    },
-    tableHeader: {
-      flexDirection: "row",
-      backgroundColor: primaryColor,
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 2,
-    },
-    tableRow: {
-      flexDirection: "row",
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderBottomWidth: 1,
-      borderBottomColor: "#f3f4f6",
-    },
-    tableRowAlt: { backgroundColor: "#f9fafb" },
-    thText: { fontSize: 8, color: "#ffffff", fontFamily: "Helvetica-Bold" },
-    tdText: { fontSize: 9, color: "#374151" },
-    tdBold: { fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" },
-    summarySection: { marginTop: 16, alignItems: "flex-end" },
-    summaryRow: { flexDirection: "row", justifyContent: "flex-end", gap: 24, marginBottom: 4 },
-    summaryLabel: { fontSize: 9, color: "#6b7280", width: 130, textAlign: "right" },
-    summaryValue: { fontSize: 9, color: "#374151", width: 80, textAlign: "right" },
-    summaryTotalRow: {
-      flexDirection: "row",
-      justifyContent: "flex-end",
-      gap: 24,
-      backgroundColor: primaryColor,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 4,
-      marginTop: 4,
-      marginBottom: 4,
-    },
-    summaryTotalLabel: { fontSize: 11, color: "#ffffff", fontFamily: "Helvetica-Bold", width: 130, textAlign: "right" },
-    summaryTotalValue: { fontSize: 11, color: "#ffffff", fontFamily: "Helvetica-Bold", width: 80, textAlign: "right" },
-    footer: { position: "absolute", bottom: 20, left: 40, right: 40, fontSize: 8, color: "#d1d5db", textAlign: "center" },
-  });
+function isOverdue(dueDate?: string | Date | null): boolean {
+  if (!dueDate) return false;
+  try {
+    return new Date(dueDate) < new Date();
+  } catch {
+    return false;
+  }
+}
+
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  draft:   { bg: "#f3f4f6", text: "#6b7280" },
+  sent:    { bg: "#dbeafe", text: "#1d4ed8" },
+  partial: { bg: "#fef3c7", text: "#d97706" },
+  paid:    { bg: "#dcfce7", text: "#15803d" },
+  overdue: { bg: "#fee2e2", text: "#dc2626" },
+};
 
 export function InvoiceDocument({
   invoiceNumber,
@@ -132,101 +90,437 @@ export function InvoiceDocument({
   totalCents,
   paidCents,
   balanceDueCents,
-  brandColor = "#6d28d9",
+  brandColor = "#3B82F6",
+  documentStyle = "style1",
+  logoUrl,
+  paymentDetails,
+  termsAndConditions,
+  status,
 }: InvoiceDocumentProps) {
-  const styles = createStyles(brandColor);
+  const isS2 = documentStyle === "style2";
+  const overdue = isOverdue(dueDate) && status !== "paid";
+  const chipColors = STATUS_COLORS[status || "draft"] || STATUS_COLORS.draft;
+
+  const thBg = isS2 ? brandColor : "#F8F8F8";
+  const thTextColor = isS2 ? "#ffffff" : "#374151";
+  const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
+  const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
+  const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
+  const docBarBorderLeft = isS2 ? 4 : 0;
 
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Hero */}
-        <View style={styles.hero}>
-          <View style={styles.heroLeft}>
-            <Text style={styles.heroTitle}>Tax Invoice</Text>
-            <Text style={styles.heroCompanyName}>{company?.name || "BuildPro"}</Text>
-            {company?.abn && <Text style={styles.heroContact}>ABN: {company.abn}</Text>}
-            {company?.phone && <Text style={styles.heroContact}>{company.phone}</Text>}
-            {company?.email && <Text style={styles.heroContact}>{company.email}</Text>}
-          </View>
-          <View style={styles.heroRight}>
-            <Text style={styles.heroNum}>{invoiceNumber}</Text>
-            <Text style={styles.heroTotal}>{formatAUD(totalCents)}</Text>
-          </View>
-        </View>
+      <Page
+        size="A4"
+        style={{
+          fontSize: 10,
+          fontFamily: "Helvetica",
+          backgroundColor: "#ffffff",
+          paddingBottom: 60,
+        }}
+      >
+        {/* Header */}
+        <DocBrandedHeader
+          companyName={company?.name || ""}
+          abn={company?.abn}
+          phone={company?.phone}
+          email={company?.email}
+          logoUrl={logoUrl}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
 
-        {/* Dates + Bill To grid */}
-        <View style={styles.metaRow}>
-          <View style={styles.metaBlock}>
-            <Text style={styles.metaLabel}>Issue Date</Text>
-            <Text style={styles.metaValue}>{safeFormatDate(issueDate)}</Text>
-          </View>
-          <View style={styles.metaBlock}>
-            <Text style={styles.metaLabel}>Due Date</Text>
-            <Text style={styles.metaValue}>{safeFormatDate(dueDate)}</Text>
-          </View>
+        {/* Project bar */}
+        <DocProjectBar
+          clientName={clientName}
+          projectName={projectName}
+          projectAddress={projectAddress}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
+
+        {/* Document bar */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 40,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: docBarBorderColor,
+            borderLeftWidth: docBarBorderLeft,
+            borderLeftColor: brandColor,
+            gap: 20,
+          }}
+        >
+          {/* Left: invoice id + date */}
           <View style={{ flex: 2 }}>
-            <Text style={styles.metaLabel}>Bill To</Text>
-            {clientName && <Text style={styles.metaValue}>{clientName}</Text>}
-            {projectName && <Text style={styles.metaValueSm}>{projectName}</Text>}
-            {projectAddress && <Text style={styles.metaValueSm}>{projectAddress}</Text>}
-          </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        {/* Line items table */}
-        <Text style={styles.sectionTitle}>Invoice Items</Text>
-        <View style={styles.tableHeader}>
-          <Text style={[styles.thText, { flex: 3 }]}>Description</Text>
-          <Text style={[styles.thText, { width: 50, textAlign: "right" }]}>Claim %</Text>
-          <Text style={[styles.thText, { width: 80, textAlign: "right" }]}>Ex. Tax</Text>
-          <Text style={[styles.thText, { width: 50, textAlign: "right" }]}>GST</Text>
-          <Text style={[styles.thText, { width: 80, textAlign: "right" }]}>Inc. Tax</Text>
-        </View>
-        {lineItems.map((item, idx) => (
-          <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-            <View style={{ flex: 3 }}>
-              <Text style={styles.tdBold}>{item.label}</Text>
-              {item.description && <Text style={[styles.tdText, { fontSize: 8, color: "#6b7280" }]}>{item.description}</Text>}
-            </View>
-            <Text style={[styles.tdText, { width: 50, textAlign: "right" }]}>
-              {item.claimPct != null ? `${item.claimPct}%` : "100%"}
+            <Text
+              style={{
+                fontSize: 8,
+                fontFamily: "Helvetica-Bold",
+                color: brandColor,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 3,
+              }}
+            >
+              Invoice
             </Text>
-            <Text style={[styles.tdText, { width: 80, textAlign: "right" }]}>{formatAUD(item.amountExTax)}</Text>
-            <Text style={[styles.tdText, { width: 50, textAlign: "right" }]}>{formatAUD(item.gst)}</Text>
-            <Text style={[styles.tdBold, { width: 80, textAlign: "right" }]}>{formatAUD(item.amountIncTax)}</Text>
+            <Text style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+              {invoiceNumber}
+            </Text>
+            <Text style={{ fontSize: 8, color: "#9ca3af", marginTop: 3 }}>
+              Issued {safeFormatDate(issueDate)}
+            </Text>
           </View>
-        ))}
 
-        {/* Summary */}
-        <View style={styles.summarySection}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal (ex. GST)</Text>
-            <Text style={styles.summaryValue}>{formatAUD(subtotalCents)}</Text>
+          {/* Centre: due date */}
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 7,
+                fontFamily: "Helvetica-Bold",
+                color: "#9ca3af",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 3,
+              }}
+            >
+              Due Date
+            </Text>
+            <Text
+              style={{
+                fontSize: 10,
+                fontFamily: "Helvetica-Bold",
+                color: overdue ? "#d97706" : "#111827",
+              }}
+            >
+              {safeFormatDate(dueDate)}
+            </Text>
+            {overdue && (
+              <Text style={{ fontSize: 8, color: "#d97706" }}>Overdue</Text>
+            )}
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>GST (10%)</Text>
-            <Text style={styles.summaryValue}>{formatAUD(gstCents)}</Text>
-          </View>
-          <View style={styles.summaryTotalRow}>
-            <Text style={styles.summaryTotalLabel}>Total (inc. GST)</Text>
-            <Text style={styles.summaryTotalValue}>{formatAUD(totalCents)}</Text>
-          </View>
-          {paidCents > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Amount Paid</Text>
-              <Text style={[styles.summaryValue, { color: "#059669" }]}>({formatAUD(paidCents)})</Text>
-            </View>
-          )}
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { fontFamily: "Helvetica-Bold", color: "#111827" }]}>Balance Due</Text>
-            <Text style={[styles.summaryValue, { fontFamily: "Helvetica-Bold", color: balanceDueCents <= 0 ? "#059669" : "#dc2626" }]}>
+
+          {/* Right: amount due */}
+          <View style={{ alignItems: "flex-end" }}>
+            <Text
+              style={{
+                fontSize: 7,
+                fontFamily: "Helvetica-Bold",
+                color: brandColor,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 3,
+              }}
+            >
+              Amount Due
+            </Text>
+            <Text
+              style={{
+                fontSize: 18,
+                fontFamily: "Helvetica-Bold",
+                color: balanceDueCents <= 0 ? "#15803d" : brandColor,
+              }}
+            >
               {formatAUD(Math.max(0, balanceDueCents))}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.footer}>Powered by BuildPro</Text>
+        {/* Content */}
+        <View style={{ paddingHorizontal: 40, paddingTop: 16 }}>
+          {/* Line items table */}
+          <Text
+            style={{
+              fontSize: 8,
+              fontFamily: "Helvetica-Bold",
+              color: "#9ca3af",
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 6,
+            }}
+          >
+            Invoice Items
+          </Text>
+
+          {/* Table header */}
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: thBg,
+              paddingHorizontal: 8,
+              paddingVertical: 5,
+              borderRadius: isS2 ? 0 : 2,
+            }}
+          >
+            <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 3 }}>
+              Description
+            </Text>
+            <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
+              Claim %
+            </Text>
+            <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 80, textAlign: "right" }}>
+              Ex. Tax
+            </Text>
+            <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 50, textAlign: "right" }}>
+              GST
+            </Text>
+            <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 80, textAlign: "right" }}>
+              Inc. Tax
+            </Text>
+          </View>
+
+          {lineItems.map((item, idx) => (
+            <View
+              key={idx}
+              style={{
+                flexDirection: "row",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderBottomWidth: 1,
+                borderBottomColor: "#f3f4f6",
+                backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
+              }}
+            >
+              <View style={{ flex: 3 }}>
+                <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
+                  {item.label}
+                </Text>
+                {item.description ? (
+                  <Text style={{ fontSize: 8, color: "#6b7280" }}>{item.description}</Text>
+                ) : null}
+              </View>
+              <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
+                {item.claimPct != null ? `${item.claimPct}%` : "100%"}
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", width: 80, textAlign: "right" }}>
+                {formatAUD(item.amountExTax)}
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", width: 50, textAlign: "right" }}>
+                {formatAUD(item.gst)}
+              </Text>
+              <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold", width: 80, textAlign: "right" }}>
+                {formatAUD(item.amountIncTax)}
+              </Text>
+            </View>
+          ))}
+
+          {/* Summary */}
+          <View style={{ alignItems: "flex-end", marginTop: 16 }}>
+            {/* Subtotal */}
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 24, marginBottom: 4 }}>
+              <Text style={{ fontSize: 9, color: "#6b7280", width: 140, textAlign: "right" }}>
+                Subtotal (ex. GST)
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", width: 90, textAlign: "right" }}>
+                {formatAUD(subtotalCents)}
+              </Text>
+            </View>
+            {/* GST */}
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 24, marginBottom: 6 }}>
+              <Text style={{ fontSize: 9, color: "#6b7280", width: 140, textAlign: "right" }}>
+                GST (10%)
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", width: 90, textAlign: "right" }}>
+                {formatAUD(gstCents)}
+              </Text>
+            </View>
+
+            {/* Thin divider */}
+            <View
+              style={{
+                width: 254,
+                borderBottomWidth: 1,
+                borderBottomColor: "#e5e7eb",
+                marginBottom: 6,
+              }}
+            />
+
+            {/* Contract total */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 24,
+                backgroundColor: accentBg,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 2,
+                marginBottom: 6,
+                width: 254,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#111827",
+                  width: 130,
+                  textAlign: "right",
+                }}
+              >
+                Contract Total (inc. GST)
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#111827",
+                  width: 90,
+                  textAlign: "right",
+                }}
+              >
+                {formatAUD(totalCents)}
+              </Text>
+            </View>
+
+            {/* Paid to date */}
+            {paidCents > 0 && (
+              <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 24, marginBottom: 4 }}>
+                <Text style={{ fontSize: 9, color: "#6b7280", width: 140, textAlign: "right" }}>
+                  Paid to Date
+                </Text>
+                <Text style={{ fontSize: 9, color: "#15803d", width: 90, textAlign: "right" }}>
+                  ({formatAUD(paidCents)})
+                </Text>
+              </View>
+            )}
+
+            {/* Thin divider */}
+            <View
+              style={{
+                width: 254,
+                borderBottomWidth: 1,
+                borderBottomColor: "#e5e7eb",
+                marginBottom: 6,
+              }}
+            />
+
+            {/* Balance due */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 24,
+                backgroundColor: accentBg,
+                paddingHorizontal: 10,
+                paddingVertical: 7,
+                borderRadius: 2,
+                width: 254,
+                borderLeftWidth: isS2 ? 3 : 0,
+                borderLeftColor: brandColor,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#374151",
+                  width: 130,
+                  textAlign: "right",
+                }}
+              >
+                Balance Due
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: "Helvetica-Bold",
+                  color: balanceDueCents <= 0 ? "#15803d" : brandColor,
+                  width: 90,
+                  textAlign: "right",
+                }}
+              >
+                {formatAUD(Math.max(0, balanceDueCents))}
+              </Text>
+            </View>
+
+            {/* Status chip */}
+            {status && (
+              <View
+                style={{
+                  alignSelf: "flex-start",
+                  marginTop: 8,
+                  backgroundColor: chipColors.bg,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 8,
+                    fontFamily: "Helvetica-Bold",
+                    color: chipColors.text,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {status}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Divider */}
+          <View
+            style={{
+              borderBottomWidth: 1,
+              borderBottomColor: isS2 ? brandColor + "33" : "#e5e7eb",
+              marginTop: 16,
+              marginBottom: 12,
+            }}
+          />
+
+          {/* Payment Details */}
+          {paymentDetails ? (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 7,
+                  fontFamily: "Helvetica-Bold",
+                  color: isS2 ? brandColor : "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 4,
+                }}
+              >
+                Payment Details
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5 }}>
+                {paymentDetails}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Terms & Conditions */}
+          {termsAndConditions ? (
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 7,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 4,
+                }}
+              >
+                Terms &amp; Conditions
+              </Text>
+              <Text style={{ fontSize: 8, color: "#9ca3af", lineHeight: 1.4 }}>
+                {termsAndConditions}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <DocFooter
+          companyName={company?.name}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
       </Page>
     </Document>
   );

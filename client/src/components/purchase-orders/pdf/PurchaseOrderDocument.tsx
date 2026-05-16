@@ -1,5 +1,8 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View } from "@react-pdf/renderer";
 import { format } from "date-fns";
+import { DocBrandedHeader } from "@/components/pdf/shared/DocBrandedHeader";
+import { DocProjectBar } from "@/components/pdf/shared/DocProjectBar";
+import { DocFooter } from "@/components/pdf/shared/DocFooter";
 
 interface Company {
   name: string;
@@ -51,6 +54,8 @@ interface PurchaseOrderDocumentProps {
   supplier?: Supplier | null;
   project?: Project | null;
   brandColor?: string;
+  documentStyle?: "style1" | "style2";
+  logoUrl?: string | null;
 }
 
 function formatAUD(cents: number): string {
@@ -70,253 +75,333 @@ function safeFormatDate(d?: Date | string | null): string {
   }
 }
 
-const createStyles = (primaryColor: string) =>
-  StyleSheet.create({
-    page: { padding: 40, fontSize: 10, fontFamily: "Helvetica", backgroundColor: "#ffffff" },
-    hero: {
-      backgroundColor: primaryColor,
-      padding: "20 24",
-      marginBottom: 20,
-      borderRadius: 4,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-    },
-    heroLeft: { flexDirection: "column", gap: 2 },
-    heroRight: { alignItems: "flex-end" },
-    heroCompanyName: { fontSize: 16, fontFamily: "Helvetica-Bold", color: "#ffffff" },
-    heroContact: { fontSize: 9, color: "rgba(255,255,255,0.8)", marginTop: 2 },
-    heroTitle: { fontSize: 8, color: "rgba(255,255,255,0.7)", fontFamily: "Helvetica-Bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
-    heroNum: { fontSize: 18, fontFamily: "Helvetica-Bold", color: "#ffffff" },
-    heroTotal: { fontSize: 14, color: "rgba(255,255,255,0.85)", marginTop: 4 },
-    sectionTitle: {
-      fontSize: 8,
-      fontFamily: "Helvetica-Bold",
-      color: "#9ca3af",
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-      marginBottom: 6,
-    },
-    infoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 16 },
-    infoItem: { width: "30%", marginBottom: 8 },
-    infoLabel: { fontSize: 8, color: "#9ca3af", marginBottom: 2 },
-    infoValue: { fontSize: 10, color: "#111827", fontFamily: "Helvetica-Bold" },
-    supplierBox: {
-      borderWidth: 1,
-      borderColor: "#e5e7eb",
-      borderRadius: 4,
-      padding: "10 12",
-      marginBottom: 16,
-      backgroundColor: "#f9fafb",
-    },
-    supplierName: { fontSize: 11, fontFamily: "Helvetica-Bold", color: "#111827", marginBottom: 3 },
-    supplierDetail: { fontSize: 9, color: "#6b7280", marginBottom: 2 },
-    tableHeader: {
-      flexDirection: "row",
-      backgroundColor: primaryColor,
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 2,
-    },
-    tableRow: {
-      flexDirection: "row",
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderBottomWidth: 1,
-      borderBottomColor: "#f3f4f6",
-    },
-    tableRowAlt: { backgroundColor: "#f9fafb" },
-    thText: { fontSize: 8, color: "#ffffff", fontFamily: "Helvetica-Bold" },
-    tdText: { fontSize: 9, color: "#374151" },
-    tdRight: { textAlign: "right" },
-    tdMuted: { fontSize: 8, color: "#9ca3af" },
-    divider: { borderTopWidth: 1, borderTopColor: "#e5e7eb", marginVertical: 12 },
-    summaryBox: {
-      alignSelf: "flex-end",
-      width: "220",
-      borderWidth: 1,
-      borderColor: "#e5e7eb",
-      borderRadius: 4,
-      overflow: "hidden",
-      marginTop: 12,
-      marginBottom: 16,
-    },
-    summaryRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      borderBottomWidth: 1,
-      borderBottomColor: "#f3f4f6",
-    },
-    summaryLabel: { fontSize: 9, color: "#6b7280" },
-    summaryValue: { fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" },
-    summaryTotalRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      backgroundColor: primaryColor + "20",
-    },
-    summaryTotalLabel: { fontSize: 10, color: primaryColor, fontFamily: "Helvetica-Bold" },
-    summaryTotalValue: { fontSize: 12, color: primaryColor, fontFamily: "Helvetica-Bold" },
-    notesBox: {
-      borderWidth: 1,
-      borderColor: "#e5e7eb",
-      borderRadius: 4,
-      padding: "10 12",
-      marginBottom: 16,
-      backgroundColor: "#fffbeb",
-    },
-    notesLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#92400e", marginBottom: 4 },
-    notesText: { fontSize: 9, color: "#78350f", lineHeight: 1.5 },
-    footer: { marginTop: 16, textAlign: "center", fontSize: 8, color: "#9ca3af" },
-  });
-
 export function PurchaseOrderDocument({
   purchaseOrder,
   items,
   company,
   supplier,
   project,
-  brandColor = "#6d28d9",
+  brandColor = "#3B82F6",
+  documentStyle = "style1",
+  logoUrl,
 }: PurchaseOrderDocumentProps) {
-  const styles = createStyles(brandColor);
+  const isS2 = documentStyle === "style2";
+  const thBg = isS2 ? brandColor : "#F8F8F8";
+  const thTextColor = isS2 ? "#ffffff" : "#374151";
+  const altRowBg = isS2 ? brandColor + "14" : "#f9fafb";
+  const accentBg = isS2 ? brandColor + "14" : "#f3f4f6";
+  const docBarBorderColor = isS2 ? brandColor + "26" : "#e5e7eb";
 
   return (
     <Document title={`Purchase Order ${purchaseOrder.poNumber}`}>
-      <Page size="A4" style={styles.page}>
-        {/* Hero */}
-        <View style={styles.hero}>
-          <View style={styles.heroLeft}>
-            <Text style={styles.heroCompanyName}>{company?.name || "BuildPro"}</Text>
-            {company?.abn && <Text style={styles.heroContact}>ABN {company.abn}</Text>}
-            {company?.phone && <Text style={styles.heroContact}>{company.phone}</Text>}
-            {company?.email && <Text style={styles.heroContact}>{company.email}</Text>}
-            {company?.address && <Text style={styles.heroContact}>{company.address}</Text>}
+      <Page
+        size="A4"
+        style={{
+          fontSize: 10,
+          fontFamily: "Helvetica",
+          backgroundColor: "#ffffff",
+          paddingBottom: 60,
+        }}
+      >
+        {/* Header */}
+        <DocBrandedHeader
+          companyName={company?.name || ""}
+          abn={company?.abn}
+          phone={company?.phone}
+          email={company?.email}
+          logoUrl={logoUrl}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
+
+        {/* Project bar (no client on POs) */}
+        <DocProjectBar
+          projectName={project?.name}
+          projectAddress={project?.address}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
+
+        {/* Document bar */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 40,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: docBarBorderColor,
+            gap: 20,
+            minHeight: 70,
+          }}
+        >
+          {/* Left: PO info */}
+          <View style={{ flex: 2 }}>
+            <Text
+              style={{
+                fontSize: 8,
+                fontFamily: "Helvetica-Bold",
+                color: brandColor,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 3,
+              }}
+            >
+              Purchase Order
+            </Text>
+            <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+              {purchaseOrder.poNumber}
+            </Text>
+            <Text style={{ fontSize: 8, color: "#9ca3af", marginTop: 3 }}>
+              {safeFormatDate(purchaseOrder.poDate)}
+              {purchaseOrder.requiredByDate
+                ? `  ·  Required by ${safeFormatDate(purchaseOrder.requiredByDate)}`
+                : ""}
+            </Text>
           </View>
-          <View style={styles.heroRight}>
-            <Text style={styles.heroTitle}>Purchase Order</Text>
-            <Text style={styles.heroNum}>{purchaseOrder.poNumber}</Text>
-            <Text style={styles.heroTotal}>{formatAUD(purchaseOrder.total)}</Text>
-          </View>
+
+          {/* Right: supplier */}
+          {supplier?.name && (
+            <View style={{ alignItems: "flex-end" }}>
+              <Text
+                style={{
+                  fontSize: 7,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 3,
+                }}
+              >
+                Supplier
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: "Helvetica-Bold", color: "#111827" }}>
+                {supplier.name}
+              </Text>
+              {supplier.email && (
+                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 2 }}>{supplier.email}</Text>
+              )}
+              {supplier.phone && (
+                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 1 }}>{supplier.phone}</Text>
+              )}
+              {supplier.abn && (
+                <Text style={{ fontSize: 8, color: "#6b7280", marginTop: 1 }}>ABN {supplier.abn}</Text>
+              )}
+            </View>
+          )}
         </View>
 
-        {/* Info grid */}
-        <Text style={styles.sectionTitle}>Order Details</Text>
-        <View style={styles.infoGrid}>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Issue Date</Text>
-            <Text style={styles.infoValue}>{safeFormatDate(purchaseOrder.poDate)}</Text>
-          </View>
-          {purchaseOrder.requiredByDate && (
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Required By</Text>
-              <Text style={styles.infoValue}>{safeFormatDate(purchaseOrder.requiredByDate)}</Text>
+        {/* Content */}
+        <View style={{ paddingHorizontal: 40, paddingTop: 14 }}>
+          {/* Description */}
+          {purchaseOrder.description ? (
+            <View style={{ marginBottom: 14 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 4,
+                }}
+              >
+                Description
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5 }}>
+                {purchaseOrder.description}
+              </Text>
             </View>
-          )}
-          {project?.name && (
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Project</Text>
-              <Text style={styles.infoValue}>{project.name}</Text>
-            </View>
-          )}
-          {project?.address && (
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Site Address</Text>
-              <Text style={styles.infoValue}>{project.address}</Text>
-            </View>
-          )}
-          {purchaseOrder.title && (
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Title</Text>
-              <Text style={styles.infoValue}>{purchaseOrder.title}</Text>
-            </View>
-          )}
-        </View>
+          ) : null}
 
-        {/* Supplier */}
-        {supplier?.name && (
-          <View>
-            <Text style={styles.sectionTitle}>Supplier</Text>
-            <View style={styles.supplierBox}>
-              <Text style={styles.supplierName}>{supplier.name}</Text>
-              {supplier.abn && <Text style={styles.supplierDetail}>ABN {supplier.abn}</Text>}
-              {supplier.email && <Text style={styles.supplierDetail}>{supplier.email}</Text>}
-              {supplier.phone && <Text style={styles.supplierDetail}>{supplier.phone}</Text>}
-              {supplier.address && <Text style={styles.supplierDetail}>{supplier.address}</Text>}
-            </View>
-          </View>
-        )}
-
-        {/* Description */}
-        {purchaseOrder.description && (
-          <View style={{ marginBottom: 12 }}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={{ fontSize: 9, color: "#374151", lineHeight: 1.5 }}>{purchaseOrder.description}</Text>
-          </View>
-        )}
-
-        {/* Line items */}
-        {items.length > 0 && (
-          <View style={{ marginBottom: 4 }}>
-            <Text style={styles.sectionTitle}>Line Items</Text>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.thText, { flex: 1 }]}>Description</Text>
-              <Text style={[styles.thText, { width: 40, textAlign: "right" }]}>Qty</Text>
-              <Text style={[styles.thText, { width: 40, textAlign: "center" }]}>Unit</Text>
-              <Text style={[styles.thText, { width: 70, textAlign: "right" }]}>Unit Price</Text>
-              <Text style={[styles.thText, { width: 70, textAlign: "right" }]}>Amount</Text>
-            </View>
-            {items.map((item, idx) => {
-              const qty = parseFloat(String(item.quantity || "1"));
-              const unitPrice = item.unitPrice || 0;
-              const lineTotal = item.total || Math.round(qty * unitPrice);
-              return (
-                <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tdText}>{item.description || "—"}</Text>
-                    {item.isGstFree && (
-                      <Text style={styles.tdMuted}>GST Free</Text>
-                    )}
+          {/* Line items */}
+          {items.length > 0 && (
+            <View style={{ marginBottom: 4 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
+              >
+                Line Items
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  backgroundColor: thBg,
+                  paddingHorizontal: 8,
+                  paddingVertical: 5,
+                  borderRadius: isS2 ? 0 : 2,
+                }}
+              >
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", flex: 1 }}>
+                  Description
+                </Text>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 40, textAlign: "right" }}>
+                  Qty
+                </Text>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 40, textAlign: "center" }}>
+                  Unit
+                </Text>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70, textAlign: "right" }}>
+                  Unit Price
+                </Text>
+                <Text style={{ fontSize: 8, color: thTextColor, fontFamily: "Helvetica-Bold", width: 70, textAlign: "right" }}>
+                  Amount
+                </Text>
+              </View>
+              {items.map((item, idx) => {
+                const qty = parseFloat(String(item.quantity || "1"));
+                const unitPrice = item.unitPrice || 0;
+                const lineTotal = item.total || Math.round(qty * unitPrice);
+                return (
+                  <View
+                    key={idx}
+                    style={{
+                      flexDirection: "row",
+                      paddingHorizontal: 8,
+                      paddingVertical: 5,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#f3f4f6",
+                      backgroundColor: idx % 2 === 1 ? altRowBg : "#ffffff",
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, color: "#374151" }}>{item.description || "—"}</Text>
+                      {item.isGstFree && (
+                        <Text style={{ fontSize: 8, color: "#9ca3af" }}>GST Free</Text>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 9, color: "#374151", width: 40, textAlign: "right" }}>
+                      {qty}
+                    </Text>
+                    <Text style={{ fontSize: 9, color: "#374151", width: 40, textAlign: "center" }}>
+                      {item.unit || ""}
+                    </Text>
+                    <Text style={{ fontSize: 9, color: "#374151", width: 70, textAlign: "right" }}>
+                      {formatAUD(unitPrice)}
+                    </Text>
+                    <Text style={{ fontSize: 9, color: "#374151", width: 70, textAlign: "right" }}>
+                      {formatAUD(lineTotal)}
+                    </Text>
                   </View>
-                  <Text style={[styles.tdText, styles.tdRight, { width: 40 }]}>{qty}</Text>
-                  <Text style={[styles.tdText, { width: 40, textAlign: "center" }]}>{item.unit || ""}</Text>
-                  <Text style={[styles.tdText, styles.tdRight, { width: 70 }]}>{formatAUD(unitPrice)}</Text>
-                  <Text style={[styles.tdText, styles.tdRight, { width: 70 }]}>{formatAUD(lineTotal)}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
+                );
+              })}
+            </View>
+          )}
 
-        {/* Summary */}
-        <View style={styles.summaryBox}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal (ex. GST)</Text>
-            <Text style={styles.summaryValue}>{formatAUD(purchaseOrder.subtotal)}</Text>
+          {/* Summary */}
+          <View style={{ alignItems: "flex-end", marginTop: 12, marginBottom: 16 }}>
+            <View
+              style={{
+                width: 220,
+                borderWidth: 1,
+                borderColor: "#e5e7eb",
+                borderRadius: 4,
+                overflow: "hidden",
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "#f3f4f6",
+                }}
+              >
+                <Text style={{ fontSize: 9, color: "#6b7280" }}>Subtotal (ex. GST)</Text>
+                <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
+                  {formatAUD(purchaseOrder.subtotal)}
+                </Text>
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "#f3f4f6",
+                }}
+              >
+                <Text style={{ fontSize: 9, color: "#6b7280" }}>GST (10%)</Text>
+                <Text style={{ fontSize: 9, color: "#111827", fontFamily: "Helvetica-Bold" }}>
+                  {formatAUD(purchaseOrder.gstAmount)}
+                </Text>
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  backgroundColor: accentBg,
+                }}
+              >
+                <Text style={{ fontSize: 10, color: brandColor, fontFamily: "Helvetica-Bold" }}>
+                  Total (inc. GST)
+                </Text>
+                <Text style={{ fontSize: 12, color: brandColor, fontFamily: "Helvetica-Bold" }}>
+                  {formatAUD(purchaseOrder.total)}
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>GST (10%)</Text>
-            <Text style={styles.summaryValue}>{formatAUD(purchaseOrder.gstAmount)}</Text>
-          </View>
-          <View style={styles.summaryTotalRow}>
-            <Text style={styles.summaryTotalLabel}>Total (inc. GST)</Text>
-            <Text style={styles.summaryTotalValue}>{formatAUD(purchaseOrder.total)}</Text>
-          </View>
+
+          {/* Notes */}
+          {purchaseOrder.internalNotes ? (
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: "#e5e7eb",
+                borderRadius: 4,
+                padding: "10 12",
+                marginBottom: 16,
+                backgroundColor: "#fffbeb",
+              }}
+            >
+              <Text
+                style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#92400e", marginBottom: 4 }}
+              >
+                NOTES
+              </Text>
+              <Text style={{ fontSize: 9, color: "#78350f", lineHeight: 1.5 }}>
+                {purchaseOrder.internalNotes}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Supplier address block (if not shown in doc bar) */}
+          {supplier?.address && (
+            <View style={{ marginBottom: 14 }}>
+              <Text
+                style={{
+                  fontSize: 8,
+                  fontFamily: "Helvetica-Bold",
+                  color: "#9ca3af",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 4,
+                }}
+              >
+                Delivery Address
+              </Text>
+              <Text style={{ fontSize: 9, color: "#374151" }}>{supplier.address}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Notes */}
-        {purchaseOrder.internalNotes && (
-          <View style={styles.notesBox}>
-            <Text style={styles.notesLabel}>NOTES</Text>
-            <Text style={styles.notesText}>{purchaseOrder.internalNotes}</Text>
-          </View>
-        )}
-
-        {/* Footer */}
-        <View style={styles.divider} />
-        <Text style={styles.footer}>{company?.name || "BuildPro"} — Generated by BuildPro</Text>
+        <DocFooter
+          companyName={company?.name}
+          brandColor={brandColor}
+          docStyle={documentStyle}
+        />
       </Page>
     </Document>
   );
