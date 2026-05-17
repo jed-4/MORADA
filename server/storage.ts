@@ -205,6 +205,7 @@ export interface IStorage {
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
   updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void>;
   seedDefaultRolesForCompany(companyId: string): Promise<string>;
+  resetDefaultPermissionsForCompany(companyId: string): Promise<void>;
 
   // Permission operations
   getPermissions(category?: string): Promise<Permission[]>;
@@ -1318,6 +1319,111 @@ export interface IStorage {
   deleteTakeoffMarkup(id: string, companyId: string): Promise<void>;
 }
 
+/**
+ * Returns a map of { permissionId → PermissionAction[] } representing the default
+ * permissions for a given built-in role name. Used by both MemStorage and DbStorage
+ * when seeding or resetting role permissions.
+ */
+function getDefaultActionsForRole(
+  roleName: string,
+  allPermissions: { id: string; key: string; actions: string[] }[],
+  permByKey: Record<string, { id: string; key: string; actions: string[] }>,
+): Record<string, PermissionAction[]> {
+  const n = roleName.toLowerCase();
+  const result: Record<string, PermissionAction[]> = {};
+
+  const grant = (key: string, actions: PermissionAction[]) => {
+    const p = permByKey[key];
+    if (!p) return;
+    const available = p.actions as PermissionAction[];
+    result[p.id] = actions.filter(a => available.includes(a));
+  };
+
+  const grantAll = (key: string) => {
+    const p = permByKey[key];
+    if (p) result[p.id] = p.actions as PermissionAction[];
+  };
+
+  // --- ADMIN / OWNER ---
+  if (n.includes('admin') || n.includes('owner') || n.includes('general manager')) {
+    for (const p of allPermissions) result[p.id] = p.actions as PermissionAction[];
+    return result;
+  }
+
+  // --- PROJECT MANAGER / CONSTRUCTION MANAGER ---
+  if (n.includes('project manager') || n.includes('construction manager') || n.includes('office manager')) {
+    const keys = [
+      'projects.view', 'projects.schedule', 'projects.variations', 'projects.todos',
+      'projects.invoices', 'projects.site_diary', 'projects.selections', 'projects.timesheet',
+      'projects.rfi', 'projects.team_calendars', 'projects.messages', 'projects.notes',
+      'projects.contract', 'schedules.view_offline',
+      'tasks.project', 'tasks.business',
+      'financial.estimate', 'financial.purchase_orders', 'financial.bills',
+      'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
+      'financial.proposal', 'financial.reports',
+      'files.manage', 'sales.client', 'sales.proposals', 'sales.leads',
+      'business.dashboard', 'business.schedule', 'business.files',
+      'business.messages', 'business.notes', 'business.team',
+      'business.timesheets',
+    ];
+    for (const key of keys) grantAll(key);
+    return result;
+  }
+
+  // --- SITE SUPERVISOR / FOREMAN ---
+  if (n.includes('site supervisor') || n.includes('foreman')) {
+    grant('projects.view', ['view']);
+    grant('projects.schedule', ['view']);
+    grant('projects.todos', ['view', 'add', 'edit', 'delete']);
+    grant('projects.site_diary', ['view', 'add', 'edit', 'delete']);
+    grant('projects.messages', ['view', 'add', 'send']);
+    grant('projects.notes', ['view', 'add', 'edit']);
+    grant('projects.timesheet', ['view', 'add', 'edit']);
+    grant('projects.rfi', ['view', 'add']);
+    grant('tasks.project', ['view', 'add', 'edit', 'delete']);
+    grant('files.manage', ['view', 'add']);
+    grant('business.messages', ['view', 'add', 'send']);
+    grant('business.team', ['view']);
+    return result;
+  }
+
+  // --- ACCOUNTS ---
+  if (n.includes('accounts')) {
+    const keys = [
+      'financial.estimate', 'financial.purchase_orders', 'financial.bills',
+      'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
+      'financial.proposal', 'financial.reports',
+      'projects.invoices', 'projects.view', 'projects.timesheet',
+      'admin.cost_codes',
+    ];
+    for (const key of keys) grantAll(key);
+    return result;
+  }
+
+  // --- CLIENT ---
+  if (n.includes('client')) {
+    grant('projects.view', ['view']);
+    grant('projects.schedule', ['view']);
+    grant('projects.invoices', ['view']);
+    grant('projects.selections', ['view']);
+    grant('projects.site_diary', ['view']);
+    grant('projects.messages', ['view', 'add', 'send']);
+    return result;
+  }
+
+  // --- SUBCONTRACTOR / CARPENTER / APPRENTICE ---
+  if (n.includes('subcontractor') || n.includes('carpenter') || n.includes('apprentice')) {
+    grant('projects.schedule', ['view']);
+    grant('projects.site_diary', ['view', 'add']);
+    grant('projects.messages', ['view', 'add', 'send']);
+    grant('files.manage', ['view']);
+    grant('tasks.project', ['view']);
+    return result;
+  }
+
+  return result;
+}
+
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private userRoles: Map<string, UserRole>;
@@ -1414,27 +1520,48 @@ export class MemStorage implements IStorage {
       
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       
       // Project Management category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.todos", name: "To Dos", description: "Manage project to-dos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.invoices", name: "Client Invoices", description: "Manage client invoices", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+      
+      // Tasks category
+      { key: "tasks.project", name: "Project Tasks", description: "Manage tasks within projects", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "tasks.business", name: "Business Tasks", description: "Manage company-wide business tasks", category: "tasks", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       
       // Financial category
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
+      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "financial.budget_labour", name: "Labour Hours Budget", description: "View labour hours tracker (hours worked vs budgeted per cost code)", category: "financial", actions: ["view"], isBuiltIn: true },
-      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view"], isBuiltIn: true },
-      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true }
+      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+      { key: "financial.reports", name: "Financial Reports", description: "Access financial reports and summaries", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
+      
+      // Business category
+      { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.messages", name: "Business Messages", description: "Access company-wide messaging", category: "business", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.leave", name: "Leave Management", description: "Manage employee leave requests", category: "business", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "business.team", name: "Team Directory", description: "View team member directory", category: "business", actions: ["view"], isBuiltIn: true },
     ];
 
     // Create permissions
@@ -2482,17 +2609,17 @@ export class MemStorage implements IStorage {
 
   async seedDefaultRolesForCompany(companyId: string): Promise<string> {
     const builtInRoles: Array<Omit<UserRole, 'id' | 'createdAt' | 'updatedAt'>> = [
-      { companyId, name: "General Manager", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 0 },
-      { companyId, name: "Office Manager", description: "Office operations management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 1 },
-      { companyId, name: "Construction Manager", description: "Construction oversight and management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 2 },
-      { companyId, name: "Foreman", description: "Site-based team lead", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 3 },
-      { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 4 },
-      { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 5 },
-      { companyId, name: "Subcontractor", description: "External subcontractor with limited access", userCategory: "supplier", isBuiltIn: true, isActive: true, displayOrder: 6 },
+      { companyId, name: "Owner", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 0 },
+      { companyId, name: "Admin", description: "Company administration and management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 1 },
+      { companyId, name: "Project Manager", description: "Project oversight and financial management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 2 },
+      { companyId, name: "Site Supervisor", description: "On-site team lead with field access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 3 },
+      { companyId, name: "Subcontractor", description: "External subcontractor with limited access", userCategory: "supplier", isBuiltIn: true, isActive: true, displayOrder: 4 },
+      { companyId, name: "Client", description: "Client portal access — read-only view of project progress", userCategory: "client", isBuiltIn: true, isActive: true, displayOrder: 5 },
+      { companyId, name: "Accounts", description: "Financial specialist with full billing and invoicing access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 6 },
     ];
 
     const now = new Date();
-    let generalManagerRoleId = '';
+    let ownerRoleId = '';
 
     for (const roleData of builtInRoles) {
       const roleId = randomUUID();
@@ -2504,10 +2631,10 @@ export class MemStorage implements IStorage {
       };
       this.userRoles.set(roleId, role);
 
-      if (roleData.name === "General Manager") {
-        generalManagerRoleId = roleId;
+      if (roleData.name === "Owner") {
+        ownerRoleId = roleId;
         
-        // Set full permissions for General Manager
+        // Set full permissions for Owner
         const allPermissions = Array.from(this.permissions.values());
         for (const permission of allPermissions) {
           const rolePermission: RolePermission = {
@@ -2522,7 +2649,36 @@ export class MemStorage implements IStorage {
       }
     }
 
-    return generalManagerRoleId;
+    return ownerRoleId;
+  }
+
+  async resetDefaultPermissionsForCompany(companyId: string): Promise<void> {
+    const allPermissions = Array.from(this.permissions.values());
+    const permByKey: Record<string, Permission> = {};
+    for (const p of allPermissions) permByKey[p.key] = p;
+
+    const companyRoles = Array.from(this.userRoles.values()).filter(r => r.companyId === companyId && r.isBuiltIn);
+    const now = new Date();
+
+    for (const role of companyRoles) {
+      // Remove existing permissions for this role
+      for (const [id, rp] of this.rolePermissions.entries()) {
+        if (rp.roleId === role.id) this.rolePermissions.delete(id);
+      }
+
+      const defaultActions = getDefaultActionsForRole(role.name, allPermissions, permByKey);
+      for (const [permId, actions] of Object.entries(defaultActions)) {
+        if (actions.length === 0) continue;
+        const rp: RolePermission = {
+          id: randomUUID(),
+          roleId: role.id,
+          permissionId: permId,
+          allowedActions: actions as PermissionAction[],
+          createdAt: now,
+        };
+        this.rolePermissions.set(rp.id, rp);
+      }
+    }
   }
 
   // Permission operations
@@ -6037,27 +6193,48 @@ export class DbStorage implements IStorage {
       
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       
       // Project Management category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.todos", name: "To Dos", description: "Manage project to-dos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.invoices", name: "Client Invoices", description: "Manage client invoices", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
+      { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+      
+      // Tasks category
+      { key: "tasks.project", name: "Project Tasks", description: "Manage tasks within projects", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "tasks.business", name: "Business Tasks", description: "Manage company-wide business tasks", category: "tasks", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       
       // Financial category
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
+      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "financial.budget_labour", name: "Labour Hours Budget", description: "View labour hours tracker (hours worked vs budgeted per cost code)", category: "financial", actions: ["view"], isBuiltIn: true },
-      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view"], isBuiltIn: true },
-      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+      { key: "financial.reports", name: "Financial Reports", description: "Access financial reports and summaries", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
+
+      // Business category
+      { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.messages", name: "Business Messages", description: "Access company-wide messaging", category: "business", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.leave", name: "Leave Management", description: "Manage employee leave requests", category: "business", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "business.team", name: "Team Directory", description: "View team member directory", category: "business", actions: ["view"], isBuiltIn: true },
 
       // Schedule visibility
       { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published to external users", category: "projects", actions: ["view"], isBuiltIn: true }
@@ -7725,48 +7902,109 @@ export class DbStorage implements IStorage {
   async seedDefaultRolesForCompany(companyId: string): Promise<string> {
     try {
       const builtInRoles = [
-        { companyId, name: "General Manager", description: "Full system administration access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 0 },
-        { companyId, name: "Office Manager", description: "Office operations management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 1 },
-        { companyId, name: "Construction Manager", description: "Construction oversight and management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 2 },
-        { companyId, name: "Foreman", description: "Site-based team lead", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 3 },
-        { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 4 },
-        { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 5 },
-        { companyId, name: "Subcontractor", description: "External subcontractor with limited access", userCategory: "supplier" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 6 },
+        { companyId, name: "Owner", description: "Full system administration access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 0 },
+        { companyId, name: "Admin", description: "Company administration and management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 1 },
+        { companyId, name: "Project Manager", description: "Project oversight and financial management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 2 },
+        { companyId, name: "Site Supervisor", description: "On-site team lead with field access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 3 },
+        { companyId, name: "Subcontractor", description: "External subcontractor with limited access", userCategory: "supplier" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 4 },
+        { companyId, name: "Client", description: "Client portal access — read-only view of project progress", userCategory: "client" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 5 },
+        { companyId, name: "Accounts", description: "Financial specialist with full billing and invoicing access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 6 },
       ];
 
-      let generalManagerRoleId = '';
+      let ownerRoleId = '';
 
       await db.transaction(async (tx) => {
-        // Insert all roles
         const insertedRoles = await tx.insert(schema.userRoles)
           .values(builtInRoles)
           .returning();
 
-        // Find General Manager role
-        const generalManagerRole = insertedRoles.find(r => r.name === "General Manager");
-        if (!generalManagerRole) {
-          throw new Error("Failed to create General Manager role");
+        const ownerRole = insertedRoles.find(r => r.name === "Owner");
+        if (!ownerRole) {
+          throw new Error("Failed to create Owner role");
         }
-        generalManagerRoleId = generalManagerRole.id;
+        ownerRoleId = ownerRole.id;
 
-        // Get all permissions
         const allPermissions = await tx.select().from(schema.permissions);
 
-        // Create role permissions for General Manager (full access)
-        const rolePermissions = allPermissions.map(permission => ({
-          roleId: generalManagerRoleId,
+        // Owner gets full access to everything
+        const ownerPermissions = allPermissions.map(permission => ({
+          roleId: ownerRoleId,
           permissionId: permission.id,
           allowedActions: permission.actions as PermissionAction[],
         }));
 
-        if (rolePermissions.length > 0) {
-          await tx.insert(schema.rolePermissions).values(rolePermissions);
+        if (ownerPermissions.length > 0) {
+          await tx.insert(schema.rolePermissions).values(ownerPermissions);
+        }
+
+        // Seed default permissions for other roles
+        const permByKey: Record<string, typeof allPermissions[0]> = {};
+        for (const p of allPermissions) permByKey[p.key] = p;
+
+        for (const role of insertedRoles) {
+          if (role.name === "Owner") continue;
+          const defaultActions = getDefaultActionsForRole(role.name, allPermissions, permByKey);
+          const rolePerms = Object.entries(defaultActions)
+            .filter(([, actions]) => actions.length > 0)
+            .map(([permId, actions]) => ({
+              roleId: role.id,
+              permissionId: permId,
+              allowedActions: actions as PermissionAction[],
+            }));
+          if (rolePerms.length > 0) {
+            await tx.insert(schema.rolePermissions).values(rolePerms);
+          }
         }
       });
 
-      return generalManagerRoleId;
+      return ownerRoleId;
     } catch (error) {
       console.error("Database error in seedDefaultRolesForCompany:", error);
+      throw error;
+    }
+  }
+
+  async resetDefaultPermissionsForCompany(companyId: string): Promise<void> {
+    try {
+      const allPermissions = await db.select().from(schema.permissions);
+      const permByKey: Record<string, typeof allPermissions[0]> = {};
+      for (const p of allPermissions) permByKey[p.key] = p;
+
+      const builtInRoles = await db.select().from(schema.userRoles)
+        .where(and(eq(schema.userRoles.companyId, companyId), eq(schema.userRoles.isBuiltIn, true)));
+
+      await db.transaction(async (tx) => {
+        for (const role of builtInRoles) {
+          await tx.delete(schema.rolePermissions)
+            .where(eq(schema.rolePermissions.roleId, role.id));
+
+          const isFullAdmin = ['owner', 'admin', 'general manager'].includes(role.name.toLowerCase());
+          let rolePerms: { roleId: string; permissionId: string; allowedActions: PermissionAction[] }[];
+
+          if (isFullAdmin) {
+            rolePerms = allPermissions.map(p => ({
+              roleId: role.id,
+              permissionId: p.id,
+              allowedActions: p.actions as PermissionAction[],
+            }));
+          } else {
+            const defaultActions = getDefaultActionsForRole(role.name, allPermissions, permByKey);
+            rolePerms = Object.entries(defaultActions)
+              .filter(([, actions]) => actions.length > 0)
+              .map(([permId, actions]) => ({
+                roleId: role.id,
+                permissionId: permId,
+                allowedActions: actions as PermissionAction[],
+              }));
+          }
+
+          if (rolePerms.length > 0) {
+            await tx.insert(schema.rolePermissions).values(rolePerms);
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Database error in resetDefaultPermissionsForCompany:", error);
       throw error;
     }
   }

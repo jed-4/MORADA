@@ -10405,7 +10405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const permissionSchema = z.object({
         permissionId: z.string(),
-        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve"])),
+        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only"])),
         viewScope: z.enum(["own", "selected_roles", "all"]).optional(),
         viewableRoleIds: z.array(z.string()).optional(),
       });
@@ -10422,6 +10422,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Role permissions updated successfully" });
     } catch (error) {
       res.status(500).json({ error: "Failed to update role permissions" });
+    }
+  });
+
+  app.post("/api/permissions/reset-defaults", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company ID not found" });
+      }
+      await storage.resetDefaultPermissionsForCompany(companyId);
+      res.json({ message: "Default permissions reset successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reset default permissions" });
     }
   });
 

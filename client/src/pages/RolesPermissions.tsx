@@ -63,7 +63,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-type PermissionAction = "view" | "add" | "edit" | "delete" | "approve";
+type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
 
 interface PermissionMatrix {
   [roleId: string]: {
@@ -262,6 +262,30 @@ export default function RolesPermissions() {
     },
   });
 
+  // Reset default permissions mutation
+  const resetDefaultsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/permissions/reset-defaults", "POST", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-roles"] });
+      if (selectedRoleId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user-roles", selectedRoleId, "permissions"] });
+      }
+      toast({
+        title: "Permissions reset",
+        description: "All built-in roles have been reset to their default permissions.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to reset default permissions.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete role mutation
   const deleteRoleMutation = useMutation({
     mutationFn: async () => {
@@ -384,7 +408,10 @@ export default function RolesPermissions() {
     admin: "ADMIN",
     sales: "SALES",
     messaging: "MESSAGING",
+    business: "BUSINESS",
   };
+
+  const categoryOrder = ["projects", "tasks", "financial", "business", "sales", "files", "admin", "timesheets", "messaging"];
 
   // Auto-select first role if none selected
   useEffect(() => {
@@ -486,7 +513,20 @@ export default function RolesPermissions() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  {selectedRole.isBuiltIn && (
+                    <Button
+                      variant="outline"
+                      onClick={() => resetDefaultsMutation.mutate()}
+                      disabled={resetDefaultsMutation.isPending}
+                      data-testid="button-reset-defaults"
+                    >
+                      {resetDefaultsMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : null}
+                      Reset to Defaults
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => setIsEditRoleOpen(true)}
@@ -525,7 +565,11 @@ export default function RolesPermissions() {
             {/* Permissions Matrix */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-6">
-                {Object.entries(groupedPermissions).map(([category, categoryPermissions]) => (
+                {[...categoryOrder, ...Object.keys(groupedPermissions).filter(c => !categoryOrder.includes(c))]
+                  .filter(cat => groupedPermissions[cat])
+                  .map((category) => {
+                  const categoryPermissions = groupedPermissions[category];
+                  return (
                   <Card key={category}>
                     <CardContent className="p-6">
                       <h3 className="text-sm font-semibold mb-4 text-muted-foreground">
@@ -533,22 +577,26 @@ export default function RolesPermissions() {
                       </h3>
                       
                       {(() => {
-                        const hasApproveAction = categoryPermissions.some(
-                          (p) => (p.actions as string[]).includes("approve")
-                        );
-                        const actionColumns: { key: PermissionAction; label: string }[] = [
+                        const allActions = categoryPermissions.flatMap(p => p.actions as string[]);
+                        const ALL_COLS: { key: PermissionAction; label: string }[] = [
                           { key: "view", label: "View" },
                           { key: "add", label: "Add" },
                           { key: "edit", label: "Edit" },
                           { key: "delete", label: "Delete" },
-                          ...(hasApproveAction ? [{ key: "approve" as PermissionAction, label: "Approve" }] : []),
+                          { key: "approve", label: "Approve" },
+                          { key: "send", label: "Send" },
+                          { key: "convert", label: "Convert" },
+                          { key: "summary_only", label: "Summary" },
                         ];
-                        const gridCols = hasApproveAction
-                          ? "grid-cols-[1fr,80px,80px,80px,80px,80px]"
-                          : "grid-cols-[1fr,80px,80px,80px,80px]";
+                        const actionColumns = ALL_COLS.filter(c => allActions.includes(c.key));
+                        const gridStyle: React.CSSProperties = {
+                          display: 'grid',
+                          gridTemplateColumns: `1fr ${actionColumns.map(() => '72px').join(' ')}`,
+                          gap: '12px',
+                        };
                         return (
                           <div className="space-y-3">
-                            <div className={`grid ${gridCols} gap-4 pb-2 border-b`}>
+                            <div style={gridStyle} className="pb-2 border-b">
                               <div></div>
                               {actionColumns.map((col) => (
                                 <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
@@ -561,7 +609,7 @@ export default function RolesPermissions() {
                               const currentViewableRoleIds = viewScopeData[permission.id]?.viewableRoleIds || [];
                               return (
                                 <div key={permission.id}>
-                                  <div className={`grid ${gridCols} gap-4 items-center`}>
+                                  <div style={{ ...gridStyle, alignItems: 'center' }}>
                                     <div className="text-sm">{permission.name}</div>
                                     {actionColumns.map(({ key: action }) => {
                                       const isAvailable = (permission.actions as string[]).includes(action);
@@ -651,7 +699,8 @@ export default function RolesPermissions() {
                       })()}
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </>

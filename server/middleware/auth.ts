@@ -93,10 +93,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
 
   const role = await storage.getUserRole(req.user.roleId);
-  const roleName = role?.name?.toLowerCase() || '';
-  // Match "general manage" (catches both "general manage" and "general manager")
-  const isAdmin = roleName.includes('admin') || roleName.includes('general manage') || roleName.includes('owner');
-  if (!role || !isAdmin) {
+  if (!role || !isAdminRole(role)) {
     res.status(403).json({ error: 'Admin role required' });
     return;
   }
@@ -105,9 +102,23 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 }
 
 /**
+ * Shared helper — returns true when the given role is considered an admin-level role
+ * that should bypass per-permission checks.
+ */
+export function isAdminRole(role: { name?: string | null; isBuiltIn?: boolean | null }): boolean {
+  const n = (role.name ?? '').toLowerCase();
+  return !!(role.isBuiltIn && (
+    n.includes('admin') ||
+    n.includes('owner') ||
+    n.includes('general manage') ||
+    n === 'general manager'
+  ));
+}
+
+/**
  * Role-based permission checker
  */
-export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete' | 'approve') {
+export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete' | 'approve' | 'send' | 'convert' | 'summary_only') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Development bypass
     if (process.env.NODE_ENV === 'development') {
@@ -123,20 +134,9 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
     try {
       // Check if user has an admin-level role (bypass permission check for admins)
       const role = await storage.getUserRole(req.user.roleId);
-      if (role) {
-        const roleName = role.name?.toLowerCase() || '';
-        // Built-in admin roles always have full access
-        // Match "general manage" (catches both "general manage" and "general manager")
-        const isAdminRole = role.isBuiltIn && (
-          roleName.includes('admin') || 
-          roleName.includes('general manage') || 
-          roleName.includes('owner') ||
-          roleName === 'general manager'
-        );
-        if (isAdminRole) {
-          next();
-          return;
-        }
+      if (role && isAdminRole(role)) {
+        next();
+        return;
       }
 
       // Get role permissions

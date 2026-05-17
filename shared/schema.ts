@@ -390,7 +390,7 @@ export type UserWithRole = User & {
   permissions?: Permission[];
 };
 
-export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve";
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
 export type UserCategory = "team" | "supplier" | "client";
 
 // Note Groups for organizing notes
