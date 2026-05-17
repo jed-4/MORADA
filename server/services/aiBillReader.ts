@@ -6,6 +6,7 @@ export interface InvoiceData {
   supplierAddress?: string;
   supplierEmail?: string;
   supplierPhone?: string;
+  siteAddress?: string;
   totalAmount?: number;
   totalTax?: number;
   subtotalAmount?: number;
@@ -35,6 +36,7 @@ interface AIInvoiceResponse {
   supplierAddress?: string;
   supplierEmail?: string;
   supplierPhone?: string;
+  siteAddress?: string;
   totalAmount?: number;
   totalTax?: number;
   subtotalAmount?: number;
@@ -57,9 +59,10 @@ Return a JSON object with the following structure. All monetary values should be
   "invoiceDate": "YYYY-MM-DD format or null",
   "dueDate": "YYYY-MM-DD format or null",
   "supplierName": "vendor/supplier company name or null",
-  "supplierAddress": "full supplier address or null",
+  "supplierAddress": "full supplier address of the supplier/vendor (their business address) or null",
   "supplierEmail": "supplier email or null",
   "supplierPhone": "supplier phone number or null",
+  "siteAddress": "the delivery/job site/installation address where work was performed or materials delivered — often labelled 'Site:', 'Job Address:', 'Delivery Address:', or appears in invoice description. null if not found",
   "totalAmount": number or null (total amount including tax, in dollars),
   "totalTax": number or null (total GST/tax amount, in dollars),
   "subtotalAmount": number or null (subtotal before tax, in dollars),

@@ -25,6 +25,60 @@ export interface AutoBillOptions {
   existingBillId?: string;
 }
 
+/**
+ * Fuzzy-match an AI-extracted invoice address against project names/locations.
+ * Returns the best-matching project ID, or null if no confident match found.
+ */
+function matchProjectByAddress(
+  invoiceAddress: string,
+  projects: import("@shared/schema").Project[],
+  invoiceSupplierName?: string,
+): string | null {
+  const normalise = (s: string) =>
+    s.toLowerCase()
+      .replace(/\bplace\b/g, "pl").replace(/\bstreet\b/g, "st").replace(/\broad\b/g, "rd")
+      .replace(/\bdrive\b/g, "dr").replace(/\bcourt\b/g, "ct").replace(/\bavenue\b/g, "ave")
+      .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  const tokenise = (s: string) => normalise(s).split(" ").filter(t => t.length > 1);
+  const addrTokens = new Set(tokenise(invoiceAddress));
+
+  // Extract leading street number from the invoice address
+  const invoiceStreetNum = normalise(invoiceAddress).match(/^\d+/)?.[0];
+
+  let best: { id: string; score: number } | null = null;
+
+  for (const project of projects) {
+    if (project.isArchived) continue;
+
+    // Combine project name + location as the candidate text
+    const candidateText = [project.name, project.location].filter(Boolean).join(" ");
+    if (!candidateText.trim()) continue;
+
+    const projTokens = tokenise(candidateText);
+    if (projTokens.length === 0) continue;
+
+    // Street number check: if both have a leading number, they must match
+    const projStreetNum = normalise(candidateText).match(/\d+/)?.[0];
+    if (invoiceStreetNum && projStreetNum && invoiceStreetNum !== projStreetNum) continue;
+
+    // Token overlap score
+    let overlap = 0;
+    for (const t of projTokens) {
+      if (addrTokens.has(t)) overlap++;
+    }
+
+    // Require at least 2 meaningful shared tokens OR the street number + 1 word
+    const score = overlap / Math.max(projTokens.length, 1);
+    if (overlap < 2 && !(invoiceStreetNum && projStreetNum && overlap >= 1)) continue;
+    if (score < 0.3) continue;
+
+    if (!best || score > best.score) best = { id: project.id, score };
+  }
+
+  return best?.id ?? null;
+}
+
 export class AutoBillCreatorService {
   /**
    * Process all attachments from one email → create exactly ONE bill.
@@ -97,21 +151,27 @@ export class AutoBillCreatorService {
 
     // ── Resolve project ──────────────────────────────────────────────────────
     let projectId = options.defaultProjectId;
+    let projectMatchConfident = !!options.defaultProjectId;
+    const projects = await storage.getProjects();
+
     if (!projectId) {
       const projectHint = emailParser.extractProjectHint(email);
-      const projects = await storage.getProjects();
 
       if (projectHint && options.autoMatch) {
         const matchedProject = projects.find(p =>
           p.name.toLowerCase().includes(projectHint.toLowerCase())
         );
-        if (matchedProject) projectId = matchedProject.id;
+        if (matchedProject) {
+          projectId = matchedProject.id;
+          projectMatchConfident = true;
+        }
       }
 
       if (!projectId) {
         const activeProject = projects.find(p => p.isActive);
         if (activeProject) {
           projectId = activeProject.id;
+          projectMatchConfident = false; // fallback — may be refined after AI
         } else {
           throw new Error("No active project found. Please set a default project.");
         }
@@ -139,53 +199,60 @@ export class AutoBillCreatorService {
       }
     }
 
-    // ── Upload ALL attachments ───────────────────────────────────────────────
+    // ── Upload ALL attachments (skip if bill already has attachments to avoid duplicates on retry) ──
     const uploadedAttachments: Array<{
       objectPath: string;
       filename: string;
       mimeType: string;
     }> = [];
 
-    for (const attachment of attachments) {
-      try {
-        const uploaded = await this.uploadAttachment(
-          attachment.content,
-          attachment.filename,
-          companyId
-        );
-        if (uploaded) {
-          uploadedAttachments.push({
-            objectPath: uploaded.objectPath,
-            filename: attachment.filename,
-            mimeType: uploaded.mimeType,
-          });
+    // Check if the existing bill already has attachments — if so skip re-upload
+    const existingBillForCheck = options.existingBillId
+      ? await storage.getBillById(options.existingBillId)
+      : null;
+    const hasExistingAttachments =
+      existingBillForCheck &&
+      ((existingBillForCheck.attachmentUrls as any[]) || []).length > 0;
+
+    if (!hasExistingAttachments) {
+      for (const attachment of attachments) {
+        try {
+          const uploaded = await this.uploadAttachment(
+            attachment.content,
+            attachment.filename,
+            companyId
+          );
+          if (uploaded) {
+            uploadedAttachments.push({
+              objectPath: uploaded.objectPath,
+              filename: attachment.filename,
+              mimeType: uploaded.mimeType,
+            });
+          }
+        } catch (uploadErr: any) {
+          console.error(`autoBillCreator: failed to upload ${attachment.filename}:`, uploadErr.message);
         }
-      } catch (uploadErr: any) {
-        console.error(`autoBillCreator: failed to upload ${attachment.filename}:`, uploadErr.message);
       }
+    } else {
+      console.log(`[autoBillCreator] Skipping re-upload for ${options.existingBillId} — ${(existingBillForCheck.attachmentUrls as any[]).length} attachment(s) already present`);
     }
 
     // ── Create ONE bill (or reuse existing draft) ────────────────────────────
     let createdBill: import("@shared/schema").Bill;
 
     if (options.existingBillId) {
-      const existing = await storage.getBillById(options.existingBillId);
+      const existing = existingBillForCheck;
       if (!existing) throw new Error(`Existing bill ${options.existingBillId} not found`);
       createdBill = existing;
       console.log(`[autoBillCreator] Reusing existing draft bill ${existing.billNumber} for AI processing`);
 
-      // Append any newly-uploaded attachments that aren't already present
-      const existingPaths = new Set(
-        ((createdBill.attachmentUrls as any[]) || []).map((a: any) => a.objectPath)
-      );
+      // Append any newly-uploaded attachments (only happens when bill had 0 attachments previously)
       for (const u of uploadedAttachments) {
-        if (!existingPaths.has(u.objectPath)) {
-          await storage.appendBillAttachment(createdBill.id, {
-            ...u,
-            source: "email",
-            uploadedAt: new Date().toISOString(),
-          });
-        }
+        await storage.appendBillAttachment(createdBill.id, {
+          ...u,
+          source: "email",
+          uploadedAt: new Date().toISOString(),
+        });
       }
     } else {
       const billNumber = await storage.getNextBillNumber();
@@ -268,6 +335,20 @@ export class AutoBillCreatorService {
           });
           aiSupplierId = newContact.id;
           aiSupplierName = newContact.name;
+        }
+      }
+
+      // ── Re-resolve project using AI-extracted address (if initial match was a fallback) ──
+      if (!projectMatchConfident && options.autoMatch) {
+        const candidateAddress = invoiceData.siteAddress || invoiceData.supplierAddress;
+        if (candidateAddress) {
+          const addressMatch = matchProjectByAddress(candidateAddress, projects, invoiceData.supplierName);
+          if (addressMatch) {
+            console.log(`[autoBillCreator] Matched project ${addressMatch} by AI-extracted address: "${candidateAddress}"`);
+            projectId = addressMatch;
+            // Update the already-created bill's project reference
+            await storage.updateBill(createdBill.id, { projectId });
+          }
         }
       }
 
