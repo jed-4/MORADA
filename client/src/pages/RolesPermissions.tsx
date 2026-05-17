@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -145,6 +146,7 @@ export default function RolesPermissions() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const pageTitle = usePageTitle({ pageName: "Roles & Permissions" });
+  const canResetDefaults = usePermission("admin.roles", "edit");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
@@ -525,7 +527,7 @@ export default function RolesPermissions() {
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  {selectedRole.isBuiltIn && (
+                  {selectedRole.isBuiltIn && canResetDefaults && (
                     <Button
                       variant="outline"
                       onClick={() => setIsResetConfirmOpen(true)}
@@ -611,7 +613,7 @@ export default function RolesPermissions() {
                               { key: "approve", label: "Approve" },
                               { key: "send", label: "Send" },
                               { key: "convert", label: "Convert" },
-                              { key: "summary_only", label: "Summary" },
+                              { key: "summary_only", label: "Summary Only" },
                             ];
                             const actionColumns = ALL_COLS.filter(c => allActions.includes(c.key));
                             const gridStyle: React.CSSProperties = {
