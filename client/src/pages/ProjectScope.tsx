@@ -66,12 +66,13 @@ import {
   Flag,
   Paperclip,
   Loader2,
+  Clock,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate, ScopeItemTypeDefinition, TaskTemplate } from "@shared/schema";
+import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate, ScopeItemTypeDefinition, TaskTemplate, LabourHoursBudget } from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1260,6 +1261,8 @@ interface DroppableStageProps {
   allProjectTasks?: { id: string; title: string; statusName?: string | null; scopeStageId?: string | null }[];
   onLinkTask?: (taskId: string, stageId: string) => void;
   onUnlinkTask?: (taskId: string) => void;
+  labourBudgetData?: LabourHoursBudget[];
+  onUpdateLabourTrackers?: (stageId: string, trackers: { costCodeId: string }[]) => void;
 }
 
 type LinkedChecklistItem = {
@@ -1415,7 +1418,10 @@ function DroppableStage({
   allProjectTasks = [],
   onLinkTask,
   onUnlinkTask,
+  labourBudgetData = [],
+  onUpdateLabourTrackers,
 }: DroppableStageProps) {
+  const [showLabourPicker, setShowLabourPicker] = useState(false);
   const stageAttachments = (Array.isArray((stageData as any).attachments) ? (stageData as any).attachments : []) as Array<{
     id: string; name: string; objectPath: string; size: number; uploadedAt: string;
   }>;
@@ -1640,6 +1646,16 @@ function DroppableStage({
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Stage Below
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowLabourPicker(true);
+                    }}
+                    data-testid={`menu-add-labour-tracker-${stageData.id}`}
+                  >
+                    <Clock className="h-4 w-4 mr-2" />
+                    Add Labour Tracker
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={(e) => {
@@ -2036,6 +2052,66 @@ function DroppableStage({
                 );
               })()}
 
+              {/* Labour Trackers */}
+              {(() => {
+                const trackers: { costCodeId: string }[] = Array.isArray(stageData.labourTrackers) ? (stageData.labourTrackers as { costCodeId: string }[]) : [];
+                if (trackers.length === 0) return null;
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="text-data font-medium text-muted-foreground uppercase tracking-wide">
+                        Labour Hours
+                      </div>
+                    </div>
+                    {trackers.map((tracker) => {
+                      const budgetRow = labourBudgetData.find(b => b.costCodeId === tracker.costCodeId);
+                      const name = budgetRow?.costCodeTitle || tracker.costCodeId;
+                      const budgeted = budgetRow ? (Number(budgetRow.budgetedHours) || 0) : 0;
+                      const approved = budgetRow ? (Number(budgetRow.approvedHours) || 0) : 0;
+                      const pct = budgeted > 0 ? Math.min(100, Math.round((approved / budgeted) * 100)) : 0;
+                      const isOver = approved > budgeted && budgeted > 0;
+                      return (
+                        <div
+                          key={tracker.costCodeId}
+                          className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 group"
+                          data-testid={`labour-tracker-${stageData.id}-${tracker.costCodeId}`}
+                        >
+                          <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium truncate">{name}</span>
+                              <span className="text-data text-muted-foreground shrink-0">
+                                {approved.toFixed(1)} / {budgeted > 0 ? budgeted.toFixed(1) : '—'} hrs
+                              </span>
+                            </div>
+                            {budgeted > 0 && (
+                              <div className="h-1 mt-0.5 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${isOver ? 'bg-red-500' : 'bg-amber-400'}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover-elevate shrink-0"
+                            title="Remove labour tracker"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const updated = trackers.filter(t => t.costCodeId !== tracker.costCodeId);
+                              onUpdateLabourTrackers?.(stageData.id, updated);
+                            }}
+                            data-testid={`button-remove-labour-tracker-${stageData.id}-${tracker.costCodeId}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* Stage Attachments */}
               <div className="mt-2 space-y-1">
                 <div className="flex items-center justify-between px-2">
@@ -2190,6 +2266,64 @@ function DroppableStage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Labour Tracker Picker Dialog */}
+      <Dialog open={showLabourPicker} onOpenChange={setShowLabourPicker}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Labour Tracker</DialogTitle>
+            <DialogDescription>
+              Select a labour cost code to track on the "{stageData.name}" stage.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1 max-h-80 overflow-y-auto">
+            {labourBudgetData.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No labour cost codes found. Add a labour budget to this project first.
+              </div>
+            ) : (() => {
+              const currentTrackers: { costCodeId: string }[] = Array.isArray(stageData.labourTrackers) ? (stageData.labourTrackers as { costCodeId: string }[]) : [];
+              const alreadyPinned = new Set(currentTrackers.map(t => t.costCodeId));
+              return labourBudgetData.map((row) => {
+                const isPinned = alreadyPinned.has(row.costCodeId ?? '');
+                return (
+                  <button
+                    key={row.id}
+                    className={`w-full text-left px-3 py-2 rounded-md flex items-center gap-3 hover-elevate active-elevate-2 ${isPinned ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isPinned || !row.costCodeId}
+                    onClick={() => {
+                      if (!row.costCodeId || isPinned) return;
+                      const updated = [...currentTrackers, { costCodeId: row.costCodeId }];
+                      onUpdateLabourTrackers?.(stageData.id, updated);
+                      setShowLabourPicker(false);
+                    }}
+                    data-testid={`labour-picker-${row.costCodeId}`}
+                  >
+                    <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{row.costCodeTitle || row.costCodeId}</div>
+                      {row.categoryTitle && (
+                        <div className="text-xs text-muted-foreground truncate">{row.categoryTitle}</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground shrink-0">
+                      {(Number(row.budgetedHours) || 0).toFixed(1)} hrs budgeted
+                    </div>
+                    {isPinned && (
+                      <Check className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
+                  </button>
+                );
+              });
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLabourPicker(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -2350,6 +2484,12 @@ export default function ProjectScope() {
     }
   }, [scopeItemTypeDefs]);
 
+
+  // Fetch labour hours budget (for labour tracker feature on stages)
+  const { data: labourBudgetData = [] } = useQuery<LabourHoursBudget[]>({
+    queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
+    enabled: !!projectId,
+  });
 
   // Fetch scope stages
   const { data: scopeStages = [], isLoading: isLoadingStages } = useQuery<ScopeStage[]>({
@@ -2621,6 +2761,35 @@ export default function ProjectScope() {
   const handleToggleStageComplete = (stageId: string, isCompleted: boolean) => {
     toggleStageCompleteMutation.mutate({ id: stageId, isCompleted });
   };
+
+  // Update labour trackers on a stage
+  const updateLabourTrackersMutation = useMutation({
+    mutationFn: async ({ id, labourTrackers }: { id: string; labourTrackers: { costCodeId: string }[] }) => {
+      return apiRequest(`/api/scope-stages/${id}`, 'PATCH', { labourTrackers });
+    },
+    onMutate: async ({ id, labourTrackers }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      const previousStages = queryClient.getQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`]);
+      queryClient.setQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`], (old) => {
+        if (!old) return old;
+        return old.map(stage => stage.id === id ? { ...stage, labourTrackers } : stage);
+      });
+      return { previousStages };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousStages) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
+      }
+      toast({ title: "Failed to update labour tracker", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+    },
+  });
+
+  const handleUpdateLabourTrackers = useCallback((stageId: string, trackers: { costCodeId: string }[]) => {
+    updateLabourTrackersMutation.mutate({ id: stageId, labourTrackers: trackers });
+  }, [updateLabourTrackersMutation]);
 
   const handleNavigateToChecklists = useCallback((stageId: string) => {
     navigate(`/projects/${projectId}/checklists?scopeStageId=${stageId}`);
@@ -4137,6 +4306,8 @@ export default function ProjectScope() {
                       allProjectTasks={projectTasks}
                       onLinkTask={handleLinkTask}
                       onUnlinkTask={handleUnlinkTask}
+                      labourBudgetData={labourBudgetData}
+                      onUpdateLabourTrackers={handleUpdateLabourTrackers}
                     />
                   ))}
               </SortableContext>
