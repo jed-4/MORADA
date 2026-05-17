@@ -8923,7 +8923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const [canViewInvoices, canViewBudget, canViewBills] = await Promise.all([
         storage.checkUserPermission(user.id, "financial.invoices", "view").catch(() => false),
-        storage.checkUserPermission(user.id, "financial.budget", "view").catch(() => false),
+        storage.checkUserPermission(user.id, "financial.budget_actuals", "view").catch(() => false),
         storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false),
       ]);
       const hasFinancialAccess = canViewInvoices || canViewBudget || canViewBills;
@@ -9278,7 +9278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ---- Composite endpoints -------------------------------------------
 
-  app.get("/api/kpis/budget-variance", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+  app.get("/api/kpis/budget-variance", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9372,7 +9372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/avg-margin", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+  app.get("/api/kpis/avg-margin", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9887,7 +9887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/business/project-profitability", requireAuth, requirePermission("financial.budget", "view"), async (req, res) => {
+  app.get("/api/business/project-profitability", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -19532,7 +19532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Budget routes
-  app.get("/api/projects/:projectId/budget", async (req, res) => {
+  app.get("/api/projects/:projectId/budget", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const budget = await storage.getBudget(req.params.projectId);
       if (!budget) {
@@ -19549,7 +19549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/projects/:projectId/budget/calculate", async (req, res) => {
+  app.post("/api/projects/:projectId/budget/calculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const budget = await storage.calculateBudget(req.params.projectId);
       res.json(budget);
@@ -19600,7 +19600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Budget Line Items routes
-  app.get("/api/budgets/:budgetId/line-items", async (req, res) => {
+  app.get("/api/budgets/:budgetId/line-items", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const lineItems = await storage.getBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
@@ -19612,7 +19612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/budgets/:budgetId/line-items/recalculate", async (req, res) => {
+  app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
@@ -19648,7 +19648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Labour Hours Budget routes
-  app.get("/api/projects/:projectId/labour-hours-budget", async (req, res) => {
+  app.get("/api/projects/:projectId/labour-hours-budget", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
       const labourHours = await storage.getLabourHoursBudget(req.params.projectId);
       res.json(labourHours);
@@ -19660,7 +19660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/projects/:projectId/labour-hours-budget/recalculate", async (req, res) => {
+  app.post("/api/projects/:projectId/labour-hours-budget/recalculate", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
       const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
       res.json(labourHours);

@@ -1431,7 +1431,8 @@ export class MemStorage implements IStorage {
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.budget", name: "Budget", description: "Manage budgets", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.budget_labour", name: "Labour Hours Budget", description: "View labour hours tracker (hours worked vs budgeted per cost code)", category: "financial", actions: ["view"], isBuiltIn: true },
+      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view"], isBuiltIn: true },
       { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true }
     ];
@@ -5983,6 +5984,9 @@ export class DbStorage implements IStorage {
   private async initializeDefaultData(): Promise<void> {
     // Always ensure built-in permissions exist (idempotent)
     await this.ensureBuiltInPermissionsExist();
+
+    // Migrate financial.budget → financial.budget_labour + financial.budget_actuals (idempotent)
+    await this.migrateBudgetPermissions();
     
     // Always ensure all required categories exist (idempotent)
     await this.ensureRequiredCategoriesExist();
@@ -6050,7 +6054,8 @@ export class DbStorage implements IStorage {
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "financial.budget", name: "Budget", description: "Manage budgets", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.budget_labour", name: "Labour Hours Budget", description: "View labour hours tracker (hours worked vs budgeted per cost code)", category: "financial", actions: ["view"], isBuiltIn: true },
+      { key: "financial.budget_actuals", name: "Financial Budget", description: "View full cost budget (estimate vs actuals, margins, dollar figures)", category: "financial", actions: ["view"], isBuiltIn: true },
       { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
 
@@ -6073,6 +6078,80 @@ export class DbStorage implements IStorage {
           createdAt: now,
         });
       }
+    }
+  }
+
+  // One-time migration: any role that had financial.budget gets financial.budget_labour
+  // and financial.budget_actuals granted automatically. Idempotent — safe to run on every boot.
+  private async migrateBudgetPermissions(): Promise<void> {
+    try {
+      // Look up the permission IDs we care about
+      const [oldPerm] = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, 'financial.budget')).limit(1);
+      const [labourPerm] = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, 'financial.budget_labour')).limit(1);
+      const [actualsPerm] = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, 'financial.budget_actuals')).limit(1);
+
+      if (!oldPerm || !labourPerm || !actualsPerm) return;
+
+      // Find all role-permission rows for the old financial.budget permission
+      const oldRolePerms = await db.select().from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.permissionId, oldPerm.id));
+
+      for (const rp of oldRolePerms) {
+        const oldActions = Array.isArray(rp.allowedActions) ? rp.allowedActions as string[] : [];
+        if (!oldActions.includes('view')) continue;
+
+        // Grant financial.budget_labour if not already granted
+        const [existingLabour] = await db.select().from(schema.rolePermissions)
+          .where(and(
+            eq(schema.rolePermissions.roleId, rp.roleId),
+            eq(schema.rolePermissions.permissionId, labourPerm.id),
+          )).limit(1);
+        if (!existingLabour) {
+          await db.insert(schema.rolePermissions).values({
+            id: `rp-${rp.roleId}-${labourPerm.id}`,
+            roleId: rp.roleId,
+            permissionId: labourPerm.id,
+            allowedActions: ['view'] as PermissionAction[],
+            viewScope: 'all',
+            viewableRoleIds: [],
+            createdAt: new Date(),
+          });
+        }
+
+        // Grant financial.budget_actuals if not already granted
+        const [existingActuals] = await db.select().from(schema.rolePermissions)
+          .where(and(
+            eq(schema.rolePermissions.roleId, rp.roleId),
+            eq(schema.rolePermissions.permissionId, actualsPerm.id),
+          )).limit(1);
+        if (!existingActuals) {
+          await db.insert(schema.rolePermissions).values({
+            id: `rp-${rp.roleId}-${actualsPerm.id}`,
+            roleId: rp.roleId,
+            permissionId: actualsPerm.id,
+            allowedActions: ['view'] as PermissionAction[],
+            viewScope: 'all',
+            viewableRoleIds: [],
+            createdAt: new Date(),
+          });
+        }
+      }
+
+      // Delete the old financial.budget role-permission rows now that the new ones are in place
+      if (oldRolePerms.length > 0) {
+        await db.delete(schema.rolePermissions)
+          .where(eq(schema.rolePermissions.permissionId, oldPerm.id));
+      }
+
+      // Delete the old financial.budget permission record itself so it no longer
+      // appears in the Roles & Permissions UI or API responses
+      await db.delete(schema.permissions)
+        .where(eq(schema.permissions.key, 'financial.budget'));
+    } catch (error) {
+      console.error('[migrateBudgetPermissions] Error:', error);
     }
   }
 

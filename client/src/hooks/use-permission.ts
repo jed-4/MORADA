@@ -45,7 +45,12 @@ export function useFinancialPermission(): boolean {
     if (!u) return false;
     if (u.isAdminLike) return true;
     const perms = u.effectivePermissions ?? {};
-    const keys = ["financial.budget", "financial.bills", "financial.invoices"];
+    const keys = [
+      "financial.budget_labour",
+      "financial.budget_actuals",
+      "financial.bills",
+      "financial.invoices",
+    ];
     return keys.some((k) => Array.isArray(perms[k]) && perms[k].includes("view"));
   }, [user]);
 }

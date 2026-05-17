@@ -1,5 +1,5 @@
 import { useParams } from "wouter";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable, type DataTableColumnMeta } from "@/components/data-table/DataTable";
@@ -17,6 +17,7 @@ import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared
 import type { ContractMetrics } from "@shared/projectMetrics";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { usePermission } from "@/hooks/use-permission";
 
 const PHASE_LABELS: Record<string, string> = {
   lead: "Lead",
@@ -30,7 +31,21 @@ export default function BudgetPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
+  const canViewLabour = usePermission("financial.budget_labour", "view");
+  const canViewActuals = usePermission("financial.budget_actuals", "view");
+
   const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
+
+  // If the currently active tab is not accessible, switch to the first accessible one.
+  // This also handles the initial render where permissions load asynchronously.
+  useEffect(() => {
+    if (activeTab === "costs" && !canViewActuals && canViewLabour) {
+      setActiveTab("hours");
+    } else if (activeTab === "hours" && !canViewLabour && canViewActuals) {
+      setActiveTab("costs");
+    }
+  }, [canViewActuals, canViewLabour, activeTab]);
+
   const [hideEmptyCostCodes, setHideEmptyCostCodes] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('budget-hide-empty-cost-codes');
@@ -47,23 +62,23 @@ export default function BudgetPage() {
 
   const { data: budget, isLoading: budgetLoading } = useQuery<Budget>({
     queryKey: [`/api/projects/${projectId}/budget`],
-    enabled: !!projectId,
+    enabled: !!projectId && canViewActuals,
   });
 
   const { data: lineItems = [], isLoading: lineItemsLoading } = useQuery<BudgetLineItem[]>({
     queryKey: [`/api/budgets/${budget?.id}/line-items`],
-    enabled: !!budget?.id,
+    enabled: !!budget?.id && canViewActuals,
   });
 
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
-    enabled: !!projectId,
+    enabled: !!projectId && canViewLabour,
   });
 
   const { data: contractMetrics } = useQuery<ContractMetrics>({
     queryKey: ["/api/projects", projectId, "contract-metrics"],
     queryFn: () => apiRequest(`/api/projects/${projectId}/contract-metrics`, "GET"),
-    enabled: !!projectId,
+    enabled: !!projectId && canViewActuals,
   });
 
   const recalculateMutation = useMutation({
@@ -430,17 +445,18 @@ export default function BudgetPage() {
   };
 
   const handleRecalculate = () => {
-    if (activeTab === "costs") {
+    if (activeTab === "costs" && canViewActuals) {
       recalculateMutation.mutate();
       if (budget?.id) {
         recalculateLineItemsMutation.mutate();
       }
+    } else if (activeTab === "hours" && canViewLabour) {
+      recalculateLabourHoursMutation.mutate();
     }
-    recalculateLabourHoursMutation.mutate();
   };
 
   const isRecalculating = activeTab === "costs"
-    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending || recalculateLabourHoursMutation.isPending)
+    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending)
     : recalculateLabourHoursMutation.isPending;
 
   if (budgetLoading) {
@@ -464,6 +480,18 @@ export default function BudgetPage() {
     );
   }
 
+  if (!canViewActuals && !canViewLabour) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center gap-2 text-center p-8" data-testid="page-budget-no-access">
+        <AlertCircle className="h-10 w-10 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">No budget access</h3>
+        <p className="text-xs text-muted-foreground max-w-xs">
+          You don't have permission to view the budget. Contact your administrator to request access.
+        </p>
+      </div>
+    );
+  }
+
   const budgetData = budget || {
     baselineAmount: 0,
     revisedAmount: 0,
@@ -478,38 +506,42 @@ export default function BudgetPage() {
       {/* TAB ROW */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-stretch h-full">
-          <button
-            onClick={() => setActiveTab("costs")}
-            className={cn(
-              "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
-              activeTab === "costs"
-                ? "text-[hsl(var(--bp-purple))]"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            data-testid="tab-costs"
-          >
-            <DollarSign className="w-3 h-3" />
-            <span>Costs</span>
-            {activeTab === "costs" && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("hours")}
-            className={cn(
-              "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
-              activeTab === "hours"
-                ? "text-[hsl(var(--bp-purple))]"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            data-testid="tab-labour-hours"
-          >
-            <Clock className="w-3 h-3" />
-            <span>Labour Hours</span>
-            {activeTab === "hours" && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
-            )}
-          </button>
+          {canViewActuals && (
+            <button
+              onClick={() => setActiveTab("costs")}
+              className={cn(
+                "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+                activeTab === "costs"
+                  ? "text-[hsl(var(--bp-purple))]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              data-testid="tab-costs"
+            >
+              <DollarSign className="w-3 h-3" />
+              <span>Costs</span>
+              {activeTab === "costs" && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+              )}
+            </button>
+          )}
+          {canViewLabour && (
+            <button
+              onClick={() => setActiveTab("hours")}
+              className={cn(
+                "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+                activeTab === "hours"
+                  ? "text-[hsl(var(--bp-purple))]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              data-testid="tab-labour-hours"
+            >
+              <Clock className="w-3 h-3" />
+              <span>Labour Hours</span>
+              {activeTab === "hours" && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+              )}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -580,50 +612,52 @@ export default function BudgetPage() {
         </div>
       </div>
 
-      {/* CONTRACT CHIPS (ex GST) */}
-      <div className="flex items-center gap-2 px-2 py-2 bg-background border-b border-border flex-shrink-0">
-        {[
-          {
-            label: "Contract",
-            ex:
-              contractMetrics?.originalContractPriceExGstCents ??
-              budgetData.baselineAmount ??
-              0,
-            testid: "chip-contract-original",
-          },
-          {
-            label: "Variations",
-            ex: contractMetrics?.approvedVariationsExGstCents ?? 0,
-            testid: "chip-contract-variations",
-          },
-          {
-            label: "Revised",
-            ex:
-              contractMetrics?.revisedContractPriceExGstCents ??
-              budgetData.revisedAmount ??
-              0,
-            testid: "chip-contract-revised",
-          },
-        ].map((chip) => (
-          <div
-            key={chip.label}
-            className="flex items-baseline gap-2 px-3 py-1 rounded-md border border-border bg-[hsl(var(--bp-subtle))]"
-            data-testid={chip.testid}
-          >
-            <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
-              {chip.label}
-            </span>
-            <span className="text-[12px] font-semibold text-foreground tabular-nums">
-              {formatCurrency(chip.ex)}
-            </span>
-            <span className="text-[9px] font-normal text-muted-foreground">ex GST</span>
-          </div>
-        ))}
-      </div>
+      {/* CONTRACT CHIPS (ex GST) — only visible to users with financial.budget_actuals */}
+      {canViewActuals && (
+        <div className="flex items-center gap-2 px-2 py-2 bg-background border-b border-border flex-shrink-0">
+          {[
+            {
+              label: "Contract",
+              ex:
+                contractMetrics?.originalContractPriceExGstCents ??
+                budgetData.baselineAmount ??
+                0,
+              testid: "chip-contract-original",
+            },
+            {
+              label: "Variations",
+              ex: contractMetrics?.approvedVariationsExGstCents ?? 0,
+              testid: "chip-contract-variations",
+            },
+            {
+              label: "Revised",
+              ex:
+                contractMetrics?.revisedContractPriceExGstCents ??
+                budgetData.revisedAmount ??
+                0,
+              testid: "chip-contract-revised",
+            },
+          ].map((chip) => (
+            <div
+              key={chip.label}
+              className="flex items-baseline gap-2 px-3 py-1 rounded-md border border-border bg-[hsl(var(--bp-subtle))]"
+              data-testid={chip.testid}
+            >
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
+                {chip.label}
+              </span>
+              <span className="text-[12px] font-semibold text-foreground tabular-nums">
+                {formatCurrency(chip.ex)}
+              </span>
+              <span className="text-[9px] font-normal text-muted-foreground">ex GST</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden p-2">
-        {activeTab === "costs" && (
+        {activeTab === "costs" && canViewActuals && (
           <>
             {/* Cost Code Breakdown Table */}
             <Card className="flex flex-col h-full">
@@ -673,7 +707,7 @@ export default function BudgetPage() {
           </>
         )}
 
-        {activeTab === "hours" && (
+        {activeTab === "hours" && canViewLabour && (
           <>
             {/* Labour Hours Breakdown Table */}
             <Card className="flex flex-col h-full">

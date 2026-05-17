@@ -5,6 +5,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -1422,6 +1423,7 @@ function DroppableStage({
   onUpdateLabourTrackers,
 }: DroppableStageProps) {
   const [showLabourPicker, setShowLabourPicker] = useState(false);
+  const canViewLabourBudget = usePermission("financial.budget_labour", "view");
   const stageAttachments = (Array.isArray((stageData as any).attachments) ? (stageData as any).attachments : []) as Array<{
     id: string; name: string; objectPath: string; size: number; uploadedAt: string;
   }>;
@@ -1647,16 +1649,18 @@ function DroppableStage({
                     <Plus className="h-4 w-4 mr-2" />
                     Add Stage Below
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowLabourPicker(true);
-                    }}
-                    data-testid={`menu-add-labour-tracker-${stageData.id}`}
-                  >
-                    <Clock className="h-4 w-4 mr-2" />
-                    Add Labour Tracker
-                  </DropdownMenuItem>
+                  {canViewLabourBudget && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowLabourPicker(true);
+                      }}
+                      data-testid={`menu-add-labour-tracker-${stageData.id}`}
+                    >
+                      <Clock className="h-4 w-4 mr-2" />
+                      Add Labour Tracker
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2052,8 +2056,8 @@ function DroppableStage({
                 );
               })()}
 
-              {/* Labour Trackers */}
-              {(() => {
+              {/* Labour Trackers — only visible to users with financial.budget_labour permission */}
+              {canViewLabourBudget && (() => {
                 const trackers: { costCodeId: string }[] = Array.isArray(stageData.labourTrackers) ? (stageData.labourTrackers as { costCodeId: string }[]) : [];
                 if (trackers.length === 0) return null;
                 return (
@@ -2384,6 +2388,7 @@ export default function ProjectScope() {
   const { projectId } = useParams<{ projectId: string }>();
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const canViewLabourBudget = usePermission("financial.budget_labour", "view");
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Scope" });
   
@@ -2486,9 +2491,10 @@ export default function ProjectScope() {
 
 
   // Fetch labour hours budget (for labour tracker feature on stages)
+  // Only fetch if user has permission to view labour hours budget
   const { data: labourBudgetData = [] } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
-    enabled: !!projectId,
+    enabled: !!projectId && canViewLabourBudget,
   });
 
   // Fetch scope stages

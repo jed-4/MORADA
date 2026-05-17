@@ -135,7 +135,7 @@ export const businessWidgetRegistry: Record<string, WidgetDefinition> = {
     configurable: false,
     accent: "financial",
     financialGated: true,
-    requiredPermission: { key: "financial.budget", action: "view" },
+    requiredPermission: { key: "financial.budget_actuals", action: "view" },
     defaultColumns: 4,
     defaultRowSpan: 3,
   },
