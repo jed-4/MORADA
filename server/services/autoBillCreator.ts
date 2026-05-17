@@ -76,7 +76,7 @@ export class AutoBillCreatorService {
       ["jpg", "jpeg"].includes(ext) ? "image/jpeg" : "application/octet-stream";
 
     await objectStorageClient.bucket(bucketName).file(objectName).save(fileBuffer, {
-      metadata: { contentType },
+      contentType,
     });
 
     return {
