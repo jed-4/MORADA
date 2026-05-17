@@ -6457,3 +6457,17 @@ export const takeoffMarkups = pgTable("takeoff_markups", {
 export const insertTakeoffMarkupSchema = createInsertSchema(takeoffMarkups).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffMarkup = z.infer<typeof insertTakeoffMarkupSchema>;
 export type TakeoffMarkup = typeof takeoffMarkups.$inferSelect;
+
+// ── Supplier Name Mappings ─────────────────────────────────────────────────────
+// Remembers which supplier a given invoice name string maps to, so future bills
+// from the same supplier auto-match without needing user confirmation again.
+export const supplierNameMappings = pgTable("supplier_name_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNameString: text("invoice_name_string").notNull(),
+  supplierId: varchar("supplier_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertSupplierNameMappingSchema = createInsertSchema(supplierNameMappings).omit({ id: true, createdAt: true });
+export type InsertSupplierNameMapping = z.infer<typeof insertSupplierNameMappingSchema>;
+export type SupplierNameMapping = typeof supplierNameMappings.$inferSelect;

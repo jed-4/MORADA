@@ -3,6 +3,7 @@ export interface InvoiceData {
   invoiceDate?: string;
   dueDate?: string;
   supplierName?: string;
+  supplierAbn?: string;
   supplierAddress?: string;
   supplierEmail?: string;
   supplierPhone?: string;
@@ -33,6 +34,7 @@ interface AIInvoiceResponse {
   invoiceDate?: string;
   dueDate?: string;
   supplierName?: string;
+  supplierAbn?: string;
   supplierAddress?: string;
   supplierEmail?: string;
   supplierPhone?: string;
@@ -58,7 +60,8 @@ Return a JSON object with the following structure. All monetary values should be
   "invoiceNumber": "string or null",
   "invoiceDate": "YYYY-MM-DD format or null",
   "dueDate": "YYYY-MM-DD format or null",
-  "supplierName": "vendor/supplier company name or null",
+  "supplierName": "the trading name or company name of the business sending this invoice, as printed on the invoice letterhead or 'From:' / sender block — NOT the recipient",
+  "supplierAbn": "ABN (Australian Business Number) of the supplier if present on the invoice — digits only, no spaces (e.g. '12345678901'). null if not found",
   "supplierAddress": "full supplier address of the supplier/vendor (their business address) or null",
   "supplierEmail": "supplier email or null",
   "supplierPhone": "supplier phone number or null",

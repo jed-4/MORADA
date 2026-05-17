@@ -11929,6 +11929,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Supplier Name Mappings API Routes
+  app.get("/api/supplier-name-mappings", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const mappings = await storage.getSupplierNameMappings(companyId);
+      res.json(mappings);
+    } catch (error) {
+      console.error("Error fetching supplier name mappings:", error);
+      res.status(500).json({ error: "Failed to fetch supplier name mappings" });
+    }
+  });
+
+  app.post("/api/supplier-name-mappings", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { invoiceNameString, supplierId } = req.body;
+      if (!invoiceNameString || !supplierId) {
+        return res.status(400).json({ error: "invoiceNameString and supplierId are required" });
+      }
+      const mapping = await storage.createSupplierNameMapping({ invoiceNameString, supplierId, companyId });
+      res.json(mapping);
+    } catch (error) {
+      console.error("Error creating supplier name mapping:", error);
+      res.status(500).json({ error: "Failed to create supplier name mapping" });
+    }
+  });
+
   // RFQ (Request for Quote) API Routes
   app.get("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
     try {

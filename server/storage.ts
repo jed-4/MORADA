@@ -642,6 +642,11 @@ export interface IStorage {
   deleteContact(id: string, companyId: string): Promise<void>;
   mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
+  // Supplier Name Mappings (invoice name → contact id learned associations)
+  getSupplierNameMapping(invoiceNameString: string, companyId: string): Promise<import("@shared/schema").SupplierNameMapping | undefined>;
+  createSupplierNameMapping(data: import("@shared/schema").InsertSupplierNameMapping & { companyId: string }): Promise<import("@shared/schema").SupplierNameMapping>;
+  getSupplierNameMappings(companyId: string): Promise<import("@shared/schema").SupplierNameMapping[]>;
+
   // RFQ (Request for Quote) CRUD
   getRFQs(companyId: string, projectId?: string): Promise<Rfq[]>;
   getRFQ(id: string): Promise<Rfq | undefined>;
@@ -6164,6 +6169,11 @@ export class MemStorage implements IStorage {
   async getNextClientInvoiceNumber(prefix: string, startNumber: number): Promise<string> {
     return `${prefix}${startNumber}`;
   }
+
+  // Supplier Name Mappings — MemStorage stubs
+  async getSupplierNameMapping(_invoiceNameString: string, _companyId: string): Promise<import("@shared/schema").SupplierNameMapping | undefined> { return undefined; }
+  async createSupplierNameMapping(data: import("@shared/schema").InsertSupplierNameMapping & { companyId: string }): Promise<import("@shared/schema").SupplierNameMapping> { throw new Error("Not implemented"); }
+  async getSupplierNameMappings(_companyId: string): Promise<import("@shared/schema").SupplierNameMapping[]> { return []; }
 }
 
 // Database-backed storage implementation
@@ -13576,6 +13586,54 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in mergeContacts:", error);
       return { success: false, transferredCounts: {} };
+    }
+  }
+
+  // Supplier Name Mapping Methods
+  async getSupplierNameMapping(invoiceNameString: string, companyId: string): Promise<import("@shared/schema").SupplierNameMapping | undefined> {
+    try {
+      const rows = await db.select()
+        .from(schema.supplierNameMappings)
+        .where(and(
+          eq(schema.supplierNameMappings.invoiceNameString, invoiceNameString),
+          eq(schema.supplierNameMappings.companyId, companyId)
+        ))
+        .limit(1);
+      return rows[0];
+    } catch (error) {
+      console.error("Database error in getSupplierNameMapping:", error);
+      return undefined;
+    }
+  }
+
+  async createSupplierNameMapping(data: import("@shared/schema").InsertSupplierNameMapping & { companyId: string }): Promise<import("@shared/schema").SupplierNameMapping> {
+    try {
+      // Upsert: if a mapping for this name+company already exists, update the supplierId
+      const existing = await this.getSupplierNameMapping(data.invoiceNameString, data.companyId);
+      if (existing) {
+        const rows = await db.update(schema.supplierNameMappings)
+          .set({ supplierId: data.supplierId })
+          .where(eq(schema.supplierNameMappings.id, existing.id))
+          .returning();
+        return rows[0];
+      }
+      const rows = await db.insert(schema.supplierNameMappings).values(data).returning();
+      return rows[0];
+    } catch (error) {
+      console.error("Database error in createSupplierNameMapping:", error);
+      throw error;
+    }
+  }
+
+  async getSupplierNameMappings(companyId: string): Promise<import("@shared/schema").SupplierNameMapping[]> {
+    try {
+      return await db.select()
+        .from(schema.supplierNameMappings)
+        .where(eq(schema.supplierNameMappings.companyId, companyId))
+        .orderBy(schema.supplierNameMappings.createdAt);
+    } catch (error) {
+      console.error("Database error in getSupplierNameMappings:", error);
+      return [];
     }
   }
 

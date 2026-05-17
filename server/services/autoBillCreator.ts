@@ -26,57 +26,102 @@ export interface AutoBillOptions {
 }
 
 /**
- * Fuzzy-match an AI-extracted invoice address against project names/locations.
- * Returns the best-matching project ID, or null if no confident match found.
+ * Normalise an address/name string for project matching:
+ * lowercase, expand common abbreviations, strip punctuation.
  */
-function matchProjectByAddress(
-  invoiceAddress: string,
+function normAddr(s: string): string {
+  return s.toLowerCase()
+    .replace(/\bplace\b/g, "pl").replace(/\bstreet\b/g, "st").replace(/\broad\b/g, "rd")
+    .replace(/\bdrive\b/g, "dr").replace(/\bcourt\b/g, "ct").replace(/\bavenue\b/g, "ave")
+    .replace(/\blane\b/g, "ln").replace(/\bcrescent\b/g, "cres")
+    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function tokAddr(s: string): string[] { return normAddr(s).split(" ").filter(t => t.length > 1); }
+
+/**
+ * Try to match a single text source against all projects (name + location).
+ * Returns { projectId, score } if confident, null otherwise.
+ */
+function matchTextAgainstProjects(
+  sourceText: string,
   projects: import("@shared/schema").Project[],
-  invoiceSupplierName?: string,
 ): string | null {
-  const normalise = (s: string) =>
-    s.toLowerCase()
-      .replace(/\bplace\b/g, "pl").replace(/\bstreet\b/g, "st").replace(/\broad\b/g, "rd")
-      .replace(/\bdrive\b/g, "dr").replace(/\bcourt\b/g, "ct").replace(/\bavenue\b/g, "ave")
-      .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-
-  const tokenise = (s: string) => normalise(s).split(" ").filter(t => t.length > 1);
-  const addrTokens = new Set(tokenise(invoiceAddress));
-
-  // Extract leading street number from the invoice address
-  const invoiceStreetNum = normalise(invoiceAddress).match(/^\d+/)?.[0];
+  const srcTokens = new Set(tokAddr(sourceText));
+  const srcStreetNum = normAddr(sourceText).match(/\b(\d+)\b/)?.[1];
 
   let best: { id: string; score: number } | null = null;
 
   for (const project of projects) {
-    if (project.isArchived) continue;
+    if ((project as any).isArchived) continue;
 
-    // Combine project name + location as the candidate text
-    const candidateText = [project.name, project.location].filter(Boolean).join(" ");
-    if (!candidateText.trim()) continue;
+    // Try both the project name and the location as candidate pools
+    const candidatePools = [
+      [project.name, project.location].filter(Boolean).join(" "),
+    ];
 
-    const projTokens = tokenise(candidateText);
-    if (projTokens.length === 0) continue;
+    for (const candidateText of candidatePools) {
+      if (!candidateText.trim()) continue;
 
-    // Street number check: if both have a leading number, they must match
-    const projStreetNum = normalise(candidateText).match(/\d+/)?.[0];
-    if (invoiceStreetNum && projStreetNum && invoiceStreetNum !== projStreetNum) continue;
+      const projTokens = tokAddr(candidateText);
+      if (projTokens.length === 0) continue;
 
-    // Token overlap score
-    let overlap = 0;
-    for (const t of projTokens) {
-      if (addrTokens.has(t)) overlap++;
+      // Street number check: if both have a number, they must match
+      const projStreetNum = normAddr(candidateText).match(/\b(\d+)\b/)?.[1];
+      if (srcStreetNum && projStreetNum && srcStreetNum !== projStreetNum) continue;
+
+      let overlap = 0;
+      for (const t of projTokens) {
+        if (srcTokens.has(t)) overlap++;
+      }
+
+      // Require at least 2 shared tokens OR (street number match + 1 other token)
+      if (overlap < 2 && !(srcStreetNum && projStreetNum && overlap >= 1)) continue;
+      const score = overlap / Math.max(projTokens.length, 1);
+      if (score < 0.3) continue;
+
+      if (!best || score > best.score) best = { id: project.id, score };
     }
-
-    // Require at least 2 meaningful shared tokens OR the street number + 1 word
-    const score = overlap / Math.max(projTokens.length, 1);
-    if (overlap < 2 && !(invoiceStreetNum && projStreetNum && overlap >= 1)) continue;
-    if (score < 0.3) continue;
-
-    if (!best || score > best.score) best = { id: project.id, score };
   }
 
   return best?.id ?? null;
+}
+
+/**
+ * Match project using multiple signals, in priority order:
+ *   1. AI-extracted siteAddress vs project location + name
+ *   2. AI-extracted siteAddress vs project name alone (for projects with no location)
+ *   3. PDF filenames (tokenised) vs project name + location
+ *   4. Email subject vs project name + location
+ */
+function matchProjectMultiSignal(
+  invoiceData: { siteAddress?: string; supplierAddress?: string },
+  pdfFilenames: string[],
+  emailSubject: string,
+  projects: import("@shared/schema").Project[],
+): string | null {
+  // Signal 1 & 2: AI-extracted address
+  const aiAddress = invoiceData.siteAddress || invoiceData.supplierAddress;
+  if (aiAddress) {
+    const m = matchTextAgainstProjects(aiAddress, projects);
+    if (m) return m;
+  }
+
+  // Signal 3: PDF filenames
+  for (const filename of pdfFilenames) {
+    // Strip extension and common filler words for cleaner matching
+    const cleaned = filename.replace(/\.(pdf|png|jpg|jpeg)$/i, "")
+      .replace(/invoice|receipt|bill|tax|statement/gi, " ");
+    const m = matchTextAgainstProjects(cleaned, projects);
+    if (m) return m;
+  }
+
+  // Signal 4: Email subject
+  if (emailSubject) {
+    const m = matchTextAgainstProjects(emailSubject, projects);
+    if (m) return m;
+  }
+
+  return null;
 }
 
 export class AutoBillCreatorService {
@@ -178,26 +223,15 @@ export class AutoBillCreatorService {
       }
     }
 
-    // ── Resolve supplier from email (hint only — AI will refine later) ───────
-    const supplierHint = emailParser.extractSupplierHint(email);
-    let supplierId: string | undefined;
-    let supplierName = supplierHint || "Unknown Supplier";
+    // ── Extract sender email domain for fallback matching later ─────────────
+    const fromEmailMatch = email.from.match(/<([^>]+)>/) || email.from.match(/(\S+@\S+)/);
+    const senderEmail = fromEmailMatch ? fromEmailMatch[1] : email.from;
+    const senderDomain = senderEmail.includes("@")
+      ? senderEmail.split("@")[1].toLowerCase().replace(/^www\./, "")
+      : null;
 
-    if (options.autoMatch && supplierHint) {
-      const contacts = await storage.getContacts(companyId, "supplier");
-      const result = matchSupplier(
-        supplierHint,
-        contacts.map((c: any) => ({
-          id: c.id,
-          names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
-          raw: c,
-        })),
-      );
-      if (result.match) {
-        supplierId = result.match.candidate.id;
-        supplierName = (result.match.candidate as any).raw?.name || supplierHint;
-      }
-    }
+    let supplierId: string | undefined;
+    let supplierName = "Unknown Supplier";
 
     // ── Upload ALL attachments (skip if bill already has attachments to avoid duplicates on retry) ──
     const uploadedAttachments: Array<{
@@ -297,64 +331,120 @@ export class AutoBillCreatorService {
     try {
       const invoiceData = await processInvoiceWithAI(primaryBase64, primary.filename);
 
-      // Re-resolve supplier now that AI has the real name
+      // ── Re-resolve supplier using full priority chain ────────────────────────
+      // Priority: ABN → learned name mapping → fuzzy name match → email domain
       let aiSupplierId = supplierId;
       let aiSupplierName = invoiceData.supplierName || supplierName;
 
-      if (options.autoMatch && invoiceData.supplierName) {
+      if (options.autoMatch) {
         const [supplierContacts, tradeContacts] = await Promise.all([
           storage.getContacts(companyId, "supplier"),
           storage.getContacts(companyId, "trade"),
         ]);
         const seenIds = new Set<string>();
-        const contacts = [...supplierContacts, ...tradeContacts].filter((c: any) => {
+        const allContacts = [...supplierContacts, ...tradeContacts].filter((c: any) => {
           if (seenIds.has(c.id)) return false;
           seenIds.add(c.id);
           return true;
         });
-        const matchResult = matchSupplier(
-          invoiceData.supplierName,
-          contacts.map((c: any) => ({
-            id: c.id,
-            names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
-            raw: c,
-          })),
-        );
 
-        if (matchResult.match) {
-          aiSupplierId = matchResult.match.candidate.id;
-          aiSupplierName = (matchResult.match.candidate as any).raw?.name || invoiceData.supplierName;
-        } else {
-          const newContact = await storage.createContact({
-            name: invoiceData.supplierName,
-            email: invoiceData.supplierEmail || null,
-            phone: invoiceData.supplierPhone || null,
-            address: invoiceData.supplierAddress || null,
-            contactType: "supplier",
-            companyId,
-          });
-          aiSupplierId = newContact.id;
-          aiSupplierName = newContact.name;
-        }
-      }
+        let matched = false;
 
-      // ── Re-resolve project using AI-extracted address (if initial match was a fallback) ──
-      if (!projectMatchConfident && options.autoMatch) {
-        const candidateAddress = invoiceData.siteAddress || invoiceData.supplierAddress;
-        if (candidateAddress) {
-          const addressMatch = matchProjectByAddress(candidateAddress, projects, invoiceData.supplierName);
-          if (addressMatch) {
-            console.log(`[autoBillCreator] Matched project ${addressMatch} by AI-extracted address: "${candidateAddress}"`);
-            projectId = addressMatch;
-            // Update the already-created bill's project reference
-            await storage.updateBill(createdBill.id, { projectId });
+        // 1. ABN match (exact — strip all spaces before comparing)
+        if (!matched && invoiceData.supplierAbn) {
+          const normAbn = invoiceData.supplierAbn.replace(/\s/g, "");
+          const abnMatch = allContacts.find((c: any) => c.abn && c.abn.replace(/\s/g, "") === normAbn);
+          if (abnMatch) {
+            aiSupplierId = abnMatch.id;
+            aiSupplierName = (abnMatch as any).name || invoiceData.supplierName || supplierName;
+            console.log(`[autoBillCreator] Supplier matched by ABN ${normAbn} → "${aiSupplierName}"`);
+            matched = true;
           }
         }
+
+        // 2. Learned name mapping (exact on AI-extracted name)
+        if (!matched && invoiceData.supplierName) {
+          const mapping = await storage.getSupplierNameMapping(invoiceData.supplierName, companyId);
+          if (mapping) {
+            const contact = allContacts.find((c: any) => c.id === mapping.supplierId);
+            if (contact) {
+              aiSupplierId = contact.id;
+              aiSupplierName = (contact as any).name || invoiceData.supplierName;
+              console.log(`[autoBillCreator] Supplier matched by learned name mapping "${invoiceData.supplierName}" → "${aiSupplierName}"`);
+              matched = true;
+            }
+          }
+        }
+
+        // 3. Fuzzy name match against supplier/trade contacts
+        if (!matched && invoiceData.supplierName) {
+          const matchResult = matchSupplier(
+            invoiceData.supplierName,
+            allContacts.map((c: any) => ({
+              id: c.id,
+              names: [c.company, c.name, `${c.firstName || ""} ${c.lastName || ""}`.trim()].filter(Boolean),
+              raw: c,
+            })),
+          );
+          if (matchResult.match) {
+            aiSupplierId = matchResult.match.candidate.id;
+            aiSupplierName = (matchResult.match.candidate as any).raw?.name || invoiceData.supplierName;
+            console.log(`[autoBillCreator] Supplier fuzzy-matched "${invoiceData.supplierName}" → "${aiSupplierName}" (confidence ${matchResult.match.confidence.toFixed(2)})`);
+            // Auto-save the name mapping so future imports skip fuzzy matching
+            await storage.createSupplierNameMapping({
+              invoiceNameString: invoiceData.supplierName,
+              supplierId: aiSupplierId!,
+              companyId,
+            }).catch(() => {}); // Non-fatal
+            matched = true;
+          }
+        }
+
+        // 4. Email domain match (sender domain vs contact email domain)
+        if (!matched && senderDomain) {
+          const domainMatch = allContacts.find((c: any) => {
+            if (!c.email) return false;
+            const contactDomain = c.email.split("@")[1]?.toLowerCase().replace(/^www\./, "");
+            return contactDomain === senderDomain;
+          });
+          if (domainMatch) {
+            aiSupplierId = domainMatch.id;
+            aiSupplierName = (domainMatch as any).name || supplierName;
+            console.log(`[autoBillCreator] Supplier matched by email domain "${senderDomain}" → "${aiSupplierName}"`);
+            matched = true;
+          }
+        }
+
+        // 5. No match — leave supplierId null; bill goes to "needs_review" status
+        if (!matched) {
+          aiSupplierId = undefined;
+          aiSupplierName = invoiceData.supplierName || supplierName;
+          console.log(`[autoBillCreator] No supplier match found for "${aiSupplierName}" — bill will require manual review`);
+        }
       }
 
+      // ── Re-resolve project using all available signals ───────────────────────
+      if (!projectMatchConfident && options.autoMatch) {
+        const pdfFilenames = attachments.map(a => a.filename).filter(Boolean);
+        const projectMatch = matchProjectMultiSignal(
+          invoiceData,
+          pdfFilenames,
+          email.subject || "",
+          projects,
+        );
+        if (projectMatch) {
+          console.log(`[autoBillCreator] Matched project ${projectMatch} via multi-signal matching`);
+          projectId = projectMatch;
+          await storage.updateBill(createdBill.id, { projectId });
+        }
+      }
+
+      // If no supplier matched, leave as "needs_review" so the bill is flagged
+      const billStatus = aiSupplierId ? "awaiting_approval" : "needs_review";
+
       await storage.updateBill(createdBill.id, {
-        supplierId: aiSupplierId,
-        status: "awaiting_approval",
+        supplierId: aiSupplierId || null,
+        status: billStatus,
         billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : new Date(),
         dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
         billReference: invoiceData.invoiceNumber,

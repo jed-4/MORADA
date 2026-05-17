@@ -3513,9 +3513,24 @@ export default function BillDetail() {
               Create new contact
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (unmatchedSupplierSelection) {
                   form.setValue("supplierId", unmatchedSupplierSelection);
+                  // Save the name mapping so future invoices with the same name auto-match
+                  if (ocrSupplierData?.name) {
+                    try {
+                      await fetch("/api/supplier-name-mappings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          invoiceNameString: ocrSupplierData.name,
+                          supplierId: unmatchedSupplierSelection,
+                        }),
+                      });
+                    } catch {
+                      // Non-fatal — mapping save failure shouldn't block the user
+                    }
+                  }
                 }
                 setUnmatchedSupplierDialogOpen(false);
                 setUnmatchedSupplierSelection("");
