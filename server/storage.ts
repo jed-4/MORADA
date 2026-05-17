@@ -1357,14 +1357,15 @@ function getDefaultActionsForRole(
       'projects.invoices', 'projects.site_diary', 'projects.selections', 'projects.timesheet',
       'projects.rfi', 'projects.team_calendars', 'projects.messages', 'projects.notes',
       'projects.contract', 'schedules.view_offline',
-      'tasks.project', 'tasks.business',
+      'tasks.manage', 'tasks.project', 'tasks.business',
       'financial.estimate', 'financial.purchase_orders', 'financial.bills',
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
-      'files.manage', 'sales.client', 'sales.proposals', 'sales.leads',
-      'business.dashboard', 'business.schedule', 'business.files',
-      'business.messages', 'business.notes', 'business.team',
-      'business.timesheets',
+      'sales.client', 'sales.proposals', 'sales.leads',
+      'files.manage', 'timesheets.manage', 'calendar.manage', 'messages.team',
+      'dashboard.overview', 'dashboard.financial', 'dashboard.project_health', 'dashboard.team_performance',
+      'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
+      'business.messages', 'business.notes', 'business.team', 'business.timesheets',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1380,21 +1381,28 @@ function getDefaultActionsForRole(
     grant('projects.notes', ['view', 'add', 'edit']);
     grant('projects.timesheet', ['view', 'add', 'edit']);
     grant('projects.rfi', ['view', 'add']);
+    grant('tasks.manage', ['view', 'add', 'edit', 'delete']);
     grant('tasks.project', ['view', 'add', 'edit', 'delete']);
     grant('files.manage', ['view', 'add']);
+    grant('timesheets.manage', ['view', 'add', 'edit']);
+    grant('calendar.manage', ['view']);
+    grant('messages.team', ['view', 'add', 'send']);
+    grant('dashboard.overview', ['view']);
+    grant('dashboard.project_health', ['view']);
     grant('business.messages', ['view', 'add', 'send']);
     grant('business.team', ['view']);
     return result;
   }
 
   // --- ACCOUNTS ---
-  if (n.includes('accounts')) {
+  if (n.includes('accounts') || n.includes('bookkeeper')) {
     const keys = [
       'financial.estimate', 'financial.purchase_orders', 'financial.bills',
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
       'projects.invoices', 'projects.view', 'projects.timesheet',
       'admin.cost_codes',
+      'dashboard.financial',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1417,6 +1425,7 @@ function getDefaultActionsForRole(
     grant('projects.site_diary', ['view', 'add']);
     grant('projects.messages', ['view', 'add', 'send']);
     grant('files.manage', ['view']);
+    grant('tasks.manage', ['view']);
     grant('tasks.project', ['view']);
     return result;
   }
@@ -1503,11 +1512,7 @@ export class MemStorage implements IStorage {
 
   // Initialize default role system with built-in roles and permissions
   private initializeDefaultRoleSystem() {
-    // Initialize built-in permissions based on Buildern screenshots
     const builtInPermissions: Array<Omit<Permission, 'id' | 'createdAt'>> = [
-      // Files category
-      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "files", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      
       // Admin category
       { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.suppliers", name: "Sub/Vendor", description: "Manage suppliers/vendors", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -1517,13 +1522,8 @@ export class MemStorage implements IStorage {
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
-      
-      // Sales category
-      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
-      
-      // Project Management category
+
+      // Projects category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
@@ -1531,17 +1531,19 @@ export class MemStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
-      { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
-      
+      { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
+
       // Tasks category
+      { key: "tasks.manage", name: "Tasks", description: "Manage tasks (with view-scope control)", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "tasks.project", name: "Project Tasks", description: "Manage tasks within projects", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "tasks.business", name: "Business Tasks", description: "Manage company-wide business tasks", category: "tasks", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      
+
       // Financial category
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
@@ -1551,12 +1553,30 @@ export class MemStorage implements IStorage {
       { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "financial.reports", name: "Financial Reports", description: "Access financial reports and summaries", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
-      
+
+      // Sales category
+      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+
+      // Team & Operations category
+      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+
+      // Dashboard & KPIs category
+      { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
+      { key: "dashboard.financial", name: "Financial Metrics", description: "View financial KPIs and metrics dashboard", category: "dashboard", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
+      { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
+
       // Business category
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.messages", name: "Business Messages", description: "Access company-wide messaging", category: "business", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -2621,6 +2641,7 @@ export class MemStorage implements IStorage {
     const now = new Date();
     let ownerRoleId = '';
 
+    const createdRoles: UserRole[] = [];
     for (const roleData of builtInRoles) {
       const roleId = randomUUID();
       const role: UserRole = {
@@ -2630,21 +2651,41 @@ export class MemStorage implements IStorage {
         updatedAt: now,
       };
       this.userRoles.set(roleId, role);
+      createdRoles.push(role);
+      if (roleData.name === "Owner") ownerRoleId = roleId;
+    }
 
-      if (roleData.name === "Owner") {
-        ownerRoleId = roleId;
-        
-        // Set full permissions for Owner
-        const allPermissions = Array.from(this.permissions.values());
+    // Seed permissions for all roles
+    const allPermissions = Array.from(this.permissions.values());
+    const permByKey: Record<string, Permission> = {};
+    for (const p of allPermissions) permByKey[p.key] = p;
+
+    for (const role of createdRoles) {
+      if (role.name === "Owner") {
+        // Owner gets full access to everything
         for (const permission of allPermissions) {
-          const rolePermission: RolePermission = {
+          const rp: RolePermission = {
             id: randomUUID(),
-            roleId: roleId,
+            roleId: role.id,
             permissionId: permission.id,
             allowedActions: permission.actions as PermissionAction[],
             createdAt: now,
           };
-          this.rolePermissions.set(rolePermission.id, rolePermission);
+          this.rolePermissions.set(rp.id, rp);
+        }
+      } else {
+        // Other roles get their default permission matrix
+        const defaultActions = getDefaultActionsForRole(role.name, allPermissions, permByKey);
+        for (const [permId, actions] of Object.entries(defaultActions)) {
+          if (actions.length === 0) continue;
+          const rp: RolePermission = {
+            id: randomUUID(),
+            roleId: role.id,
+            permissionId: permId,
+            allowedActions: actions as PermissionAction[],
+            createdAt: now,
+          };
+          this.rolePermissions.set(rp.id, rp);
         }
       }
     }
@@ -6178,9 +6219,6 @@ export class DbStorage implements IStorage {
     const now = new Date();
     
     const builtInPermissions = [
-      // Files category
-      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "files", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      
       // Admin category
       { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.suppliers", name: "Sub/Vendor", description: "Manage suppliers/vendors", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -6190,13 +6228,8 @@ export class DbStorage implements IStorage {
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
-      
-      // Sales category
-      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
-      
-      // Project Management category
+
+      // Projects category
       { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
@@ -6204,17 +6237,19 @@ export class DbStorage implements IStorage {
       { key: "projects.invoices", name: "Progress Claims", description: "Manage client invoices and progress claims", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
       { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
-      { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.timesheet", name: "Project Timesheet", description: "Manage per-project timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
       { key: "projects.messages", name: "Project Messages", description: "Access project messaging", category: "projects", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "projects.notes", name: "Project Notes", description: "Access project notes and memos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.contract", name: "Contracts & Proposals", description: "Manage project contracts and proposals", category: "projects", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
-      
+      { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published", category: "projects", actions: ["view"], isBuiltIn: true },
+
       // Tasks category
+      { key: "tasks.manage", name: "Tasks", description: "Manage tasks (with view-scope control)", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "tasks.project", name: "Project Tasks", description: "Manage tasks within projects", category: "tasks", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "tasks.business", name: "Business Tasks", description: "Manage company-wide business tasks", category: "tasks", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      
+
       // Financial category
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send"], isBuiltIn: true },
@@ -6225,19 +6260,34 @@ export class DbStorage implements IStorage {
       { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
       { key: "financial.reports", name: "Financial Reports", description: "Access financial reports and summaries", category: "financial", actions: ["view", "summary_only"], isBuiltIn: true },
 
+      // Sales category
+      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.leads", name: "Leads & Prospects", description: "Manage sales leads and prospects", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "sales.proposals", name: "Proposals", description: "Manage sales proposals", category: "sales", actions: ["view", "add", "edit", "delete", "approve", "send", "convert"], isBuiltIn: true },
+
+      // Team & Operations category
+      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+
+      // Dashboard & KPIs category
+      { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
+      { key: "dashboard.financial", name: "Financial Metrics", description: "View financial KPIs and metrics dashboard", category: "dashboard", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
+      { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
+
       // Business category
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
-      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.timesheets", name: "Business Timesheets", description: "View company-wide timesheets (with view-scope control)", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.calendar", name: "Business Calendar", description: "Manage business-level calendar (with view-scope control)", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.files", name: "Business Files", description: "Access company-level file library", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.messages", name: "Business Messages", description: "Access company-wide messaging", category: "business", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.leave", name: "Leave Management", description: "Manage employee leave requests", category: "business", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "business.team", name: "Team Directory", description: "View team member directory", category: "business", actions: ["view"], isBuiltIn: true },
-
-      // Schedule visibility
-      { key: "schedules.view_offline", name: "View Offline Schedules", description: "Can see offline (draft) schedules not yet published to external users", category: "projects", actions: ["view"], isBuiltIn: true }
     ];
 
     for (const permData of builtInPermissions) {

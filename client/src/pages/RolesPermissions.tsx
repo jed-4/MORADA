@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -149,10 +150,12 @@ export default function RolesPermissions() {
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [isEditRoleOpen, setIsEditRoleOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [permissionMatrix, setPermissionMatrix] = useState<PermissionMatrix>({});
   const [viewScopeData, setViewScopeData] = useState<ViewScopeData>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [localRoles, setLocalRoles] = useState<UserRole[]>([]);
+  const [activeTab, setActiveTab] = useState("projects");
 
   // Fetch roles
   const { data: roles = EMPTY_ROLES, isLoading: rolesLoading } = useQuery<UserRole[]>({
@@ -399,19 +402,27 @@ export default function RolesPermissions() {
     return acc;
   }, {} as Record<string, Permission[]>);
 
-  const categoryDisplayNames: Record<string, string> = {
-    tasks: "TASKS",
-    projects: "PROJECT MANAGEMENT",
-    financial: "FINANCIAL",
-    timesheets: "TIMESHEETS",
-    files: "FILES",
-    admin: "ADMIN",
-    sales: "SALES",
-    messaging: "MESSAGING",
-    business: "BUSINESS",
-  };
+  // 8 tab definitions — each maps to exactly one permission category
+  const TABS_CONFIG = [
+    { id: "admin",      label: "Admin",              category: "admin" },
+    { id: "projects",   label: "Projects",           category: "projects" },
+    { id: "tasks",      label: "Tasks",              category: "tasks" },
+    { id: "financial",  label: "Financial",          category: "financial" },
+    { id: "sales",      label: "Sales & CRM",        category: "sales" },
+    { id: "operations", label: "Team & Operations",  category: "operations" },
+    { id: "dashboard",  label: "Dashboard & KPIs",   category: "dashboard" },
+    { id: "business",   label: "Business",           category: "business" },
+  ];
 
-  const categoryOrder = ["projects", "tasks", "financial", "business", "sales", "files", "admin", "timesheets", "messaging"];
+  // Keys that support viewScope (own / selected_roles / all) dropdown
+  const VIEW_SCOPE_KEYS = new Set([
+    "tasks.manage",
+    "timesheets.manage",
+    "business.timesheets",
+    "calendar.manage",
+    "business.calendar",
+    "projects.site_diary",
+  ]);
 
   // Auto-select first role if none selected
   useEffect(() => {
@@ -517,7 +528,7 @@ export default function RolesPermissions() {
                   {selectedRole.isBuiltIn && (
                     <Button
                       variant="outline"
-                      onClick={() => resetDefaultsMutation.mutate()}
+                      onClick={() => setIsResetConfirmOpen(true)}
                       disabled={resetDefaultsMutation.isPending}
                       data-testid="button-reset-defaults"
                     >
@@ -562,147 +573,160 @@ export default function RolesPermissions() {
               </div>
             </div>
 
-            {/* Permissions Matrix */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="space-y-6">
-                {[...categoryOrder, ...Object.keys(groupedPermissions).filter(c => !categoryOrder.includes(c))]
-                  .filter(cat => groupedPermissions[cat])
-                  .map((category) => {
-                  const categoryPermissions = groupedPermissions[category];
+            {/* Permissions Matrix — tab per category */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-6 pt-4 border-b">
+                <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0 justify-start">
+                  {TABS_CONFIG.map(tab => {
+                    const hasPerms = (groupedPermissions[tab.category]?.length ?? 0) > 0;
+                    if (!hasPerms) return null;
+                    return (
+                      <TabsTrigger
+                        key={tab.id}
+                        value={tab.id}
+                        className="text-xs h-8"
+                      >
+                        {tab.label}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {TABS_CONFIG.map(tab => {
+                  const categoryPermissions = groupedPermissions[tab.category];
+                  if (!categoryPermissions) return null;
                   return (
-                  <Card key={category}>
-                    <CardContent className="p-6">
-                      <h3 className="text-sm font-semibold mb-4 text-muted-foreground">
-                        {categoryDisplayNames[category] || category.toUpperCase()}
-                      </h3>
-                      
-                      {(() => {
-                        const allActions = categoryPermissions.flatMap(p => p.actions as string[]);
-                        const ALL_COLS: { key: PermissionAction; label: string }[] = [
-                          { key: "view", label: "View" },
-                          { key: "add", label: "Add" },
-                          { key: "edit", label: "Edit" },
-                          { key: "delete", label: "Delete" },
-                          { key: "approve", label: "Approve" },
-                          { key: "send", label: "Send" },
-                          { key: "convert", label: "Convert" },
-                          { key: "summary_only", label: "Summary" },
-                        ];
-                        const actionColumns = ALL_COLS.filter(c => allActions.includes(c.key));
-                        const gridStyle: React.CSSProperties = {
-                          display: 'grid',
-                          gridTemplateColumns: `1fr ${actionColumns.map(() => '72px').join(' ')}`,
-                          gap: '12px',
-                        };
-                        return (
-                          <div className="space-y-3">
-                            <div style={gridStyle} className="pb-2 border-b">
-                              <div></div>
-                              {actionColumns.map((col) => (
-                                <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
-                              ))}
-                            </div>
-                            {categoryPermissions.map((permission) => {
-                              const hasViewScope = permission.key === "projects.timesheet";
-                              const viewEnabled = isPermissionEnabled(permission.id, "view");
-                              const currentScope = viewScopeData[permission.id]?.viewScope || "own";
-                              const currentViewableRoleIds = viewScopeData[permission.id]?.viewableRoleIds || [];
-                              return (
-                                <div key={permission.id}>
-                                  <div style={{ ...gridStyle, alignItems: 'center' }}>
-                                    <div className="text-sm">{permission.name}</div>
-                                    {actionColumns.map(({ key: action }) => {
-                                      const isAvailable = (permission.actions as string[]).includes(action);
-                                      return (
-                                        <div key={action} className="flex justify-center">
-                                          {isAvailable ? (
-                                            <Checkbox
-                                              checked={isPermissionEnabled(permission.id, action)}
-                                              onCheckedChange={() =>
-                                                togglePermission(permission.id, action)
-                                              }
-                                              data-testid={`checkbox-${permission.key}-${action}`}
-                                            />
-                                          ) : (
-                                            <div className="h-4 w-4" />
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  {hasViewScope && viewEnabled && (
-                                    <div className="ml-4 mt-2 mb-1 flex items-center gap-3 flex-wrap">
-                                      <span className="text-xs text-muted-foreground">View scope:</span>
-                                      <Select
-                                        value={currentScope}
-                                        onValueChange={(value: "own" | "selected_roles" | "all") => {
-                                          setViewScopeData(prev => ({
-                                            ...prev,
-                                            [permission.id]: {
-                                              ...prev[permission.id],
-                                              viewScope: value,
-                                              viewableRoleIds: value === "selected_roles" ? (prev[permission.id]?.viewableRoleIds || []) : [],
-                                            },
-                                          }));
-                                          setHasUnsavedChanges(true);
-                                        }}
-                                      >
-                                        <SelectTrigger className="w-[160px] h-8 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="own">Own Only</SelectItem>
-                                          <SelectItem value="selected_roles">Selected Roles</SelectItem>
-                                          <SelectItem value="all">All</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      {currentScope === "selected_roles" && (
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          {localRoles.map(role => {
-                                            if (role.id === selectedRoleId) return null;
-                                            const isChecked = currentViewableRoleIds.includes(role.id);
-                                            return (
-                                              <label key={role.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <TabsContent key={tab.id} value={tab.id} className="m-0 p-6">
+                      <Card>
+                        <CardContent className="p-6">
+                          {(() => {
+                            const allActions = categoryPermissions.flatMap(p => p.actions as string[]);
+                            const ALL_COLS: { key: PermissionAction; label: string }[] = [
+                              { key: "view", label: "View" },
+                              { key: "add", label: "Add" },
+                              { key: "edit", label: "Edit" },
+                              { key: "delete", label: "Delete" },
+                              { key: "approve", label: "Approve" },
+                              { key: "send", label: "Send" },
+                              { key: "convert", label: "Convert" },
+                              { key: "summary_only", label: "Summary" },
+                            ];
+                            const actionColumns = ALL_COLS.filter(c => allActions.includes(c.key));
+                            const gridStyle: React.CSSProperties = {
+                              display: 'grid',
+                              gridTemplateColumns: `1fr ${actionColumns.map(() => '72px').join(' ')}`,
+                              gap: '12px',
+                            };
+                            return (
+                              <div className="space-y-3">
+                                <div style={gridStyle} className="pb-2 border-b">
+                                  <div></div>
+                                  {actionColumns.map(col => (
+                                    <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
+                                  ))}
+                                </div>
+                                {categoryPermissions.map(permission => {
+                                  const hasViewScope = VIEW_SCOPE_KEYS.has(permission.key);
+                                  const viewEnabled = isPermissionEnabled(permission.id, "view");
+                                  const currentScope = viewScopeData[permission.id]?.viewScope || "own";
+                                  const currentViewableRoleIds = viewScopeData[permission.id]?.viewableRoleIds || [];
+                                  return (
+                                    <div key={permission.id}>
+                                      <div style={{ ...gridStyle, alignItems: 'center' }}>
+                                        <div className="text-sm">{permission.name}</div>
+                                        {actionColumns.map(({ key: action }) => {
+                                          const isAvailable = (permission.actions as string[]).includes(action);
+                                          return (
+                                            <div key={action} className="flex justify-center">
+                                              {isAvailable ? (
                                                 <Checkbox
-                                                  checked={isChecked}
-                                                  onCheckedChange={(checked) => {
-                                                    setViewScopeData(prev => {
-                                                      const existing = prev[permission.id]?.viewableRoleIds || [];
-                                                      const updated = checked
-                                                        ? [...existing, role.id]
-                                                        : existing.filter(id => id !== role.id);
-                                                      return {
-                                                        ...prev,
-                                                        [permission.id]: {
-                                                          ...prev[permission.id],
-                                                          viewScope: "selected_roles",
-                                                          viewableRoleIds: updated,
-                                                        },
-                                                      };
-                                                    });
-                                                    setHasUnsavedChanges(true);
-                                                  }}
+                                                  checked={isPermissionEnabled(permission.id, action)}
+                                                  onCheckedChange={() => togglePermission(permission.id, action)}
+                                                  data-testid={`checkbox-${permission.key}-${action}`}
                                                 />
-                                                <span>{role.name}</span>
-                                              </label>
-                                            );
-                                          })}
+                                              ) : (
+                                                <div className="h-4 w-4" />
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      {hasViewScope && viewEnabled && (
+                                        <div className="ml-4 mt-2 mb-1 flex items-center gap-3 flex-wrap">
+                                          <span className="text-xs text-muted-foreground">View scope:</span>
+                                          <Select
+                                            value={currentScope}
+                                            onValueChange={(value: "own" | "selected_roles" | "all") => {
+                                              setViewScopeData(prev => ({
+                                                ...prev,
+                                                [permission.id]: {
+                                                  ...prev[permission.id],
+                                                  viewScope: value,
+                                                  viewableRoleIds: value === "selected_roles" ? (prev[permission.id]?.viewableRoleIds || []) : [],
+                                                },
+                                              }));
+                                              setHasUnsavedChanges(true);
+                                            }}
+                                          >
+                                            <SelectTrigger className="w-[160px] h-8 text-xs">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="own">Own Only</SelectItem>
+                                              <SelectItem value="selected_roles">Selected Roles</SelectItem>
+                                              <SelectItem value="all">All</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          {currentScope === "selected_roles" && (
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              {localRoles.map(role => {
+                                                if (role.id === selectedRoleId) return null;
+                                                const isChecked = currentViewableRoleIds.includes(role.id);
+                                                return (
+                                                  <label key={role.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <Checkbox
+                                                      checked={isChecked}
+                                                      onCheckedChange={(checked) => {
+                                                        setViewScopeData(prev => {
+                                                          const existing = prev[permission.id]?.viewableRoleIds || [];
+                                                          const updated = checked
+                                                            ? [...existing, role.id]
+                                                            : existing.filter(id => id !== role.id);
+                                                          return {
+                                                            ...prev,
+                                                            [permission.id]: {
+                                                              ...prev[permission.id],
+                                                              viewScope: "selected_roles",
+                                                              viewableRoleIds: updated,
+                                                            },
+                                                          };
+                                                        });
+                                                        setHasUnsavedChanges(true);
+                                                      }}
+                                                    />
+                                                    <span>{role.name}</span>
+                                                  </label>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                     </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
                   );
                 })}
               </div>
-            </div>
+            </Tabs>
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -741,6 +765,31 @@ export default function RolesPermissions() {
               data-testid="button-confirm-delete-role"
             >
               {deleteRoleMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reset to Defaults Confirmation Dialog */}
+      <AlertDialog open={isResetConfirmOpen} onOpenChange={setIsResetConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset all built-in roles to defaults?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reset the permissions for all built-in roles across your company to their factory defaults. Any custom permission changes you've made to built-in roles will be lost. Custom roles are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setIsResetConfirmOpen(false);
+                resetDefaultsMutation.mutate();
+              }}
+              data-testid="button-confirm-reset-defaults"
+            >
+              Reset to Defaults
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
