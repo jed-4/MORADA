@@ -49,7 +49,7 @@ export function useFinancialPermission(): boolean {
       "financial.budget_labour",
       "financial.budget_actuals",
       "financial.bills",
-      "financial.invoices",
+      "dashboard.financial",
     ];
     return keys.some((k) => Array.isArray(perms[k]) && perms[k].includes("view"));
   }, [user]);

@@ -205,7 +205,7 @@ export interface IStorage {
   deleteUserRole(id: string, companyId?: string): Promise<boolean>;
   updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void>;
   seedDefaultRolesForCompany(companyId: string): Promise<string>;
-  resetDefaultPermissionsForCompany(companyId: string): Promise<void>;
+  resetDefaultPermissions(companyId: string): Promise<void>;
 
   // Permission operations
   getPermissions(category?: string): Promise<Permission[]>;
@@ -1362,10 +1362,11 @@ function getDefaultActionsForRole(
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
       'sales.client', 'sales.proposals', 'sales.leads',
-      'files.manage', 'timesheets.manage', 'calendar.manage', 'messages.team',
+      'files.manage', 'timesheets.manage', 'calendar.manage', 'messages.team', 'leave.manage',
       'dashboard.overview', 'dashboard.financial', 'dashboard.project_health', 'dashboard.team_performance',
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
+      'business.leave', 'business.contacts', 'business.purchase_orders', 'business.reports',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1387,6 +1388,7 @@ function getDefaultActionsForRole(
     grant('timesheets.manage', ['view', 'add', 'edit']);
     grant('calendar.manage', ['view']);
     grant('messages.team', ['view', 'add', 'send']);
+    grant('leave.manage', ['view', 'add']);
     grant('dashboard.overview', ['view']);
     grant('dashboard.project_health', ['view']);
     grant('business.messages', ['view', 'add', 'send']);
@@ -1564,6 +1566,7 @@ export class MemStorage implements IStorage {
       { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -1571,7 +1574,7 @@ export class MemStorage implements IStorage {
       { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
       { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
 
-      // Business category
+      // Business category (13 keys)
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -1582,6 +1585,9 @@ export class MemStorage implements IStorage {
       { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.leave", name: "Leave Management", description: "Manage employee leave requests", category: "business", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "business.team", name: "Team Directory", description: "View team member directory", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.contacts", name: "Business Contacts", description: "Manage company-wide contact directory", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.purchase_orders", name: "Business Purchase Orders", description: "View company-wide purchase order summary", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
     ];
 
     // Create permissions
@@ -2693,7 +2699,7 @@ export class MemStorage implements IStorage {
     return ownerRoleId;
   }
 
-  async resetDefaultPermissionsForCompany(companyId: string): Promise<void> {
+  async resetDefaultPermissions(companyId: string): Promise<void> {
     const allPermissions = Array.from(this.permissions.values());
     const permByKey: Record<string, Permission> = {};
     for (const p of allPermissions) permByKey[p.key] = p;
@@ -6270,6 +6276,7 @@ export class DbStorage implements IStorage {
       { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
+      { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
 
       // Dashboard & KPIs category
       { key: "dashboard.overview", name: "Overview Dashboard", description: "View the main business overview dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
@@ -6277,7 +6284,7 @@ export class DbStorage implements IStorage {
       { key: "dashboard.project_health", name: "Project Health", description: "View project health and status dashboard", category: "dashboard", actions: ["view"], isBuiltIn: true },
       { key: "dashboard.team_performance", name: "Team Performance", description: "View team performance and productivity metrics", category: "dashboard", actions: ["view"], isBuiltIn: true },
 
-      // Business category
+      // Business category (13 keys)
       { key: "business.dashboard", name: "Business Dashboard", description: "Access business-level dashboard and KPIs", category: "business", actions: ["view"], isBuiltIn: true },
       { key: "business.schedule", name: "Business Schedule", description: "Manage company-wide schedule", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.overheads", name: "Overheads", description: "Manage business overhead costs", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -6288,6 +6295,9 @@ export class DbStorage implements IStorage {
       { key: "business.notes", name: "Business Notes", description: "Manage company notes and memos", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "business.leave", name: "Leave Management", description: "Manage employee leave requests", category: "business", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
       { key: "business.team", name: "Team Directory", description: "View team member directory", category: "business", actions: ["view"], isBuiltIn: true },
+      { key: "business.contacts", name: "Business Contacts", description: "Manage company-wide contact directory", category: "business", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "business.purchase_orders", name: "Business Purchase Orders", description: "View company-wide purchase order summary", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
+      { key: "business.reports", name: "Business Reports", description: "Access company-level reports and analytics", category: "business", actions: ["view", "summary_only"], isBuiltIn: true },
     ];
 
     for (const permData of builtInPermissions) {
@@ -8014,7 +8024,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async resetDefaultPermissionsForCompany(companyId: string): Promise<void> {
+  async resetDefaultPermissions(companyId: string): Promise<void> {
     try {
       const allPermissions = await db.select().from(schema.permissions);
       const permByKey: Record<string, typeof allPermissions[0]> = {};
@@ -8054,7 +8064,7 @@ export class DbStorage implements IStorage {
         }
       });
     } catch (error) {
-      console.error("Database error in resetDefaultPermissionsForCompany:", error);
+      console.error("Database error in resetDefaultPermissions:", error);
       throw error;
     }
   }

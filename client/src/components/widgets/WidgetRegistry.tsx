@@ -218,7 +218,7 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     configurable: true,
     accent: "green",
     financialGated: true,
-    requiredPermission: { key: "financial.invoices", action: "view" },
+    requiredPermission: { key: "dashboard.financial", action: "view" },
     defaultColumns: 3,
     defaultRowSpan: 2,
   },

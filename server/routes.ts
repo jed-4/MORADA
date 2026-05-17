@@ -8922,7 +8922,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else start.setMonth(now.getMonth() - 1);
 
       const [canViewInvoices, canViewBudget, canViewBills] = await Promise.all([
-        storage.checkUserPermission(user.id, "financial.invoices", "view").catch(() => false),
+        storage.checkUserPermission(user.id, "dashboard.financial", "view").catch(() => false),
         storage.checkUserPermission(user.id, "financial.budget_actuals", "view").catch(() => false),
         storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false),
       ]);
@@ -9134,7 +9134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/pipeline-value", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/pipeline-value", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9166,7 +9166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/outstanding-buildpro", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/outstanding-buildpro", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9193,7 +9193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ---- Period-filtered endpoints --------------------------------------
 
-  app.get("/api/kpis/revenue-buildpro", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/revenue-buildpro", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9487,7 +9487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return /not active|reconnect Xero|refresh token has expired|invalid_grant|\b401\b/i.test(msg);
   };
 
-  app.get("/api/kpis/revenue-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/revenue-xero", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9517,7 +9517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/outstanding-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/outstanding-xero", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9543,7 +9543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/cash-xero", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/kpis/cash-xero", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9588,7 +9588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/business/revenue-trends", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/business/revenue-trends", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9701,7 +9701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const businessPnLCache = new Map<string, { value: any; expires: number }>();
   const BUSINESS_PNL_TTL_MS = 15 * 60_000;
 
-  app.get("/api/business/financial-summary", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/business/financial-summary", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -9818,7 +9818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Profit & Loss widget — sources structured P&L from Xero with period filtering
-  app.get("/api/business/pnl", requireAuth, requirePermission("financial.invoices", "view"), async (req, res) => {
+  app.get("/api/business/pnl", requireAuth, requirePermission("dashboard.financial", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -10431,7 +10431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) {
         return res.status(400).json({ error: "Company ID not found" });
       }
-      await storage.resetDefaultPermissionsForCompany(companyId);
+      await storage.resetDefaultPermissions(companyId);
       res.json({ message: "Default permissions reset successfully" });
     } catch (error) {
       res.status(500).json({ error: "Failed to reset default permissions" });
