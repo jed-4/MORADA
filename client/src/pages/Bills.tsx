@@ -139,7 +139,7 @@ function ImportFromXeroDialog({
   const { toast } = useToast();
   const [sinceDate, setSinceDate] = useState<string>("");
   const [unmappedAction, setUnmappedAction] = useState<"skip" | "create">("skip");
-  const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("draft");
+  const [importStatus, setImportStatus] = useState<"draft" | "awaiting_approval" | "from_xero">("from_xero");
   const [supplierFilter, setSupplierFilter] = useState<string>("");
   const [trackingFilter, setTrackingFilter] = useState<string>("__all__");
 
@@ -719,6 +719,20 @@ export default function Bills() {
     },
   });
 
+  const syncXeroStatusMutation = useMutation({
+    mutationFn: () => apiRequest("/api/xero/bills/sync-status", "POST"),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({
+        title: "Xero status synced",
+        description: `${data.synced} bill${data.synced === 1 ? "" : "s"} updated${data.failed > 0 ? `, ${data.failed} failed` : ""}.`,
+      });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Sync failed", description: e.message, variant: "destructive" });
+    },
+  });
+
   // ── DataTable column defs ───────────────────────────────────────────────
   const billColumns = useMemo<ColumnDef<Bill, unknown>[]>(() => {
     const cols: (ColumnDef<Bill, unknown> & { meta?: DataTableColumnMeta })[] = [
@@ -1124,6 +1138,16 @@ export default function Bills() {
             >
               <Download className="w-3.5 h-3.5 mr-2" />
               Import from Xero
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => syncXeroStatusMutation.mutate()}
+              disabled={syncXeroStatusMutation.isPending}
+              data-testid="menu-item-sync-xero-status"
+            >
+              {syncXeroStatusMutation.isPending
+                ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
+              Sync status from Xero
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => setLocation("/settings?tab=integrations")}

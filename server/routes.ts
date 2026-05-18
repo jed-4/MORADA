@@ -28204,6 +28204,48 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       res.status(500).json({ error: error.message || "Failed to load Xero bills" });
     }
   };
+  // Xero: Bulk-sync status of all already-imported Xero bills for this company.
+  // Calls syncBillFromXeroInternal on every bill that has a xeroInvoiceId, bringing
+  // BuildPro statuses in line with current Xero statuses (AUTHORISED → awaiting_payment,
+  // PAID → paid, SUBMITTED → awaiting_approval, etc.).
+  app.post("/api/xero/bills/sync-status", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      // Find all bills with a xeroInvoiceId belonging to this company (via project)
+      const { bills: billsTbl, projects: projectsTbl } = await import("@shared/schema");
+      const linkedBills = await db
+        .select({ id: billsTbl.id })
+        .from(billsTbl)
+        .innerJoin(projectsTbl, eq(billsTbl.projectId, projectsTbl.id))
+        .where(and(eq(projectsTbl.companyId, companyId), isNotNull(billsTbl.xeroInvoiceId)));
+
+      let synced = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const { id } of linkedBills) {
+        const result = await syncBillFromXeroInternal(id, companyId);
+        if (result.ok) {
+          synced++;
+        } else {
+          failed++;
+          if (result.error) errors.push(result.error);
+        }
+      }
+
+      res.json({ synced, failed, total: linkedBills.length, errors });
+    } catch (error: any) {
+      console.error("Error syncing Xero bill statuses:", error);
+      res.status(500).json({ error: error.message || "Failed to sync bill statuses from Xero" });
+    }
+  });
+
   app.get("/api/xero/bills/import-preview", requireAuth, importPreviewHandler);
   app.get("/api/xero/bills/import", requireAuth, importPreviewHandler);
 
