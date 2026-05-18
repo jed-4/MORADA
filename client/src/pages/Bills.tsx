@@ -209,12 +209,21 @@ function ImportFromXeroDialog({
   });
 
   const visibleBills = useMemo(() => {
+    const selectedTrackingName = trackingFilter !== "__all__"
+      ? trackingOptions.find(o => o.id === trackingFilter)?.name
+      : undefined;
     return allXeroBills.filter(b => {
       if (supplierFilter && !(b.contactName || "").toLowerCase().includes(supplierFilter.toLowerCase())) return false;
-      if (trackingFilter !== "__all__" && b.trackingOptionId !== trackingFilter) return false;
+      if (trackingFilter !== "__all__") {
+        const matchById = b.trackingOptionId === trackingFilter;
+        const matchByName = !b.trackingOptionId && selectedTrackingName
+          ? b.trackingOptionName === selectedTrackingName
+          : false;
+        if (!matchById && !matchByName) return false;
+      }
       return true;
     });
-  }, [allXeroBills, supplierFilter, trackingFilter]);
+  }, [allXeroBills, supplierFilter, trackingFilter, trackingOptions]);
 
   const importableBills = visibleBills.filter(b => !b.alreadyImported);
 

@@ -27908,7 +27908,11 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         for (const line of (xb.LineItems || [])) {
           for (const tc of (line.Tracking || [])) {
             if (tc.TrackingCategoryID === tc2Id) {
-              return { trackingOptionId: tc.TrackingOptionID, trackingOptionName: tc.Option };
+              // Xero paged responses often omit TrackingOptionID — resolve it from the
+              // trackingOptions list by matching the option name when it is absent.
+              const resolvedId = tc.TrackingOptionID ||
+                trackingOptions.find((o: any) => o.name === tc.Option)?.id;
+              return { trackingOptionId: resolvedId, trackingOptionName: tc.Option };
             }
           }
         }
