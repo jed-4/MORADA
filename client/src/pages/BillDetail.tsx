@@ -270,7 +270,18 @@ export default function BillDetail() {
       if (!suppliersRes.ok || !tradesRes.ok) throw new Error("Failed to fetch contacts");
       const [supplierList, tradeList] = await Promise.all([suppliersRes.json(), tradesRes.json()]);
       const combined = [...supplierList, ...tradeList];
-      const deduped = Array.from(new Map(combined.map((c: any) => [c.id, c])).values());
+      // Deduplicate by ID first, then by normalised name — contacts can exist as
+      // both "supplier" and "trade" type records, prefer the supplier record.
+      const byId = Array.from(new Map(combined.map((c: any) => [c.id, c])).values());
+      const byName = new Map<string, any>();
+      for (const c of byId) {
+        const key = (c.name ?? "").trim().toLowerCase();
+        const existing = byName.get(key);
+        if (!existing || existing.contactType !== "supplier") {
+          byName.set(key, c);
+        }
+      }
+      const deduped = Array.from(byName.values());
       return deduped.sort((a: any, b: any) => a.name.localeCompare(b.name));
     },
   });
@@ -1805,11 +1816,11 @@ export default function BillDetail() {
                         >
                           <FormControl>
                             <SelectTrigger
-                              className="border border-border bg-muted/30 text-sm font-normal"
+                              className="border border-border bg-muted/30 text-sm font-normal text-left"
                               style={{ height: '36px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}
                               data-testid="select-project"
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 0%', minWidth: 0, overflow: 'hidden' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 0%', minWidth: 0, overflow: 'hidden', textAlign: 'left' }}>
                                 {selectedProject?.color && (
                                   <span
                                     className="rounded-full"
