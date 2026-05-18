@@ -242,6 +242,7 @@ export default function BillDetail() {
   const [defaultsAccountPickerOpen, setDefaultsAccountPickerOpen] = useState(false);
   const [defaultsAccountSearch, setDefaultsAccountSearch] = useState("");
   const [defaultsPromptDismissed, setDefaultsPromptDismissed] = useState(false);
+  const [showUpdateDefaultsPrompt, setShowUpdateDefaultsPrompt] = useState(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -587,10 +588,33 @@ export default function BillDetail() {
     }
   }, [watchedSupplierId, suppliers, isEditMode]);
 
-  // Reset the per-bill "Not now" dismissal whenever the supplier changes.
+  // Reset per-bill dismissals whenever the supplier changes.
   useEffect(() => {
     setDefaultsPromptDismissed(false);
+    setShowUpdateDefaultsPrompt(false);
   }, [watchedSupplierId]);
+
+  // Auto-apply supplier defaults to empty line items when opening an existing bill (edit mode).
+  // New bills are handled by the effect above (line ~576).
+  useEffect(() => {
+    if (!isEditMode) return;
+    if (!currentSupplier) return;
+    const defaultCostCode = currentSupplier.defaultCostCodeId || "";
+    const defaultAccount = currentSupplier.xeroDefaultAccountCode || (currentSupplier as any).xeroDefaultAccount || "";
+    if (!defaultCostCode && !defaultAccount) return;
+    setLineItems(prev => {
+      const updated = prev.map(item => ({
+        ...item,
+        costCodeId: item.costCodeId || defaultCostCode || item.costCodeId,
+        account: item.account || defaultAccount || item.account,
+      }));
+      const changed = updated.some((item, i) =>
+        item.costCodeId !== prev[i].costCodeId || item.account !== prev[i].account
+      );
+      return changed ? updated : prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSupplier?.id, isEditMode]);
 
   const getSupplierDefaultAccount = () => {
     const supplierId = form.getValues("supplierId");
@@ -644,12 +668,14 @@ export default function BillDetail() {
     }
     return best;
   };
-  const suggestedCostCode = !supplierDefaultCostCode ? mostUsed(lineItems.map(li => li.costCodeId || "")) : "";
-  const suggestedAccount = !supplierDefaultAccountCode ? mostUsed(lineItems.map(li => li.account || "")) : "";
+  const mostUsedCostCode = mostUsed(lineItems.map(li => li.costCodeId || ""));
+  const mostUsedAccount = mostUsed(lineItems.map(li => li.account || ""));
+  // Suggest whenever the bill has a value that differs from (or fills in) the stored default.
+  const suggestedCostCode = (mostUsedCostCode && mostUsedCostCode !== supplierDefaultCostCode) ? mostUsedCostCode : "";
+  const suggestedAccount = (mostUsedAccount && mostUsedAccount !== supplierDefaultAccountCode) ? mostUsedAccount : "";
   const showDefaultsPrompt = !!currentSupplier
     && !defaultsPromptDismissed
     && !currentSupplier.suppressDefaultsPrompt
-    && (!supplierDefaultCostCode || !supplierDefaultAccountCode)
     && (!!suggestedCostCode || !!suggestedAccount);
 
   const addLineItem = () => {
@@ -1026,6 +1052,19 @@ export default function BillDetail() {
         }
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
+      }
+      // If supplier defaults are stored but the user coded this bill differently,
+      // stay on the page so they can decide whether to update the defaults.
+      if (currentSupplier && !currentSupplier.suppressDefaultsPrompt && !defaultsPromptDismissed) {
+        const billCostCode = mostUsed(lineItems.map(li => li.costCodeId || ""));
+        const billAccount = mostUsed(lineItems.map(li => li.account || ""));
+        const hasSomeDefault = !!(supplierDefaultCostCode || supplierDefaultAccountCode);
+        const costCodeDiffers = !!billCostCode && billCostCode !== supplierDefaultCostCode;
+        const accountDiffers = !!billAccount && billAccount !== supplierDefaultAccountCode;
+        if (hasSomeDefault && (costCodeDiffers || accountDiffers)) {
+          setShowUpdateDefaultsPrompt(true);
+          return; // stay on page — user must dismiss the update prompt before leaving
+        }
       }
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
@@ -2551,7 +2590,7 @@ export default function BillDetail() {
                       </>
                     )}
                     {suggestedCostCode && suggestedAccount && " and "}
-                    {suggestedAccount && (
+                    {suggestedAccount && xeroAccounts.length > 0 && (
                       <>
                         Xero account{" "}
                         <span className="font-medium text-foreground">
@@ -2578,10 +2617,11 @@ export default function BillDetail() {
                           defaultCostCodeId?: string | null;
                           xeroDefaultAccountCode?: string | null;
                         } = { supplierId: currentSupplier.id };
-                        if (suggestedCostCode && !supplierDefaultCostCode) payload.defaultCostCodeId = suggestedCostCode;
-                        if (suggestedAccount && !supplierDefaultAccountCode) payload.xeroDefaultAccountCode = suggestedAccount;
+                        if (suggestedCostCode) payload.defaultCostCodeId = suggestedCostCode;
+                        if (suggestedAccount && xeroAccounts.length > 0) payload.xeroDefaultAccountCode = suggestedAccount;
                         updateSupplierDefaultsMutation.mutate(payload, {
                           onSuccess: () => {
+                            setDefaultsPromptDismissed(true);
                             toast({ title: "Defaults saved", description: `Future bills for ${currentSupplier.name} will use these.` });
                           },
                         });
@@ -2618,6 +2658,57 @@ export default function BillDetail() {
                       data-testid="button-suppress-supplier-defaults"
                     >
                       Don't ask for this supplier
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {showUpdateDefaultsPrompt && currentSupplier && (
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-muted/20 text-table" data-testid="prompt-update-supplier-defaults">
+                  <span className="text-muted-foreground">
+                    You changed the coding for{" "}
+                    <span className="font-medium text-foreground">{currentSupplier.name}</span>.
+                    Update the saved default?
+                  </span>
+                  <div className="flex items-center gap-1 ml-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      className="h-6 text-table px-2"
+                      disabled={updateSupplierDefaultsMutation.isPending}
+                      onClick={() => {
+                        const billCostCode = mostUsed(lineItems.map(li => li.costCodeId || ""));
+                        const billAccount = mostUsed(lineItems.map(li => li.account || ""));
+                        const patch: { supplierId: string; defaultCostCodeId?: string; xeroDefaultAccountCode?: string } = {
+                          supplierId: currentSupplier.id,
+                        };
+                        if (billCostCode && billCostCode !== supplierDefaultCostCode) patch.defaultCostCodeId = billCostCode;
+                        if (billAccount && billAccount !== supplierDefaultAccountCode && xeroAccounts.length > 0) patch.xeroDefaultAccountCode = billAccount;
+                        updateSupplierDefaultsMutation.mutate(patch, {
+                          onSuccess: () => {
+                            toast({ title: "Default updated", description: `${currentSupplier.name} will use the new coding next time.` });
+                            setShowUpdateDefaultsPrompt(false);
+                            setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+                          },
+                        });
+                      }}
+                      data-testid="button-update-supplier-defaults"
+                    >
+                      Update default
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-table px-2"
+                      onClick={() => {
+                        setShowUpdateDefaultsPrompt(false);
+                        setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+                      }}
+                      data-testid="button-keep-supplier-defaults"
+                    >
+                      Keep existing
                     </Button>
                   </div>
                 </div>
