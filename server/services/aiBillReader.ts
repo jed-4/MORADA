@@ -281,7 +281,7 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
   fs.writeFileSync(pdfPath, pdfBuffer);
 
   const outputPrefix = path.join(tmpDir, "page");
-  await execAsync(`pdftoppm -png -r 200 -l 3 "${pdfPath}" "${outputPrefix}"`);
+  await execAsync(`pdftoppm -png -r 150 -l 3 "${pdfPath}" "${outputPrefix}"`);
 
   const files = fs
     .readdirSync(tmpDir)
@@ -312,7 +312,7 @@ async function extractWithVision(pdfBuffer: Buffer): Promise<AIInvoiceResponse> 
 
   const imageContent = pageImages.map((dataUrl) => ({
     type: "image_url" as const,
-    image_url: { url: dataUrl, detail: "high" as const },
+    image_url: { url: dataUrl, detail: "auto" as const },
   }));
 
   const response = await openai.chat.completions.create({

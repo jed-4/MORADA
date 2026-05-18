@@ -331,6 +331,15 @@ export class AutoBillCreatorService {
       ? primary.content.toString("base64")
       : primary.content;
 
+    // Skip AI if this is an existing bill that was already successfully processed.
+    // The polling cycle can revisit the same bill multiple times; once ocrProcessed
+    // is true and the bill has a supplier or invoice reference, there is no value
+    // in running the extraction pipeline again.
+    if (options.existingBillId && createdBill.ocrProcessed && (createdBill.supplierId || (createdBill as any).billReference)) {
+      console.log(`[autoBillCreator] Bill ${createdBill.id} already processed (ocrProcessed=true) — skipping AI re-extraction`);
+      return { success: true, billId: createdBill.id, billNumber: createdBill.billNumber ?? undefined, supplierName };
+    }
+
     try {
       const invoiceData = await processInvoiceWithAI(primaryBase64, primary.filename);
 

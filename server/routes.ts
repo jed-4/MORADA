@@ -16907,6 +16907,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { processInvoiceWithAI } = await import("./services/aiBillReader");
       const attachmentMeta = { objectPath, filename, mimeType, size: fileBuffer.length };
+
+      // Skip re-extraction if this bill was already successfully processed and
+      // the user did not explicitly force a re-run. The auto-OCR trigger on
+      // bill load fires every time the page mounts, so this guard prevents
+      // redundant AI calls when data is already present.
+      const forceReprocess = req.body?.forceReprocess === true;
+      if (!forceReprocess && bill.ocrProcessed && (bill.supplierId || (bill as any).billReference)) {
+        console.log(`[ocr-from-attachment] Bill ${bill.id} already processed — skipping re-extraction`);
+        return res.json({ skipped: true, attachment: attachmentMeta });
+      }
+
       try {
         const result = await processInvoiceWithAI(dataUrl, filename);
         res.json({ ...result, attachment: attachmentMeta });
