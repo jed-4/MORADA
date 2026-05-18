@@ -27939,29 +27939,91 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       let processed = 0;
 
       for (const event of payload.events) {
-        if (event.resourceType !== "INVOICE") continue;
+        if (
+          event.resourceType !== "INVOICE" &&
+          event.resourceType !== "CREDITNOTE" &&
+          event.resourceType !== "PAYMENT"
+        ) continue;
 
-        const xeroInvoiceId: string = event.resourceId;
-        if (!xeroInvoiceId) continue;
-
-        // Resolve connection (used for both branches below)
+        // Resolve connection before any branching
         let resolvedConnection = connection;
         if (!resolvedConnection && event.tenantId) {
           resolvedConnection = await storage.getXeroConnectionByTenantId(event.tenantId).catch(() => null) || null;
         }
         if (!resolvedConnection) {
+          console.warn(`[Xero Webhook] No active Xero connection found for ${event.resourceType} ${event.resourceId}`);
+          continue;
+        }
+
+        // ── PAYMENT events ────────────────────────────────────────────────────
+        // Xero fires a PAYMENT event when a payment is applied to (or removed
+        // from) an invoice directly in Xero. We resolve the linked invoice and
+        // call syncBillFromXeroInternal so amounts and status stay in sync.
+        if (event.resourceType === "PAYMENT") {
+          const paymentId: string = event.resourceId;
+          if (!paymentId) continue;
+          try {
+            const xeroPayment = await xeroService.getPayment(resolvedConnection.id, paymentId);
+            const invoiceId = xeroPayment?.Invoice?.InvoiceID;
+            console.log(`[xero-webhook] PAYMENT event — resourceId: ${paymentId}, resolved to invoice: ${invoiceId || "none"}`);
+            if (!invoiceId) continue;
+
+            const localBillForPayment = await storage.getBillByXeroId(invoiceId, resolvedConnection.companyId).catch(() => null);
+            console.log(`[xero-webhook] PAYMENT event — found local bill: ${!!localBillForPayment}`);
+            if (!localBillForPayment) continue;
+
+            const xeroInvoiceForPayment = await xeroService.getInvoice(resolvedConnection.id, invoiceId);
+            if (!xeroInvoiceForPayment) continue;
+
+            const result = await syncBillFromXeroInternal(localBillForPayment.id, resolvedConnection.companyId, xeroInvoiceForPayment);
+            if (result.ok) processed++;
+            else console.warn(`[Xero Webhook] Payment sync failed for invoice ${invoiceId}: ${result.error}`);
+          } catch (err) {
+            console.error(`[Xero Webhook] Failed to process PAYMENT event ${paymentId}:`, err);
+          }
+          continue;
+        }
+
+        const xeroInvoiceId: string = event.resourceId;
+        if (!xeroInvoiceId) continue;
+
+        // ── CREDITNOTE events ─────────────────────────────────────────────────
+        // Credit notes pushed from BuildPro store their xeroInvoiceId on the
+        // bill record the same way regular invoices do, so getBillByXeroId
+        // finds them. syncBillFromXeroInternal handles ACCPAYCREDIT just like
+        // ACCPAY — status, amounts, and voided/deleted states all apply.
+        if (event.resourceType === "CREDITNOTE") {
+          try {
+            const localCreditNote = await storage.getBillByXeroId(xeroInvoiceId, resolvedConnection.companyId).catch(() => null);
+            console.log(`[xero-webhook] CREDITNOTE event — resourceId: ${xeroInvoiceId}, found local bill: ${!!localCreditNote}`);
+            if (!localCreditNote) continue;
+
+            const xeroCreditNote = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
+            if (!xeroCreditNote) continue;
+
+            const result = await syncBillFromXeroInternal(localCreditNote.id, resolvedConnection.companyId, xeroCreditNote);
+            if (result.ok) processed++;
+            else console.warn(`[Xero Webhook] Credit note sync failed for ${xeroInvoiceId}: ${result.error}`);
+          } catch (err) {
+            console.error(`[Xero Webhook] Failed to sync credit note ${xeroInvoiceId}:`, err);
+          }
+          continue;
+        }
+
+        // ── INVOICE events ────────────────────────────────────────────────────
+        if (!resolvedConnection) {
           console.warn(`[Xero Webhook] No active Xero connection found for invoice ${xeroInvoiceId}`);
           continue;
         }
 
-        // Branch A: Local supplier bill (ACCPAY) — scope by tenant's company
+        // Branch A: Local supplier bill (ACCPAY / ACCPAYCREDIT) — scope by tenant's company
         const localBill = await storage.getBillByXeroId(xeroInvoiceId, resolvedConnection.companyId).catch(() => null);
         if (localBill) {
           try {
             const xeroInvoice = await xeroService.getInvoice(resolvedConnection.id, xeroInvoiceId);
             if (!xeroInvoice) continue;
-            // Only handle ACCPAY invoices in this branch
-            if (xeroInvoice.Type && xeroInvoice.Type !== "ACCPAY") {
+            // Handle ACCPAY (supplier bills) and ACCPAYCREDIT (credit notes stored as bills)
+            if (xeroInvoice.Type && xeroInvoice.Type !== "ACCPAY" && xeroInvoice.Type !== "ACCPAYCREDIT") {
               // Fall through to client-invoice branch below
             } else {
               const result = await syncBillFromXeroInternal(localBill.id, resolvedConnection.companyId, xeroInvoice);

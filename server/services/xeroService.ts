@@ -995,6 +995,33 @@ export class XeroService {
     return data.Payments?.[0] || null;
   }
 
+  /**
+   * Fetch a single payment from Xero by its PaymentID.
+   * Returns the payment object including the nested Invoice.InvoiceID so the
+   * webhook handler can resolve which local bill to update.
+   */
+  async getPayment(connectionId: string, paymentId: string): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Payments/${paymentId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch Xero payment: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Payments?.[0] || null;
+  }
+
   async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
     const accessToken = await this.getValidToken(connectionId);
     const connection = await storage.getXeroConnection(connectionId);
