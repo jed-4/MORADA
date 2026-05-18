@@ -265,6 +265,7 @@ const colors = {
     { key: 'scope', icon: 'layers-outline', label: 'Scope', showCount: false },
     { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
     { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
+    { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
   ];
 
   const handleTileTap = (key: string) => {
@@ -284,6 +285,9 @@ const colors = {
         break;
       case 'tasks':
         navigation.navigate('ProjectTasks', { projectId, projectName: project.name });
+        break;
+      case 'receiptCapture':
+        navigation.navigate('ReceiptCapture', { projectId, projectName: project.name });
         break;
       default:
         if (collapsed[key]) {

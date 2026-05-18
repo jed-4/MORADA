@@ -62,6 +62,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   X,
+  Camera,
+  Banknote,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -71,6 +73,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import { CaptureReceiptDialog } from "@/components/bills/CaptureReceiptDialog";
+import { ReimbursementsQueue } from "@/components/bills/ReimbursementsQueue";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -479,8 +484,14 @@ export default function Bills() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importProjectId, setImportProjectId] = useState<string>("");
   const [emailSetupOpen, setEmailSetupOpen] = useState(false);
+  const [captureReceiptOpen, setCaptureReceiptOpen] = useState(false);
+  const [billsView, setBillsView] = useState<"bills" | "reimbursements">("bills");
 
   const { toast } = useToast();
+
+  const { user } = useAuth();
+  const roleName = ((user as any)?.roleName || "").toLowerCase();
+  const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (billIds: string[]) => {
@@ -986,7 +997,7 @@ export default function Bills() {
       <div className="bg-background flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
         {/* Status tabs */}
         <div className="flex items-center overflow-x-auto">
-          {STATUS_OPTIONS.map((status) => {
+          {billsView === "bills" && STATUS_OPTIONS.map((status) => {
             const isActive = selectedStatus === status.key;
             const showCount = status.key !== "all" && status.key !== "paid";
             const count = statusCounts[status.key as keyof typeof statusCounts];
@@ -1015,6 +1026,26 @@ export default function Bills() {
               </button>
             );
           })}
+          {billsView === "reimbursements" && (
+            <span className="relative flex items-center gap-1.5 px-3 py-2 text-xs font-semibold whitespace-nowrap text-primary">
+              Reimbursements
+              <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
+            </span>
+          )}
+          {/* Reimbursements tab (admin only) */}
+          {isAdminLike && (
+            <button
+              onClick={() => setBillsView(billsView === "reimbursements" ? "bills" : "reimbursements")}
+              className={cn(
+                "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0 cursor-pointer bg-transparent border-0",
+                billsView === "reimbursements" ? "hidden" : "text-muted-foreground hover:text-foreground"
+              )}
+              data-testid="tab-reimbursements"
+            >
+              <Banknote className="h-3 w-3" />
+              Reimbursements
+            </button>
+          )}
         </div>
 
         <div className="flex-1" />
@@ -1036,15 +1067,27 @@ export default function Bills() {
 
         <div className="w-px h-4 bg-border mx-1 flex-shrink-0" />
 
-        {/* New Bill button */}
+        {/* Capture Receipt button */}
         <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
-          onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
-          data-testid="button-create-bill"
+          className="h-6 w-auto px-2 text-xs border rounded-md border-border hover-elevate active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+          onClick={() => setCaptureReceiptOpen(true)}
+          data-testid="button-capture-receipt"
         >
-          <Plus className="w-3 h-3" />
-          <span>New Bill</span>
+          <Camera className="w-3 h-3" />
+          <span>Capture Receipt</span>
         </button>
+
+        {/* New Bill button */}
+        {(isAdminLike || billsView === "bills") && (
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+            onClick={() => setLocation(projectIdFromUrl ? `/projects/${projectIdFromUrl}/bills/new` : "/bills/new")}
+            data-testid="button-create-bill"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Bill</span>
+          </button>
+        )}
 
         {/* 3-dot menu */}
         <DropdownMenu>
@@ -1239,8 +1282,25 @@ export default function Bills() {
         defaultProjectId={importProjectId}
       />
 
+      {/* ── Reimbursements queue (admin) ── */}
+      {billsView === "reimbursements" && (
+        <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              onClick={() => setBillsView("bills")}
+              data-testid="btn-back-to-bills"
+            >
+              <ChevronRight className="h-3 w-3 rotate-180" />
+              Back to Bills
+            </button>
+          </div>
+          <ReimbursementsQueue projectId={projectIdFromUrl || undefined} />
+        </div>
+      )}
+
       {/* ── Content ── */}
-      <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
+      {billsView === "bills" && <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
         {billsLoading ? (
           <div className="flex items-center justify-center h-64">
             <p className="text-muted-foreground text-sm">Loading bills...</p>
@@ -1308,7 +1368,15 @@ export default function Bills() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
+
+      {/* ── Capture Receipt dialog ── */}
+      <CaptureReceiptDialog
+        open={captureReceiptOpen}
+        onOpenChange={setCaptureReceiptOpen}
+        projectId={projectIdFromUrl || undefined}
+      />
+
     </div>
   );
 }

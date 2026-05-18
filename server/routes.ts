@@ -12674,11 +12674,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bills API Routes
   app.get("/api/bills", async (req, res) => {
     try {
-      const { projectId, status } = req.query;
-      const bills = await storage.getBills(
-        projectId as string | undefined, 
+      const { projectId, status, paidByEmployee } = req.query;
+      const user = (req as any).user;
+      const roleName = (user?.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+
+      let bills = await storage.getBills(
+        projectId as string | undefined,
         status as string | undefined
       );
+
+      // Workers can only see receipts they personally created
+      if (!isAdminLike && user?.id) {
+        bills = bills.filter((b: any) => b.billType === "receipt" && b.createdById === user.id);
+      }
+
+      // Admin reimbursements-queue filter
+      if (isAdminLike && paidByEmployee === "true") {
+        bills = bills.filter((b: any) => b.paidByEmployee === true);
+      }
 
       // Enrich bills with supplier name from contacts table
       const companyId = (req as any).user?.companyId;
@@ -12777,6 +12791,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const bill = await storage.createBill(validationResult.data);
+
+      // Receipt flow: if an objectPath was provided, attach the photo inline
+      // so the client doesn't need a separate POST /api/bills/:id/attachments call.
+      const { objectPath: inlineObjectPath } = req.body;
+      if (bill.billType === "receipt" && inlineObjectPath && typeof inlineObjectPath === "string") {
+        try {
+          const attachment: import("@shared/schema").BillAttachment = {
+            objectPath: inlineObjectPath,
+            filename: inlineObjectPath.split("/").pop() || "receipt.jpg",
+            mimeType: "image/jpeg",
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: currentUser.id,
+            source: "manual",
+          };
+          await storage.appendBillAttachment(bill.id, attachment);
+        } catch (attachErr) {
+          console.error("[bills/create] failed to attach receipt photo:", attachErr);
+        }
+      }
+
       res.status(201).json(bill);
     } catch (error) {
       console.error("Error creating bill:", error);
@@ -12955,6 +12989,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("[bills/attachments] failed:", error);
       res.status(500).json({ error: error?.message || "Failed to append attachment" });
+    }
+  });
+
+  // ── Reimbursement action routes ────────────────────────────────────────────
+
+  // Approve a reimbursement claim
+  app.patch("/api/bills/:id/reimbursement/approve", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const roleName = (user?.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
+
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      if (!(bill as any).paidByEmployee) return res.status(400).json({ error: "Bill is not a reimbursement claim" });
+
+      const updated = await storage.updateBill(req.params.id, {
+        reimbursementStatus: "approved",
+        reimbursedByUserId: user.id,
+      } as any);
+
+      // Notify the worker
+      if ((bill as any).createdById) {
+        try {
+          const totalLabel = `$${((bill.total || 0) / 100).toFixed(2)}`;
+          const notification = await storage.createNotification({
+            userId: (bill as any).createdById,
+            companyId: user.companyId,
+            type: "reimbursement_approved",
+            title: "Reimbursement Approved",
+            message: `Your receipt for ${totalLabel} has been approved. Payment is on its way.`,
+            link: `/projects/${bill.projectId}/bills/${bill.id}`,
+            entityType: "bill",
+            entityId: bill.id,
+            isRead: false,
+            createdByUserId: user.id,
+          });
+          emitNotification((bill as any).createdById, notification);
+        } catch (notifErr) {
+          console.error("[reimbursement/approve] notification failed:", notifErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("[reimbursement/approve] error:", error);
+      res.status(500).json({ error: "Failed to approve reimbursement" });
+    }
+  });
+
+  // Mark a reimbursement as paid
+  app.patch("/api/bills/:id/reimbursement/mark-paid", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const roleName = (user?.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
+
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+
+      const { method, notes } = req.body;
+      const allowedMethods = ["bank_transfer", "added_to_wages", "cash"];
+      if (!method || !allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "method must be one of: bank_transfer, added_to_wages, cash" });
+      }
+
+      const updated = await storage.updateBill(req.params.id, {
+        reimbursementStatus: "paid",
+        reimbursementMethod: method,
+        reimbursementNotes: notes || null,
+        reimbursedAt: new Date(),
+        reimbursedByUserId: user.id,
+      } as any);
+
+      // Notify the worker
+      if ((bill as any).createdById) {
+        try {
+          const totalLabel = `$${((bill.total || 0) / 100).toFixed(2)}`;
+          const methodLabel = method === "bank_transfer" ? "bank transfer" : method === "added_to_wages" ? "wages" : "cash";
+          const notification = await storage.createNotification({
+            userId: (bill as any).createdById,
+            companyId: user.companyId,
+            type: "reimbursement_paid",
+            title: "Reimbursement Paid",
+            message: `Your reimbursement of ${totalLabel} has been paid via ${methodLabel}.`,
+            link: `/projects/${bill.projectId}/bills/${bill.id}`,
+            entityType: "bill",
+            entityId: bill.id,
+            isRead: false,
+            createdByUserId: user.id,
+          });
+          emitNotification((bill as any).createdById, notification);
+        } catch (notifErr) {
+          console.error("[reimbursement/mark-paid] notification failed:", notifErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("[reimbursement/mark-paid] error:", error);
+      res.status(500).json({ error: "Failed to mark reimbursement as paid" });
+    }
+  });
+
+  // Reject / return a reimbursement claim
+  app.patch("/api/bills/:id/reimbursement/reject", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const roleName = (user?.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      if (!isAdminLike) return res.status(403).json({ error: "Forbidden" });
+
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+
+      const { reason } = req.body;
+      const updated = await storage.updateBill(req.params.id, {
+        reimbursementStatus: "rejected",
+        paidByEmployee: false,
+        reimbursementNotes: reason || null,
+      } as any);
+
+      // Notify the worker
+      if ((bill as any).createdById) {
+        try {
+          const notification = await storage.createNotification({
+            userId: (bill as any).createdById,
+            companyId: user.companyId,
+            type: "reimbursement_rejected",
+            title: "Reimbursement Needs Attention",
+            message: reason ? `Your receipt was returned: ${reason}` : "Your reimbursement request was returned. Please check with your manager.",
+            link: `/projects/${bill.projectId}/bills/${bill.id}`,
+            entityType: "bill",
+            entityId: bill.id,
+            isRead: false,
+            createdByUserId: user.id,
+          });
+          emitNotification((bill as any).createdById, notification);
+        } catch (notifErr) {
+          console.error("[reimbursement/reject] notification failed:", notifErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("[reimbursement/reject] error:", error);
+      res.status(500).json({ error: "Failed to reject reimbursement" });
     }
   });
 

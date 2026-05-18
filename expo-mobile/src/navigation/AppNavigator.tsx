@@ -30,6 +30,7 @@ import NoteEditorScreen from '../screens/NoteEditorScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
+import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -90,6 +91,11 @@ function ProjectsStack() {
         name="ProjectTasks"
         component={ProjectTasksScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ReceiptCapture"
+        component={ReceiptCaptureScreen}
+        options={{ headerShown: true, title: 'Capture Receipt' }}
       />
     </Stack.Navigator>
   );

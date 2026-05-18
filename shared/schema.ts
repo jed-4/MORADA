@@ -1502,7 +1502,7 @@ export type SelectionOptionWithAttachments = SelectionOption & {
 };
 
 // Bill-related enums
-export const billTypeEnum = pgEnum("bill_type", ["bill", "credit"]);
+export const billTypeEnum = pgEnum("bill_type", ["bill", "credit", "receipt"]);
 export const billStatusEnum = pgEnum("bill_status", ["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]);
 export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
 export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
@@ -1844,6 +1844,13 @@ export const bills = pgTable("bills", {
   gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
   matchedSitePOId: varchar("matched_site_po_id"), // Confirmed site PO match (ID of purchase_orders row)
   suggestedSitePOIds: json("suggested_site_po_ids").default([]), // Fuzzy suggestion PO IDs (array of strings)
+  // Reimbursement fields (used when billType === "receipt" and worker paid personally)
+  paidByEmployee: boolean("paid_by_employee").default(false),
+  reimbursementStatus: text("reimbursement_status"), // null | "pending" | "approved" | "paid" | "rejected"
+  reimbursedByUserId: varchar("reimbursed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reimbursementMethod: text("reimbursement_method"), // "bank_transfer" | "added_to_wages" | "cash"
+  reimbursementNotes: text("reimbursement_notes"),
+  reimbursedAt: timestamp("reimbursed_at"),
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1865,7 +1872,7 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  billType: z.enum(["bill", "credit"]),
+  billType: z.enum(["bill", "credit", "receipt"]),
   status: z.enum(["draft", "needs_review", "awaiting_approval", "awaiting_payment", "paid"]),
   billDate: z.coerce.date(),
   dueDate: z.coerce.date().optional(),
