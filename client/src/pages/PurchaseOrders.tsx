@@ -13,6 +13,10 @@ import {
   MoreVertical,
   Filter,
   ChevronRight,
+  Check,
+  X,
+  Link2,
+  ClipboardList,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,8 +53,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { SiXero } from "react-icons/si";
-import type { PurchaseOrder, Project, Contact } from "@shared/schema";
+import type { PurchaseOrder, Project, Contact, CostCode } from "@shared/schema";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All Statuses" },
@@ -94,12 +99,29 @@ export default function PurchaseOrders() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
+  const [isSitePODialogOpen, setIsSitePODialogOpen] = useState(false);
+  const [confirmedSitePO, setConfirmedSitePO] = useState<{ poNumber: string; id: string } | null>(null);
+  const [sitePOSupplierId, setSitePOSupplierId] = useState<string>("");
+  const [sitePOSupplierName, setSitePOSupplierName] = useState<string>("");
+  const [sitePOCostCodeId, setSitePOCostCodeId] = useState<string>("");
+  const [sitePOAmount, setSitePOAmount] = useState<string>("");
+  const [sitePODescription, setSitePODescription] = useState<string>("");
 
   useEffect(() => {
     if (projectIdFromUrl) {
       setSelectedProjectId(projectIdFromUrl);
     }
   }, [projectIdFromUrl]);
+
+  const { data: projectCostCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/projects", projectIdFromUrl, "cost-codes"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectIdFromUrl}/cost-codes`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectIdFromUrl,
+  });
 
   const createPoMutation = useMutation({
     mutationFn: async (data: { projectId: string; type: string }) => {
@@ -195,6 +217,7 @@ export default function PurchaseOrders() {
     const anyPo = po as any;
     if (anyPo.supplierId) return suppliersMap.get(anyPo.supplierId)?.name || "";
     if (anyPo.supplierUserId) return supplierUsersMap.get(anyPo.supplierUserId) || "";
+    if (anyPo.supplierName) return anyPo.supplierName as string;
     return "";
   };
 
@@ -258,6 +281,71 @@ export default function PurchaseOrders() {
       approved: filteredPOs.filter(po => po.status === "approved").reduce((sum, po) => sum + (po.total || 0), 0),
     };
   }, [filteredPOs]);
+
+  const createSitePOMutation = useMutation({
+    mutationFn: async (data: {
+      projectId: string;
+      supplierId?: string;
+      supplierName?: string;
+      costCodeId: string;
+      total: number;
+      description: string;
+      poType: string;
+      status: string;
+      requiresApproval: boolean;
+    }) => {
+      return apiRequest("/api/purchase-orders", "POST", data);
+    },
+    onSuccess: (newPO: PurchaseOrder) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsSitePODialogOpen(false);
+      resetSitePOForm();
+      setConfirmedSitePO({ poNumber: newPO.poNumber || '', id: newPO.id });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error creating site PO",
+        description: error.message || "Failed to create site purchase order",
+        variant: "destructive",
+      });
+    },
+  });
+
+  function resetSitePOForm() {
+    setSitePOSupplierId("");
+    setSitePOSupplierName("");
+    setSitePOCostCodeId("");
+    setSitePOAmount("");
+    setSitePODescription("");
+  }
+
+  function handleCreateSitePO() {
+    if (!projectIdFromUrl) return;
+    if (!sitePOCostCodeId) {
+      toast({ title: "Cost code required", description: "Please select a cost code", variant: "destructive" });
+      return;
+    }
+    const amountInDollars = parseFloat(sitePOAmount);
+    if (!sitePOAmount || isNaN(amountInDollars) || amountInDollars < 0) {
+      toast({ title: "Valid amount required", description: "Please enter the amount inc. GST", variant: "destructive" });
+      return;
+    }
+    if (!sitePODescription.trim()) {
+      toast({ title: "Description required", description: "Please describe what is being purchased", variant: "destructive" });
+      return;
+    }
+    createSitePOMutation.mutate({
+      projectId: projectIdFromUrl,
+      supplierId: sitePOSupplierId || undefined,
+      supplierName: !sitePOSupplierId ? sitePOSupplierName || undefined : undefined,
+      costCodeId: sitePOCostCodeId,
+      total: Math.round(amountInDollars * 100),
+      description: sitePODescription.trim(),
+      poType: 'site',
+      status: 'draft',
+      requiresApproval: false,
+    });
+  }
 
   const handleNewPO = () => {
     if (isProjectContext && projectIdFromUrl) {
@@ -588,6 +676,21 @@ export default function PurchaseOrders() {
           </PopoverContent>
         </Popover>
 
+        {isProjectContext && (
+          <button
+            onClick={() => setIsSitePODialogOpen(true)}
+            disabled={createSitePOMutation.isPending}
+            className="h-6 px-2 text-xs border rounded-md bg-amber-500 text-white border-amber-400/20 hover:bg-amber-600 active-elevate-2 flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
+            data-testid="button-new-site-po"
+          >
+            {createSitePOMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <ClipboardList className="w-3 h-3" />
+            )}
+            <span>{createSitePOMutation.isPending ? "Creating..." : "New Site PO"}</span>
+          </button>
+        )}
         <button
           onClick={handleNewPO}
           disabled={createPoMutation.isPending}
@@ -637,50 +740,285 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Table Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading purchase orders...</div>
           </div>
-        ) : filteredPOs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full py-12">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <ShoppingCart className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-lg font-medium mb-2">No Purchase Orders</h3>
-            <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
-              {searchTerm || selectedStatus !== "all" || selectedType !== "all"
-                ? "No purchase orders match your current filters."
-                : "Create your first purchase order to start tracking orders to suppliers."}
-            </p>
-            {!searchTerm && selectedStatus === "all" && selectedType === "all" && (
-              <Button
-                onClick={handleNewPO}
-                disabled={createPoMutation.isPending}
-                className="bg-primary hover:bg-primary/90"
-                size="sm"
-                data-testid="button-empty-new-po"
-              >
-                {createPoMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-2" />
-                )}
-                {createPoMutation.isPending ? "Creating..." : "New Purchase Order"}
-              </Button>
-            )}
-          </div>
         ) : (
-          <DataTable
-            data={filteredPOs}
-            columns={poColumns}
-            storageKey="purchase-orders"
-            legacyConfigKey="purchase-orders-column-config-v1"
-            rowKey={(po) => po.id}
-            onRowClick={(po) => handleRowClick(po.id)}
-          />
+          <>
+            {/* ── Site PO Section ─────────────────────────────────────────── */}
+            {(selectedType === "all" || selectedType === "site") && (() => {
+              const sitePOs = filteredPOs.filter(po => po.poType === "site");
+              if (sitePOs.length === 0 && selectedType !== "site") return null;
+              return (
+                <div className="border-b border-border">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-amber-50/50 dark:bg-amber-900/10 border-b border-amber-100 dark:border-amber-900/30">
+                    <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                      Site Purchase Orders
+                    </span>
+                    <span className="text-xs text-amber-600/70 dark:text-amber-400/70">({sitePOs.length})</span>
+                  </div>
+                  {sitePOs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 gap-2">
+                      <p className="text-sm text-muted-foreground">No site POs yet.</p>
+                      {isProjectContext && (
+                        <Button size="sm" variant="outline" onClick={() => setIsSitePODialogOpen(true)} data-testid="button-empty-site-po">
+                          <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                          New Site PO
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
+                      {sitePOs.map(po => {
+                        const anyPo = po as any;
+                        const supplierName = supplierNameForPO(po);
+                        const project = po.projectId ? projectsMap.get(po.projectId) : null;
+                        const statusLabel = po.status === "draft" ? "Open" : po.status === "billed" ? "Matched" : po.status === "cancelled" ? "Closed" : po.status;
+                        const statusClass = po.status === "draft"
+                          ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300"
+                          : po.status === "billed"
+                          ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300"
+                          : "bg-muted border-border text-muted-foreground";
+                        return (
+                          <div
+                            key={po.id}
+                            onClick={() => handleRowClick(po.id)}
+                            className="rounded-md border bg-card p-3 cursor-pointer hover-elevate flex flex-col gap-2"
+                            data-testid={`site-po-card-${po.id}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-semibold text-primary font-mono tracking-tight">{po.poNumber}</span>
+                              <Badge variant="outline" className={`text-[11px] font-medium px-1.5 py-0 flex-shrink-0 ${statusClass}`}>
+                                {statusLabel}
+                              </Badge>
+                            </div>
+                            {supplierName && (
+                              <div className="text-xs text-muted-foreground truncate">{supplierName}</div>
+                            )}
+                            <div className="text-xs text-foreground line-clamp-2 min-h-[2.5em]">{po.description || <span className="text-muted-foreground italic">No description</span>}</div>
+                            <div className="flex items-center justify-between gap-2 mt-auto">
+                              <div className="flex flex-col gap-0.5">
+                                {!isProjectContext && project && (
+                                  <span className="text-[11px] text-muted-foreground truncate">{project.name}</span>
+                                )}
+                                {po.createdAt && (
+                                  <span className="text-[11px] text-muted-foreground">{format(new Date(po.createdAt), "dd MMM yyyy")}</span>
+                                )}
+                              </div>
+                              <span className="text-sm font-semibold tabular-nums">{formatCurrency(po.total || 0)}</span>
+                            </div>
+                            {po.status === "billed" && anyPo.matchedBillId && (
+                              <div className="flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400 mt-0.5">
+                                <Link2 className="w-3 h-3 flex-shrink-0" />
+                                <span>Matched to bill</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Standard PO Table ──────────────────────────────────────── */}
+            {(selectedType === "all" || selectedType === "main") && (() => {
+              const mainPOs = filteredPOs.filter(po => po.poType !== "site");
+              if (mainPOs.length === 0 && selectedType !== "main") return null;
+              const showHeader = selectedType === "all";
+              return (
+                <div className={showHeader ? "" : "h-full flex flex-col"}>
+                  {showHeader && (
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
+                      <ShoppingCart className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Standard Purchase Orders
+                      </span>
+                      <span className="text-xs text-muted-foreground/70">({mainPOs.length})</span>
+                    </div>
+                  )}
+                  {mainPOs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <p className="text-sm text-muted-foreground">No standard purchase orders match your filters.</p>
+                    </div>
+                  ) : (
+                    <DataTable
+                      data={mainPOs}
+                      columns={poColumns}
+                      storageKey="purchase-orders"
+                      legacyConfigKey="purchase-orders-column-config-v1"
+                      rowKey={(po) => po.id}
+                      onRowClick={(po) => handleRowClick(po.id)}
+                    />
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Empty state when truly nothing ──────────────────────────── */}
+            {filteredPOs.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <ShoppingCart className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="text-lg font-medium mb-2">No Purchase Orders</h3>
+                <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
+                  {searchTerm || selectedStatus !== "all" || selectedType !== "all"
+                    ? "No purchase orders match your current filters."
+                    : "Create your first purchase order to start tracking orders to suppliers."}
+                </p>
+                {!searchTerm && selectedStatus === "all" && selectedType === "all" && (
+                  <Button
+                    onClick={handleNewPO}
+                    disabled={createPoMutation.isPending}
+                    className="bg-primary hover:bg-primary/90"
+                    size="sm"
+                    data-testid="button-empty-new-po"
+                  >
+                    {createPoMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    {createPoMutation.isPending ? "Creating..." : "New Purchase Order"}
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {/* Site PO Creation Dialog */}
+      <Dialog open={isSitePODialogOpen} onOpenChange={(open) => { setIsSitePODialogOpen(open); if (!open) resetSitePOForm(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Site Purchase Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="spo-supplier">Supplier</Label>
+              <Select value={sitePOSupplierId} onValueChange={(v) => { setSitePOSupplierId(v === "__manual__" ? "" : v); if (v !== "__manual__") setSitePOSupplierName(""); }}>
+                <SelectTrigger id="spo-supplier" data-testid="select-spo-supplier">
+                  <SelectValue placeholder="Select supplier (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">Enter name manually</SelectItem>
+                  {suppliers.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!sitePOSupplierId && (
+                <Input
+                  placeholder="Supplier name"
+                  value={sitePOSupplierName}
+                  onChange={e => setSitePOSupplierName(e.target.value)}
+                  className="text-sm"
+                  data-testid="input-spo-supplier-name"
+                />
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="spo-costcode">Cost Code <span className="text-destructive">*</span></Label>
+              <Select value={sitePOCostCodeId} onValueChange={setSitePOCostCodeId}>
+                <SelectTrigger id="spo-costcode" data-testid="select-spo-costcode">
+                  <SelectValue placeholder="Select cost code" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectCostCodes.map(cc => (
+                    <SelectItem key={cc.id} value={cc.id}>{cc.code ? `${cc.code} — ${cc.name}` : cc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="spo-amount">Amount (inc. GST) <span className="text-destructive">*</span></Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <Input
+                  id="spo-amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={sitePOAmount}
+                  onChange={e => setSitePOAmount(e.target.value)}
+                  className="pl-7 text-sm"
+                  data-testid="input-spo-amount"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="spo-description">Description <span className="text-destructive">*</span></Label>
+              <Textarea
+                id="spo-description"
+                placeholder="What is being purchased and why? e.g. 'Timber for frame repairs — approved by PM'"
+                value={sitePODescription}
+                onChange={e => setSitePODescription(e.target.value)}
+                rows={3}
+                className="text-sm resize-none"
+                data-testid="textarea-spo-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsSitePODialogOpen(false); resetSitePOForm(); }} disabled={createSitePOMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateSitePO}
+              disabled={createSitePOMutation.isPending || !sitePOCostCodeId || !sitePOAmount || !sitePODescription.trim()}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+              data-testid="button-submit-site-po"
+            >
+              {createSitePOMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>
+              ) : (
+                "Create Site PO"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Site PO Confirmation Dialog */}
+      <Dialog open={!!confirmedSitePO} onOpenChange={(open) => { if (!open) setConfirmedSitePO(null); }}>
+        <DialogContent className="sm:max-w-sm text-center">
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <Check className="w-7 h-7 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold mb-1">Site PO Created</h2>
+              <p className="text-sm text-muted-foreground">PO number generated successfully</p>
+            </div>
+            <div className="bg-muted rounded-md px-6 py-4 w-full text-center">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">PO Number</div>
+              <div className="text-3xl font-bold font-mono tracking-widest text-primary">{confirmedSitePO?.poNumber}</div>
+            </div>
+            <p className="text-sm text-muted-foreground text-center max-w-xs">
+              Give this number to the supplier to include on their invoice.
+            </p>
+          </div>
+          <DialogFooter className="sm:justify-center gap-2">
+            <Button variant="outline" onClick={() => setConfirmedSitePO(null)}>Close</Button>
+            <Button
+              onClick={() => {
+                if (confirmedSitePO) handleRowClick(confirmedSitePO.id);
+                setConfirmedSitePO(null);
+              }}
+              className="bg-primary"
+            >
+              View Site PO
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Project Selection Dialog */}
       <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>

@@ -1842,6 +1842,8 @@ export const bills = pgTable("bills", {
   ocrProcessed: boolean("ocr_processed").notNull().default(false),
   ocrData: json("ocr_data"), // Raw OCR results
   gmailMessageId: text("gmail_message_id"), // Gmail message ID if imported from bill inbox
+  matchedSitePOId: varchar("matched_site_po_id"), // Confirmed site PO match (ID of purchase_orders row)
+  suggestedSitePOIds: json("suggested_site_po_ids").default([]), // Fuzzy suggestion PO IDs (array of strings)
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5035,6 +5037,11 @@ export const purchaseOrders = pgTable("purchase_orders", {
   xeroPurchaseOrderNumber: text("xero_purchase_order_number"), // Linked Xero PurchaseOrderNumber
   xeroStatus: text("xero_status"), // Last status mirrored from Xero (DRAFT|SUBMITTED|AUTHORISED|BILLED|DELETED)
   xeroLastSyncAt: timestamp("xero_last_sync_at"), // Last successful Xero PO push or status pull
+
+  // Site PO — cost code link and bill matching
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  matchedBillId: varchar("matched_bill_id"), // ID of the matched bill (no FK constraint to avoid circular dep)
+  matchedAt: timestamp("matched_at"),
 
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),

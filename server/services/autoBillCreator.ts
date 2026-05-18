@@ -2,9 +2,12 @@ import { processInvoiceWithAI } from "./aiBillReader";
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
 import type { InsertBill, InsertBillLineItem } from "@shared/schema";
+import * as schema from "@shared/schema";
 import { matchSupplier } from "@shared/supplierMatcher";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { randomUUID } from "crypto";
+import { db } from "../db";
+import { and, eq, gte, lte } from "drizzle-orm";
 
 export interface AutoBillResult {
   success: boolean;
@@ -439,6 +442,86 @@ export class AutoBillCreatorService {
         }
       }
 
+      // ── SITE PO MATCHING ─────────────────────────────────────────────────────
+      let matchedSitePOId: string | null = null;
+      let suggestedSitePOIds: string[] = [];
+
+      if (options.autoMatch) {
+        const pdfFilenames = attachments.map(a => a.filename).filter(Boolean) as string[];
+        const poPattern = /\bSP-\d{4}-\d{3}\b/gi;
+        const searchTargets = [
+          (invoiceData as any)?.rawText || '',
+          ...pdfFilenames,
+          email?.subject || '',
+        ].join(' ');
+
+        const poMatches = searchTargets.match(poPattern);
+        const foundPONumber = poMatches?.[0]?.toUpperCase() ?? null;
+
+        if (foundPONumber) {
+          const [sitePO] = await db
+            .select()
+            .from(schema.purchaseOrders)
+            .where(and(
+              eq(schema.purchaseOrders.companyId, companyId),
+              eq(schema.purchaseOrders.poType, 'site' as any),
+              eq(schema.purchaseOrders.poNumber, foundPONumber),
+              eq(schema.purchaseOrders.status, 'draft' as any)
+            ))
+            .limit(1);
+
+          if (sitePO) {
+            matchedSitePOId = sitePO.id;
+
+            // Override project and supplier from the PO (authoritative match)
+            if (sitePO.projectId) projectId = sitePO.projectId;
+            if (sitePO.supplierId) aiSupplierId = sitePO.supplierId;
+
+            // Mark the site PO as matched
+            await db.update(schema.purchaseOrders)
+              .set({
+                status: 'billed' as any,
+                matchedBillId: createdBill.id,
+                matchedAt: new Date(),
+              } as any)
+              .where(eq(schema.purchaseOrders.id, sitePO.id));
+
+            console.log(`[autoBillCreator] Matched site PO ${foundPONumber} → bill ${createdBill.billNumber}`);
+          }
+        }
+
+        // Fuzzy fallback: suggest site POs by supplier + amount proximity
+        if (!matchedSitePOId) {
+          const billTotal = (invoiceData as any)?.totalAmountIncGst ?? invoiceData?.totalAmount ?? 0;
+          const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+          const conditions: any[] = [
+            eq(schema.purchaseOrders.companyId, companyId),
+            eq(schema.purchaseOrders.poType, 'site' as any),
+            eq(schema.purchaseOrders.status, 'draft' as any),
+            gte(schema.purchaseOrders.createdAt, sixtyDaysAgo),
+          ];
+          if (aiSupplierId) {
+            conditions.push(eq(schema.purchaseOrders.supplierId, aiSupplierId));
+          }
+          if (billTotal > 0) {
+            conditions.push(gte(schema.purchaseOrders.total, Math.round(billTotal * 85)));
+            conditions.push(lte(schema.purchaseOrders.total, Math.round(billTotal * 115)));
+          }
+
+          const suggestions = await db
+            .select({ id: schema.purchaseOrders.id })
+            .from(schema.purchaseOrders)
+            .where(and(...conditions))
+            .limit(3);
+
+          suggestedSitePOIds = suggestions.map(s => s.id);
+          if (suggestedSitePOIds.length > 0) {
+            console.log(`[autoBillCreator] Found ${suggestedSitePOIds.length} site PO suggestion(s) for bill ${createdBill.billNumber}`);
+          }
+        }
+      }
+      // ── END SITE PO MATCHING ──────────────────────────────────────────────────
+
       // If no supplier matched, leave as "needs_review" so the bill is flagged
       const billStatus = aiSupplierId ? "awaiting_approval" : "needs_review";
 
@@ -453,6 +536,8 @@ export class AutoBillCreatorService {
         total: invoiceData.totalAmount || 0,
         ocrProcessed: true,
         ocrData: invoiceData as any,
+        ...(matchedSitePOId ? { matchedSitePOId } : {}),
+        ...(suggestedSitePOIds.length > 0 ? { suggestedSitePOIds } : {}),
       });
 
       if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {

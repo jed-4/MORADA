@@ -25,6 +25,8 @@ import {
   ChevronsUpDown,
   Send,
   Settings,
+  Link2,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LineItemTable, type LineItemColumn } from "@/components/LineItemTable";
@@ -99,7 +101,7 @@ import { useUpload } from "@/hooks/use-upload";
 import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem } from "@shared/schema";
+import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem, PurchaseOrder } from "@shared/schema";
 
 const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
@@ -1661,6 +1663,61 @@ export default function BillDetail() {
     };
   };
 
+  // ── Site PO suggestion banner ──────────────────────────────────────────────
+  const billAny = bill as any;
+  const matchedSitePOId: string | null = billAny?.matchedSitePOId ?? null;
+  const suggestedSitePOIds: string[] = Array.isArray(billAny?.suggestedSitePOIds)
+    ? (billAny.suggestedSitePOIds as string[])
+    : [];
+
+  const { data: suggestedSitePOs = [] } = useQuery<PurchaseOrder[]>({
+    queryKey: ["/api/purchase-orders/suggestions", suggestedSitePOIds],
+    queryFn: async () => {
+      if (!suggestedSitePOIds.length) return [];
+      const results = await Promise.all(
+        suggestedSitePOIds.map(poId =>
+          fetch(`/api/purchase-orders/${poId}`, { credentials: "include" })
+            .then(r => r.ok ? r.json() as Promise<PurchaseOrder> : null)
+        )
+      );
+      return results.filter(Boolean) as PurchaseOrder[];
+    },
+    enabled: !!(suggestedSitePOIds.length && !matchedSitePOId && isEditMode),
+  });
+
+  const { data: matchedSitePO } = useQuery<PurchaseOrder | null>({
+    queryKey: ["/api/purchase-orders", matchedSitePOId],
+    queryFn: async () => {
+      if (!matchedSitePOId) return null;
+      const r = await fetch(`/api/purchase-orders/${matchedSitePOId}`, { credentials: "include" });
+      return r.ok ? (r.json() as Promise<PurchaseOrder>) : null;
+    },
+    enabled: !!(matchedSitePOId && isEditMode),
+  });
+
+  const linkSitePOMutation = useMutation({
+    mutationFn: async (sitePOId: string) => {
+      await apiRequest(`/api/bills/${id}`, "PATCH", { matchedSitePOId: sitePOId, suggestedSitePOIds: [] });
+      await apiRequest(`/api/purchase-orders/${sitePOId}`, "PATCH", { status: "billed", matchedBillId: id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to link site PO", variant: "destructive" });
+    },
+  });
+
+  const dismissSuggestionsMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/bills/${id}`, "PATCH", { suggestedSitePOIds: [] });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+    },
+  });
+
   if (billLoading) {
     return <div className="p-6">Loading...</div>;
   }
@@ -1747,6 +1804,76 @@ export default function BillDetail() {
           </div>
         </div>
       </div>
+
+      {/* ── Site PO matched banner ──────────────────────────────────────── */}
+      {isEditMode && matchedSitePOId && matchedSitePO && (
+        <div className="flex-none border-b bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 px-4 py-2">
+          <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-300">
+            <Link2 className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" />
+            <span className="font-medium">Matched to Site PO</span>
+            <span className="font-mono font-semibold">{matchedSitePO.poNumber}</span>
+            {matchedSitePO.description && (
+              <span className="text-green-700/70 dark:text-green-400/70 truncate">— {matchedSitePO.description}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Site PO suggestion banner ───────────────────────────────────── */}
+      {isEditMode && !matchedSitePOId && suggestedSitePOs.length > 0 && (
+        <div className="flex-none border-b bg-amber-50/80 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <ClipboardList className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-1.5">
+                  Possible Site PO match{suggestedSitePOs.length > 1 ? "es" : ""}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {suggestedSitePOs.map(po => (
+                    <div
+                      key={po.id}
+                      className="flex items-center gap-2 bg-white dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-md px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="font-mono font-semibold text-amber-700 dark:text-amber-300">{po.poNumber}</span>
+                      {po.description && (
+                        <span className="text-muted-foreground truncate max-w-[180px]">{po.description}</span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-300 ml-1"
+                        onClick={() => linkSitePOMutation.mutate(po.id)}
+                        disabled={linkSitePOMutation.isPending}
+                        data-testid={`button-link-site-po-${po.id}`}
+                      >
+                        {linkSitePOMutation.isPending ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <>
+                            <Link2 className="w-3 h-3 mr-1" />
+                            Link
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="flex-shrink-0 h-6 w-6 text-amber-600 dark:text-amber-400"
+              onClick={() => dismissSuggestionsMutation.mutate()}
+              disabled={dismissSuggestionsMutation.isPending}
+              data-testid="button-dismiss-site-po-suggestions"
+            >
+              <X className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-auto p-4">

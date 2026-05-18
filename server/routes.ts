@@ -167,7 +167,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { eq, and, asc, desc, or, isNull, isNotNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
-import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser, isAdminRole } from "./middleware/auth";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification, emitReactionUpdated, getIO, getConnectedUserIdsForCompany } from "./socketManager";
@@ -13773,11 +13773,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
       const { projectId, status, poType } = req.query;
+
+      // Non-admin workers can only see their own site POs
+      let workerUserId: string | undefined;
+      if (req.user.userCategory !== 'team') {
+        workerUserId = req.user.id;
+      } else if (req.user.roleId) {
+        const role = await storage.getUserRole(req.user.roleId);
+        if (!role || !isAdminRole(role)) {
+          workerUserId = req.user.id;
+        }
+      } else {
+        workerUserId = req.user.id;
+      }
+
       const purchaseOrders = await storage.getPurchaseOrders(
         req.user.companyId,
         projectId as string | undefined,
         status as string | undefined,
-        poType as string | undefined
+        poType as string | undefined,
+        workerUserId
       );
       res.json(purchaseOrders);
     } catch (error) {
@@ -13841,6 +13856,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "Project required", 
           details: "Please select a project for this purchase order" 
         });
+      }
+
+      // Site PO specific validation
+      if (poType === 'site') {
+        if (!req.body.costCodeId) {
+          return res.status(400).json({ error: 'Cost code is required for site POs' });
+        }
+        if (req.body.total === undefined || req.body.total === null || req.body.total === '') {
+          return res.status(400).json({ error: 'Amount is required for site POs' });
+        }
+        if (!req.body.description) {
+          return res.status(400).json({ error: 'Description is required for site POs' });
+        }
+
+        // Verify project access for non-admin workers
+        let isAdmin = false;
+        if (req.user.userCategory === 'team' && req.user.roleId) {
+          const role = await storage.getUserRole(req.user.roleId);
+          if (role && isAdminRole(role)) isAdmin = true;
+        }
+        if (!isAdmin) {
+          const access = await db
+            .select()
+            .from(userProjectAccessTable)
+            .where(and(
+              eq(userProjectAccessTable.userId, req.user.id),
+              eq(userProjectAccessTable.projectId, req.body.projectId)
+            ))
+            .limit(1);
+          if (!access.length) {
+            return res.status(403).json({ error: 'You do not have access to this project' });
+          }
+        }
+
+        // Auto-set for site POs
+        req.body.status = 'draft';
+        req.body.requiresApproval = false;
       }
 
       const poData = {

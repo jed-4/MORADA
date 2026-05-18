@@ -1155,7 +1155,7 @@ export interface IStorage {
   getAttachmentsForMessages(messageIds: string[]): Promise<Record<string, schema.MessageAttachment[]>>;
 
   // Purchase Orders CRUD
-  getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]>;
+  getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string, workerUserId?: string): Promise<PurchaseOrder[]>;
   getPurchaseOrder(id: string): Promise<PurchaseOrder | undefined>;
   createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: string, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
@@ -20699,7 +20699,7 @@ export class DbStorage implements IStorage {
   // PURCHASE ORDERS
   // ============================================
 
-  async getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]> {
+  async getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string, workerUserId?: string): Promise<PurchaseOrder[]> {
     try {
       const conditions = [eq(schema.purchaseOrders.companyId, companyId)];
       
@@ -20711,6 +20711,15 @@ export class DbStorage implements IStorage {
       }
       if (poType) {
         conditions.push(eq(schema.purchaseOrders.poType, poType as any));
+      }
+      // Non-admin workers: only see main POs or site POs they created
+      if (workerUserId) {
+        conditions.push(
+          or(
+            ne(schema.purchaseOrders.poType, 'site' as any),
+            eq(schema.purchaseOrders.createdById, workerUserId)
+          )!
+        );
       }
       
       const result = await db.select().from(schema.purchaseOrders)
@@ -20773,10 +20782,35 @@ export class DbStorage implements IStorage {
 
   async getNextPONumber(companyId: string, poType: "main" | "site"): Promise<string> {
     try {
+      if (poType === 'site') {
+        // Site POs use SP-YYMM-SEQ with monthly reset
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const prefix = `SP-${yy}${mm}`;
+
+        const existing = await db
+          .select({ poNumber: schema.purchaseOrders.poNumber })
+          .from(schema.purchaseOrders)
+          .where(and(
+            eq(schema.purchaseOrders.companyId, companyId),
+            eq(schema.purchaseOrders.poType, 'site'),
+            sql`${schema.purchaseOrders.poNumber} LIKE ${prefix + '-%'}`
+          ))
+          .orderBy(desc(schema.purchaseOrders.poNumber))
+          .limit(1);
+
+        const lastSeq = existing[0]
+          ? parseInt(existing[0].poNumber.split('-')[2] ?? '0', 10) || 0
+          : 0;
+
+        return `${prefix}-${String(lastSeq + 1).padStart(3, '0')}`;
+      }
+
+      // Standard POs: PO-YYYY-SEQ (annual reset)
       const year = new Date().getFullYear();
-      const prefix = poType === "site" ? "SPO" : "PO";
+      const prefix = "PO";
       
-      // Get the highest PO number for this year and type
       const result = await db.select({ poNumber: schema.purchaseOrders.poNumber })
         .from(schema.purchaseOrders)
         .where(
