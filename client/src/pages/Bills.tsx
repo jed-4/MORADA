@@ -512,7 +512,7 @@ export default function Bills() {
   });
 
   const bulkChangeProjectMutation = useMutation({
-    mutationFn: async ({ billIds, projectId }: { billIds: string[]; projectId: string }) => {
+    mutationFn: async ({ billIds, projectId }: { billIds: string[]; projectId: string | null }) => {
       const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "PATCH", { projectId })));
       const failed = results.filter(r => r.status === "rejected").length;
       if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to update`);
@@ -800,7 +800,7 @@ export default function Bills() {
       ...(projectIdFromUrl ? [] : [{
         id: "project",
         header: "Project",
-        accessorFn: (b: Bill) => getProject(b.projectId)?.name || "",
+        accessorFn: (b: Bill) => getProject(b.projectId)?.name || "Business",
         cell: ({ row }) => {
           const project = getProject(row.original.projectId);
           return project ? (
@@ -808,7 +808,9 @@ export default function Bills() {
               <ProjectIcon icon={project.icon} color={project.color} className="w-3 h-3 flex-shrink-0" />
               <span className="truncate">{project.name}</span>
             </div>
-          ) : null;
+          ) : (
+            <span className="text-muted-foreground text-xs">Business</span>
+          );
         },
         size: 150,
         meta: { defaultWidth: 150, headerLabel: "Project" },
@@ -1271,12 +1273,15 @@ export default function Bills() {
         <DialogContent>
           <DialogHeader><DialogTitle>Change project for {selectedBills.size} bill(s)</DialogTitle></DialogHeader>
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
-            <SelectContent>{projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+            <SelectTrigger><SelectValue placeholder="Select a project or business" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__business__">Business (no project)</SelectItem>
+              {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
           </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeProjectDialogOpen(false); setSelectedProjectId(""); }}>Cancel</Button>
-            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}>
+            <Button disabled={!selectedProjectId || bulkChangeProjectMutation.isPending} style={{ backgroundColor: "hsl(var(--primary))", color: "white" }} onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId === "__business__" ? null : selectedProjectId })}>
               {bulkChangeProjectMutation.isPending ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>

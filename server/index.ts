@@ -204,6 +204,16 @@ app.use((req, res, next) => {
     // run on every startup.
     healContactNames();
 
+    // Backfill companyId on any bills that pre-date the company-scoping migration
+    try {
+      const backfillResult = await storage.backfillBillsCompanyId();
+      if (backfillResult.updated > 0) {
+        log(`Bills backfill: stamped companyId on ${backfillResult.updated} existing bill(s)`);
+      }
+    } catch (err) {
+      console.error("Bills companyId backfill failed (non-fatal):", err);
+    }
+
     // Repair any pre-existing duplicate scope stages before the unique
     // index can possibly trip on legacy rows. Idempotent — exits cheaply
     // when there are no duplicates.

@@ -12681,7 +12681,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let bills = await storage.getBills(
         projectId as string | undefined,
-        status as string | undefined
+        status as string | undefined,
+        user?.companyId as string | undefined
       );
 
       // Workers can only see receipts they personally created
@@ -12781,6 +12782,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const currentUser = (req as any).user;
       billData.createdById = currentUser.id;
+      if (!billData.companyId && currentUser.companyId) {
+        billData.companyId = currentUser.companyId;
+      }
 
       const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {

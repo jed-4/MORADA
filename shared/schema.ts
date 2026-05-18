@@ -1818,7 +1818,8 @@ export type ContactInsurance = typeof contactInsurances.$inferSelect;
 export const bills = pgTable("bills", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   billNumber: text("bill_number").notNull().unique(), // Auto-generated unique number
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }), // Nullable — bills can belong to the business (no project)
   supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
   billType: billTypeEnum("bill_type").notNull().default("bill"),
   status: billStatusEnum("status").notNull().default("draft"),
@@ -1880,6 +1881,8 @@ export const insertBillSchema = createInsertSchema(bills).omit({
   tax: z.number().default(0),
   total: z.number().default(0),
   paidAmount: z.number().default(0),
+  projectId: z.string().nullable().optional(),
+  companyId: z.string().nullable().optional(),
   attachmentUrls: z.array(z.union([z.string(), billAttachmentSchema])).optional(),
   xeroLastSyncAt: z.coerce.date().optional().nullable(),
   xeroLastSyncStatus: z.string().optional().nullable(),

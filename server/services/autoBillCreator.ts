@@ -220,9 +220,8 @@ export class AutoBillCreatorService {
         if (activeProject) {
           projectId = activeProject.id;
           projectMatchConfident = false; // fallback — may be refined after AI
-        } else {
-          throw new Error("No active project found. Please set a default project.");
         }
+        // If still no project, bill will be saved as a business-level bill (projectId = null)
       }
     }
 
@@ -311,6 +310,7 @@ export class AutoBillCreatorService {
         attachmentUrls: [],
         createdById: options.defaultUserId || null,
         gmailMessageId: options.gmailMessageId || null,
+        companyId: companyId || null,
       };
 
       createdBill = await storage.createBill(draftBillData);

@@ -695,7 +695,8 @@ export interface IStorage {
   deleteRFIComment(id: string): Promise<boolean>;
 
   // Bills CRUD
-  getBills(projectId?: string, status?: string): Promise<Bill[]>;
+  getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]>;
+  backfillBillsCompanyId(): Promise<{ updated: number }>;
   getBillById(id: string): Promise<Bill | null>;
   getBillByXeroId(xeroInvoiceId: string, companyId?: string): Promise<Bill | null>;
   getBillByGmailMessageId(messageId: string): Promise<Bill | null>;
@@ -14108,11 +14109,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getBills(projectId?: string, status?: string): Promise<Bill[]> {
+  async getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]> {
     try {
       let query = db.select().from(schema.bills);
       const conditions = [];
-      
+
+      if (companyId) {
+        conditions.push(or(eq(schema.bills.companyId, companyId), isNull(schema.bills.companyId)));
+      }
       if (projectId) {
         conditions.push(eq(schema.bills.projectId, projectId));
       }
@@ -14218,6 +14222,21 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in createBill:", error);
       throw error;
+    }
+  }
+
+  async backfillBillsCompanyId(): Promise<{ updated: number }> {
+    try {
+      const companies = await db.select({ id: schema.companies.id }).from(schema.companies).limit(1);
+      if (companies.length === 0) return { updated: 0 };
+      const firstCompanyId = companies[0].id;
+      const result = await db.update(schema.bills)
+        .set({ companyId: firstCompanyId })
+        .where(isNull(schema.bills.companyId));
+      return { updated: (result as any).rowCount ?? 0 };
+    } catch (error) {
+      console.error("Database error in backfillBillsCompanyId:", error);
+      return { updated: 0 };
     }
   }
 
