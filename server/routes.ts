@@ -11185,8 +11185,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isAdminLike) {
         return res.status(403).json({ error: "Only admin users can approve selection options." });
       }
-      const existing = await storage.getSelectionOption(req.params.id);
-      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      // Verify the authenticated user's company owns this option (prevents cross-tenant approval)
+      const existing = await assertOptionAccess(req, res, req.params.id);
+      if (!existing) return;
       const userName = user?.name || user?.dbUser?.name || user?.email || "Admin";
       const option = await storage.approveSelectionOption(req.params.id, user?.id || user?.dbUser?.id, userName);
       res.json(option);
