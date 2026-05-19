@@ -38,6 +38,7 @@ import {
   insertFieldOptionSchema,
   insertSelectionSchema,
   insertSelectionOptionSchema,
+  type InsertSelectionOption,
   insertOptionAttachmentSchema,
   insertClientSelectionSchema,
   insertSupplierSchema,
@@ -11145,7 +11146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const updateData: any = { ...validationResult.data };
+      const updateData: Partial<InsertSelectionOption> & { lockedAt?: Date } = { ...validationResult.data };
       if (validationResult.data.isSelectedByClient === true && !existing.lockedAt) {
         updateData.lockedAt = new Date();
       }
@@ -11194,8 +11195,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: verify the authenticated user's company owns the given selection option.
+  // Returns the option on success or sends a 403/404 response and returns null.
+  async function assertOptionAccess(req: any, res: any, optionId: string) {
+    const option = await storage.getSelectionOption(optionId);
+    if (!option) { res.status(404).json({ error: "Selection option not found" }); return null; }
+    const selection = await storage.getSelection(option.selectionId);
+    if (!selection) { res.status(404).json({ error: "Selection not found" }); return null; }
+    const project = await storage.getProject(selection.projectId);
+    const userCompanyId: string | undefined = req.user?.companyId ?? req.user?.dbUser?.companyId;
+    if (!project || !userCompanyId || project.companyId !== userCompanyId) {
+      res.status(403).json({ error: "Access denied" }); return null;
+    }
+    return option;
+  }
+
   app.get("/api/selection-options/:id/attachments", requireAuth, async (req, res) => {
     try {
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
       const attachments = await storage.getOptionAttachments(req.params.id);
       res.json(attachments);
     } catch (error) {
@@ -11205,6 +11223,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/selection-options/:id/attachments", requireAuth, async (req, res) => {
     try {
+      const option = await assertOptionAccess(req, res, req.params.id);
+      if (!option) return;
       const { fileData, fileName, fileType, mimeType, fileSize } = req.body || {};
       if (!fileData || !fileName) {
         return res.status(400).json({ error: "fileData and fileName are required" });
@@ -11239,6 +11259,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/selection-option-attachments/:id", requireAuth, async (req, res) => {
     try {
+      const attachmentRecord = await storage.getOptionAttachmentById(req.params.id);
+      if (!attachmentRecord) return res.status(404).json({ error: "Attachment not found" });
+      const option = await assertOptionAccess(req, res, attachmentRecord.optionId);
+      if (!option) return;
       const { sortOrder } = req.body;
       const attachment = await storage.updateOptionAttachment(req.params.id, { sortOrder });
       if (!attachment) return res.status(404).json({ error: "Attachment not found" });
@@ -11252,6 +11276,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const attachmentRecord = await storage.getOptionAttachmentById(req.params.id);
       if (!attachmentRecord) return res.status(404).json({ error: "Attachment not found" });
+      const option = await assertOptionAccess(req, res, attachmentRecord.optionId);
+      if (!option) return;
       // Best-effort object storage cleanup before DB delete
       if (attachmentRecord.filePath) {
         try {
