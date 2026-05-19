@@ -1960,7 +1960,7 @@ export default function SelectionDetail() {
                         attachments={editingOptionAttachments}
                         onReorder={(newOrder) => {
                           newOrder.forEach((att, idx) => {
-                            apiRequest("PATCH", `/api/selection-option-attachments/${att.id}`, { sortOrder: idx });
+                            apiRequest(`/api/selection-option-attachments/${att.id}`, "PATCH", { sortOrder: idx });
                           });
                           queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
                         }}
