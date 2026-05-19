@@ -1438,6 +1438,10 @@ export const selectionOptions = pgTable("selection_options", {
   visibleToClient: boolean("visible_to_client").notNull().default(true),
   isSelectedByClient: boolean("is_selected_by_client").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedBy: text("approved_by"),
+  lockedAt: timestamp("locked_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -11133,6 +11133,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/selection-options/:id", async (req, res) => {
     try {
+      const existing = await storage.getSelectionOption(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      if (existing.lockedAt) {
+        return res.status(403).json({ error: "This option is locked and cannot be edited." });
+      }
       const validationResult = insertSelectionOptionSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -11140,8 +11145,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-
-      const option = await storage.updateSelectionOption(req.params.id, validationResult.data);
+      const updateData: any = { ...validationResult.data };
+      if (validationResult.data.isSelectedByClient === true && !existing.lockedAt) {
+        updateData.lockedAt = new Date();
+      }
+      const option = await storage.updateSelectionOption(req.params.id, updateData);
       if (!option) {
         return res.status(404).json({ error: "Selection option not found" });
       }
@@ -11153,6 +11161,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/selection-options/:id", async (req, res) => {
     try {
+      const existing = await storage.getSelectionOption(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      if (existing.lockedAt) {
+        return res.status(403).json({ error: "This option is locked and cannot be deleted." });
+      }
       const success = await storage.deleteSelectionOption(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Selection option not found" });
@@ -11160,6 +11173,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete selection option" });
+    }
+  });
+
+  app.patch("/api/selection-options/:id/approve", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const roleName: string = user?.roleName || user?.dbUser?.roleName || "";
+      const isAdminLike = roleName.toLowerCase().includes("admin") || roleName.toLowerCase().includes("owner") || roleName.toLowerCase().includes("general manager");
+      if (!isAdminLike) {
+        return res.status(403).json({ error: "Only admin users can approve selection options." });
+      }
+      const existing = await storage.getSelectionOption(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Selection option not found" });
+      const userName = user?.name || user?.dbUser?.name || user?.email || "Admin";
+      const option = await storage.approveSelectionOption(req.params.id, user?.id || user?.dbUser?.id, userName);
+      res.json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve selection option" });
+    }
+  });
+
+  app.get("/api/selection-options/:id/attachments", async (req, res) => {
+    try {
+      const attachments = await storage.getOptionAttachments(req.params.id);
+      res.json(attachments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachments" });
+    }
+  });
+
+  app.post("/api/selection-options/:id/attachments", requireAuth, async (req, res) => {
+    try {
+      const { fileData, fileName, fileType, mimeType, fileSize } = req.body || {};
+      if (!fileData || !fileName) {
+        return res.status(400).json({ error: "fileData and fileName are required" });
+      }
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const objectStorage = new ObjectStorageService();
+      let base64Body = fileData as string;
+      let resolvedMime = mimeType || "application/octet-stream";
+      const dataUrlMatch = /^data:([^;]+);base64,(.+)$/.exec(fileData);
+      if (dataUrlMatch) {
+        resolvedMime = dataUrlMatch[1] || resolvedMime;
+        base64Body = dataUrlMatch[2];
+      }
+      const buffer = Buffer.from(base64Body, "base64");
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "selections");
+      const existingAttachments = await storage.getOptionAttachments(req.params.id);
+      const sortOrder = existingAttachments.length;
+      const attachment = await storage.createOptionAttachment({
+        optionId: req.params.id,
+        fileName,
+        filePath: objectPath,
+        fileType: fileType || (resolvedMime.startsWith("image/") ? "image" : "document"),
+        fileSize: fileSize || buffer.length,
+        mimeType: resolvedMime,
+        sortOrder,
+      });
+      res.status(201).json(attachment);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to upload attachment" });
+    }
+  });
+
+  app.patch("/api/selection-option-attachments/:id", requireAuth, async (req, res) => {
+    try {
+      const { sortOrder } = req.body;
+      const attachment = await storage.updateOptionAttachment(req.params.id, { sortOrder });
+      if (!attachment) return res.status(404).json({ error: "Attachment not found" });
+      res.json(attachment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update attachment" });
+    }
+  });
+
+  app.delete("/api/selection-option-attachments/:id", requireAuth, async (req, res) => {
+    try {
+      const success = await storage.deleteOptionAttachment(req.params.id);
+      if (!success) return res.status(404).json({ error: "Attachment not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete attachment" });
     }
   });
 

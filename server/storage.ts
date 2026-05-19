@@ -584,9 +584,12 @@ export interface IStorage {
   updateSelectionOption(id: string, option: Partial<InsertSelectionOption>): Promise<SelectionOption | undefined>;
   deleteSelectionOption(id: string): Promise<boolean>;
 
+  approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined>;
+
   // Option Attachments CRUD
   getOptionAttachments(optionId: string): Promise<OptionAttachment[]>;
   createOptionAttachment(attachment: InsertOptionAttachment): Promise<OptionAttachment>;
+  updateOptionAttachment(id: string, data: Partial<InsertOptionAttachment>): Promise<OptionAttachment | undefined>;
   deleteOptionAttachment(id: string): Promise<boolean>;
 
   // Client Selections CRUD  
@@ -5565,6 +5568,23 @@ export class MemStorage implements IStorage {
     return this.optionAttachments.delete(id);
   }
 
+  async updateOptionAttachment(id: string, data: Partial<InsertOptionAttachment>): Promise<OptionAttachment | undefined> {
+    const existing = this.optionAttachments.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...data };
+    this.optionAttachments.set(id, updated);
+    return updated;
+  }
+
+  async approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined> {
+    const existing = this.selectionOptions.get(id);
+    if (!existing) return undefined;
+    const now = new Date();
+    const updated: SelectionOption = { ...existing, approvedAt: now, approvedById: userId, approvedBy: userName, lockedAt: now, updatedAt: now };
+    this.selectionOptions.set(id, updated);
+    return updated;
+  }
+
   // Client Selections CRUD  
   async getClientSelections(projectId: string): Promise<ClientSelection[]> {
     return Array.from(this.clientSelections.values())
@@ -7821,6 +7841,39 @@ export class DbStorage implements IStorage {
 
   async deleteSelectionOption(id: string): Promise<boolean> {
     const result = await db.delete(schema.selectionOptions).where(eq(schema.selectionOptions.id, id));
+    return result.rowCount > 0;
+  }
+
+  async approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined> {
+    const now = new Date();
+    const [option] = await db.update(schema.selectionOptions).set({
+      approvedAt: now,
+      approvedById: userId,
+      approvedBy: userName,
+      lockedAt: now,
+      updatedAt: now,
+    }).where(eq(schema.selectionOptions.id, id)).returning();
+    return option;
+  }
+
+  async getOptionAttachments(optionId: string): Promise<OptionAttachment[]> {
+    return await db.select().from(schema.optionAttachments)
+      .where(eq(schema.optionAttachments.optionId, optionId))
+      .orderBy(asc(schema.optionAttachments.sortOrder));
+  }
+
+  async createOptionAttachment(insertAttachment: InsertOptionAttachment): Promise<OptionAttachment> {
+    const [attachment] = await db.insert(schema.optionAttachments).values(insertAttachment).returning();
+    return attachment;
+  }
+
+  async updateOptionAttachment(id: string, data: Partial<InsertOptionAttachment>): Promise<OptionAttachment | undefined> {
+    const [attachment] = await db.update(schema.optionAttachments).set(data).where(eq(schema.optionAttachments.id, id)).returning();
+    return attachment;
+  }
+
+  async deleteOptionAttachment(id: string): Promise<boolean> {
+    const result = await db.delete(schema.optionAttachments).where(eq(schema.optionAttachments.id, id));
     return result.rowCount > 0;
   }
 
@@ -12890,7 +12943,9 @@ export class DbStorage implements IStorage {
   }
   async getOptionAttachments(optionId: string): Promise<OptionAttachment[]> { return []; }
   async createOptionAttachment(attachment: InsertOptionAttachment): Promise<OptionAttachment> { throw new Error("Not implemented"); }
+  async updateOptionAttachment(id: string, data: Partial<InsertOptionAttachment>): Promise<OptionAttachment | undefined> { return undefined; }
   async deleteOptionAttachment(id: string): Promise<boolean> { return false; }
+  async approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined> { return undefined; }
   async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
   async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
   async deleteClientSelection(id: string): Promise<boolean> { return false; }

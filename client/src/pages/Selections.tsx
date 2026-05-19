@@ -255,10 +255,10 @@ function SelectionRow({
   return (
     <>
       <div
-        className={`grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
-          isChecked ? "bg-primary/5" : expanded ? "bg-[#F5F3F0] dark:bg-[#2A2720]" : "hover:bg-muted/30"
+        className={`group grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
+          isChecked ? "bg-primary/5" : "hover:bg-muted/30"
         }`}
-        onClick={isOrderedOrReceived ? undefined : onToggleExpand}
+        onClick={isOrderedOrReceived ? undefined : () => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
         {/* First column: checkbox for checkable rows, expand toggle otherwise */}
@@ -287,17 +287,7 @@ function SelectionRow({
             <TooltipContent>Client hasn't made a selection yet</TooltipContent>
           </Tooltip>
         ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand();
-            }}
-            className={`flex items-center justify-center rounded ${expanded ? "text-primary" : "text-muted-foreground"} hover-elevate w-5 h-5`}
-            data-testid={`button-expand-${selection.id}`}
-          >
-            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-          </button>
+          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
         )}
 
         {/* Thumbnail */}
@@ -422,13 +412,6 @@ function SelectionRow({
         </div>
       </div>
 
-      {expanded && (
-        <OptionsPanel
-          selection={selection}
-          onSelectOption={(optionId) => onSelectOption(selection.id, optionId)}
-          isPending={isPending}
-        />
-      )}
     </>
   );
 }

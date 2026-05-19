@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
 import { 
   insertSelectionOptionSchema, 
   insertSelectionSchema,
   type SelectionWithOptions,
   type SelectionOption,
+  type OptionAttachment,
   type InsertSelectionOption,
   type InsertSelection,
   type FieldCategoryWithOptions
@@ -86,6 +88,10 @@ import {
   Send,
   ShoppingCart,
   PackageCheck,
+  Camera,
+  Image as ImageIcon,
+  Upload,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -100,12 +106,15 @@ export default function SelectionDetail() {
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [optionsView, setOptionsView] = useState<"table" | "grid">("table");
+  const [optionsView, setOptionsView] = useState<"table" | "grid">("grid");
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
 
@@ -247,6 +256,61 @@ export default function SelectionDetail() {
       });
     },
   });
+
+  const approveMutation = useMutation({
+    mutationFn: async (optionId: string) => {
+      return await apiRequest(`/api/selection-options/${optionId}/approve`, "PATCH");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      toast({ title: "Option approved", description: "The option has been approved and locked." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message ?? "Failed to approve option.", variant: "destructive" });
+    },
+  });
+
+  const { data: editingOptionAttachments, refetch: refetchAttachments } = useQuery<OptionAttachment[]>({
+    queryKey: ["/api/selection-options", editingOption?.id, "attachments"],
+    queryFn: async () => {
+      if (!editingOption?.id) return [];
+      const res = await fetch(`/api/selection-options/${editingOption.id}/attachments`);
+      return res.json();
+    },
+    enabled: !!editingOption?.id,
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: string) => {
+      await apiRequest(`/api/selection-option-attachments/${attachmentId}`, "DELETE");
+    },
+    onSuccess: () => refetchAttachments(),
+  });
+
+  const handleImageUpload = async (file: File) => {
+    if (!editingOption?.id) return;
+    setUploadingImage(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const fileData = e.target?.result as string;
+        await apiRequest(`/api/selection-options/${editingOption.id}/attachments`, "POST", {
+          fileData,
+          fileName: file.name,
+          fileType: "image",
+          mimeType: file.type,
+          fileSize: file.size,
+        });
+        refetchAttachments();
+        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+        setUploadingImage(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingImage(false);
+      toast({ title: "Upload failed", variant: "destructive" });
+    }
+  };
 
   const markReceivedMutation = useMutation({
     mutationFn: async () => {
@@ -491,6 +555,10 @@ export default function SelectionDetail() {
   const selectedOption = selection.options?.find(opt => opt.isSelectedByClient);
   const selectedPrice = Number(selectedOption?.totalCost) || 0;
   const allowanceAmount = Number(selection.allowance) || 0;
+  const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
+  const allowancePercent = allowanceAmount > 0 ? Math.min((selectedPrice / allowanceAmount) * 100, 200) : 0;
+
+  const isAdminUser = !!(user as any)?.isAdminLike;
 
   return (
     <div className="flex flex-col h-full">
@@ -547,9 +615,40 @@ export default function SelectionDetail() {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
+
+          {/* Prominent name heading */}
+          <div>
+            <h2 className="text-2xl font-bold leading-tight">{selection.name}</h2>
+            {(selection.category || selection.room) && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {[selection.category, selection.room].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+
+          {/* Over-allowance banner */}
+          {isOverAllowance && (
+            <div className="flex items-center gap-3 rounded-md border border-[hsl(var(--coral))]/40 bg-[hsl(var(--coral-bg))] px-4 py-3">
+              <AlertTriangle className="w-4 h-4 text-[hsl(var(--coral))] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-[hsl(var(--coral))]">Over allowance by ${((selectedPrice - allowanceAmount) / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}</span>
+                <span className="text-sm text-muted-foreground ml-2">Selected option exceeds the allowance.</span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs shrink-0"
+                onClick={() => setLocation(`/projects/${effectiveProjectId}/variations/new?name=${encodeURIComponent(selection.name + " – allowance overage")}&amount=${selectedPrice - allowanceAmount}`)}
+              >
+                Create Variation
+              </Button>
+            </div>
+          )}
+
           {/* Selection Details — summary strip OR inline edit form */}
           <div className="surface-panel p-3" data-testid="selection-details-block">
             {!isEditingDetails ? (
+              <>
               <div className="flex items-center gap-6 flex-wrap">
                 {/* Status */}
                 <div>
@@ -695,6 +794,31 @@ export default function SelectionDetail() {
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Allowance progress bar */}
+              {allowanceAmount > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/60">
+                  <div className="flex items-center justify-between mb-1.5 text-xs text-muted-foreground">
+                    <span>Allowance utilisation</span>
+                    <span className={cn(
+                      "font-semibold",
+                      allowancePercent > 110 ? "text-[hsl(var(--coral))]" : allowancePercent > 100 ? "text-[hsl(var(--amber))]" : "text-[hsl(var(--sage))]"
+                    )}>
+                      {allowancePercent.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-300",
+                        allowancePercent > 110 ? "bg-[hsl(var(--coral))]" : allowancePercent > 100 ? "bg-[hsl(var(--amber))]" : "bg-[hsl(var(--sage))]"
+                      )}
+                      style={{ width: `${Math.min(allowancePercent, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              </>
             ) : (
               <Form {...selectionForm}>
                 <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
@@ -1049,52 +1173,94 @@ export default function SelectionDetail() {
             ) : optionsView === "grid" ? (
               /* Grid View - Gallery Style */
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredOptions.map((option) => (
-                  <Card 
-                    key={option.id} 
-                    className={cn(
-                      "hover-elevate cursor-pointer transition-all duration-200 group overflow-hidden",
-                      option.isSelectedByClient && "ring-2 ring-green-500"
-                    )}
-                    onClick={() => handleEditOption(option)}
-                    data-testid={`card-option-${option.id}`}
-                  >
-                    {/* Image placeholder */}
-                    <div className="aspect-square bg-muted flex items-center justify-center relative">
-                      <Package className="w-12 h-12 text-muted-foreground/50" />
-                      {option.isSelectedByClient && (
-                        <div className="absolute top-2 right-2">
-                          <Badge className="bg-green-500 text-white text-xs">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Selected
-                          </Badge>
+                {filteredOptions.map((option) => {
+                  const heroAttachment = option.attachments?.[0];
+                  const isApproved = !!(option as any).approvedAt;
+                  const isLocked = !!(option as any).lockedAt;
+                  return (
+                    <Card 
+                      key={option.id} 
+                      className={cn(
+                        "hover-elevate cursor-pointer transition-all duration-200 group",
+                        option.isSelectedByClient && !isApproved && "ring-2 ring-[hsl(var(--amber))]",
+                        isApproved && "ring-2 ring-[hsl(var(--sage))]"
+                      )}
+                      onClick={() => handleEditOption(option)}
+                      data-testid={`card-option-${option.id}`}
+                    >
+                      {/* Hero image */}
+                      <div className="h-40 bg-muted flex items-center justify-center relative overflow-hidden">
+                        {heroAttachment?.filePath ? (
+                          <img
+                            src={heroAttachment.filePath}
+                            alt={option.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Camera className="w-10 h-10 text-muted-foreground/30" />
+                        )}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1">
+                          {!option.visibleToClient && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                              <EyeOff className="w-3 h-3 mr-1" />
+                              Hidden
+                            </Badge>
+                          )}
+                          {isLocked && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                              <Lock className="w-3 h-3 mr-1" />
+                              Locked
+                            </Badge>
+                          )}
                         </div>
-                      )}
-                      {!option.visibleToClient && (
-                        <div className="absolute top-2 left-2">
-                          <Badge variant="secondary" className="text-xs">
-                            <EyeOff className="w-3 h-3 mr-1" />
-                            Hidden
-                          </Badge>
+                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                          {isApproved ? (
+                            <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Approved
+                            </Badge>
+                          ) : option.isSelectedByClient ? (
+                            <Badge className="bg-[hsl(var(--amber))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Selected
+                            </Badge>
+                          ) : null}
                         </div>
-                      )}
-                    </div>
-                    <CardContent className="p-3">
-                      <div className="font-medium text-sm truncate">{option.name}</div>
-                      {option.brand && (
-                        <div className="text-xs text-muted-foreground truncate">{option.brand}</div>
-                      )}
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">
-                          {option.quantity} {option.unitType}
-                        </span>
-                        <span className="text-sm font-semibold">
-                          ${((option.totalCost || 0) / 100).toFixed(2)}
-                        </span>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      <CardContent className="p-3">
+                        <div className="font-medium text-sm truncate">{option.name}</div>
+                        {(option.brand || option.sku) && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            {option.quantity} {option.unitType}
+                          </span>
+                          <span className="text-sm font-semibold">
+                            ${((option.totalCost || 0) / 100).toFixed(2)}
+                          </span>
+                        </div>
+                        {isAdminUser && !isApproved && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-7 w-full text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              approveMutation.mutate(option.id);
+                            }}
+                            disabled={approveMutation.isPending}
+                          >
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Approve
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             ) : (
               /* Table View */
@@ -1581,6 +1747,62 @@ export default function SelectionDetail() {
                     </FormItem>
                   )}
                 />
+
+                {/* Image attachments section */}
+                {editingOption && (
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Images</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={uploadingImage}
+                        onClick={() => imageInputRef.current?.click()}
+                      >
+                        {uploadingImage ? (
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3 mr-1" />
+                        )}
+                        Add image
+                      </Button>
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleImageUpload(file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </div>
+                    {editingOptionAttachments && editingOptionAttachments.length > 0 ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {editingOptionAttachments.map((att) => (
+                          <div key={att.id} className="relative group aspect-square rounded-md overflow-hidden bg-muted">
+                            <img src={att.filePath} alt={att.fileName || "attachment"} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                              onClick={() => deleteAttachmentMutation.mutate(att.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-white" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
+                        <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                        No images yet
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
                   <Button 
