@@ -809,6 +809,86 @@ async function syncBillFromXeroInternal(
   }
 }
 
+// ── PDF helper — generates a Selections Schedule PDF via puppeteer ────────────
+async function generateSelectionPdf(selections: any[], projectName?: string): Promise<Buffer> {
+  const puppeteer = await import("puppeteer");
+  const formatCents = (c: number | null | undefined) =>
+    c == null ? "—" : `$${(c / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
+
+  const selectionRows = selections.map((sel: any) => {
+    const selectedOpt = sel.options?.find((o: any) => o.isSelectedByClient);
+    const optionRows = (sel.options || []).map((o: any) => {
+      const isSelected = o.isSelectedByClient;
+      const firstImg = (o.attachments || [])[0];
+      return `
+        <tr style="background:${isSelected ? "#f0f9f0" : "white"}">
+          <td style="padding:6px;border:1px solid #e2e8f0">
+            ${firstImg ? `<img src="${firstImg.filePath}" style="width:40px;height:40px;object-fit:cover;border-radius:4px" />` : ""}
+          </td>
+          <td style="padding:6px;border:1px solid #e2e8f0">${isSelected ? "✓" : ""}</td>
+          <td style="padding:6px;border:1px solid #e2e8f0"><b>${o.name}</b>${o.brand ? `<br/><span style="color:#64748b;font-size:11px">${o.brand}${o.sku ? ` · ${o.sku}` : ""}</span>` : ""}</td>
+          <td style="padding:6px;border:1px solid #e2e8f0;text-align:right">${formatCents(o.totalCost)}</td>
+        </tr>`;
+    }).join("");
+
+    const allowance = sel.allowance ? formatCents(sel.allowance) : "—";
+    const actual = selectedOpt ? formatCents(selectedOpt.totalCost) : "—";
+    const variance = sel.allowance && selectedOpt?.totalCost
+      ? formatCents(selectedOpt.totalCost - sel.allowance) : "—";
+
+    const approvedRow = sel.options?.find((o: any) => o.approvedAt);
+    const approvalText = approvedRow
+      ? `Approved by ${approvedRow.approvedBy || "Admin"} on ${new Date(approvedRow.approvedAt).toLocaleDateString("en-AU")}`
+      : "";
+
+    return `
+      <div style="page-break-inside:avoid;margin-bottom:24px">
+        <h3 style="margin:0 0 4px;font-size:14px;color:#1e293b">${sel.name}</h3>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px">${[sel.category, sel.room].filter(Boolean).join(" · ")}</div>
+        <div style="display:flex;gap:20px;font-size:11px;margin-bottom:8px">
+          <span>Allowance: <b>${allowance}</b></span>
+          <span>Selected: <b>${actual}</b></span>
+          <span>Variance: <b>${variance}</b></span>
+          ${sel.deadline ? `<span>Deadline: <b>${new Date(sel.deadline).toLocaleDateString("en-AU")}</b></span>` : ""}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:6px;border:1px solid #e2e8f0;width:50px">Img</th>
+              <th style="padding:6px;border:1px solid #e2e8f0;width:30px">✓</th>
+              <th style="padding:6px;border:1px solid #e2e8f0;text-align:left">Product</th>
+              <th style="padding:6px;border:1px solid #e2e8f0;text-align:right">Price</th>
+            </tr>
+          </thead>
+          <tbody>${optionRows}</tbody>
+        </table>
+        ${approvalText ? `<div style="font-size:11px;color:#64748b;margin-top:6px">${approvalText}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+    <style>body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;max-width:800px;margin:auto}
+    h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;color:#64748b;margin:0 0 20px}</style>
+  </head><body>
+    <h1>Selections Schedule${projectName ? ` — ${projectName}` : ""}</h1>
+    <h2>Generated ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })} · ${selections.length} selection(s)</h2>
+    ${selectionRows}
+  </body></html>`;
+
+  const browser = await puppeteer.default.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    const pdf = await page.pdf({ format: "A4", margin: { top: "20mm", bottom: "20mm", left: "20mm", right: "20mm" } });
+    return Buffer.from(pdf);
+  } finally {
+    await browser.close();
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
@@ -11400,6 +11480,243 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Product Library Routes ─────────────────────────────────────────────────
+  app.get("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { category, search } = req.query as Record<string, string>;
+      const products = await storage.getProducts(companyId, {
+        category: category || undefined,
+        search: search || undefined,
+        isActive: true,
+      });
+      res.json(products);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  app.post("/api/products", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const product = await storage.createProduct({ ...req.body, companyId });
+      res.status(201).json(product);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
+  app.get("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const product = await storage.getProduct(Number(req.params.id));
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      const images = await storage.getProductImages(product.id);
+      res.json({ ...product, images });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch product" });
+    }
+  });
+
+  app.patch("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const product = await storage.updateProduct(Number(req.params.id), req.body);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      res.json(product);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update product" });
+    }
+  });
+
+  app.delete("/api/products/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const success = await storage.deleteProduct(Number(req.params.id));
+      if (!success) return res.status(404).json({ error: "Product not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete product" });
+    }
+  });
+
+  app.post("/api/products/:id/images", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const productId = Number(req.params.id);
+      const image = await storage.createProductImage({ ...req.body, productId });
+      res.status(201).json(image);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create product image" });
+    }
+  });
+
+  app.delete("/api/product-images/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const success = await storage.deleteProductImage(Number(req.params.id));
+      if (!success) return res.status(404).json({ error: "Image not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete product image" });
+    }
+  });
+
+  // Save a selection option to the product library
+  app.post("/api/selection-options/:id/save-to-library", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const option = await storage.getSelectionOption(req.params.id);
+      if (!option) return res.status(404).json({ error: "Option not found" });
+      const product = await storage.createProduct({
+        companyId,
+        name: option.name,
+        brand: option.brand ?? undefined,
+        sku: option.sku ?? undefined,
+        description: option.description ?? undefined,
+        category: option.category ?? undefined,
+        subcategory: option.subcategory ?? undefined,
+        defaultUnitCost: option.unitCost ?? undefined,
+        unitType: option.unitType,
+        url: option.url ?? undefined,
+        isActive: true,
+      });
+      // Copy option attachments as product images
+      const attachments = await storage.getOptionAttachments(req.params.id);
+      for (const att of attachments) {
+        await storage.createProductImage({
+          productId: product.id,
+          filePath: att.filePath,
+          fileName: att.fileName,
+          mimeType: att.mimeType ?? undefined,
+          fileSize: att.fileSize ?? undefined,
+          sortOrder: att.sortOrder,
+        });
+      }
+      // Link the option back to the product
+      await storage.updateSelectionOption(req.params.id, { productId: product.id } as any);
+      res.status(201).json(product);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save to library" });
+    }
+  });
+
+  // Add a product from library to a selection as a new option
+  app.post("/api/selections/:id/options/from-product", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { productId, quantity, markupPercent, visibleToClient } = req.body;
+      const product = await storage.getProduct(Number(productId));
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      const allOptions = await storage.getSelectionOptions(req.params.id);
+      const newOption = await storage.createSelectionOption({
+        selectionId: req.params.id,
+        name: product.name,
+        brand: product.brand ?? undefined,
+        sku: product.sku ?? undefined,
+        description: product.description ?? undefined,
+        category: product.category ?? undefined,
+        subcategory: product.subcategory ?? undefined,
+        unitCost: product.defaultUnitCost ?? undefined,
+        quantity: quantity ?? 1,
+        unitType: product.unitType ?? "ea",
+        url: product.url ?? undefined,
+        markupPercent: markupPercent ?? undefined,
+        totalCost: product.defaultUnitCost ?? undefined,
+        visibleToClient: visibleToClient !== false,
+        sortOrder: allOptions.length,
+        productId: product.id,
+      } as any);
+      // Copy product images as option attachments
+      const images = await storage.getProductImages(product.id);
+      for (const img of images) {
+        await storage.createOptionAttachment({
+          optionId: newOption.id,
+          fileName: img.fileName ?? "image",
+          filePath: img.filePath,
+          fileType: "image",
+          fileSize: img.fileSize ?? undefined,
+          mimeType: img.mimeType ?? undefined,
+          sortOrder: img.sortOrder ?? 0,
+        });
+      }
+      res.status(201).json(newOption);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add from library" });
+    }
+  });
+
+  // ── Trades Portal Routes ───────────────────────────────────────────────────
+  // Get/generate trades portal token for a project
+  app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      let token = (project as any).tradesPortalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      res.json({ token, url: `${host}/portal/project/${token}/trades` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get trades portal token" });
+    }
+  });
+
+  // QR code for project trades portal
+  app.get("/api/projects/:id/trades-qr", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      let token = (project as any).tradesPortalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateProject(req.params.id, { tradesPortalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const url = `${host}/portal/project/${token}/trades`;
+      const buffer = await QRCode.toBuffer(url, { width: 400, margin: 2 });
+      res.set("Content-Type", "image/png");
+      res.send(buffer);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate QR code" });
+    }
+  });
+
+  // ── PDF Export Routes ─────────────────────────────────────────────────────
+  app.get("/api/selections/:id/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const selection = await storage.getSelectionWithOptions(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      const pdfBuffer = await generateSelectionPdf([selection]);
+      res.set("Content-Type", "application/pdf");
+      res.set("Content-Disposition", `attachment; filename="${selection.name.replace(/[^a-z0-9]/gi, "_")}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
+  app.get("/api/selections/project/:projectId/pdf", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { eq: eqFn } = await import("drizzle-orm");
+      const schemaImport = await import("@shared/schema");
+      const selectionsRaw = await db.select().from(schemaImport.selections)
+        .where(eqFn(schemaImport.selections.projectId, req.params.projectId))
+        .orderBy(schemaImport.selections.name);
+      const selections: any[] = [];
+      for (const s of selectionsRaw) {
+        const withOptions = await storage.getSelectionWithOptions(s.id);
+        if (withOptions) selections.push(withOptions);
+      }
+      const project = await storage.getProject(req.params.projectId);
+      const pdfBuffer = await generateSelectionPdf(selections, project?.name);
+      res.set("Content-Type", "application/pdf");
+      const fname = (project?.name ?? "selections").replace(/[^a-z0-9]/gi, "_");
+      res.set("Content-Disposition", `attachment; filename="${fname}_schedule.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("PDF schedule generation error:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
   // Suppliers API Routes
   app.get("/api/suppliers", requireAuth, requireTeamMember, async (req, res) => {
     try {
@@ -12688,6 +13005,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clientName: clientName || "Client",
       });
 
+      // Auto-generate a draft variation if selection exceeds allowance
+      try {
+        const chosenOption = await storage.getSelectionOption(optionId);
+        const allowanceCents = Number((sel as any).allowance) || 0;
+        const totalCostCents = Number(chosenOption?.totalCost) || 0;
+        if (allowanceCents > 0 && totalCostCents > allowanceCents) {
+          const overageCents = totalCostCents - allowanceCents;
+          const gstCents = Math.round(overageCents * 0.1);
+          const totalCents = overageCents + gstCents;
+          await storage.createVariation({
+            projectId: sel.projectId,
+            variationNumber: `SEL-OA-${Date.now().toString(36).toUpperCase()}`,
+            name: `Over-allowance: ${(sel as any).name}`,
+            status: "draft",
+            subtotal: overageCents,
+            gstAmount: gstCents,
+            totalAmount: totalCents,
+            paidAmount: 0,
+            balanceAmount: totalCents,
+            relatedTo: sel.id,
+          });
+        }
+      } catch (_varErr) {
+        // Non-fatal — variation auto-gen failure should not break selection
+      }
+
       res.json({ clientSelection: newClientSelection });
     } catch (error) {
       console.error("Portal select error:", error);
@@ -12720,6 +13063,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(comment);
     } catch (error) {
       res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
+  // Public Trades Portal — shows all selections for a project (no auth)
+  app.get("/api/portal/project/:token/trades", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const schemaImp = await import("@shared/schema");
+      const [project] = await db.select().from(schemaImp.projects)
+        .where(eqFn((schemaImp.projects as any).tradesPortalToken, token))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Invalid or expired link" });
+
+      const selectionsRaw = await db.select().from(schemaImp.selections)
+        .where(eqFn(schemaImp.selections.projectId, project.id))
+        .orderBy(schemaImp.selections.name);
+
+      const selectionsWithOptions: any[] = [];
+      for (const s of selectionsRaw) {
+        const withOptions = await storage.getSelectionWithOptions(s.id);
+        if (withOptions) selectionsWithOptions.push(withOptions);
+      }
+
+      res.json({
+        project: { id: project.id, name: (project as any).name, address: (project as any).address },
+        selections: selectionsWithOptions,
+      });
+    } catch (error) {
+      console.error("Trades portal error:", error);
+      res.status(500).json({ error: "Failed to load trades portal" });
     }
   });
 

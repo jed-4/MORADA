@@ -61,6 +61,9 @@ import {
   ShoppingCart,
   ExternalLink,
   Loader2,
+  HardHat,
+  FileText,
+  Copy,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -1093,7 +1096,7 @@ export default function Selections() {
                   <MoreVertical className="w-3 h-3" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuCheckboxItem
                   checked={showSummaryCards}
                   onCheckedChange={(c) => setShowSummaryCards(!!c)}
@@ -1102,6 +1105,32 @@ export default function Selections() {
                 >
                   Show summary cards
                 </DropdownMenuCheckboxItem>
+                {projectId && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/projects/${projectId}/trades-portal-token`, { method: "POST" });
+                          if (!res.ok) throw new Error();
+                          const { url } = await res.json();
+                          await navigator.clipboard.writeText(url);
+                          toast({ title: "Trades portal link copied!", description: "Share this link with your trades." });
+                        } catch {
+                          toast({ title: "Failed to copy link", variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <HardHat className="w-3.5 h-3.5 mr-2" />
+                      Copy Trades View Link
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => window.open(`/api/selections/project/${projectId}/pdf`, "_blank")}
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-2" />
+                      Export Schedule PDF
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

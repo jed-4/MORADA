@@ -605,6 +605,16 @@ export interface IStorage {
   createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment>;
   deleteSelectionComment(id: string): Promise<boolean>;
 
+  // Product Library CRUD
+  getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<schema.Product[]>;
+  getProduct(id: number): Promise<schema.Product | undefined>;
+  createProduct(product: schema.InsertProduct): Promise<schema.Product>;
+  updateProduct(id: number, product: Partial<schema.InsertProduct>): Promise<schema.Product | undefined>;
+  deleteProduct(id: number): Promise<boolean>;
+  getProductImages(productId: number): Promise<schema.ProductImage[]>;
+  createProductImage(image: schema.InsertProductImage): Promise<schema.ProductImage>;
+  deleteProductImage(id: number): Promise<boolean>;
+
   getFirstCompanyId(): Promise<string | undefined>;
 
   // Suppliers CRUD
@@ -5629,6 +5639,16 @@ export class MemStorage implements IStorage {
   async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
   async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
   async deleteSelectionComment(id: string): Promise<boolean> { return false; }
+
+  // Product Library stubs
+  async getProducts(_companyId: string, _filters?: any): Promise<schema.Product[]> { return []; }
+  async getProduct(_id: number): Promise<schema.Product | undefined> { return undefined; }
+  async createProduct(product: schema.InsertProduct): Promise<schema.Product> { throw new Error("Not implemented"); }
+  async updateProduct(_id: number, _product: Partial<schema.InsertProduct>): Promise<schema.Product | undefined> { return undefined; }
+  async deleteProduct(_id: number): Promise<boolean> { return false; }
+  async getProductImages(_productId: number): Promise<schema.ProductImage[]> { return []; }
+  async createProductImage(image: schema.InsertProductImage): Promise<schema.ProductImage> { throw new Error("Not implemented"); }
+  async deleteProductImage(_id: number): Promise<boolean> { return false; }
 
   // Activity Feed CRUD
   async getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]> {
@@ -14221,6 +14241,53 @@ export class DbStorage implements IStorage {
 
   async deleteSelectionComment(id: string): Promise<boolean> {
     const result = await db.delete(schema.selectionComments).where(eq(schema.selectionComments.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // ── Product Library ──────────────────────────────────────────────────
+  async getProducts(companyId: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<schema.Product[]> {
+    const conditions: any[] = [eq(schema.products.companyId, companyId)];
+    if (filters?.isActive !== undefined) conditions.push(eq(schema.products.isActive, filters.isActive));
+    if (filters?.category) conditions.push(eq(schema.products.category, filters.category));
+    let rows = await db.select().from(schema.products).where(and(...conditions)).orderBy(schema.products.name);
+    if (filters?.search) {
+      const t = filters.search.toLowerCase();
+      rows = rows.filter(p => p.name.toLowerCase().includes(t) || (p.brand?.toLowerCase().includes(t)) || (p.sku?.toLowerCase().includes(t)));
+    }
+    return rows;
+  }
+
+  async getProduct(id: number): Promise<schema.Product | undefined> {
+    const [row] = await db.select().from(schema.products).where(eq(schema.products.id, id)).limit(1);
+    return row;
+  }
+
+  async createProduct(product: schema.InsertProduct): Promise<schema.Product> {
+    const [row] = await db.insert(schema.products).values(product).returning();
+    return row;
+  }
+
+  async updateProduct(id: number, product: Partial<schema.InsertProduct>): Promise<schema.Product | undefined> {
+    const [row] = await db.update(schema.products).set({ ...product, updatedAt: new Date() }).where(eq(schema.products.id, id)).returning();
+    return row;
+  }
+
+  async deleteProduct(id: number): Promise<boolean> {
+    const [row] = await db.update(schema.products).set({ isActive: false, updatedAt: new Date() }).where(eq(schema.products.id, id)).returning();
+    return !!row;
+  }
+
+  async getProductImages(productId: number): Promise<schema.ProductImage[]> {
+    return db.select().from(schema.productImages).where(eq(schema.productImages.productId, productId)).orderBy(schema.productImages.sortOrder);
+  }
+
+  async createProductImage(image: schema.InsertProductImage): Promise<schema.ProductImage> {
+    const [row] = await db.insert(schema.productImages).values(image).returning();
+    return row;
+  }
+
+  async deleteProductImage(id: number): Promise<boolean> {
+    const result = await db.delete(schema.productImages).where(eq(schema.productImages.id, id)).returning();
     return result.length > 0;
   }
 

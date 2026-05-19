@@ -105,6 +105,8 @@ import RFQPortal from "@/pages/RFQPortal";
 import VariationPortal from "@/pages/VariationPortal";
 import ProposalPortal from "@/pages/ProposalPortal";
 import SelectionPortal from "@/pages/SelectionPortal";
+import TradesPortal from "@/pages/TradesPortal";
+import ProductLibrary from "@/pages/ProductLibrary";
 import RFIs from "@/pages/RFIs";
 import RFIDetail from "@/pages/RFIDetail";
 import ProjectScope from "@/pages/ProjectScope";
@@ -130,6 +132,7 @@ function Router() {
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
       <Route path="/portal/selections/:token" component={SelectionPortal} />
+      <Route path="/portal/project/:token/trades" component={TradesPortal} />
       
       <Route path="/">
         {() => {
@@ -316,6 +319,7 @@ function Router() {
       <Route path="/trades" component={Trades} />
       <Route path="/price-list" component={PriceListPage} />
       <Route path="/ai-price-review" component={AIPriceReviewPage} />
+      <Route path="/product-library" component={ProductLibrary} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />
@@ -340,6 +344,7 @@ function UnauthenticatedRoutes() {
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
       <Route path="/portal/selections/:token" component={SelectionPortal} />
+      <Route path="/portal/project/:token/trades" component={TradesPortal} />
       <Route path="/" component={AuthPage} />
       <Route component={AuthPage} />
     </Switch>

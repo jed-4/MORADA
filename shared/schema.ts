@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date, doublePrecision, serial } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -807,6 +807,7 @@ export const projects = pgTable("projects", {
   
   companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   ownerId: varchar("owner_id").references(() => users.id),
+  tradesPortalToken: varchar("trades_portal_token").unique(), // UUID for /portal/project/:token/trades, generated lazily
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1446,6 +1447,7 @@ export const selectionOptions = pgTable("selection_options", {
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedBy: text("approved_by"),
   lockedAt: timestamp("locked_at"),
+  productId: integer("product_id"), // Link to product library entry (set via save-to-library or add-from-library)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -6519,3 +6521,44 @@ export const supplierNameMappings = pgTable("supplier_name_mappings", {
 export const insertSupplierNameMappingSchema = createInsertSchema(supplierNameMappings).omit({ id: true, createdAt: true });
 export type InsertSupplierNameMapping = z.infer<typeof insertSupplierNameMappingSchema>;
 export type SupplierNameMapping = typeof supplierNameMappings.$inferSelect;
+
+// ── Product Library ────────────────────────────────────────────────────────────
+// Fixtures, tapware, tiles, appliances — company-level product catalogue
+// used to populate selection options without re-entering data each time.
+export const products = pgTable("products", {
+  id:                serial("id").primaryKey(),
+  companyId:         varchar("company_id").notNull().references(() => companies.id),
+  name:              text("name").notNull(),
+  brand:             text("brand"),
+  sku:               text("sku"),
+  description:       text("description"),
+  category:          text("category"),
+  subcategory:       text("subcategory"),
+  supplierContactId: varchar("supplier_contact_id").references(() => contacts.id),
+  defaultUnitCost:   integer("default_unit_cost"),   // cents
+  unitType:          text("unit_type"),
+  url:               text("url"),
+  notes:             text("notes"),
+  isActive:          boolean("is_active").default(true),
+  createdAt:         timestamp("created_at").defaultNow(),
+  updatedAt:         timestamp("updated_at").defaultNow(),
+});
+
+export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type Product = typeof products.$inferSelect;
+
+export const productImages = pgTable("product_images", {
+  id:        serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  filePath:  text("file_path").notNull(),
+  fileName:  text("file_name"),
+  mimeType:  text("mime_type"),
+  fileSize:  integer("file_size"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertProductImageSchema = createInsertSchema(productImages).omit({ id: true, createdAt: true });
+export type InsertProductImage = z.infer<typeof insertProductImageSchema>;
+export type ProductImage = typeof productImages.$inferSelect;

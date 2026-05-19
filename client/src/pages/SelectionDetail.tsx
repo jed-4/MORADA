@@ -743,6 +743,12 @@ export default function SelectionDetail() {
                 <QrCode className="w-4 h-4 mr-2" />
                 Show QR Code
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => window.open(`/api/selections/${id}/pdf`, "_blank")}
+              >
+                <Package className="w-4 h-4 mr-2" />
+                Export PDF
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
