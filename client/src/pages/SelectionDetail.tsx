@@ -366,11 +366,16 @@ export default function SelectionDetail() {
   const handleImageUpload = async (file: File) => {
     if (!editingOption?.id) return;
     setUploadingImage(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
+    const optionId = editingOption.id;
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setUploadingImage(false);
+      toast({ title: "Could not read file", variant: "destructive" });
+    };
+    reader.onload = async (e) => {
+      try {
         const fileData = e.target?.result as string;
-        await apiRequest(`/api/selection-options/${editingOption.id}/attachments`, "POST", {
+        await apiRequest(`/api/selection-options/${optionId}/attachments`, "POST", {
           fileData,
           fileName: file.name,
           fileType: "image",
@@ -379,13 +384,13 @@ export default function SelectionDetail() {
         });
         refetchAttachments();
         queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      } catch {
+        toast({ title: "Upload failed", variant: "destructive" });
+      } finally {
         setUploadingImage(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setUploadingImage(false);
-      toast({ title: "Upload failed", variant: "destructive" });
-    }
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const markReceivedMutation = useMutation({
@@ -634,7 +639,8 @@ export default function SelectionDetail() {
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
   const allowancePercent = allowanceAmount > 0 ? Math.min((selectedPrice / allowanceAmount) * 100, 200) : 0;
 
-  const isAdminUser = !!(user as any)?.isAdminLike;
+  type AuthUserExtended = typeof user & { isAdminLike?: boolean };
+  const isAdminUser = !!(user as AuthUserExtended)?.isAdminLike;
 
   return (
     <div className="flex flex-col h-full">
@@ -1269,17 +1275,19 @@ export default function SelectionDetail() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredOptions.map((option) => {
                   const heroAttachment = option.attachments?.[0];
-                  const isApproved = !!(option as any).approvedAt;
-                  const isLocked = !!(option as any).lockedAt;
+                  const isApproved = !!option.approvedAt;
+                  const isLocked = !!option.lockedAt;
                   return (
+                    <Tooltip key={option.id}>
+                    <TooltipTrigger asChild>
                     <Card 
-                      key={option.id} 
                       className={cn(
-                        "hover-elevate cursor-pointer transition-all duration-200 group",
+                        "transition-all duration-200 group",
+                        isLocked ? "cursor-not-allowed opacity-80" : "hover-elevate cursor-pointer",
                         option.isSelectedByClient && !isApproved && "ring-2 ring-[hsl(var(--amber))]",
                         isApproved && "ring-2 ring-[hsl(var(--sage))]"
                       )}
-                      onClick={() => handleEditOption(option)}
+                      onClick={() => { if (!isLocked) handleEditOption(option); }}
                       data-testid={`card-option-${option.id}`}
                     >
                       {/* Hero image */}
@@ -1318,7 +1326,7 @@ export default function SelectionDetail() {
                               </TooltipTrigger>
                               <TooltipContent side="left">
                                 <p className="text-xs">
-                                  {(option as any).approvedBy || "Admin"}{(option as any).approvedAt ? ` · ${format(new Date((option as any).approvedAt), "d MMM yyyy")}` : ""}
+                                  {option.approvedBy || "Admin"}{option.approvedAt ? ` · ${format(new Date(option.approvedAt), "d MMM yyyy")}` : ""}
                                 </p>
                               </TooltipContent>
                             </Tooltip>
@@ -1345,7 +1353,7 @@ export default function SelectionDetail() {
                             ${((option.totalCost || 0) / 100).toFixed(2)}
                           </span>
                         </div>
-                        {isAdminUser && !isApproved && (
+                        {isAdminUser && !isApproved && !isLocked && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1362,6 +1370,13 @@ export default function SelectionDetail() {
                         )}
                       </CardContent>
                     </Card>
+                    </TooltipTrigger>
+                    {isLocked && (
+                      <TooltipContent>
+                        <p className="text-xs">This option is locked</p>
+                      </TooltipContent>
+                    )}
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -1373,8 +1388,8 @@ export default function SelectionDetail() {
                   data={filteredOptions}
                   rowKey={(option) => option.id}
                   rowTestId={(option) => `row-option-${option.id}`}
-                  onRowClick={(option) => handleEditOption(option)}
-                  rowClassName={(_option, idx) => cn("hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
+                  onRowClick={(option) => { if (!option.lockedAt) handleEditOption(option); }}
+                  rowClassName={(option, idx) => cn(option.lockedAt ? "cursor-not-allowed opacity-75" : "hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
                   columns={[
                     {
                       key: "image",
@@ -1444,8 +1459,8 @@ export default function SelectionDetail() {
                       align: "center",
                       truncate: false,
                       cell: (option) => {
-                        const isApprovedRow = !!(option as any).approvedAt;
-                        const isLockedRow = !!(option as any).lockedAt;
+                        const isApprovedRow = !!option.approvedAt;
+                        const isLockedRow = !!option.lockedAt;
                         return (
                           <div className="flex flex-col gap-1 items-center">
                             {isApprovedRow ? (
@@ -1458,7 +1473,7 @@ export default function SelectionDetail() {
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="text-xs">
-                                    {(option as any).approvedBy || "Admin"}{(option as any).approvedAt ? ` · ${format(new Date((option as any).approvedAt), "d MMM yyyy")}` : ""}
+                                    {option.approvedBy || "Admin"}{option.approvedAt ? ` · ${format(new Date(option.approvedAt), "d MMM yyyy")}` : ""}
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -1489,8 +1504,8 @@ export default function SelectionDetail() {
                     },
                   ]}
                   actions={(option) => {
-                    const isLockedRow = !!(option as any).lockedAt;
-                    const isApprovedRow = !!(option as any).approvedAt;
+                    const isLockedRow = !!option.lockedAt;
+                    const isApprovedRow = !!option.approvedAt;
                     return (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
