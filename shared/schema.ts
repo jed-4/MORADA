@@ -388,6 +388,8 @@ export type InsertUserViewPreferences = z.infer<typeof insertUserViewPreferences
 export type UserWithRole = User & {
   role?: UserRole;
   permissions?: Permission[];
+  /** Server-computed flag: true for admin / owner / general-manager roles. */
+  isAdminLike?: boolean;
 };
 
 export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";

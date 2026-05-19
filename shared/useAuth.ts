@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryClient, getApiBaseUrl } from "./api";
-import type { User } from "./schema";
+import type { UserWithRole } from "./schema";
 
 export function useAuth() {
   const baseUrl = getApiBaseUrl();
   
-  const { data: user, isLoading, error } = useQuery<User | null>({
+  const { data: user, isLoading, error } = useQuery<UserWithRole | null>({
     queryKey: ['/api/auth/user'],
     queryFn: async ({ queryKey }) => {
       try {
@@ -23,7 +23,7 @@ export function useAuth() {
         }
         
         if (res.status === 304) {
-          const cachedData = queryClient.getQueryData<User | null>(queryKey);
+          const cachedData = queryClient.getQueryData<UserWithRole | null>(queryKey);
           return cachedData ?? null;
         }
         

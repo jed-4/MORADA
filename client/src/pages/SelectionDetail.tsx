@@ -639,8 +639,7 @@ export default function SelectionDetail() {
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
   const allowancePercent = allowanceAmount > 0 ? Math.min((selectedPrice / allowanceAmount) * 100, 200) : 0;
 
-  type AuthUserExtended = typeof user & { isAdminLike?: boolean };
-  const isAdminUser = !!(user as AuthUserExtended)?.isAdminLike;
+  const isAdminUser = !!user?.isAdminLike;
 
   return (
     <div className="flex flex-col h-full">

@@ -287,7 +287,7 @@ function SelectionRow({
             <TooltipContent>Client hasn't made a selection yet</TooltipContent>
           </Tooltip>
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         )}
 
         {/* Thumbnail */}
