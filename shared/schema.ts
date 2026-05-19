@@ -1406,6 +1406,8 @@ export const selections = pgTable("selections", {
   orderedAt: timestamp("ordered_at"), // Set when status becomes "ordered"
   receivedAt: timestamp("received_at"), // Set when status becomes "received"
   createdBy: varchar("created_by").references(() => users.id),
+  portalToken: varchar("portal_token").unique(), // UUID used for /portal/selections/:token, generated lazily
+  portalSentAt: timestamp("portal_sent_at"), // when portal link was last sent to client
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1496,6 +1498,29 @@ export const insertClientSelectionSchema = createInsertSchema(clientSelections).
 
 export type InsertClientSelection = z.infer<typeof insertClientSelectionSchema>;
 export type ClientSelection = typeof clientSelections.$inferSelect;
+
+// Selection Comments (conversation thread on a selection, visible to team + client portal)
+export const selectionComments = pgTable("selection_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isClientComment: boolean("is_client_comment").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionCommentSchema = createInsertSchema(selectionComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelectionComment = z.infer<typeof insertSelectionCommentSchema>;
+export type SelectionComment = typeof selectionComments.$inferSelect;
 
 // Combined types for selections with their options
 export type SelectionWithOptions = Selection & {

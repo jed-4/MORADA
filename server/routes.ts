@@ -4,6 +4,7 @@ import { storage, InvalidProposalStateError } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
+import QRCode from "qrcode";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, initializeEmailServices, sendGenericEmail } from "./utils/email";
@@ -41,6 +42,8 @@ import {
   type InsertSelectionOption,
   insertOptionAttachmentSchema,
   insertClientSelectionSchema,
+  insertSelectionCommentSchema,
+  type SelectionComment,
   insertSupplierSchema,
   insertSupplierLabelSchema,
   insertSupplierInsuranceSchema,
@@ -10861,6 +10864,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!selection) {
         return res.status(404).json({ error: "Selection not found" });
       }
+      // Lazily generate portal token if missing
+      if (!selection.portalToken) {
+        const token = randomBytes(24).toString("hex");
+        await storage.updateSelection(selection.id, { portalToken: token } as any);
+        selection.portalToken = token;
+      }
       res.json(selection);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch selection" });
@@ -11326,6 +11335,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(clientSelection);
     } catch (error) {
       res.status(500).json({ error: "Failed to create client selection" });
+    }
+  });
+
+  // Selection Comments API Routes
+  app.get("/api/selections/:id/comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const comments = await storage.getSelectionComments(req.params.id);
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/selections/:id/comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      const user = req.user!;
+      const comment = await storage.createSelectionComment({
+        selectionId: req.params.id,
+        content: content.trim(),
+        attachmentUrls: [],
+        attachmentFileNames: [],
+        createdById: user.id,
+        createdByName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+        isClientComment: false,
+      });
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
+  app.delete("/api/selection-comments/:id", requireAuth, async (req, res) => {
+    try {
+      const success = await storage.deleteSelectionComment(req.params.id);
+      if (!success) return res.status(404).json({ error: "Comment not found" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // QR code for selection portal
+  app.get("/api/selections/:id/qr-code", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const selection = await storage.getSelection(req.params.id);
+      if (!selection) return res.status(404).json({ error: "Selection not found" });
+      let token = selection.portalToken;
+      if (!token) {
+        token = randomBytes(24).toString("hex");
+        await storage.updateSelection(selection.id, { portalToken: token } as any);
+      }
+      const host = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const url = `${host}/portal/selections/${token}`;
+      const buffer = await QRCode.toBuffer(url, { width: 400, margin: 2 });
+      res.set("Content-Type", "image/png");
+      res.send(buffer);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate QR code" });
     }
   });
 
@@ -12553,6 +12624,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error creating RFQ portal token:", error);
       res.status(500).json({ error: "Failed to create portal token" });
+    }
+  });
+
+  // Public Selection Portal (no auth required - clients access via token link)
+  app.get("/api/portal/selections/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const selWithOptions = await storage.getSelectionWithOptions(sel.id);
+      if (!selWithOptions) return res.status(404).json({ error: "Selection not found" });
+
+      const clientSelection = await storage.getClientSelectionBySelectionId(sel.id);
+      const comments = await storage.getSelectionComments(sel.id);
+
+      res.json({ selection: selWithOptions, clientSelection, comments });
+    } catch (error) {
+      console.error("Portal selection error:", error);
+      res.status(500).json({ error: "Failed to load selection" });
+    }
+  });
+
+  app.patch("/api/portal/selections/:token/options/:optionId/select", async (req, res) => {
+    try {
+      const { token, optionId } = req.params;
+      const { clientName } = req.body;
+      const { eq: eqFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+      if ((sel as any).lockedAt) return res.status(403).json({ error: "Selection is locked" });
+
+      const allOptionsForCheck = await storage.getSelectionOptions(sel.id);
+      const option = allOptionsForCheck.find(o => o.id === optionId);
+      if (!option) return res.status(403).json({ error: "Option not accessible" });
+
+      // Clear previous client selections on this selection
+      const prevClientSelection = await storage.getClientSelectionBySelectionId(sel.id);
+      if (prevClientSelection) await storage.deleteClientSelection(prevClientSelection.id);
+
+      // Deselect all options for this selection
+      const allOptions = await storage.getSelectionOptions(sel.id);
+      for (const opt of allOptions) {
+        if (opt.isSelectedByClient) {
+          await storage.updateSelectionOption(opt.id, { isSelectedByClient: false });
+        }
+      }
+
+      // Mark the chosen option as selected
+      await storage.updateSelectionOption(optionId, { isSelectedByClient: true });
+
+      // Create clientSelection record
+      const newClientSelection = await storage.createClientSelection({
+        projectId: sel.projectId,
+        selectionId: sel.id,
+        selectedOptionId: optionId,
+        clientName: clientName || "Client",
+      });
+
+      res.json({ clientSelection: newClientSelection });
+    } catch (error) {
+      console.error("Portal select error:", error);
+      res.status(500).json({ error: "Failed to save selection" });
+    }
+  });
+
+  app.post("/api/portal/selections/:token/comments", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { content, clientName } = req.body;
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      const { eq: eqFn } = await import("drizzle-orm");
+      const [sel] = await db.select().from(schema.selections as any)
+        .where(eqFn((schema.selections as any).portalToken, token))
+        .limit(1);
+      if (!sel) return res.status(404).json({ error: "Invalid link" });
+
+      const comment = await storage.createSelectionComment({
+        selectionId: sel.id,
+        content: content.trim(),
+        attachmentUrls: [],
+        attachmentFileNames: [],
+        createdById: null,
+        createdByName: clientName || "Client",
+        isClientComment: true,
+      });
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to post comment" });
     }
   });
 

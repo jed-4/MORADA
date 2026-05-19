@@ -104,6 +104,7 @@ import RFQDetail from "@/pages/RFQDetail";
 import RFQPortal from "@/pages/RFQPortal";
 import VariationPortal from "@/pages/VariationPortal";
 import ProposalPortal from "@/pages/ProposalPortal";
+import SelectionPortal from "@/pages/SelectionPortal";
 import RFIs from "@/pages/RFIs";
 import RFIDetail from "@/pages/RFIDetail";
 import ProjectScope from "@/pages/ProjectScope";
@@ -128,6 +129,7 @@ function Router() {
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
+      <Route path="/portal/selections/:token" component={SelectionPortal} />
       
       <Route path="/">
         {() => {
@@ -337,6 +339,7 @@ function UnauthenticatedRoutes() {
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />
       <Route path="/portal/proposal/:id" component={ProposalPortal} />
+      <Route path="/portal/selections/:token" component={SelectionPortal} />
       <Route path="/" component={AuthPage} />
       <Route component={AuthPage} />
     </Switch>

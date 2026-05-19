@@ -29,6 +29,7 @@ import {
   type SelectionOption, type InsertSelectionOption,
   type OptionAttachment, type InsertOptionAttachment,
   type ClientSelection, type InsertClientSelection,
+  type SelectionComment, type InsertSelectionComment,
   type SelectionWithOptions,
   type Supplier, type InsertSupplier,
   type Contact, type InsertContact,
@@ -597,6 +598,12 @@ export interface IStorage {
   getClientSelections(projectId: string): Promise<ClientSelection[]>;
   createClientSelection(selection: InsertClientSelection): Promise<ClientSelection>;
   deleteClientSelection(id: string): Promise<boolean>;
+  getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined>;
+
+  // Selection Comments CRUD
+  getSelectionComments(selectionId: string): Promise<SelectionComment[]>;
+  createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment>;
+  deleteSelectionComment(id: string): Promise<boolean>;
 
   getFirstCompanyId(): Promise<string | undefined>;
 
@@ -5614,6 +5621,14 @@ export class MemStorage implements IStorage {
   async deleteClientSelection(id: string): Promise<boolean> {
     return this.clientSelections.delete(id);
   }
+
+  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> {
+    return Array.from(this.clientSelections.values()).find(cs => cs.selectionId === selectionId);
+  }
+
+  async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
+  async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
+  async deleteSelectionComment(id: string): Promise<boolean> { return false; }
 
   // Activity Feed CRUD
   async getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]> {
@@ -12967,6 +12982,10 @@ export class DbStorage implements IStorage {
   async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
   async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
   async deleteClientSelection(id: string): Promise<boolean> { return false; }
+  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> { return undefined; }
+  async getSelectionComments(selectionId: string): Promise<SelectionComment[]> { return []; }
+  async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> { throw new Error("Not implemented"); }
+  async deleteSelectionComment(id: string): Promise<boolean> { return false; }
 
   async getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]> {
     try {
@@ -14180,6 +14199,29 @@ export class DbStorage implements IStorage {
       console.error("Database error in deleteRFIComment:", error);
       throw error;
     }
+  }
+
+  async getClientSelectionBySelectionId(selectionId: string): Promise<ClientSelection | undefined> {
+    const [cs] = await db.select().from(schema.clientSelections)
+      .where(eq(schema.clientSelections.selectionId, selectionId))
+      .limit(1);
+    return cs;
+  }
+
+  async getSelectionComments(selectionId: string): Promise<SelectionComment[]> {
+    return db.select().from(schema.selectionComments)
+      .where(eq(schema.selectionComments.selectionId, selectionId))
+      .orderBy(asc(schema.selectionComments.createdAt));
+  }
+
+  async createSelectionComment(comment: InsertSelectionComment): Promise<SelectionComment> {
+    const [newComment] = await db.insert(schema.selectionComments).values(comment).returning();
+    return newComment;
+  }
+
+  async deleteSelectionComment(id: string): Promise<boolean> {
+    const result = await db.delete(schema.selectionComments).where(eq(schema.selectionComments.id, id)).returning();
+    return result.length > 0;
   }
 
   async getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]> {

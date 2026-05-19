@@ -26,7 +26,8 @@ import {
   type OptionAttachment,
   type InsertSelectionOption,
   type InsertSelection,
-  type FieldCategoryWithOptions
+  type FieldCategoryWithOptions,
+  type SelectionComment,
 } from "@shared/schema";
 import {
   Select,
@@ -95,6 +96,8 @@ import {
   Image as ImageIcon,
   Upload,
   AlertTriangle,
+  QrCode,
+  Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -191,6 +194,9 @@ export default function SelectionDetail() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [portalLinkCopied, setPortalLinkCopied] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
 
@@ -270,6 +276,47 @@ export default function SelectionDetail() {
       });
     },
   });
+
+  const { data: comments = [] } = useQuery<SelectionComment[]>({
+    queryKey: ["/api/selections", id, "comments"],
+    queryFn: async () => {
+      const res = await fetch(`/api/selections/${id}/comments`);
+      if (!res.ok) throw new Error("Failed to fetch comments");
+      return res.json();
+    },
+    enabled: !!id,
+  });
+
+  const addCommentMutation = useMutation({
+    mutationFn: async (content: string) => {
+      return await apiRequest(`/api/selections/${id}/comments`, "POST", { content });
+    },
+    onSuccess: () => {
+      setCommentText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id, "comments"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to post comment.", variant: "destructive" });
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      return await apiRequest(`/api/selection-comments/${commentId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id, "comments"] });
+    },
+  });
+
+  const handleCopyPortalLink = () => {
+    if (!selection?.portalToken) return;
+    const url = `${window.location.origin}/portal/selections/${selection.portalToken}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setPortalLinkCopied(true);
+      setTimeout(() => setPortalLinkCopied(false), 2000);
+    });
+  };
 
   const createOptionMutation = useMutation({
     mutationFn: async (option: InsertSelectionOption) => {
@@ -687,6 +734,14 @@ export default function SelectionDetail() {
               <DropdownMenuItem onClick={() => setIsEditingDetails(true)}>
                 <Settings className="w-4 h-4 mr-2" />
                 Edit Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleCopyPortalLink}>
+                <LinkIcon className="w-4 h-4 mr-2" />
+                {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowQrModal(true)}>
+                <QrCode className="w-4 h-4 mr-2" />
+                Show QR Code
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1618,22 +1673,81 @@ export default function SelectionDetail() {
 
           {/* Comments */}
           <div className="surface-panel p-3" data-testid="selection-comments">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-data text-muted-foreground uppercase tracking-wide">Comments</span>
+              {comments.length > 0 && (
+                <Badge variant="secondary" className="text-xs ml-auto">{comments.length}</Badge>
+              )}
             </div>
-            <div className="text-center py-4 text-muted-foreground">
-              <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No comments yet</p>
-            </div>
-            <div className="flex items-start gap-2 pt-2 border-t">
+
+            {comments.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">
+                <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No comments yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2 mb-3">
+                {comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className={cn(
+                      "rounded-md p-2.5 text-sm",
+                      comment.isClientComment
+                        ? "bg-blue-50 dark:bg-blue-950/20 ml-4"
+                        : "bg-muted mr-4"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-medium text-xs text-muted-foreground">
+                        {comment.isClientComment ? "Client" : (comment.createdByName || "Team")}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(comment.createdAt), "d MMM, h:mm a")}
+                        </span>
+                        {isAdminUser && !comment.isClientComment && (
+                          <button
+                            onClick={() => deleteCommentMutation.mutate(comment.id)}
+                            className="h-4 w-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:text-destructive visibility-hidden"
+                            style={{ visibility: "visible" }}
+                          >
+                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-end gap-2 pt-2 border-t">
               <Textarea
                 placeholder="Add a comment..."
-                className="flex-1 min-h-[60px] text-sm"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
+                    e.preventDefault();
+                    addCommentMutation.mutate(commentText.trim());
+                  }
+                }}
+                className="flex-1 min-h-[60px] text-sm resize-none"
                 data-testid="input-comment"
               />
-              <Button size="icon" className="h-8 w-8" disabled data-testid="button-send-comment">
-                <Send className="w-4 h-4" />
+              <Button
+                size="icon"
+                onClick={() => commentText.trim() && addCommentMutation.mutate(commentText.trim())}
+                disabled={!commentText.trim() || addCommentMutation.isPending}
+                data-testid="button-send-comment"
+              >
+                {addCommentMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </Button>
             </div>
           </div>
@@ -2011,6 +2125,39 @@ export default function SelectionDetail() {
                 </div>
               </form>
             </Form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Modal */}
+      <Dialog open={showQrModal} onOpenChange={setShowQrModal}>
+        <DialogContent className="sm:max-w-[360px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-4 h-4" />
+              Client Portal QR Code
+            </DialogTitle>
+            <DialogDescription>
+              Clients can scan this QR code to view and choose options on their device.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-2">
+            {id && (
+              <img
+                src={`/api/selections/${id}/qr-code`}
+                alt="QR code for client portal"
+                className="w-48 h-48 rounded-md border"
+              />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={handleCopyPortalLink}
+            >
+              <LinkIcon className="w-4 h-4 mr-2" />
+              {portalLinkCopied ? "Link copied!" : "Copy Portal Link"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
