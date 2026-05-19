@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,7 +99,79 @@ import {
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+
+function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onDelete: (id: string) => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: att.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="relative group aspect-square rounded-md overflow-hidden bg-muted cursor-grab active:cursor-grabbing">
+      <img src={att.filePath} alt={att.fileName || "attachment"} className="w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="text-white p-1"
+          aria-label="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3zm4 0h2v2h-2V3zM9 7h2v2H9V7zm4 0h2v2h-2V7zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 15h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
+        </button>
+        <button
+          type="button"
+          className="text-white p-1"
+          onClick={(e) => { e.stopPropagation(); onDelete(att.id); }}
+          aria-label="Delete image"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SortableImageGrid({
+  attachments,
+  onReorder,
+  onDelete,
+}: {
+  attachments: OptionAttachment[];
+  onReorder: (newOrder: OptionAttachment[]) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [items, setItems] = useState<OptionAttachment[]>(attachments);
+  useEffect(() => { setItems(attachments); }, [attachments]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = items.findIndex((i) => i.id === active.id);
+      const newIndex = items.findIndex((i) => i.id === over.id);
+      const newOrder = arrayMove(items, oldIndex, newIndex);
+      setItems(newOrder);
+      onReorder(newOrder);
+    }
+  };
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
+        <div className="grid grid-cols-4 gap-2">
+          {items.map((att) => (
+            <SortableAttachmentThumb key={att.id} att={att} onDelete={onDelete} />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
 
 export default function SelectionDetail() {
   const { id, projectId } = useParams<{ id: string; projectId?: string }>();
@@ -115,6 +190,7 @@ export default function SelectionDetail() {
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
 
@@ -627,7 +703,7 @@ export default function SelectionDetail() {
           </div>
 
           {/* Over-allowance banner */}
-          {isOverAllowance && (
+          {isOverAllowance && !bannerDismissed && (
             <div className="flex items-center gap-3 rounded-md border border-[hsl(var(--coral))]/40 bg-[hsl(var(--coral-bg))] px-4 py-3">
               <AlertTriangle className="w-4 h-4 text-[hsl(var(--coral))] shrink-0" />
               <div className="flex-1 min-w-0">
@@ -642,6 +718,14 @@ export default function SelectionDetail() {
               >
                 Create Variation
               </Button>
+              <button
+                type="button"
+                onClick={() => setBannerDismissed(true)}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover-elevate shrink-0"
+                aria-label="Dismiss warning"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -800,12 +884,22 @@ export default function SelectionDetail() {
                 <div className="mt-3 pt-3 border-t border-border/60">
                   <div className="flex items-center justify-between mb-1.5 text-xs text-muted-foreground">
                     <span>Allowance utilisation</span>
-                    <span className={cn(
-                      "font-semibold",
-                      allowancePercent > 110 ? "text-[hsl(var(--coral))]" : allowancePercent > 100 ? "text-[hsl(var(--amber))]" : "text-[hsl(var(--sage))]"
-                    )}>
-                      {allowancePercent.toFixed(0)}%
-                    </span>
+                    <div className="flex items-center gap-3">
+                      {selectedPrice > 0 && (
+                        <span className={cn(
+                          "text-xs",
+                          selectedPrice > allowanceAmount ? "text-[hsl(var(--coral))]" : "text-muted-foreground"
+                        )}>
+                          {selectedPrice > allowanceAmount ? "+" : ""}${Math.abs(selectedPrice - allowanceAmount) >= 0 ? ((selectedPrice - allowanceAmount) / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 }) : "0.00"} variance
+                        </span>
+                      )}
+                      <span className={cn(
+                        "font-semibold",
+                        allowancePercent > 110 ? "text-[hsl(var(--coral))]" : allowancePercent > 100 ? "text-[hsl(var(--amber))]" : "text-[hsl(var(--sage))]"
+                      )}>
+                        {allowancePercent.toFixed(0)}%
+                      </span>
+                    </div>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                     <div
@@ -1215,14 +1309,23 @@ export default function SelectionDetail() {
                         </div>
                         <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
                           {isApproved ? (
-                            <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Approved
-                            </Badge>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate cursor-default">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Approved
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                <p className="text-xs">
+                                  {(option as any).approvedBy || "Admin"}{(option as any).approvedAt ? ` · ${format(new Date((option as any).approvedAt), "d MMM yyyy")}` : ""}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
                           ) : option.isSelectedByClient ? (
                             <Badge className="bg-[hsl(var(--amber))] text-white text-[10px] px-1.5 py-0.5 no-default-active-elevate">
                               <CheckCircle className="w-3 h-3 mr-1" />
-                              Selected
+                              Client selected
                             </Badge>
                           ) : null}
                         </div>
@@ -1340,26 +1443,55 @@ export default function SelectionDetail() {
                       header: "Status",
                       align: "center",
                       truncate: false,
-                      cell: (option) =>
-                        option.isSelectedByClient ? (
-                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-status-success">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Selected
-                          </Badge>
-                        ) : !option.visibleToClient ? (
-                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-status-danger">
-                            <EyeOff className="w-3 h-3 mr-1" />
-                            Hidden
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">
-                            <Eye className="w-3 h-3 mr-1" />
-                            Visible
-                          </Badge>
-                        ),
+                      cell: (option) => {
+                        const isApprovedRow = !!(option as any).approvedAt;
+                        const isLockedRow = !!(option as any).lockedAt;
+                        return (
+                          <div className="flex flex-col gap-1 items-center">
+                            {isApprovedRow ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge className="bg-[hsl(var(--sage))] text-white text-[10px] px-1.5 cursor-default no-default-active-elevate">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Approved
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">
+                                    {(option as any).approvedBy || "Admin"}{(option as any).approvedAt ? ` · ${format(new Date((option as any).approvedAt), "d MMM yyyy")}` : ""}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : isLockedRow ? (
+                              <Badge variant="outline" className="text-xs">
+                                <Lock className="w-3 h-3 mr-1" />
+                                Locked
+                              </Badge>
+                            ) : option.isSelectedByClient ? (
+                              <Badge variant="outline" className="text-xs">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Selected
+                              </Badge>
+                            ) : !option.visibleToClient ? (
+                              <Badge variant="outline" className="text-xs text-muted-foreground">
+                                <EyeOff className="w-3 h-3 mr-1" />
+                                Hidden
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                <Eye className="w-3 h-3 mr-1" />
+                                Visible
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      },
                     },
                   ]}
-                  actions={(option) => (
+                  actions={(option) => {
+                    const isLockedRow = !!(option as any).lockedAt;
+                    const isApprovedRow = !!(option as any).approvedAt;
+                    return (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button
@@ -1372,20 +1504,34 @@ export default function SelectionDetail() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); if (!isLockedRow) handleEditOption(option); }}
+                          disabled={isLockedRow}
+                        >
                           <Edit3 className="w-4 h-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
+                        {isAdminUser && !isApprovedRow && (
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                            disabled={approveMutation.isPending}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Approve
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); deleteOptionMutation.mutate(option.id); }}
+                          onClick={(e) => { e.stopPropagation(); if (!isLockedRow) deleteOptionMutation.mutate(option.id); }}
                           className="text-destructive"
+                          disabled={isLockedRow}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  )}
+                  );
+                  }}
                 />
               </div>
             )}
@@ -1501,25 +1647,28 @@ export default function SelectionDetail() {
           <div className="flex-1 overflow-y-auto">
             <Form {...optionForm}>
               <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="space-y-4 pr-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={optionForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Option Name</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="e.g., Subway Tile White"
-                            {...field}
-                            data-testid="input-option-name"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
+                {/* Row 1: Name (full width) */}
+                <FormField
+                  control={optionForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Option Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., Subway Tile White"
+                          {...field}
+                          data-testid="input-option-name"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Row 2: Brand | SKU */}
+                <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={optionForm.control}
                     name="brand"
@@ -1527,7 +1676,7 @@ export default function SelectionDetail() {
                       <FormItem>
                         <FormLabel>Brand</FormLabel>
                         <FormControl>
-                          <Input 
+                          <Input
                             placeholder="e.g., Concept Tile"
                             {...field}
                             value={field.value || ""}
@@ -1538,8 +1687,27 @@ export default function SelectionDetail() {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={optionForm.control}
+                    name="sku"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>SKU</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Product code"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-option-sku"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
+                {/* Row 3: Description (full width) */}
                 <FormField
                   control={optionForm.control}
                   name="description"
@@ -1547,7 +1715,7 @@ export default function SelectionDetail() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea 
+                        <Textarea
                           placeholder="Describe this option..."
                           rows={2}
                           {...field}
@@ -1560,26 +1728,40 @@ export default function SelectionDetail() {
                   )}
                 />
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Separator />
+
+                {/* Pricing section: Unit Cost | Qty | Unit Type */}
+                <div className="grid grid-cols-3 gap-4">
                   <FormField
                     control={optionForm.control}
-                    name="sku"
+                    name="unitCost"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>SKU</FormLabel>
+                        <FormLabel>Unit Cost</FormLabel>
                         <FormControl>
-                          <Input 
-                            placeholder="Product code"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-option-sku"
-                          />
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                            <Input
+                              type="number"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              className="pl-10"
+                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
+                                field.onChange(centValue);
+                                handleUnitCostChange(centValue);
+                              }}
+                              data-testid="input-option-unit-cost"
+                            />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
                   <FormField
                     control={optionForm.control}
                     name="quantity"
@@ -1587,7 +1769,7 @@ export default function SelectionDetail() {
                       <FormItem>
                         <FormLabel>Quantity</FormLabel>
                         <FormControl>
-                          <Input 
+                          <Input
                             type="number"
                             min="1"
                             {...field}
@@ -1619,10 +1801,9 @@ export default function SelectionDetail() {
                   />
                 </div>
 
-                {/* Pricing Section */}
+                {/* Markup % */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-medium">Pricing</h3>
                     <Select
                       value={gstInclusive ? "inc" : "ex"}
                       onValueChange={(value) => handleGstChange(value === "inc")}
@@ -1637,97 +1818,68 @@ export default function SelectionDetail() {
                     </Select>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField
-                      control={optionForm.control}
-                      name="unitCost"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Unit Cost</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                              <Input 
-                                type="number"
-                                placeholder="0.00"
-                                step="0.01"
-                                min="0"
-                                className="pl-10"
-                                value={field.value ? (field.value / 100).toFixed(2) : ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
-                                  field.onChange(centValue);
-                                  handleUnitCostChange(centValue);
-                                }}
-                                data-testid="input-option-unit-cost"
-                              />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {/* Markup % row */}
+                  <FormField
+                    control={optionForm.control}
+                    name="markupPercent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Markup %</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              placeholder="0"
+                              min="0"
+                              className="pr-8"
+                              value={field.value || ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                field.onChange(value ? parseInt(value) : undefined);
+                              }}
+                              data-testid="input-option-markup"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                    <FormField
-                      control={optionForm.control}
-                      name="markupPercent"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Markup %</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input 
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                className="pr-8"
-                                value={field.value || ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  field.onChange(value ? parseInt(value) : undefined);
-                                }}
-                                data-testid="input-option-markup"
-                              />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={optionForm.control}
-                      name="totalCost"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Total Cost</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                              <Input 
-                                type="number"
-                                placeholder="0.00"
-                                step="0.01"
-                                min="0"
-                                className="pl-10"
-                                value={field.value ? (field.value / 100).toFixed(2) : ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                                }}
-                                data-testid="input-option-total-cost"
-                              />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  <FormField
+                    control={optionForm.control}
+                    name="totalCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Total (inc. markup)</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                            <Input
+                              type="number"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              className="pl-10"
+                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                              }}
+                              data-testid="input-option-total-cost"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
+                <Separator />
+
+                {/* URL */}
                 <FormField
                   control={optionForm.control}
                   name="url"
@@ -1735,7 +1887,7 @@ export default function SelectionDetail() {
                     <FormItem>
                       <FormLabel>Product URL</FormLabel>
                       <FormControl>
-                        <Input 
+                        <Input
                           type="url"
                           placeholder="https://..."
                           {...field}
@@ -1748,9 +1900,32 @@ export default function SelectionDetail() {
                   )}
                 />
 
-                {/* Image attachments section */}
+                {/* Visible to Client */}
+                <FormField
+                  control={optionForm.control}
+                  name="visibleToClient"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <FormLabel className="text-sm font-medium">Visible to client</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">Show this option in the client portal</p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={!!field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-option-visible"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <Separator />
+
+                {/* Images with DnD reorder */}
                 {editingOption && (
-                  <div className="space-y-2 pt-2">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Images</span>
                       <Button
@@ -1781,24 +1956,20 @@ export default function SelectionDetail() {
                       />
                     </div>
                     {editingOptionAttachments && editingOptionAttachments.length > 0 ? (
-                      <div className="grid grid-cols-4 gap-2">
-                        {editingOptionAttachments.map((att) => (
-                          <div key={att.id} className="relative group aspect-square rounded-md overflow-hidden bg-muted">
-                            <img src={att.filePath} alt={att.fileName || "attachment"} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                              onClick={() => deleteAttachmentMutation.mutate(att.id)}
-                            >
-                              <Trash2 className="w-4 h-4 text-white" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                      <SortableImageGrid
+                        attachments={editingOptionAttachments}
+                        onReorder={(newOrder) => {
+                          newOrder.forEach((att, idx) => {
+                            apiRequest("PATCH", `/api/selection-option-attachments/${att.id}`, { sortOrder: idx });
+                          });
+                          queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+                        }}
+                        onDelete={(attId) => deleteAttachmentMutation.mutate(attId)}
+                      />
                     ) : (
                       <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
                         <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                        No images yet
+                        No images yet — drag &amp; drop to reorder after adding
                       </div>
                     )}
                   </div>

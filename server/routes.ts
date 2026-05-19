@@ -11250,6 +11250,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/selection-option-attachments/:id", requireAuth, async (req, res) => {
     try {
+      const attachments = await storage.getOptionAttachments(req.params.id);
+      const attachment = attachments.length > 0 ? attachments[0] : null;
+      // Actually get single attachment via optionId won't work — query by the attachment record itself
+      // Use a direct DB lookup
+      const { db } = await import("./db");
+      const { optionAttachments } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [attachmentRecord] = await db.select().from(optionAttachments).where(eq(optionAttachments.id, req.params.id)).limit(1);
+      if (!attachmentRecord) return res.status(404).json({ error: "Attachment not found" });
+      // Attempt to delete from object storage (best-effort)
+      if (attachmentRecord.filePath) {
+        try {
+          const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+          const objectStorage = new ObjectStorageService();
+          const file = await objectStorage.getObjectEntityFile(attachmentRecord.filePath);
+          await file.delete();
+        } catch (ossErr) {
+          // Object may already be deleted or path may be from a different source — continue
+          console.warn("[deleteOptionAttachment] Object storage deletion skipped:", (ossErr as any)?.message);
+        }
+      }
       const success = await storage.deleteOptionAttachment(req.params.id);
       if (!success) return res.status(404).json({ error: "Attachment not found" });
       res.status(204).send();

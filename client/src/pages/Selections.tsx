@@ -258,7 +258,7 @@ function SelectionRow({
         className={`group grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
           isChecked ? "bg-primary/5" : "hover:bg-muted/30"
         }`}
-        onClick={isOrderedOrReceived ? undefined : () => onEdit(selection.id)}
+        onClick={() => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
         {/* First column: checkbox for checkable rows, expand toggle otherwise */}

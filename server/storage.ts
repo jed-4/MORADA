@@ -7818,12 +7818,25 @@ export class DbStorage implements IStorage {
 
   // Selection Options CRUD
   async getSelectionOptions(selectionId: string): Promise<SelectionOption[]> {
-    return await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.selectionId, selectionId));
+    const options = await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.selectionId, selectionId));
+    if (options.length === 0) return [];
+    const optionIds = options.map((o) => o.id);
+    const attachments = await db.select().from(schema.optionAttachments)
+      .where(inArray(schema.optionAttachments.optionId, optionIds))
+      .orderBy(asc(schema.optionAttachments.sortOrder));
+    const attachmentsByOption = attachments.reduce<Record<string, OptionAttachment[]>>((acc, att) => {
+      if (!acc[att.optionId]) acc[att.optionId] = [];
+      acc[att.optionId].push(att);
+      return acc;
+    }, {});
+    return options.map((o) => ({ ...o, attachments: attachmentsByOption[o.id] ?? [] })) as SelectionOption[];
   }
 
   async getSelectionOption(id: string): Promise<SelectionOption | undefined> {
     const [option] = await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.id, id)).limit(1);
-    return option;
+    if (!option) return undefined;
+    const attachments = await this.getOptionAttachments(id);
+    return { ...option, attachments } as SelectionOption;
   }
 
   async createSelectionOption(insertOption: InsertSelectionOption): Promise<SelectionOption> {
