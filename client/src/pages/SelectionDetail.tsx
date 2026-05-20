@@ -800,7 +800,13 @@ export default function SelectionDetail() {
 
   // Calculate selected price from options (ensure we have valid numbers)
   const selectedOption = selection.options?.find(opt => opt.isSelectedByClient);
-  const selectedPrice = Number(selectedOption?.totalCost) || 0;
+  const selectedPrice = selectedOption
+    ? (selectedOption.totalCost != null
+        ? selectedOption.totalCost
+        : selectedOption.unitCost != null
+          ? Math.round(selectedOption.unitCost * (selectedOption.quantity || 1) * (1 + (selectedOption.markupPercent || 0) / 100))
+          : 0)
+    : 0;
   const allowanceAmount = Number(selection.allowance) || 0;
   const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
   const allowancePercent = allowanceAmount > 0 ? Math.min((selectedPrice / allowanceAmount) * 100, 200) : 0;
@@ -1571,20 +1577,21 @@ export default function SelectionDetail() {
                                   : option.unitCost != null
                                     ? Math.round(option.unitCost * (option.quantity || 1) * (1 + (option.markupPercent || 0) / 100))
                                     : null;
-                                return displayCents != null ? (
-                                  <div className="text-sm font-semibold">
-                                    ${(displayCents / 100).toFixed(2)}
-                                  </div>
-                                ) : null;
-                              })()}
-                              {selection.allowance != null && selection.allowance > 0 && option.totalCost != null && (() => {
-                                const variance = option.totalCost - selection.allowance;
-                                if (variance === 0) return null;
-                                const over = variance > 0;
+                                const showVariance = selection.allowance != null && selection.allowance > 0 && displayCents != null;
+                                const variance = showVariance ? displayCents! - selection.allowance! : null;
                                 return (
-                                  <div className={`text-[10px] font-medium ${over ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
-                                    {over ? "+" : ""}${(Math.abs(variance) / 100).toFixed(0)}
-                                  </div>
+                                  <>
+                                    {displayCents != null && (
+                                      <div className="text-sm font-semibold">
+                                        ${(displayCents / 100).toFixed(2)}
+                                      </div>
+                                    )}
+                                    {showVariance && variance !== 0 && (
+                                      <div className={`text-[10px] font-medium ${variance! > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
+                                        {variance! > 0 ? "+" : ""}${(Math.abs(variance!) / 100).toFixed(0)}
+                                      </div>
+                                    )}
+                                  </>
                                 );
                               })()}
                             </div>
