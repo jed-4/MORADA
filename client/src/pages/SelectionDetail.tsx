@@ -2121,44 +2121,14 @@ export default function SelectionDetail() {
 
                 <Separator />
 
-                {/* Pricing section: Unit Cost | Qty | Unit Type */}
+                {/* Pricing section: Qty | Unit Type | Unit Cost */}
                 <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={optionForm.control}
-                    name="unitCost"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Unit Cost</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                            <Input
-                              type="number"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              className="pl-10 h-9"
-                              value={unitCostDisplayStr}
-                              onChange={(e) => {
-                                setUnitCostDisplayStr(e.target.value);
-                                const centValue = e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined;
-                                field.onChange(centValue);
-                                handleUnitCostChange(centValue);
-                              }}
-                              data-testid="input-option-unit-cost"
-                            />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                   <FormField
                     control={optionForm.control}
                     name="quantity"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Quantity</FormLabel>
+                        <FormLabel>Qty</FormLabel>
                         <FormControl>
                           <Input
                             className="h-9"
@@ -2182,13 +2152,56 @@ export default function SelectionDetail() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Unit Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || "ea"}>
+                          <FormControl>
+                            <SelectTrigger className="h-9" data-testid="select-option-unit-type">
+                              <SelectValue placeholder="Select unit" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="ea">ea — Each</SelectItem>
+                            <SelectItem value="m2">m² — Square metre</SelectItem>
+                            <SelectItem value="lm">lm — Linear metre</SelectItem>
+                            <SelectItem value="m3">m³ — Cubic metre</SelectItem>
+                            <SelectItem value="hr">hr — Hour</SelectItem>
+                            <SelectItem value="day">day — Day</SelectItem>
+                            <SelectItem value="wk">wk — Week</SelectItem>
+                            <SelectItem value="lot">lot — Lot</SelectItem>
+                            <SelectItem value="allow">allow — Allowance</SelectItem>
+                            <SelectItem value="t">t — Tonne</SelectItem>
+                            <SelectItem value="kg">kg — Kilogram</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={optionForm.control}
+                    name="unitCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-primary font-semibold">Unit Cost</FormLabel>
                         <FormControl>
-                          <Input
-                            className="h-9"
-                            placeholder="ea, m2, linear_m"
-                            {...field}
-                            data-testid="input-option-unit-type"
-                          />
+                          <div className="flex rounded-md border border-primary/40 bg-primary/5 overflow-hidden focus-within:ring-1 focus-within:ring-primary/50">
+                            <span className="flex items-center px-3 text-muted-foreground text-sm font-medium border-r border-primary/20 bg-primary/5 select-none">$</span>
+                            <Input
+                              type="number"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              className="border-0 rounded-none bg-transparent text-right font-medium shadow-none focus-visible:ring-0 h-9"
+                              value={unitCostDisplayStr}
+                              onChange={(e) => {
+                                setUnitCostDisplayStr(e.target.value);
+                                const centValue = e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined;
+                                field.onChange(centValue);
+                                handleUnitCostChange(centValue);
+                              }}
+                              data-testid="input-option-unit-cost"
+                            />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
