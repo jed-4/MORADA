@@ -206,7 +206,6 @@ export default function SelectionDetail() {
   const [commentsExpanded, setCommentsExpanded] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
-  const [overAllowanceDismissed, setOverAllowanceDismissed] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
 
@@ -981,35 +980,6 @@ export default function SelectionDetail() {
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
 
-          {/* Over-allowance warning banner */}
-          {isOverAllowance && !overAllowanceDismissed && (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-[hsl(var(--coral)/0.3)] bg-[hsl(var(--coral)/0.08)] px-3 py-2.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <AlertCircle className="w-4 h-4 text-[hsl(var(--coral))] flex-shrink-0" />
-                <span className="text-sm font-medium text-[hsl(var(--coral))]">
-                  Cost is ${((selectedPrice - allowanceAmount) / 100).toFixed(2)} over allowance
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => setLocation(`/projects/${effectiveProjectId}/variations/new?name=${encodeURIComponent(`${selection.name} — overage`)}&amount=${selectedPrice - allowanceAmount}`)}
-                >
-                  Create variation
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setOverAllowanceDismissed(true)}
-                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground"
-                  aria-label="Dismiss"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Prominent name heading */}
           <div>
