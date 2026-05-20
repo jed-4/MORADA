@@ -98,6 +98,7 @@ import {
   AlertTriangle,
   QrCode,
   Link as LinkIcon,
+  ChevronRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -690,25 +691,26 @@ export default function SelectionDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto relative">
-        {/* Floating back arrow */}
-        <button
-          onClick={goBack}
-          className="absolute top-3 left-3 z-10 h-7 w-7 rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-          data-testid="button-back"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-
-        {/* Floating actions (top-right) */}
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+      {/* Breadcrumb bar */}
+      <div className="h-9 bg-background border-b flex items-center justify-between px-2 gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <button
+            onClick={goBack}
+            className="hover:text-foreground transition-colors"
+            data-testid="button-back"
+          >
+            Selections
+          </button>
+          <ChevronRight className="w-3 h-3" />
+          <ArrowLeft className="w-3 h-3" />
+        </div>
+        <div className="flex items-center gap-2">
           {hasUnsavedChanges && !isEditingDetails && (
             <Button
               size="sm"
               onClick={handleSaveSelection}
               disabled={updateSelectionMutation.isPending}
-              className="h-7 px-2 text-xs bg-background/80 backdrop-blur-sm"
+              className="h-7 px-2 text-xs"
               data-testid="button-save-selection"
             >
               <Save className="w-3 h-3 mr-1" />
@@ -717,7 +719,7 @@ export default function SelectionDetail() {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 bg-background/80 backdrop-blur-sm" data-testid="button-selection-menu">
+              <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-selection-menu">
                 <MoreVertical className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -743,7 +745,10 @@ export default function SelectionDetail() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+      </div>
 
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
 
           {/* Prominent name heading */}
