@@ -496,6 +496,8 @@ export default function SelectionDetail() {
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
   const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
   const pendingImageInputRef = useRef<HTMLInputElement>(null);
+  const [unitCostDisplayStr, setUnitCostDisplayStr] = useState<string>("");
+  const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
 
   const optionForm = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
@@ -526,6 +528,8 @@ export default function SelectionDetail() {
       setIsAddingOption(false);
       setEditingOption(null);
       setGstInclusive(false);
+      setUnitCostDisplayStr("");
+      setTotalCostDisplayStr("");
       setPendingImages((prev) => {
         prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
         return [];
@@ -608,6 +612,8 @@ export default function SelectionDetail() {
   const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
     setGstInclusive(option.gstInclusive || false);
+    setUnitCostDisplayStr(option.unitCost ? String(option.unitCost / 100) : "");
+    setTotalCostDisplayStr(option.totalCost ? String(option.totalCost / 100) : "");
     
     optionForm.reset({
       selectionId: option.selectionId,
@@ -635,6 +641,8 @@ export default function SelectionDetail() {
     setIsAddingOption(true);
     setEditingOption(null);
     setGstInclusive(false);
+    setUnitCostDisplayStr("");
+    setTotalCostDisplayStr("");
     optionForm.reset({
       selectionId: id || "",
       name: "",
@@ -1520,66 +1528,91 @@ export default function SelectionDetail() {
                         </div>
                       </div>
                       <CardContent className="p-3">
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm truncate">{option.name}</div>
-                            {(option.brand || option.sku) && (
-                              <div className="text-xs text-muted-foreground truncate">
-                                {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
-                              </div>
-                            )}
+                        <div className="font-medium text-sm truncate">{option.name}</div>
+                        {(option.brand || option.sku) && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
                           </div>
-                          {isAdminUser && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-6 w-6 flex-shrink-0 -mr-1 -mt-0.5"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <MoreVertical className="w-3.5 h-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                {!isLocked && (
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
-                                  >
-                                    <Edit3 className="w-4 h-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
-                                  className="text-destructive"
-                                  disabled={isLocked}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                        <div className="mt-2 flex items-end justify-between">
+                        )}
+                        <div className="mt-2 flex items-end justify-between gap-1">
                           <span className="text-xs text-muted-foreground">
                             {option.quantity} {option.unitType}
                           </span>
-                          <div className="text-right">
-                            <div className="text-sm font-semibold">
-                              ${((option.totalCost || 0) / 100).toFixed(2)}
+                          <div className="flex items-end gap-0.5">
+                            <div className="text-right">
+                              <div className="text-sm font-semibold">
+                                ${((option.totalCost || 0) / 100).toFixed(2)}
+                              </div>
+                              {selection.allowanceAmount != null && selection.allowanceAmount > 0 && option.totalCost != null && (() => {
+                                const variance = option.totalCost - selection.allowanceAmount;
+                                if (variance === 0) return null;
+                                const over = variance > 0;
+                                return (
+                                  <div className={`text-[10px] font-medium ${over ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
+                                    {over ? "+" : ""}${(Math.abs(variance) / 100).toFixed(0)}
+                                  </div>
+                                );
+                              })()}
                             </div>
-                            {selection.allowanceAmount != null && selection.allowanceAmount > 0 && option.totalCost != null && (() => {
-                              const variance = option.totalCost - selection.allowanceAmount;
-                              if (variance === 0) return null;
-                              const over = variance > 0;
-                              return (
-                                <div className={`text-[10px] font-medium ${over ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
-                                  {over ? "+" : ""}${(Math.abs(variance) / 100).toFixed(0)}
-                                </div>
-                              );
-                            })()}
+                            {isAdminUser && (
+                              <AlertDialog>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <MoreVertical className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                    {!isLocked && (
+                                      <DropdownMenuItem
+                                        onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
+                                      >
+                                        <Edit3 className="w-4 h-4 mr-2" />
+                                        Edit
+                                      </DropdownMenuItem>
+                                    )}
+                                    {isApproved && (
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem
+                                          onSelect={(e) => e.preventDefault()}
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <XCircle className="w-4 h-4 mr-2" />
+                                          Remove approval
+                                        </DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                    )}
+                                    <DropdownMenuItem
+                                      onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
+                                      className="text-destructive"
+                                      disabled={isLocked}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remove approval?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will unlock <span className="font-medium text-foreground">{option.name}</span> and revert the selection status to submitted.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => unapproveMutation.mutate(option.id)}>
+                                      Remove approval
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
                           </div>
                         </div>
                         {isAdminUser && !isApproved && !isLocked && (
@@ -1611,21 +1644,6 @@ export default function SelectionDetail() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
-                        )}
-                        {isAdminUser && isApproved && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="mt-2 h-7 w-full text-xs text-muted-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              unapproveMutation.mutate(option.id);
-                            }}
-                            disabled={unapproveMutation.isPending}
-                          >
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Remove approval
-                          </Button>
                         )}
                       </CardContent>
                     </Card>
@@ -2099,10 +2117,10 @@ export default function SelectionDetail() {
                               step="0.01"
                               min="0"
                               className="pl-10 h-9"
-                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              value={unitCostDisplayStr}
                               onChange={(e) => {
-                                const value = e.target.value;
-                                const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
+                                setUnitCostDisplayStr(e.target.value);
+                                const centValue = e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined;
                                 field.onChange(centValue);
                                 handleUnitCostChange(centValue);
                               }}
@@ -2216,10 +2234,10 @@ export default function SelectionDetail() {
                               step="0.01"
                               min="0"
                               className="pl-10 h-9"
-                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              value={totalCostDisplayStr}
                               onChange={(e) => {
-                                const value = e.target.value;
-                                field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                                setTotalCostDisplayStr(e.target.value);
+                                field.onChange(e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined);
                               }}
                               data-testid="input-option-total-cost"
                             />
