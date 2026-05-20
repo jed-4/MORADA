@@ -1508,7 +1508,7 @@ export default function SelectionDetail() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                  {!isApproved && !isLocked && (
+                                  {!isApproved && (
                                     <DropdownMenuItem
                                       onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
                                     >
