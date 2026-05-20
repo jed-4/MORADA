@@ -1565,9 +1565,18 @@ export default function SelectionDetail() {
                           </span>
                           <div className="flex items-end gap-0.5">
                             <div className="text-right">
-                              <div className="text-sm font-semibold">
-                                ${((option.totalCost || 0) / 100).toFixed(2)}
-                              </div>
+                              {(() => {
+                                const displayCents = option.totalCost != null
+                                  ? option.totalCost
+                                  : option.unitCost != null
+                                    ? Math.round(option.unitCost * (option.quantity || 1) * (1 + (option.markupPercent || 0) / 100))
+                                    : null;
+                                return displayCents != null ? (
+                                  <div className="text-sm font-semibold">
+                                    ${(displayCents / 100).toFixed(2)}
+                                  </div>
+                                ) : null;
+                              })()}
                               {selection.allowance != null && selection.allowance > 0 && option.totalCost != null && (() => {
                                 const variance = option.totalCost - selection.allowance;
                                 if (variance === 0) return null;
