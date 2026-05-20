@@ -612,8 +612,8 @@ export default function SelectionDetail() {
   const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
     setGstInclusive(option.gstInclusive || false);
-    setUnitCostDisplayStr(option.unitCost ? String(option.unitCost / 100) : "");
-    setTotalCostDisplayStr(option.totalCost ? String(option.totalCost / 100) : "");
+    setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
+    setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
     
     optionForm.reset({
       selectionId: option.selectionId,
@@ -686,6 +686,16 @@ export default function SelectionDetail() {
     }
   };
 
+  const recalculateTotalCost = (unitCostCents?: number, qty?: number, markupPct?: number) => {
+    const cost = unitCostCents ?? optionForm.getValues("unitCost") ?? 0;
+    const quantity = qty ?? optionForm.getValues("quantity") ?? 1;
+    const markup = markupPct ?? optionForm.getValues("markupPercent") ?? 0;
+    if (!cost) return;
+    const total = Math.round(cost * quantity * (1 + markup / 100));
+    optionForm.setValue("totalCost", total);
+    setTotalCostDisplayStr((total / 100).toFixed(2));
+  };
+
   const handleUnitCostChange = (value: number | undefined) => {
     if (value && gstInclusive) {
       const newTax = calculateGst(value, gstInclusive);
@@ -693,6 +703,7 @@ export default function SelectionDetail() {
     } else if (!gstInclusive) {
       optionForm.setValue("unitTax", value ? calculateGst(value, false) : undefined);
     }
+    recalculateTotalCost(value);
   };
 
   const filteredOptions = (selection?.options || []).filter((option) =>
@@ -1090,7 +1101,7 @@ export default function SelectionDetail() {
                           <FormControl>
                             <Input 
                               placeholder="e.g., Kitchen Splashback Tiles"
-                              className="h-7 text-sm"
+                              className="h-9 text-sm"
                               {...field}
                               data-testid="input-selection-name"
                             />
@@ -1107,7 +1118,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Category</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-7 text-sm" data-testid="select-category">
+                              <SelectTrigger className="h-9 text-sm" data-testid="select-category">
                                 <SelectValue placeholder="Select category" />
                               </SelectTrigger>
                             </FormControl>
@@ -1131,7 +1142,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Location</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-7 text-sm" data-testid="select-room">
+                              <SelectTrigger className="h-9 text-sm" data-testid="select-room">
                                 <SelectValue placeholder="Select location" />
                               </SelectTrigger>
                             </FormControl>
@@ -1163,7 +1174,7 @@ export default function SelectionDetail() {
                                 <Button
                                   variant="outline"
                                   className={cn(
-                                    "w-full h-7 px-2 text-sm font-normal justify-start",
+                                    "w-full h-9 text-sm font-normal justify-start",
                                     !field.value && "text-muted-foreground"
                                   )}
                                   data-testid="button-deadline"
@@ -1198,7 +1209,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Status</FormLabel>
                           <Select onValueChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-7 text-sm" data-testid="select-status">
+                              <SelectTrigger className="h-9 text-sm" data-testid="select-status">
                                 <SelectValue placeholder="Select status" />
                               </SelectTrigger>
                             </FormControl>
@@ -1227,7 +1238,7 @@ export default function SelectionDetail() {
                                 type="number"
                                 step="0.01"
                                 min="0"
-                                className="h-7 pl-6 text-sm"
+                                className="h-9 pl-6 text-sm"
                                 value={field.value !== undefined && field.value !== null ? (Number(field.value) / 100).toString() : ""}
                                 onChange={(e) => {
                                   const v = e.target.value;
@@ -1473,8 +1484,8 @@ export default function SelectionDetail() {
                       className={cn(
                         "transition-all duration-200 group",
                         isLocked ? "cursor-not-allowed opacity-80" : "hover-elevate cursor-pointer",
-                        option.isSelectedByClient && !isApproved && "ring-2 ring-[hsl(var(--amber))]",
-                        isApproved && "ring-2 ring-[hsl(var(--sage))]"
+                        option.isSelectedByClient && !isApproved && "ring-1 ring-[hsl(var(--amber))]",
+                        isApproved && "ring-1 ring-[hsl(var(--sage))]"
                       )}
                       onClick={() => { if (!isLocked) handleEditOption(option); }}
                       data-testid={`card-option-${option.id}`}
@@ -1543,8 +1554,8 @@ export default function SelectionDetail() {
                               <div className="text-sm font-semibold">
                                 ${((option.totalCost || 0) / 100).toFixed(2)}
                               </div>
-                              {selection.allowanceAmount != null && selection.allowanceAmount > 0 && option.totalCost != null && (() => {
-                                const variance = option.totalCost - selection.allowanceAmount;
+                              {selection.allowance != null && selection.allowance > 0 && option.totalCost != null && (() => {
+                                const variance = option.totalCost - selection.allowance;
                                 if (variance === 0) return null;
                                 const over = variance > 0;
                                 return (
@@ -2144,7 +2155,11 @@ export default function SelectionDetail() {
                             type="number"
                             min="1"
                             {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                            onChange={(e) => {
+                              const qty = parseInt(e.target.value) || 1;
+                              field.onChange(qty);
+                              recalculateTotalCost(undefined, qty);
+                            }}
                             data-testid="input-option-quantity"
                           />
                         </FormControl>
@@ -2207,7 +2222,9 @@ export default function SelectionDetail() {
                               value={field.value || ""}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                field.onChange(value ? parseInt(value) : undefined);
+                                const pct = value ? parseInt(value) : undefined;
+                                field.onChange(pct);
+                                recalculateTotalCost(undefined, undefined, pct ?? 0);
                               }}
                               data-testid="input-option-markup"
                             />
