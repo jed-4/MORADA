@@ -523,6 +523,17 @@ export default function SelectionDetail() {
     },
   });
 
+  const watchedUnitCost = optionForm.watch("unitCost");
+  const watchedQuantity = optionForm.watch("quantity");
+  const watchedMarkupPercent = optionForm.watch("markupPercent");
+
+  useEffect(() => {
+    if (!watchedUnitCost) return;
+    const total = Math.round(watchedUnitCost * (watchedQuantity || 1) * (1 + (watchedMarkupPercent || 0) / 100));
+    optionForm.setValue("totalCost", total, { shouldDirty: true });
+    setTotalCostDisplayStr((total / 100).toFixed(2));
+  }, [watchedUnitCost, watchedQuantity, watchedMarkupPercent]);
+
   const handleDialogChange = (open: boolean) => {
     if (!open) {
       setIsAddingOption(false);
@@ -703,7 +714,6 @@ export default function SelectionDetail() {
     } else if (!gstInclusive) {
       optionForm.setValue("unitTax", value ? calculateGst(value, false) : undefined);
     }
-    recalculateTotalCost(value);
   };
 
   const filteredOptions = (selection?.options || []).filter((option) =>
@@ -1091,12 +1101,12 @@ export default function SelectionDetail() {
               <Form {...selectionForm}>
                 <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
                   {/* Row 1: Name (wide), Category, Location */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <FormField
                       control={selectionForm.control}
                       name="name"
                       render={({ field }) => (
-                        <FormItem className="lg:col-span-2">
+                        <FormItem>
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Name</FormLabel>
                           <FormControl>
                             <Input 
@@ -2156,9 +2166,7 @@ export default function SelectionDetail() {
                             min="1"
                             {...field}
                             onChange={(e) => {
-                              const qty = parseInt(e.target.value) || 1;
-                              field.onChange(qty);
-                              recalculateTotalCost(undefined, qty);
+                              field.onChange(parseInt(e.target.value) || 1);
                             }}
                             data-testid="input-option-quantity"
                           />
@@ -2222,9 +2230,7 @@ export default function SelectionDetail() {
                               value={field.value || ""}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                const pct = value ? parseInt(value) : undefined;
-                                field.onChange(pct);
-                                recalculateTotalCost(undefined, undefined, pct ?? 0);
+                                field.onChange(value ? parseInt(value) : undefined);
                               }}
                               data-testid="input-option-markup"
                             />
