@@ -409,6 +409,7 @@ export default function SelectionDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
       toast({ title: "Option approved", description: "The option has been approved and locked." });
     },
     onError: (err: any) => {
@@ -422,6 +423,7 @@ export default function SelectionDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options"] });
       toast({ title: "Approval removed", description: "The option has been unlocked." });
     },
     onError: (err: any) => {
@@ -1517,50 +1519,86 @@ export default function SelectionDetail() {
                         </div>
                       </div>
                       <CardContent className="p-3">
-                        <div className="font-medium text-sm truncate">{option.name}</div>
-                        {(option.brand || option.sku) && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm truncate">{option.name}</div>
+                            {(option.brand || option.sku) && (
+                              <div className="text-xs text-muted-foreground truncate">
+                                {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        <div className="mt-2 flex items-center justify-between">
+                          {isAdminUser && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 flex-shrink-0 -mr-1 -mt-0.5"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreVertical className="w-3.5 h-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                {!isApproved && !isLocked && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                                    disabled={approveMutation.isPending}
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Approve
+                                  </DropdownMenuItem>
+                                )}
+                                {isApproved && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); unapproveMutation.mutate(option.id); }}
+                                    disabled={unapproveMutation.isPending}
+                                  >
+                                    <XCircle className="w-4 h-4 mr-2" />
+                                    Remove approval
+                                  </DropdownMenuItem>
+                                )}
+                                {!isLocked && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
+                                  >
+                                    <Edit3 className="w-4 h-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
+                                  className="text-destructive"
+                                  disabled={isLocked}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-end justify-between">
                           <span className="text-xs text-muted-foreground">
                             {option.quantity} {option.unitType}
                           </span>
-                          <span className="text-sm font-semibold">
-                            ${((option.totalCost || 0) / 100).toFixed(2)}
-                          </span>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold">
+                              ${((option.totalCost || 0) / 100).toFixed(2)}
+                            </div>
+                            {selection.allowanceAmount != null && selection.allowanceAmount > 0 && option.totalCost != null && (() => {
+                              const variance = option.totalCost - selection.allowanceAmount;
+                              if (variance === 0) return null;
+                              const over = variance > 0;
+                              return (
+                                <div className={`text-[10px] font-medium ${over ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
+                                  {over ? "+" : ""}${(Math.abs(variance) / 100).toFixed(0)}
+                                </div>
+                              );
+                            })()}
+                          </div>
                         </div>
-                        {isAdminUser && !isApproved && !isLocked && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-2 h-7 w-full text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              approveMutation.mutate(option.id);
-                            }}
-                            disabled={approveMutation.isPending}
-                          >
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Approve
-                          </Button>
-                        )}
-                        {isAdminUser && isApproved && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="mt-2 h-7 w-full text-xs text-muted-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              unapproveMutation.mutate(option.id);
-                            }}
-                            disabled={unapproveMutation.isPending}
-                          >
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Remove approval
-                          </Button>
-                        )}
                       </CardContent>
                     </Card>
                     </TooltipTrigger>

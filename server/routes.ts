@@ -11279,6 +11279,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = await assertOptionAccess(req, res, req.params.id);
       if (!existing) return;
       const option = await storage.unapproveSelectionOption(req.params.id);
+      // Revert selection status to "submitted" (option still selected by client, just no longer admin-approved)
+      if (existing.selectionId) {
+        await storage.updateSelection(existing.selectionId, { status: "submitted" });
+      }
       res.json(option);
     } catch (error) {
       res.status(500).json({ error: "Failed to unapprove selection option" });
@@ -11300,6 +11304,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) return;
       const userName = user?.name || user?.dbUser?.name || user?.email || "Admin";
       const option = await storage.approveSelectionOption(req.params.id, user?.id || user?.dbUser?.id, userName);
+      // Also mark the parent selection as approved
+      if (existing.selectionId) {
+        await storage.updateSelection(existing.selectionId, { status: "approved" });
+      }
       res.json(option);
     } catch (error) {
       res.status(500).json({ error: "Failed to approve selection option" });
