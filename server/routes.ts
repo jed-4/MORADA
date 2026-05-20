@@ -11266,6 +11266,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/selection-options/:id/unapprove", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const roleId: string = user?.roleId || user?.dbUser?.roleId || "";
+      const role = roleId ? await storage.getUserRole(roleId) : null;
+      const roleName = (role?.name || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      if (!isAdminLike) {
+        return res.status(403).json({ error: "Only admin users can unapprove selection options." });
+      }
+      const existing = await assertOptionAccess(req, res, req.params.id);
+      if (!existing) return;
+      const option = await storage.unapproveSelectionOption(req.params.id);
+      res.json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to unapprove selection option" });
+    }
+  });
+
   app.patch("/api/selection-options/:id/approve", requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;

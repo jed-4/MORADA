@@ -586,6 +586,7 @@ export interface IStorage {
   deleteSelectionOption(id: string): Promise<boolean>;
 
   approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined>;
+  unapproveSelectionOption(id: string): Promise<SelectionOption | undefined>;
 
   // Option Attachments CRUD
   getOptionAttachments(optionId: string): Promise<OptionAttachment[]>;
@@ -5602,7 +5603,22 @@ export class MemStorage implements IStorage {
     const existing = this.selectionOptions.get(id);
     if (!existing) return undefined;
     const now = new Date();
-    const updated: SelectionOption = { ...existing, approvedAt: now, approvedById: userId, approvedBy: userName, lockedAt: now, updatedAt: now };
+    // Unselect any other option for the same selection
+    for (const [oid, opt] of this.selectionOptions.entries()) {
+      if (opt.selectionId === existing.selectionId && oid !== id && opt.isSelectedByClient) {
+        this.selectionOptions.set(oid, { ...opt, isSelectedByClient: false, updatedAt: now });
+      }
+    }
+    const updated: SelectionOption = { ...existing, approvedAt: now, approvedById: userId, approvedBy: userName, lockedAt: now, isSelectedByClient: true, updatedAt: now };
+    this.selectionOptions.set(id, updated);
+    return updated;
+  }
+
+  async unapproveSelectionOption(id: string): Promise<SelectionOption | undefined> {
+    const existing = this.selectionOptions.get(id);
+    if (!existing) return undefined;
+    const now = new Date();
+    const updated: SelectionOption = { ...existing, approvedAt: null, approvedById: null, approvedBy: null, lockedAt: null, updatedAt: now };
     this.selectionOptions.set(id, updated);
     return updated;
   }
@@ -7899,11 +7915,35 @@ export class DbStorage implements IStorage {
 
   async approveSelectionOption(id: string, userId: string, userName: string): Promise<SelectionOption | undefined> {
     const now = new Date();
+    // Get the selectionId first so we can unselect sibling options
+    const [existing] = await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.id, id)).limit(1);
+    if (!existing) return undefined;
+    // Unselect any other option for the same selection
+    await db.update(schema.selectionOptions)
+      .set({ isSelectedByClient: false, updatedAt: now })
+      .where(and(
+        eq(schema.selectionOptions.selectionId, existing.selectionId),
+        ne(schema.selectionOptions.id, id),
+        eq(schema.selectionOptions.isSelectedByClient, true),
+      ));
     const [option] = await db.update(schema.selectionOptions).set({
       approvedAt: now,
       approvedById: userId,
       approvedBy: userName,
       lockedAt: now,
+      isSelectedByClient: true,
+      updatedAt: now,
+    }).where(eq(schema.selectionOptions.id, id)).returning();
+    return option;
+  }
+
+  async unapproveSelectionOption(id: string): Promise<SelectionOption | undefined> {
+    const now = new Date();
+    const [option] = await db.update(schema.selectionOptions).set({
+      approvedAt: null,
+      approvedById: null,
+      approvedBy: null,
+      lockedAt: null,
       updatedAt: now,
     }).where(eq(schema.selectionOptions.id, id)).returning();
     return option;

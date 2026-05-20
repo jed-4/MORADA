@@ -101,6 +101,7 @@ import {
   Link2,
   ChevronDown,
   ChevronRight,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -412,6 +413,19 @@ export default function SelectionDetail() {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err?.message ?? "Failed to approve option.", variant: "destructive" });
+    },
+  });
+
+  const unapproveMutation = useMutation({
+    mutationFn: async (optionId: string) => {
+      return await apiRequest(`/api/selection-options/${optionId}/unapprove`, "PATCH");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      toast({ title: "Approval removed", description: "The option has been unlocked." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message ?? "Failed to unapprove option.", variant: "destructive" });
     },
   });
 
@@ -1532,6 +1546,21 @@ export default function SelectionDetail() {
                             Approve
                           </Button>
                         )}
+                        {isAdminUser && isApproved && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="mt-2 h-7 w-full text-xs text-muted-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              unapproveMutation.mutate(option.id);
+                            }}
+                            disabled={unapproveMutation.isPending}
+                          >
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Remove approval
+                          </Button>
+                        )}
                       </CardContent>
                     </Card>
                     </TooltipTrigger>
@@ -1697,6 +1726,15 @@ export default function SelectionDetail() {
                           >
                             <CheckCircle className="w-4 h-4 mr-2" />
                             Approve
+                          </DropdownMenuItem>
+                        )}
+                        {isAdminUser && isApprovedRow && (
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); unapproveMutation.mutate(option.id); }}
+                            disabled={unapproveMutation.isPending}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Remove approval
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
