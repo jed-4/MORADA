@@ -1605,7 +1605,7 @@ export default function PurchaseOrderDetail() {
                     data-testid="action-mark-billed"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Mark as Paid
+                    Paid
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -1705,7 +1705,7 @@ export default function PurchaseOrderDetail() {
                 ) : (
                   <CreditCard className="w-4 h-4 mr-1" />
                 )}
-                Mark as Paid
+                Paid
               </Button>
             )}
           </div>
