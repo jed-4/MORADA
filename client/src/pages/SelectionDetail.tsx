@@ -95,13 +95,14 @@ import {
   Camera,
   Image as ImageIcon,
   Upload,
-
   QrCode,
   Link as LinkIcon,
   Link2,
   ChevronDown,
   ChevronRight,
   XCircle,
+  FileText,
+  File as FileIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -479,6 +480,36 @@ export default function SelectionDetail() {
     reader.readAsDataURL(file);
   };
 
+  const handleDocUpload = async (file: File) => {
+    if (!editingOption?.id) return;
+    setUploadingDoc(true);
+    const optionId = editingOption.id;
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setUploadingDoc(false);
+      toast({ title: "Could not read file", variant: "destructive" });
+    };
+    reader.onload = async (e) => {
+      try {
+        const fileData = e.target?.result as string;
+        await apiRequest(`/api/selection-options/${optionId}/attachments`, "POST", {
+          fileData,
+          fileName: file.name,
+          fileType: "document",
+          mimeType: file.type || "application/octet-stream",
+          fileSize: file.size,
+        });
+        refetchAttachments();
+        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      } catch {
+        toast({ title: "Upload failed", variant: "destructive" });
+      } finally {
+        setUploadingDoc(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const markReceivedMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/selections/${id}/mark-received`, "PATCH");
@@ -496,6 +527,11 @@ export default function SelectionDetail() {
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
   const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
   const pendingImageInputRef = useRef<HTMLInputElement>(null);
+  const [pendingDocs, setPendingDocs] = useState<Array<{ file: File }>>([]);
+  const pendingDocInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   const [unitCostDisplayStr, setUnitCostDisplayStr] = useState<string>("");
   const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
   const [markupDisplayStr, setMarkupDisplayStr] = useState<string>("");
@@ -539,10 +575,12 @@ export default function SelectionDetail() {
     if (!open) {
       setIsAddingOption(false);
       setEditingOption(null);
+      setIsViewOnly(false);
       setGstInclusive(false);
       setUnitCostDisplayStr("");
       setTotalCostDisplayStr("");
       setMarkupDisplayStr("");
+      setPendingDocs([]);
       setPendingImages((prev) => {
         prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
         return [];
@@ -592,6 +630,28 @@ export default function SelectionDetail() {
     });
   };
 
+  const uploadDocumentToOption = async (optionId: string, file: File) => {
+    const reader = new FileReader();
+    return new Promise<void>((resolve, reject) => {
+      reader.onerror = () => reject(new Error("Could not read file"));
+      reader.onload = async (e) => {
+        try {
+          await apiRequest(`/api/selection-options/${optionId}/attachments`, "POST", {
+            fileData: e.target?.result as string,
+            fileName: file.name,
+            fileType: "document",
+            mimeType: file.type || "application/octet-stream",
+            fileSize: file.size,
+          });
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const onOptionSubmit = async (data: InsertSelectionOption) => {
     if (editingOption) {
       updateOptionMutation.mutate({ optionId: editingOption.id, data });
@@ -612,10 +672,22 @@ export default function SelectionDetail() {
             setUploadingImage(false);
           }
         }
+        if (pendingDocs.length > 0 && newOption?.id) {
+          setUploadingDoc(true);
+          try {
+            for (const { file } of pendingDocs) {
+              await uploadDocumentToOption(newOption.id, file);
+            }
+            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+          } finally {
+            setUploadingDoc(false);
+          }
+        }
         setPendingImages((prev) => {
           prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
           return [];
         });
+        setPendingDocs([]);
       } catch {
         // errors handled by mutation
       }
@@ -649,6 +721,41 @@ export default function SelectionDetail() {
       isSelectedByClient: option.isSelectedByClient,
       sortOrder: option.sortOrder,
     });
+  };
+
+  const handleViewOption = (option: SelectionOption) => {
+    setIsViewOnly(true);
+    setEditingOption(option);
+    setGstInclusive(option.gstInclusive || false);
+    setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
+    setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
+    setMarkupDisplayStr(option.markupPercent != null ? option.markupPercent.toString() : "");
+    optionForm.reset({
+      selectionId: option.selectionId,
+      name: option.name,
+      description: option.description || "",
+      sku: option.sku || "",
+      brand: option.brand || "",
+      category: option.category || "",
+      subcategory: option.subcategory || "",
+      unitCost: option.unitCost || undefined,
+      unitTax: option.unitTax || undefined,
+      gstInclusive: option.gstInclusive || false,
+      markupPercent: option.markupPercent || undefined,
+      totalCost: option.totalCost || undefined,
+      quantity: option.quantity,
+      unitType: option.unitType,
+      url: option.url || "",
+      visibleToClient: option.visibleToClient,
+      isSelectedByClient: option.isSelectedByClient,
+      sortOrder: option.sortOrder,
+    });
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const handleAddOption = () => {
@@ -1560,6 +1667,12 @@ export default function SelectionDetail() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                  <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); handleViewOption(option); }}
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    View
+                                  </DropdownMenuItem>
                                   {!isApproved && (
                                     <DropdownMenuItem
                                       onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
@@ -1672,8 +1785,8 @@ export default function SelectionDetail() {
                   data={filteredOptions}
                   rowKey={(option) => option.id}
                   rowTestId={(option) => `row-option-${option.id}`}
-                  onRowClick={(option) => { if (!option.lockedAt) handleEditOption(option); }}
-                  rowClassName={(option, idx) => cn(option.lockedAt ? "cursor-not-allowed opacity-75" : "hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
+                  onRowClick={(option) => { if (option.lockedAt) { handleViewOption(option); } else { handleEditOption(option); } }}
+                  rowClassName={(option, idx) => cn("hover-elevate", idx % 2 === 0 ? "bg-background" : "bg-muted/20")}
                   columns={[
                     {
                       key: "image",
@@ -1811,12 +1924,19 @@ export default function SelectionDetail() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); if (!isLockedRow) handleEditOption(option); }}
-                          disabled={isLockedRow}
+                          onClick={(e) => { e.stopPropagation(); handleViewOption(option); }}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        {!isLockedRow && (
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
                         >
                           <Edit3 className="w-4 h-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
+                        )}
                         {isAdminUser && !isApprovedRow && (
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
@@ -2015,12 +2135,14 @@ export default function SelectionDetail() {
         <DialogContent className="sm:max-w-[700px] max-h-[95vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>
-              {editingOption ? "Edit Option" : "Add New Option"}
+              {isViewOnly ? "View Option" : editingOption ? "Edit Option" : "Add New Option"}
             </DialogTitle>
             <DialogDescription>
-              {editingOption 
-                ? "Update the option details below."
-                : "Add a new option for clients to choose from."
+              {isViewOnly
+                ? "This option is locked — viewing details only."
+                : editingOption 
+                  ? "Update the option details below."
+                  : "Add a new option for clients to choose from."
               }
             </DialogDescription>
           </DialogHeader>
@@ -2028,6 +2150,7 @@ export default function SelectionDetail() {
           <div className="flex-1 overflow-y-auto">
             <Form {...optionForm}>
               <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="space-y-4 pr-2">
+                <fieldset disabled={isViewOnly} className="contents">
 
                 {/* Row 1: Name (full width) */}
                 <FormField
@@ -2354,22 +2477,23 @@ export default function SelectionDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Images</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={uploadingImage}
-                      onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
-                    >
-                      {uploadingImage ? (
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      ) : (
-                        <Upload className="w-3 h-3 mr-1" />
-                      )}
-                      Add image
-                    </Button>
-                    {/* File input for editing an existing option */}
+                    {!isViewOnly && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={uploadingImage}
+                        onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
+                      >
+                        {uploadingImage ? (
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3 mr-1" />
+                        )}
+                        Add image
+                      </Button>
+                    )}
                     <input
                       ref={imageInputRef}
                       type="file"
@@ -2381,7 +2505,6 @@ export default function SelectionDetail() {
                         e.target.value = "";
                       }}
                     />
-                    {/* File input for a new option (staged locally) */}
                     <input
                       ref={pendingImageInputRef}
                       type="file"
@@ -2400,10 +2523,11 @@ export default function SelectionDetail() {
                     />
                   </div>
 
-                  {editingOption ? (
-                    editingOptionAttachments && editingOptionAttachments.length > 0 ? (
+                  {editingOption ? (() => {
+                    const imageAtts = (editingOptionAttachments || []).filter(a => a.fileType === "image");
+                    return imageAtts.length > 0 ? (
                       <SortableImageGrid
-                        attachments={editingOptionAttachments}
+                        attachments={imageAtts}
                         onReorder={(newOrder) => {
                           newOrder.forEach((att, idx) => {
                             apiRequest(`/api/selection-option-attachments/${att.id}`, "PATCH", { sortOrder: idx });
@@ -2417,8 +2541,8 @@ export default function SelectionDetail() {
                         <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
                         No images yet
                       </div>
-                    )
-                  ) : pendingImages.length > 0 ? (
+                    );
+                  })() : pendingImages.length > 0 ? (
                     <div className="grid grid-cols-3 gap-2">
                       {pendingImages.map((p, idx) => (
                         <div key={idx} className="relative aspect-square rounded-md overflow-hidden border border-border">
@@ -2444,25 +2568,145 @@ export default function SelectionDetail() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => handleDialogChange(false)}
-                    data-testid="button-cancel-option"
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    type="submit"
-                    disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
-                    data-testid="button-save-option"
-                  >
-                    {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                <Separator />
+
+                {/* Documents & Attachments */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Documents & Specs</span>
+                    {!isViewOnly && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={uploadingDoc}
+                        onClick={() => editingOption ? docInputRef.current?.click() : pendingDocInputRef.current?.click()}
+                      >
+                        {uploadingDoc ? (
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3 mr-1" />
+                        )}
+                        Add file
+                      </Button>
                     )}
-                    {editingOption ? "Update Option" : "Add Option"}
-                  </Button>
+                    <input
+                      ref={docInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleDocUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={pendingDocInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setPendingDocs((prev) => [...prev, { file }]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+
+                  {editingOption ? (() => {
+                    const docAtts = (editingOptionAttachments || []).filter(a => a.fileType !== "image");
+                    return docAtts.length > 0 ? (
+                      <div className="space-y-1">
+                        {docAtts.map((att) => (
+                          <div key={att.id} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
+                            <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                            <a
+                              href={att.filePath}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 text-sm truncate hover:underline text-primary"
+                            >
+                              {att.fileName}
+                            </a>
+                            {att.fileSize && (
+                              <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(att.fileSize)}</span>
+                            )}
+                            {!isViewOnly && (
+                              <button
+                                type="button"
+                                onClick={() => deleteAttachmentMutation.mutate(att.id)}
+                                className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
+                        <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                        No files attached
+                      </div>
+                    );
+                  })() : pendingDocs.length > 0 ? (
+                    <div className="space-y-1">
+                      {pendingDocs.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/20">
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <span className="flex-1 text-sm truncate">{p.file.name}</span>
+                          <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(p.file.size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDocs((prev) => prev.filter((_, i) => i !== idx))}
+                            className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-md p-3 text-center text-muted-foreground text-xs">
+                      <FileIcon className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                      No files attached — they'll be uploaded when you save
+                    </div>
+                  )}
+                </div>
+
+                </fieldset>
+
+                <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
+                  {isViewOnly ? (
+                    <Button
+                      type="button"
+                      onClick={() => handleDialogChange(false)}
+                    >
+                      Close
+                    </Button>
+                  ) : (
+                    <>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => handleDialogChange(false)}
+                        data-testid="button-cancel-option"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit"
+                        disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
+                        data-testid="button-save-option"
+                      >
+                        {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        )}
+                        {editingOption ? "Update Option" : "Add Option"}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </form>
             </Form>
