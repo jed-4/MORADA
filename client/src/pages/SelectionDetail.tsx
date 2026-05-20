@@ -98,6 +98,7 @@ import {
   AlertTriangle,
   QrCode,
   Link as LinkIcon,
+  Link2,
   ChevronRight,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -199,6 +200,7 @@ export default function SelectionDetail() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [commentsExpanded, setCommentsExpanded] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
 
@@ -728,10 +730,13 @@ export default function SelectionDetail() {
               size="sm"
               onClick={handleSaveSelection}
               disabled={updateSelectionMutation.isPending}
-              className="h-7 px-2 text-xs"
               data-testid="button-save-selection"
             >
-              <Save className="w-3 h-3 mr-1" />
+              {updateSelectionMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5 mr-1" />
+              )}
               Save
             </Button>
           )}
@@ -846,6 +851,17 @@ export default function SelectionDetail() {
                     {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
                   </div>
                 </div>
+
+                {/* Estimate link */}
+                {selection.estimateItemId && (
+                  <div>
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Source</div>
+                    <div className="text-sm font-medium flex items-center gap-1 text-muted-foreground">
+                      <Link2 className="w-3 h-3" />
+                      Linked from estimate
+                    </div>
+                  </div>
+                )}
                 
                 <div className="flex-1" />
                 
@@ -1721,84 +1737,91 @@ export default function SelectionDetail() {
           )}
 
           {/* Comments */}
-          <div className="surface-panel p-3" data-testid="selection-comments">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="surface-panel" data-testid="selection-comments">
+            <button
+              type="button"
+              onClick={() => setCommentsExpanded((v) => !v)}
+              className="w-full flex items-center gap-2 p-3 hover-elevate rounded-t-md text-left"
+            >
               <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-data text-muted-foreground uppercase tracking-wide">Comments</span>
               {comments.length > 0 && (
-                <Badge variant="secondary" className="text-xs ml-auto">{comments.length}</Badge>
+                <Badge variant="secondary" className="text-xs">{comments.length}</Badge>
               )}
-            </div>
+              <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-150", commentsExpanded && "rotate-180")} />
+            </button>
 
-            {comments.length === 0 ? (
-              <div className="text-center py-4 text-muted-foreground">
-                <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No comments yet</p>
-              </div>
-            ) : (
-              <div className="space-y-2 mb-3">
-                {comments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className={cn(
-                      "rounded-md p-2.5 text-sm",
-                      comment.isClientComment
-                        ? "bg-blue-50 dark:bg-blue-950/20 ml-4"
-                        : "bg-muted mr-4"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="font-medium text-xs text-muted-foreground">
-                        {comment.isClientComment ? "Client" : (comment.createdByName || "Team")}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(comment.createdAt), "d MMM, h:mm a")}
-                        </span>
-                        {isAdminUser && !comment.isClientComment && (
-                          <button
-                            onClick={() => deleteCommentMutation.mutate(comment.id)}
-                            className="h-4 w-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:text-destructive visibility-hidden"
-                            style={{ visibility: "visible" }}
-                          >
-                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+            {commentsExpanded && (
+              <div className="px-3 pb-3">
+                {comments.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <p className="text-sm">No comments yet</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="space-y-2 mb-3">
+                    {comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        className={cn(
+                          "rounded-md p-2.5 text-sm",
+                          comment.isClientComment
+                            ? "bg-blue-50 dark:bg-blue-950/20 ml-4"
+                            : "bg-muted mr-4"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-medium text-xs text-muted-foreground">
+                            {comment.isClientComment ? "Client" : (comment.createdByName || "Team")}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(comment.createdAt), "d MMM, h:mm a")}
+                            </span>
+                            {isAdminUser && !comment.isClientComment && (
+                              <button
+                                onClick={() => deleteCommentMutation.mutate(comment.id)}
+                                className="h-4 w-4 flex items-center justify-center rounded hover:text-destructive"
+                              >
+                                <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-2 pt-2 border-t">
+                  <Textarea
+                    placeholder="Add a comment..."
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
+                        e.preventDefault();
+                        addCommentMutation.mutate(commentText.trim());
+                      }
+                    }}
+                    className="flex-1 min-h-[60px] text-sm resize-none"
+                    data-testid="input-comment"
+                  />
+                  <Button
+                    size="icon"
+                    onClick={() => commentText.trim() && addCommentMutation.mutate(commentText.trim())}
+                    disabled={!commentText.trim() || addCommentMutation.isPending}
+                    data-testid="button-send-comment"
+                  >
+                    {addCommentMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
-
-            <div className="flex items-end gap-2 pt-2 border-t">
-              <Textarea
-                placeholder="Add a comment..."
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
-                    e.preventDefault();
-                    addCommentMutation.mutate(commentText.trim());
-                  }
-                }}
-                className="flex-1 min-h-[60px] text-sm resize-none"
-                data-testid="input-comment"
-              />
-              <Button
-                size="icon"
-                onClick={() => commentText.trim() && addCommentMutation.mutate(commentText.trim())}
-                disabled={!commentText.trim() || addCommentMutation.isPending}
-                data-testid="button-send-comment"
-              >
-                {addCommentMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </Button>
-            </div>
           </div>
         </div>
       </div>
