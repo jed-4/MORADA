@@ -99,6 +99,7 @@ import {
   QrCode,
   Link as LinkIcon,
   Link2,
+  ChevronDown,
   ChevronRight,
 } from "lucide-react";
 import { format } from "date-fns";
