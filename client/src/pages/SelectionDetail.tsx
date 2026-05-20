@@ -1902,6 +1902,7 @@ export default function SelectionDetail() {
                       <FormLabel>Option Name</FormLabel>
                       <FormControl>
                         <Input
+                          className="h-9"
                           placeholder="e.g., Subway Tile White"
                           {...field}
                           data-testid="input-option-name"
@@ -1922,6 +1923,7 @@ export default function SelectionDetail() {
                         <FormLabel>Brand</FormLabel>
                         <FormControl>
                           <Input
+                            className="h-9"
                             placeholder="e.g., Concept Tile"
                             {...field}
                             value={field.value || ""}
@@ -1940,6 +1942,7 @@ export default function SelectionDetail() {
                         <FormLabel>SKU</FormLabel>
                         <FormControl>
                           <Input
+                            className="h-9"
                             placeholder="Product code"
                             {...field}
                             value={field.value || ""}
@@ -1991,7 +1994,7 @@ export default function SelectionDetail() {
                               placeholder="0.00"
                               step="0.01"
                               min="0"
-                              className="pl-10"
+                              className="pl-10 h-9"
                               value={field.value ? (field.value / 100).toFixed(2) : ""}
                               onChange={(e) => {
                                 const value = e.target.value;
@@ -2015,6 +2018,7 @@ export default function SelectionDetail() {
                         <FormLabel>Quantity</FormLabel>
                         <FormControl>
                           <Input
+                            className="h-9"
                             type="number"
                             min="1"
                             {...field}
@@ -2034,7 +2038,8 @@ export default function SelectionDetail() {
                       <FormItem>
                         <FormLabel>Unit Type</FormLabel>
                         <FormControl>
-                          <Input 
+                          <Input
+                            className="h-9"
                             placeholder="ea, m2, linear_m"
                             {...field}
                             data-testid="input-option-unit-type"
@@ -2053,7 +2058,7 @@ export default function SelectionDetail() {
                       value={gstInclusive ? "inc" : "ex"}
                       onValueChange={(value) => handleGstChange(value === "inc")}
                     >
-                      <SelectTrigger className="w-48">
+                      <SelectTrigger className="w-48 h-9">
                         <SelectValue placeholder="GST on expenses" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2076,7 +2081,7 @@ export default function SelectionDetail() {
                               type="number"
                               placeholder="0"
                               min="0"
-                              className="pr-8"
+                              className="pr-8 h-9"
                               value={field.value || ""}
                               onChange={(e) => {
                                 const value = e.target.value;
@@ -2106,7 +2111,7 @@ export default function SelectionDetail() {
                               placeholder="0.00"
                               step="0.01"
                               min="0"
-                              className="pl-10"
+                              className="pl-10 h-9"
                               value={field.value ? (field.value / 100).toFixed(2) : ""}
                               onChange={(e) => {
                                 const value = e.target.value;
@@ -2133,6 +2138,7 @@ export default function SelectionDetail() {
                       <FormLabel>Product URL</FormLabel>
                       <FormControl>
                         <Input
+                          className="h-9"
                           type="url"
                           placeholder="https://..."
                           {...field}
