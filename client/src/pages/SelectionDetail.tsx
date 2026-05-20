@@ -108,6 +108,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
 function SortableAttachmentThumb({ att, onDelete }: { att: OptionAttachment; onDelete: (id: string) => void }) {
@@ -1541,24 +1542,6 @@ export default function SelectionDetail() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                {!isApproved && !isLocked && (
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
-                                    disabled={approveMutation.isPending}
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-2" />
-                                    Approve
-                                  </DropdownMenuItem>
-                                )}
-                                {isApproved && (
-                                  <DropdownMenuItem
-                                    onClick={(e) => { e.stopPropagation(); unapproveMutation.mutate(option.id); }}
-                                    disabled={unapproveMutation.isPending}
-                                  >
-                                    <XCircle className="w-4 h-4 mr-2" />
-                                    Remove approval
-                                  </DropdownMenuItem>
-                                )}
                                 {!isLocked && (
                                   <DropdownMenuItem
                                     onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
@@ -1599,6 +1582,51 @@ export default function SelectionDetail() {
                             })()}
                           </div>
                         </div>
+                        {isAdminUser && !isApproved && !isLocked && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-2 h-7 w-full text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                                disabled={approveMutation.isPending}
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Approve
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Approve this option?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will approve and lock <span className="font-medium text-foreground">{option.name}</span>. Locked options cannot be edited or deleted.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => approveMutation.mutate(option.id)}>
+                                  Approve
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        {isAdminUser && isApproved && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="mt-2 h-7 w-full text-xs text-muted-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              unapproveMutation.mutate(option.id);
+                            }}
+                            disabled={unapproveMutation.isPending}
+                          >
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Remove approval
+                          </Button>
+                        )}
                       </CardContent>
                     </Card>
                     </TooltipTrigger>
