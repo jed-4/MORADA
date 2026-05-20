@@ -53,6 +53,7 @@ import {
   Eye,
   ChevronRight,
   ChevronDown,
+  ChevronsUpDown,
   Image as ImageIcon,
   Check,
   MessageSquare,
@@ -264,34 +265,16 @@ function SelectionRow({
         onClick={() => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* First column: checkbox for checkable rows, expand toggle otherwise */}
-        {isCheckable ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onCheck(selection.id, !isChecked); }}
-            className={`flex items-center justify-center rounded w-5 h-5 border-2 transition-colors flex-shrink-0 ${
-              isChecked ? "bg-primary border-primary" : "bg-transparent border-border hover:border-primary"
-            }`}
-            data-testid={`checkbox-${selection.id}`}
-            aria-label={isChecked ? "Deselect" : "Select for PO"}
-          >
-            {isChecked && <Check className="w-3 h-3 text-white" />}
-          </button>
-        ) : isCheckable === false && !isOrderedOrReceived ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                disabled
-                className="flex items-center justify-center rounded w-5 h-5 border-2 border-dashed border-border/40 bg-transparent opacity-40 flex-shrink-0 cursor-not-allowed"
-                data-testid={`checkbox-disabled-${selection.id}`}
-              />
-            </TooltipTrigger>
-            <TooltipContent>Client hasn't made a selection yet</TooltipContent>
-          </Tooltip>
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-        )}
+        {/* First column: expand/collapse toggle */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+          className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+          data-testid={`button-expand-${selection.id}`}
+          aria-label={expanded ? "Collapse" : "Expand"}
+        >
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${expanded ? "rotate-0" : "-rotate-90"}`} />
+        </button>
 
         {/* Thumbnail */}
         <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
@@ -785,6 +768,11 @@ export default function Selections() {
     });
   };
 
+  const toggleAllExpanded = () => {
+    const allExpanded = filtered.every((s) => expandedRows.has(s.id));
+    setExpandedRows(allExpanded ? new Set() : new Set(filtered.map((s) => s.id)));
+  };
+
   const handleAddSelection = () => {
     if (!projectId) return;
     createSelectionMutation.mutate({
@@ -1140,7 +1128,17 @@ export default function Selections() {
       <div className="flex-1 overflow-auto">
         {/* Table header */}
         <div className="grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
-          <div></div>
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={toggleAllExpanded}
+              className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="button-expand-all"
+              aria-label={filtered.every(s => expandedRows.has(s.id)) ? "Collapse all" : "Expand all"}
+            >
+              <ChevronsUpDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <div></div>
           <div>Selection</div>
           <div>Category</div>
@@ -1176,21 +1174,31 @@ export default function Selections() {
         ) : (
           <div>
             {filtered.map((sel) => (
-              <SelectionRow
-                key={sel.id}
-                selection={sel}
-                expanded={expandedRows.has(sel.id)}
-                onToggleExpand={() => toggleExpand(sel.id)}
-                onSelectOption={(selectionId, optionId) =>
-                  selectOptionMutation.mutate({ selectionId, optionId })
-                }
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                isPending={selectOptionMutation.isPending}
-                isChecked={checkedIds.has(sel.id)}
-                onCheck={handleCheck}
-                projectId={projectId!}
-              />
+              <div key={sel.id}>
+                <SelectionRow
+                  selection={sel}
+                  expanded={expandedRows.has(sel.id)}
+                  onToggleExpand={() => toggleExpand(sel.id)}
+                  onSelectOption={(selectionId, optionId) =>
+                    selectOptionMutation.mutate({ selectionId, optionId })
+                  }
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  isPending={selectOptionMutation.isPending}
+                  isChecked={checkedIds.has(sel.id)}
+                  onCheck={handleCheck}
+                  projectId={projectId!}
+                />
+                {expandedRows.has(sel.id) && (
+                  <OptionsPanel
+                    selection={sel}
+                    onSelectOption={(optionId) =>
+                      selectOptionMutation.mutate({ selectionId: sel.id, optionId })
+                    }
+                    isPending={selectOptionMutation.isPending}
+                  />
+                )}
+              </div>
             ))}
           </div>
         )}
