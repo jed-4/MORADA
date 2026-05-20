@@ -1173,7 +1173,7 @@ export default function CustomizableProjectOverview() {
 
       {/* Content Area - either tab content or widget dashboard */}
       {!isOverviewTab ? (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {renderTabContent()}
         </div>
       ) : (
