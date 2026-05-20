@@ -701,7 +701,6 @@ export default function SelectionDetail() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold">{selection.name}</h1>
             <Badge 
               variant="outline" 
               className={cn("text-xs capitalize px-2 py-0.5", currentStatus.bgClass, currentStatus.textClass)}
