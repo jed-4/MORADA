@@ -186,6 +186,9 @@ export default function SelectionDetail() {
   const [searchTerm, setSearchTerm] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [optionsView, setOptionsView] = useState<"table" | "grid">("grid");
+  const [optionsSearchExpanded, setOptionsSearchExpanded] = useState(false);
+  const optionsSearchRef = useRef<HTMLInputElement>(null);
+  const optionsSearchWrapRef = useRef<HTMLDivElement>(null);
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
   const [editingAllowance, setEditingAllowance] = useState<string>("");
   const [isEditingDetails, setIsEditingDetails] = useState(false);
@@ -255,6 +258,21 @@ export default function SelectionDetail() {
     });
     return () => subscription.unsubscribe();
   }, [selectionForm.watch]);
+
+  useEffect(() => {
+    if (optionsSearchExpanded) optionsSearchRef.current?.focus();
+  }, [optionsSearchExpanded]);
+
+  useEffect(() => {
+    if (!optionsSearchExpanded) return;
+    const handler = (e: MouseEvent) => {
+      if (optionsSearchWrapRef.current && !optionsSearchWrapRef.current.contains(e.target as Node) && !searchTerm) {
+        setOptionsSearchExpanded(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [optionsSearchExpanded, searchTerm]);
 
   const updateSelectionMutation = useMutation({
     mutationFn: async (data: Partial<InsertSelection>) => {
@@ -1264,46 +1282,78 @@ export default function SelectionDetail() {
                 <Package className="w-4 h-4" />
                 Options ({selection.options?.length || 0})
               </h2>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center border rounded-md">
+              <div className="flex items-center gap-1.5">
+                {/* View toggle */}
+                <div className="flex items-center border border-border rounded-md overflow-hidden">
                   <button
                     onClick={() => setOptionsView("grid")}
                     className={cn(
-                      "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
-                      optionsView === "grid" ? "bg-primary text-white" : "hover-elevate"
+                      "h-7 w-7 flex items-center justify-center transition-colors",
+                      optionsView === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
                     )}
                     data-testid="button-view-grid"
                   >
-                    <LayoutGrid className="w-3 h-3" />
+                    <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setOptionsView("table")}
                     className={cn(
-                      "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
-                      optionsView === "table" ? "bg-primary text-white" : "hover-elevate"
+                      "h-7 w-7 flex items-center justify-center transition-colors",
+                      optionsView === "table" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover-elevate"
                     )}
                     data-testid="button-view-table"
                   >
-                    <LayoutList className="w-3 h-3" />
+                    <LayoutList className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                  <Input
-                    placeholder="Search options..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="h-6 pl-7 w-[180px] text-xs"
-                    data-testid="input-search-options"
-                  />
+
+                {/* Expandable search */}
+                <div ref={optionsSearchWrapRef} className="flex items-center flex-shrink-0">
+                  <div className={cn("flex items-center transition-all duration-200 overflow-hidden", optionsSearchExpanded ? "w-44" : "w-7")}>
+                    {optionsSearchExpanded ? (
+                      <div className="relative w-full">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                        <Input
+                          ref={optionsSearchRef}
+                          placeholder="Search options…"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") { setSearchTerm(""); setOptionsSearchExpanded(false); }
+                          }}
+                          className="h-7 pl-7 pr-6 text-xs"
+                          data-testid="input-search-options"
+                        />
+                        {searchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => { setSearchTerm(""); optionsSearchRef.current?.focus(); }}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover-elevate text-muted-foreground"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setOptionsSearchExpanded(true)}
+                        className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover-elevate active-elevate-2"
+                        data-testid="button-search-options"
+                      >
+                        <Search className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <Button 
-                  size="sm" 
-                  className="h-6 px-2 text-xs"
+
+                {/* Add option */}
+                <Button
+                  size="sm"
                   onClick={handleAddOption}
                   data-testid="button-add-option"
                 >
-                  <Plus className="w-3 h-3 mr-1" />
+                  <Plus className="w-3.5 h-3.5 mr-1" />
                   Add Option
                 </Button>
               </div>
