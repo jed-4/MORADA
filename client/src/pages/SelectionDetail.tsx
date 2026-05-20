@@ -530,7 +530,6 @@ export default function SelectionDetail() {
   const pendingDocInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [isViewOnly, setIsViewOnly] = useState(false);
   const [unitCostDisplayStr, setUnitCostDisplayStr] = useState<string>("");
   const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
   const [markupDisplayStr, setMarkupDisplayStr] = useState<string>("");
@@ -574,7 +573,6 @@ export default function SelectionDetail() {
     if (!open) {
       setIsAddingOption(false);
       setEditingOption(null);
-      setIsViewOnly(false);
       setGstInclusive(false);
       setUnitCostDisplayStr("");
       setTotalCostDisplayStr("");
@@ -722,34 +720,7 @@ export default function SelectionDetail() {
     });
   };
 
-  const handleViewOption = (option: SelectionOption) => {
-    setIsViewOnly(true);
-    setEditingOption(option);
-    setGstInclusive(option.gstInclusive || false);
-    setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
-    setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
-    setMarkupDisplayStr(option.markupPercent != null ? option.markupPercent.toString() : "");
-    optionForm.reset({
-      selectionId: option.selectionId,
-      name: option.name,
-      description: option.description || "",
-      sku: option.sku || "",
-      brand: option.brand || "",
-      category: option.category || "",
-      subcategory: option.subcategory || "",
-      unitCost: option.unitCost || undefined,
-      unitTax: option.unitTax || undefined,
-      gstInclusive: option.gstInclusive || false,
-      markupPercent: option.markupPercent || undefined,
-      totalCost: option.totalCost || undefined,
-      quantity: option.quantity,
-      unitType: option.unitType,
-      url: option.url || "",
-      visibleToClient: option.visibleToClient,
-      isSelectedByClient: option.isSelectedByClient,
-      sortOrder: option.sortOrder,
-    });
-  };
+  const handleViewOption = (option: SelectionOption) => handleEditOption(option);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -2105,14 +2076,12 @@ export default function SelectionDetail() {
         <DialogContent className="sm:max-w-[700px] max-h-[95vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>
-              {isViewOnly ? "View Option" : editingOption ? "Edit Option" : "Add New Option"}
+              {editingOption ? "Edit Option" : "Add New Option"}
             </DialogTitle>
             <DialogDescription>
-              {isViewOnly
-                ? "This option is locked — viewing details only."
-                : editingOption 
-                  ? "Update the option details below."
-                  : "Add a new option for clients to choose from."
+              {editingOption 
+                ? "Update the option details below."
+                : "Add a new option for clients to choose from."
               }
             </DialogDescription>
           </DialogHeader>
@@ -2120,7 +2089,6 @@ export default function SelectionDetail() {
           <div className="flex-1 overflow-y-auto">
             <Form {...optionForm}>
               <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="space-y-4 pr-2">
-                <fieldset disabled={isViewOnly} className="contents">
 
                 {/* Row 1: Name (full width) */}
                 <FormField
@@ -2447,23 +2415,21 @@ export default function SelectionDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Images</span>
-                    {!isViewOnly && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={uploadingImage}
-                        onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
-                      >
-                        {uploadingImage ? (
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        ) : (
-                          <Upload className="w-3 h-3 mr-1" />
-                        )}
-                        Add image
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={uploadingImage}
+                      onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Upload className="w-3 h-3 mr-1" />
+                      )}
+                      Add image
+                    </Button>
                     <input
                       ref={imageInputRef}
                       type="file"
@@ -2544,23 +2510,21 @@ export default function SelectionDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Documents & Specs</span>
-                    {!isViewOnly && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={uploadingDoc}
-                        onClick={() => editingOption ? docInputRef.current?.click() : pendingDocInputRef.current?.click()}
-                      >
-                        {uploadingDoc ? (
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        ) : (
-                          <Upload className="w-3 h-3 mr-1" />
-                        )}
-                        Add file
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={uploadingDoc}
+                      onClick={() => editingOption ? docInputRef.current?.click() : pendingDocInputRef.current?.click()}
+                    >
+                      {uploadingDoc ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Upload className="w-3 h-3 mr-1" />
+                      )}
+                      Add file
+                    </Button>
                     <input
                       ref={docInputRef}
                       type="file"
@@ -2602,15 +2566,13 @@ export default function SelectionDetail() {
                             {att.fileSize && (
                               <span className="text-xs text-muted-foreground flex-shrink-0">{formatFileSize(att.fileSize)}</span>
                             )}
-                            {!isViewOnly && (
-                              <button
-                                type="button"
-                                onClick={() => deleteAttachmentMutation.mutate(att.id)}
-                                className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => deleteAttachmentMutation.mutate(att.id)}
+                              className="h-5 w-5 flex-shrink-0 flex items-center justify-center rounded hover:text-destructive text-muted-foreground"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -2645,38 +2607,25 @@ export default function SelectionDetail() {
                   )}
                 </div>
 
-                </fieldset>
-
                 <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
-                  {isViewOnly ? (
-                    <Button
-                      type="button"
-                      onClick={() => handleDialogChange(false)}
-                    >
-                      Close
-                    </Button>
-                  ) : (
-                    <>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => handleDialogChange(false)}
-                        data-testid="button-cancel-option"
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit"
-                        disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
-                        data-testid="button-save-option"
-                      >
-                        {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        )}
-                        {editingOption ? "Update Option" : "Add Option"}
-                      </Button>
-                    </>
-                  )}
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => handleDialogChange(false)}
+                    data-testid="button-cancel-option"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit"
+                    disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
+                    data-testid="button-save-option"
+                  >
+                    {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    )}
+                    {editingOption ? "Update Option" : "Add Option"}
+                  </Button>
                 </div>
               </form>
             </Form>

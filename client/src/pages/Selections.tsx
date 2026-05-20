@@ -265,9 +265,14 @@ function SelectionRow({
         onClick={() => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* First column: navigation chevron indicator */}
-        <div className="flex items-center justify-center flex-shrink-0">
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        {/* First column: expand/collapse toggle */}
+        <div
+          className="flex items-center justify-center flex-shrink-0 h-full"
+          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+        >
+          <ChevronRight
+            className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 opacity-0 group-hover:opacity-100 ${expanded ? "rotate-90" : ""}`}
+          />
         </div>
 
         {/* Thumbnail */}
