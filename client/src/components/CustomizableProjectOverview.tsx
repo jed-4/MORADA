@@ -741,7 +741,7 @@ export default function CustomizableProjectOverview() {
   // Show loading state while fetching views
   if (isLoadingViews) {
     return (
-      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+      <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -755,7 +755,7 @@ export default function CustomizableProjectOverview() {
   // Show error state if views failed to load
   if (isViewsError) {
     return (
-      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+      <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
             <h2 className="text-xl font-medium mb-2">Unable to Load Dashboard</h2>
@@ -775,7 +775,7 @@ export default function CustomizableProjectOverview() {
   // Show loading state if no project is selected
   if (!currentProject) {
     return (
-      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+      <div className="flex flex-col flex-1 min-h-0" data-testid="customizable-project-overview">
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
             <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
@@ -1173,7 +1173,7 @@ export default function CustomizableProjectOverview() {
 
       {/* Content Area - either tab content or widget dashboard */}
       {!isOverviewTab ? (
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           {renderTabContent()}
         </div>
       ) : (
