@@ -498,6 +498,7 @@ export default function SelectionDetail() {
   const pendingImageInputRef = useRef<HTMLInputElement>(null);
   const [unitCostDisplayStr, setUnitCostDisplayStr] = useState<string>("");
   const [totalCostDisplayStr, setTotalCostDisplayStr] = useState<string>("");
+  const [markupDisplayStr, setMarkupDisplayStr] = useState<string>("");
 
   const optionForm = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
@@ -541,6 +542,7 @@ export default function SelectionDetail() {
       setGstInclusive(false);
       setUnitCostDisplayStr("");
       setTotalCostDisplayStr("");
+      setMarkupDisplayStr("");
       setPendingImages((prev) => {
         prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
         return [];
@@ -625,6 +627,7 @@ export default function SelectionDetail() {
     setGstInclusive(option.gstInclusive || false);
     setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
     setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
+    setMarkupDisplayStr(option.markupPercent != null ? option.markupPercent.toString() : "");
     
     optionForm.reset({
       selectionId: option.selectionId,
@@ -654,6 +657,7 @@ export default function SelectionDetail() {
     setGstInclusive(false);
     setUnitCostDisplayStr("");
     setTotalCostDisplayStr("");
+    setMarkupDisplayStr("");
     optionForm.reset({
       selectionId: id || "",
       name: "",
@@ -2159,17 +2163,17 @@ export default function SelectionDetail() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="ea">ea — Each</SelectItem>
-                            <SelectItem value="m2">m² — Square metre</SelectItem>
-                            <SelectItem value="lm">lm — Linear metre</SelectItem>
-                            <SelectItem value="m3">m³ — Cubic metre</SelectItem>
-                            <SelectItem value="hr">hr — Hour</SelectItem>
-                            <SelectItem value="day">day — Day</SelectItem>
-                            <SelectItem value="wk">wk — Week</SelectItem>
-                            <SelectItem value="lot">lot — Lot</SelectItem>
-                            <SelectItem value="allow">allow — Allowance</SelectItem>
-                            <SelectItem value="t">t — Tonne</SelectItem>
-                            <SelectItem value="kg">kg — Kilogram</SelectItem>
+                            <SelectItem value="ea">ea</SelectItem>
+                            <SelectItem value="m2">m²</SelectItem>
+                            <SelectItem value="lm">lm</SelectItem>
+                            <SelectItem value="m3">m³</SelectItem>
+                            <SelectItem value="hr">hr</SelectItem>
+                            <SelectItem value="day">day</SelectItem>
+                            <SelectItem value="wk">wk</SelectItem>
+                            <SelectItem value="lot">lot</SelectItem>
+                            <SelectItem value="allow">allow</SelectItem>
+                            <SelectItem value="t">t</SelectItem>
+                            <SelectItem value="kg">kg</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -2254,10 +2258,10 @@ export default function SelectionDetail() {
                               placeholder="0"
                               min="0"
                               className="pr-8 h-9"
-                              value={field.value || ""}
+                              value={markupDisplayStr}
                               onChange={(e) => {
-                                const value = e.target.value;
-                                field.onChange(value ? parseInt(value) : undefined);
+                                setMarkupDisplayStr(e.target.value);
+                                field.onChange(e.target.value !== "" ? parseInt(e.target.value) : undefined);
                               }}
                               data-testid="input-option-markup"
                             />
