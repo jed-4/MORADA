@@ -1495,6 +1495,75 @@ export default function SelectionDetail() {
                             </Badge>
                           ) : null}
                         </div>
+                        {isAdminUser && (
+                          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                            <AlertDialog>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7 bg-background/80 backdrop-blur-sm"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MoreVertical className="w-3.5 h-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                  {!isApproved && !isLocked && (
+                                    <DropdownMenuItem
+                                      onClick={(e) => { e.stopPropagation(); approveMutation.mutate(option.id); }}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </DropdownMenuItem>
+                                  )}
+                                  {!isLocked && (
+                                    <DropdownMenuItem
+                                      onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
+                                    >
+                                      <Edit3 className="w-4 h-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                  )}
+                                  {isApproved && (
+                                    <AlertDialogTrigger asChild>
+                                      <DropdownMenuItem
+                                        onSelect={(e) => e.preventDefault()}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <XCircle className="w-4 h-4 mr-2" />
+                                        Remove approval
+                                      </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                  )}
+                                  <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
+                                    className="text-destructive"
+                                    disabled={isLocked}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove approval?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will unlock <span className="font-medium text-foreground">{option.name}</span> and revert the selection status to submitted.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => unapproveMutation.mutate(option.id)}>
+                                    Remove approval
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        )}
                       </div>
                       <CardContent className="p-3">
                         <div className="font-medium text-sm truncate">{option.name}</div>
@@ -1507,123 +1576,32 @@ export default function SelectionDetail() {
                           <span className="text-xs text-muted-foreground">
                             {option.quantity} {option.unitType}
                           </span>
-                          <div className="flex items-end gap-0.5">
-                            <div className="text-right">
-                              {(() => {
-                                const displayCents = option.totalCost != null
-                                  ? option.totalCost
-                                  : option.unitCost != null
-                                    ? Math.round(option.unitCost * (option.quantity || 1) * (1 + (option.markupPercent || 0) / 100))
-                                    : null;
-                                const showVariance = selection.allowance != null && selection.allowance > 0 && displayCents != null;
-                                const variance = showVariance ? displayCents! - selection.allowance! : null;
-                                return (
-                                  <>
-                                    {displayCents != null && (
-                                      <div className="text-sm font-semibold">
-                                        ${(displayCents / 100).toFixed(2)}
-                                      </div>
-                                    )}
-                                    {showVariance && variance !== 0 && (
-                                      <div className={`text-[10px] font-medium ${variance! > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
-                                        {variance! > 0 ? "+" : ""}${(Math.abs(variance!) / 100).toFixed(0)}
-                                      </div>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                            {isAdminUser && (
-                              <AlertDialog>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <MoreVertical className="w-3.5 h-3.5" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                    {!isLocked && (
-                                      <DropdownMenuItem
-                                        onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}
-                                      >
-                                        <Edit3 className="w-4 h-4 mr-2" />
-                                        Edit
-                                      </DropdownMenuItem>
-                                    )}
-                                    {isApproved && (
-                                      <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem
-                                          onSelect={(e) => e.preventDefault()}
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <XCircle className="w-4 h-4 mr-2" />
-                                          Remove approval
-                                        </DropdownMenuItem>
-                                      </AlertDialogTrigger>
-                                    )}
-                                    <DropdownMenuItem
-                                      onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
-                                      className="text-destructive"
-                                      disabled={isLocked}
-                                    >
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Remove approval?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This will unlock <span className="font-medium text-foreground">{option.name}</span> and revert the selection status to submitted.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => unapproveMutation.mutate(option.id)}>
-                                      Remove approval
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            )}
+                          <div className="text-right">
+                            {(() => {
+                              const displayCents = option.totalCost != null
+                                ? option.totalCost
+                                : option.unitCost != null
+                                  ? Math.round(option.unitCost * (option.quantity || 1) * (1 + (option.markupPercent || 0) / 100))
+                                  : null;
+                              const showVariance = selection.allowance != null && selection.allowance > 0 && displayCents != null;
+                              const variance = showVariance ? displayCents! - selection.allowance! : null;
+                              return (
+                                <>
+                                  {showVariance && variance !== 0 && (
+                                    <div className={`text-[10px] font-medium ${variance! > 0 ? "text-[hsl(var(--coral))]" : "text-[hsl(var(--sage))]"}`}>
+                                      {variance! > 0 ? "+" : ""}${(Math.abs(variance!) / 100).toFixed(0)}
+                                    </div>
+                                  )}
+                                  {displayCents != null && (
+                                    <div className="text-sm font-semibold">
+                                      ${(displayCents / 100).toFixed(2)}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
-                        {isAdminUser && !isApproved && !isLocked && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="mt-2 h-7 w-full text-xs"
-                                onClick={(e) => e.stopPropagation()}
-                                disabled={approveMutation.isPending}
-                              >
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Approve
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Approve this option?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will approve and lock <span className="font-medium text-foreground">{option.name}</span>. Locked options cannot be edited or deleted.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => approveMutation.mutate(option.id)}>
-                                  Approve
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
                       </CardContent>
                     </Card>
                     </TooltipTrigger>
