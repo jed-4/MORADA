@@ -1111,7 +1111,7 @@ export default function SelectionDetail() {
                           <FormControl>
                             <Input 
                               placeholder="e.g., Kitchen Splashback Tiles"
-                              className="h-9 text-sm"
+                              className="h-9 text-sm shadow-none border-border"
                               {...field}
                               data-testid="input-selection-name"
                             />
@@ -1128,7 +1128,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Category</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-9 text-sm" data-testid="select-category">
+                              <SelectTrigger className="h-9 text-sm shadow-none border-border" data-testid="select-category">
                                 <SelectValue placeholder="Select category" />
                               </SelectTrigger>
                             </FormControl>
@@ -1152,7 +1152,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Location</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-9 text-sm" data-testid="select-room">
+                              <SelectTrigger className="h-9 text-sm shadow-none border-border" data-testid="select-room">
                                 <SelectValue placeholder="Select location" />
                               </SelectTrigger>
                             </FormControl>
@@ -1184,7 +1184,7 @@ export default function SelectionDetail() {
                                 <Button
                                   variant="outline"
                                   className={cn(
-                                    "w-full h-9 text-sm font-normal justify-start",
+                                    "w-full h-9 text-sm font-normal justify-start shadow-none",
                                     !field.value && "text-muted-foreground"
                                   )}
                                   data-testid="button-deadline"
@@ -1219,7 +1219,7 @@ export default function SelectionDetail() {
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Status</FormLabel>
                           <Select onValueChange={(val) => { field.onChange(val); setHasUnsavedChanges(true); }} value={field.value || ""}>
                             <FormControl>
-                              <SelectTrigger className="h-9 text-sm" data-testid="select-status">
+                              <SelectTrigger className="h-9 text-sm shadow-none border-border" data-testid="select-status">
                                 <SelectValue placeholder="Select status" />
                               </SelectTrigger>
                             </FormControl>
@@ -1248,7 +1248,7 @@ export default function SelectionDetail() {
                                 type="number"
                                 step="0.01"
                                 min="0"
-                                className="h-9 pl-6 text-sm"
+                                className="h-9 pl-6 text-sm shadow-none border-border"
                                 value={field.value !== undefined && field.value !== null ? (Number(field.value) / 100).toString() : ""}
                                 onChange={(e) => {
                                   const v = e.target.value;
@@ -2196,24 +2196,38 @@ export default function SelectionDetail() {
                   />
                 </div>
 
-                {/* Markup % */}
+                {/* GST toggle + Markup + Total */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={gstInclusive ? "inc" : "ex"}
-                      onValueChange={(value) => handleGstChange(value === "inc")}
-                    >
-                      <SelectTrigger className="w-48 h-9">
-                        <SelectValue placeholder="GST on expenses" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ex">GST exclusive</SelectItem>
-                        <SelectItem value="inc">GST inclusive</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  {/* GST pill toggle */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground font-medium">GST treatment</span>
+                    <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                      <button
+                        type="button"
+                        onClick={() => handleGstChange(false)}
+                        className={cn(
+                          "px-3 py-1.5 font-medium transition-colors",
+                          !gstInclusive ? "bg-foreground text-background" : "text-muted-foreground hover-elevate"
+                        )}
+                        data-testid="button-gst-ex"
+                      >
+                        Ex. GST
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGstChange(true)}
+                        className={cn(
+                          "px-3 py-1.5 font-medium transition-colors border-l border-border",
+                          gstInclusive ? "bg-foreground text-background" : "text-muted-foreground hover-elevate"
+                        )}
+                        data-testid="button-gst-inc"
+                      >
+                        Inc. GST
+                      </button>
+                    </div>
                   </div>
-                  
-                  {/* Markup % row */}
+
+                  {/* Markup % */}
                   <FormField
                     control={optionForm.control}
                     name="markupPercent"
@@ -2242,33 +2256,44 @@ export default function SelectionDetail() {
                     )}
                   />
 
+                  {/* Total display card */}
                   <FormField
                     control={optionForm.control}
                     name="totalCost"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Total (inc. markup)</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                            <Input
-                              type="number"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              className="pl-10 h-9"
-                              value={totalCostDisplayStr}
-                              onChange={(e) => {
-                                setTotalCostDisplayStr(e.target.value);
-                                field.onChange(e.target.value !== "" ? Math.round(parseFloat(e.target.value) * 100) : undefined);
-                              }}
-                              data-testid="input-option-total-cost"
-                            />
+                    render={({ field }) => {
+                      const totalCents = watchedUnitCost
+                        ? Math.round(watchedUnitCost * (watchedQuantity || 1) * (1 + (watchedMarkupPercent || 0) / 100))
+                        : null;
+                      const totalIncGst = totalCents !== null
+                        ? (gstInclusive ? totalCents : Math.round(totalCents * 1.1))
+                        : null;
+                      const totalExGst = totalCents !== null
+                        ? (gstInclusive ? Math.round(totalCents / 1.1) : totalCents)
+                        : null;
+                      return (
+                        <FormItem>
+                          <input type="hidden" {...field} value={field.value ?? ""} />
+                          <div
+                            className="rounded-md bg-muted/50 border border-border px-4 py-3 space-y-1"
+                            data-testid="display-option-total-cost"
+                          >
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total inc. GST</span>
+                              <span className="text-lg font-semibold tabular-nums">
+                                {totalIncGst !== null ? `$${(totalIncGst / 100).toFixed(2)}` : "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">ex. GST</span>
+                              <span className="text-sm text-muted-foreground tabular-nums">
+                                {totalExGst !== null ? `$${(totalExGst / 100).toFixed(2)}` : "—"}
+                              </span>
+                            </div>
                           </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                 </div>
 
