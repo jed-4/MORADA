@@ -1473,7 +1473,7 @@ export default function SelectionDetail() {
                             </Badge>
                           )}
                         </div>
-                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                        <div className="absolute top-2 right-2 flex flex-row items-center gap-1">
                           {isApproved ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1494,16 +1494,14 @@ export default function SelectionDetail() {
                               Client selected
                             </Badge>
                           ) : null}
-                        </div>
-                        {isAdminUser && (
-                          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                          {isAdminUser && (
                             <AlertDialog>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-7 w-7 bg-background/80 backdrop-blur-sm"
+                                    className="h-6 w-6 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <MoreVertical className="w-3.5 h-3.5" />
@@ -1562,17 +1560,17 @@ export default function SelectionDetail() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                      <CardContent className="p-3">
+                      <CardContent className="px-3 pt-2 pb-2">
                         <div className="font-medium text-sm truncate">{option.name}</div>
                         {(option.brand || option.sku) && (
                           <div className="text-xs text-muted-foreground truncate">
                             {[option.brand, option.sku ? `SKU ${option.sku}` : null].filter(Boolean).join(" · ")}
                           </div>
                         )}
-                        <div className="mt-2 flex items-end justify-between gap-1">
+                        <div className="mt-1.5 flex items-end justify-between gap-1">
                           <span className="text-xs text-muted-foreground">
                             {option.quantity} {option.unitType}
                           </span>
