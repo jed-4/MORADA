@@ -1132,7 +1132,7 @@ export default function PurchaseOrderDetail() {
   const markReceivedMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
-        status: "delivered",
+        status: "completed",
       });
     },
     onSuccess: () => {
