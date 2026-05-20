@@ -54,6 +54,7 @@ import {
   ArrowUp,
   Building2,
   RefreshCw,
+  CreditCard,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1151,6 +1152,28 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  const markBilledMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", {
+        status: "billed",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/purchase-orders", poId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Marked as paid", description: "Status updated to Billed" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const addAttachmentMutation = useMutation({
     mutationFn: async (data: {
       fileName: string;
@@ -1576,6 +1599,15 @@ export default function PurchaseOrderDetail() {
                     Mark as Received
                   </DropdownMenuItem>
                 )}
+                {purchaseOrder.status === "completed" && (
+                  <DropdownMenuItem
+                    onClick={() => markBilledMutation.mutate()}
+                    data-testid="action-mark-billed"
+                  >
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Mark as Paid
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={() => duplicatePoMutation.mutate()}
                   data-testid="action-duplicate-po"
@@ -1652,8 +1684,28 @@ export default function PurchaseOrderDetail() {
                 disabled={markReceivedMutation.isPending}
                 data-testid="button-receive-goods"
               >
-                <Package className="w-4 h-4 mr-1" />
+                {markReceivedMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Package className="w-4 h-4 mr-1" />
+                )}
                 Receive Goods
+              </Button>
+            )}
+            {purchaseOrder.status === "completed" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => markBilledMutation.mutate()}
+                disabled={markBilledMutation.isPending}
+                data-testid="button-mark-paid"
+              >
+                {markBilledMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <CreditCard className="w-4 h-4 mr-1" />
+                )}
+                Mark as Paid
               </Button>
             )}
           </div>
