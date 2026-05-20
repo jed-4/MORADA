@@ -787,7 +787,7 @@ export default function SelectionDetail() {
             onClick={goBack}
             className="mt-4"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ChevronLeft className="w-4 h-4 mr-2" />
             Back to Selections
           </Button>
         </div>
@@ -1680,11 +1680,18 @@ export default function SelectionDetail() {
                       header: "Image",
                       width: 64,
                       truncate: false,
-                      cell: () => (
-                        <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
-                          <Package className="w-5 h-5 text-muted-foreground" />
-                        </div>
-                      ),
+                      cell: (option) => {
+                        const heroAtt = option.attachments?.[0];
+                        return (
+                          <div className="w-10 h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
+                            {heroAtt?.filePath ? (
+                              <img src={heroAtt.filePath} alt={option.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <Camera className="w-4 h-4 text-muted-foreground/40" />
+                            )}
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: "option",

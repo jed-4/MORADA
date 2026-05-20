@@ -2076,6 +2076,7 @@ export default function Schedule() {
         })()}
 
         {/* Content - conditional rendering based on activeView */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {scheduleItems.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="text-center max-w-md">
@@ -2310,6 +2311,7 @@ export default function Schedule() {
             )}
           </>
         )}
+        </div>
       </div>
 
       <AlertDialog open={showLockConfirm} onOpenChange={setShowLockConfirm}>
