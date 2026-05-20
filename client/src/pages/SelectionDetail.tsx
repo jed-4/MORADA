@@ -63,7 +63,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  ArrowLeft,
+  ChevronLeft,
   Plus,
   Search,
   MoreVertical,
@@ -477,6 +477,8 @@ export default function SelectionDetail() {
   });
 
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
+  const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
+  const pendingImageInputRef = useRef<HTMLInputElement>(null);
 
   const optionForm = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
@@ -507,6 +509,10 @@ export default function SelectionDetail() {
       setIsAddingOption(false);
       setEditingOption(null);
       setGstInclusive(false);
+      setPendingImages((prev) => {
+        prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+        return [];
+      });
       optionForm.reset({
         selectionId: id || "",
         name: "",
@@ -530,14 +536,55 @@ export default function SelectionDetail() {
     }
   };
 
-  const onOptionSubmit = (data: InsertSelectionOption) => {
+  const uploadImageToOption = async (optionId: string, file: File) => {
+    const reader = new FileReader();
+    return new Promise<void>((resolve, reject) => {
+      reader.onerror = () => reject(new Error("Could not read file"));
+      reader.onload = async (e) => {
+        try {
+          await apiRequest(`/api/selection-options/${optionId}/attachments`, "POST", {
+            fileData: e.target?.result as string,
+            fileName: file.name,
+            fileType: "image",
+            mimeType: file.type,
+            fileSize: file.size,
+          });
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const onOptionSubmit = async (data: InsertSelectionOption) => {
     if (editingOption) {
       updateOptionMutation.mutate({ optionId: editingOption.id, data });
     } else {
-      createOptionMutation.mutate({
-        ...data,
-        selectionId: id || "",
-      });
+      try {
+        const newOption = await createOptionMutation.mutateAsync({
+          ...data,
+          selectionId: id || "",
+        });
+        if (pendingImages.length > 0 && newOption?.id) {
+          setUploadingImage(true);
+          try {
+            for (const { file } of pendingImages) {
+              await uploadImageToOption(newOption.id, file);
+            }
+            queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+          } finally {
+            setUploadingImage(false);
+          }
+        }
+        setPendingImages((prev) => {
+          prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+          return [];
+        });
+      } catch {
+        // errors handled by mutation
+      }
     }
   };
 
@@ -714,17 +761,14 @@ export default function SelectionDetail() {
     <div className="flex flex-col h-full">
       {/* Breadcrumb bar */}
       <div className="h-9 bg-background border-b flex items-center justify-between px-2 gap-2 flex-shrink-0">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <button
-            onClick={goBack}
-            className="text-xs font-sans hover:text-foreground transition-colors"
-            data-testid="button-back"
-          >
-            Selections
-          </button>
-          <ChevronRight className="w-3 h-3" />
-          <ArrowLeft className="w-3 h-3" />
-        </div>
+        <button
+          onClick={goBack}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="button-back"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Selections
+        </button>
         <div className="flex items-center gap-2">
           {hasUnsavedChanges && !isEditingDetails && (
             <Button
@@ -2124,39 +2168,58 @@ export default function SelectionDetail() {
 
                 <Separator />
 
-                {/* Images with DnD reorder */}
-                {editingOption && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Images</span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={uploadingImage}
-                        onClick={() => imageInputRef.current?.click()}
-                      >
-                        {uploadingImage ? (
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        ) : (
-                          <Upload className="w-3 h-3 mr-1" />
-                        )}
-                        Add image
-                      </Button>
-                      <input
-                        ref={imageInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleImageUpload(file);
-                          e.target.value = "";
-                        }}
-                      />
-                    </div>
-                    {editingOptionAttachments && editingOptionAttachments.length > 0 ? (
+                {/* Images */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Images</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={uploadingImage}
+                      onClick={() => editingOption ? imageInputRef.current?.click() : pendingImageInputRef.current?.click()}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Upload className="w-3 h-3 mr-1" />
+                      )}
+                      Add image
+                    </Button>
+                    {/* File input for editing an existing option */}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleImageUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    {/* File input for a new option (staged locally) */}
+                    <input
+                      ref={pendingImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setPendingImages((prev) => [
+                            ...prev,
+                            { file, previewUrl: URL.createObjectURL(file) },
+                          ]);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+
+                  {editingOption ? (
+                    editingOptionAttachments && editingOptionAttachments.length > 0 ? (
                       <SortableImageGrid
                         attachments={editingOptionAttachments}
                         onReorder={(newOrder) => {
@@ -2170,11 +2233,34 @@ export default function SelectionDetail() {
                     ) : (
                       <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
                         <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                        No images yet — drag &amp; drop to reorder after adding
+                        No images yet
                       </div>
-                    )}
-                  </div>
-                )}
+                    )
+                  ) : pendingImages.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {pendingImages.map((p, idx) => (
+                        <div key={idx} className="relative aspect-square rounded-md overflow-hidden border border-border">
+                          <img src={p.previewUrl} alt={p.file.name} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              URL.revokeObjectURL(p.previewUrl);
+                              setPendingImages((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded-md p-4 text-center text-muted-foreground text-xs">
+                      <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                      No images yet — they'll be uploaded when you save
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
                   <Button 
