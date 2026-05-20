@@ -20764,7 +20764,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         filtered = await filterTimesheetsByViewScope(timesheets, req.user);
       }
-      const enriched = await enrichTimesheetsWithCostCodes(filtered);
+      let enriched: any[] = await enrichTimesheetsWithCostCodes(filtered);
+      // Strip confidential pay-rate fields for non-admin users
+      if (req.user) {
+        const u = req.user as any;
+        const dbU = u?.dbUser || u;
+        const roleName = (dbU?.roleName || dbU?.role?.name || '').toLowerCase();
+        const isAdminLike = roleName.includes('admin') || roleName.includes('owner') || roleName.includes('general manager');
+        if (!isAdminLike) {
+          enriched = enriched.map(({ hourlyRate, totalCost, costPerHour, ...rest }: any) => rest);
+        }
+      }
       res.json(enriched);
     } catch (error: any) {
       res.status(500).json({
@@ -21072,7 +21082,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
-      res.json(timesheet);
+      // Strip confidential pay-rate fields for non-admin users
+      let result: any = timesheet;
+      if (req.user) {
+        const u = req.user as any;
+        const dbU = u?.dbUser || u;
+        const roleName = (dbU?.roleName || dbU?.role?.name || '').toLowerCase();
+        const isAdminLike = roleName.includes('admin') || roleName.includes('owner') || roleName.includes('general manager');
+        if (!isAdminLike) {
+          const { hourlyRate, totalCost, costPerHour, ...rest } = result;
+          result = rest;
+        }
+      }
+      res.json(result);
     } catch (error: any) {
       res.status(500).json({
         error: "Failed to get timesheet",
@@ -23874,6 +23896,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         return d;
       };
+
+      // Idempotency guard: if the schedule already has items, refuse to re-apply
+      const existingItems = await storage.getScheduleItems(scheduleId);
+      if (existingItems && existingItems.length > 0) {
+        return res.status(409).json({
+          error: "Template already applied",
+          message: "This schedule already has items. Clear them first before applying a template.",
+        });
+      }
 
       const templateItems = template.templateData as any[];
       const createdItems = [];

@@ -205,6 +205,7 @@ export default function SelectionDetail() {
   const [commentsExpanded, setCommentsExpanded] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+  const [overAllowanceDismissed, setOverAllowanceDismissed] = useState(false);
 
   const effectiveProjectId = projectId || currentProject?.id;
 
@@ -809,6 +810,7 @@ export default function SelectionDetail() {
   const allowanceAmount = Number(selection.allowance) || 0;
 
   const isAdminUser = !!user?.isAdminLike;
+  const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
 
   return (
     <div className="flex flex-col h-full">
@@ -871,6 +873,36 @@ export default function SelectionDetail() {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
+
+          {/* Over-allowance warning banner */}
+          {isOverAllowance && !overAllowanceDismissed && (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-[hsl(var(--coral)/0.3)] bg-[hsl(var(--coral)/0.08)] px-3 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 text-[hsl(var(--coral))] flex-shrink-0" />
+                <span className="text-sm font-medium text-[hsl(var(--coral))]">
+                  Cost is ${((selectedPrice - allowanceAmount) / 100).toFixed(2)} over allowance
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setLocation(`/projects/${effectiveProjectId}/variations/new?name=${encodeURIComponent(`${selection.name} — overage`)}&amount=${selectedPrice - allowanceAmount}`)}
+                >
+                  Create variation
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setOverAllowanceDismissed(true)}
+                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Prominent name heading */}
           <div>
@@ -980,6 +1012,26 @@ export default function SelectionDetail() {
                           })()}
                         </div>
                       </div>
+                      {/* Allowance progress bar */}
+                      {allowanceAmount > 0 && (
+                        <div className="mt-2 space-y-0.5">
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                            {(() => {
+                              const pct = (selectedPrice / allowanceAmount) * 100;
+                              const barPct = Math.min(pct, 100);
+                              const barColor = pct <= 100 ? "bg-[hsl(var(--sage))]" : pct <= 110 ? "bg-[hsl(var(--amber))]" : "bg-[hsl(var(--coral))]";
+                              return <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${barPct}%` }} />;
+                            })()}
+                          </div>
+                          {(() => {
+                            const pct = (selectedPrice / allowanceAmount) * 100;
+                            const diff = selectedPrice - allowanceAmount;
+                            const label = diff === 0 ? "On budget" : diff > 0 ? `$${(diff / 100).toFixed(0)} over` : `$${(Math.abs(diff) / 100).toFixed(0)} under`;
+                            const labelColor = pct > 100 ? "text-[hsl(var(--coral))]" : pct > 90 ? "text-[hsl(var(--amber))]" : "text-[hsl(var(--sage))]";
+                            return <div className={`text-[10px] font-medium text-right ${labelColor}`}>{label}</div>;
+                          })()}
+                        </div>
+                      )}
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-64">

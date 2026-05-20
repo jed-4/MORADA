@@ -697,13 +697,14 @@ const colors = {
       }
 
       const body: any = {
-        templateId: activeTemplate?.id || template?.id || null,
         projectId,
         title: formTitle.trim(),
         entryDateTime: formDateTime,
         fieldValues: uploadedFieldValues,
         overallPhotos: uploadedOverallPhotos,
       };
+      const resolvedTemplateId = activeTemplate?.id || template?.id;
+      if (resolvedTemplateId) body.templateId = resolvedTemplateId;
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         const res = await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);

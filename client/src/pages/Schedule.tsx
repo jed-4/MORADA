@@ -2113,7 +2113,7 @@ export default function Schedule() {
               // until either DataTable grows the missing capabilities or the
               // schedule editing UX is redesigned. Storage scope reserved:
               // "schedule" (legacyConfigKey: "schedule-column-config-v1").
-              <div className="flex-1 overflow-auto p-4">
+              <div className="flex-1 min-h-0 overflow-auto p-4">
                 {filteredItems.length === 0 ? (
                   <Card className="p-12 text-center">
                     <CardTitle className="mb-2">No Matching Items</CardTitle>

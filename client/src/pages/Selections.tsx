@@ -265,16 +265,10 @@ function SelectionRow({
         onClick={() => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* First column: expand/collapse toggle */}
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-          className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          data-testid={`button-expand-${selection.id}`}
-          aria-label={expanded ? "Collapse" : "Expand"}
-        >
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${expanded ? "rotate-0" : "-rotate-90"}`} />
-        </button>
+        {/* First column: navigation chevron indicator */}
+        <div className="flex items-center justify-center flex-shrink-0">
+          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
 
         {/* Thumbnail */}
         <SelectionThumbnail category={selection.category} attachment={rowThumb} size={32} />
@@ -1189,15 +1183,6 @@ export default function Selections() {
                   onCheck={handleCheck}
                   projectId={projectId!}
                 />
-                {expandedRows.has(sel.id) && (
-                  <OptionsPanel
-                    selection={sel}
-                    onSelectOption={(optionId) =>
-                      selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                    }
-                    isPending={selectOptionMutation.isPending}
-                  />
-                )}
               </div>
             ))}
           </div>
