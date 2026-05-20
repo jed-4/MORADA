@@ -95,7 +95,7 @@ import {
   Camera,
   Image as ImageIcon,
   Upload,
-  AlertTriangle,
+
   QrCode,
   Link as LinkIcon,
   Link2,
@@ -201,7 +201,6 @@ export default function SelectionDetail() {
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [commentsExpanded, setCommentsExpanded] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -808,8 +807,6 @@ export default function SelectionDetail() {
           : 0)
     : 0;
   const allowanceAmount = Number(selection.allowance) || 0;
-  const isOverAllowance = allowanceAmount > 0 && selectedPrice > allowanceAmount;
-  const allowancePercent = allowanceAmount > 0 ? Math.min((selectedPrice / allowanceAmount) * 100, 200) : 0;
 
   const isAdminUser = !!user?.isAdminLike;
 
@@ -885,32 +882,6 @@ export default function SelectionDetail() {
             )}
           </div>
 
-          {/* Over-allowance banner */}
-          {isOverAllowance && !bannerDismissed && (
-            <div className="flex items-center gap-3 rounded-md border border-[hsl(var(--coral))]/40 bg-[hsl(var(--coral-bg))] px-4 py-3">
-              <AlertTriangle className="w-4 h-4 text-[hsl(var(--coral))] shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium text-[hsl(var(--coral))]">Over allowance by ${((selectedPrice - allowanceAmount) / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}</span>
-                <span className="text-sm text-muted-foreground ml-2">Selected option exceeds the allowance.</span>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs shrink-0"
-                onClick={() => setLocation(`/projects/${effectiveProjectId}/variations/new?name=${encodeURIComponent(selection.name + " – allowance overage")}&amount=${selectedPrice - allowanceAmount}`)}
-              >
-                Create Variation
-              </Button>
-              <button
-                type="button"
-                onClick={() => setBannerDismissed(true)}
-                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover-elevate shrink-0"
-                aria-label="Dismiss warning"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
 
           {/* Selection Details — summary strip OR inline edit form */}
           <div className="surface-panel p-3" data-testid="selection-details-block">
@@ -1073,39 +1044,6 @@ export default function SelectionDetail() {
                 </button>
               </div>
 
-              {/* Allowance progress bar */}
-              {allowanceAmount > 0 && (
-                <div className="mt-3 pt-3 border-t border-border/60">
-                  <div className="flex items-center justify-between mb-1.5 text-xs text-muted-foreground">
-                    <span>Allowance utilisation</span>
-                    <div className="flex items-center gap-3">
-                      {selectedPrice > 0 && (
-                        <span className={cn(
-                          "text-xs",
-                          selectedPrice > allowanceAmount ? "text-[hsl(var(--coral))]" : "text-muted-foreground"
-                        )}>
-                          {selectedPrice > allowanceAmount ? "+" : ""}${Math.abs(selectedPrice - allowanceAmount) >= 0 ? ((selectedPrice - allowanceAmount) / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 }) : "0.00"} variance
-                        </span>
-                      )}
-                      <span className={cn(
-                        "font-semibold",
-                        allowancePercent > 110 ? "text-[hsl(var(--coral))]" : allowancePercent > 100 ? "text-[hsl(var(--amber))]" : "text-[hsl(var(--sage))]"
-                      )}>
-                        {allowancePercent.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-300",
-                        allowancePercent > 110 ? "bg-[hsl(var(--coral))]" : allowancePercent > 100 ? "bg-[hsl(var(--amber))]" : "bg-[hsl(var(--sage))]"
-                      )}
-                      style={{ width: `${Math.min(allowancePercent, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
               </>
             ) : (
               <Form {...selectionForm}>
