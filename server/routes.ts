@@ -11269,8 +11269,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/selection-options/:id/approve", requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const roleName: string = user?.roleName || user?.dbUser?.roleName || "";
-      const isAdminLike = roleName.toLowerCase().includes("admin") || roleName.toLowerCase().includes("owner") || roleName.toLowerCase().includes("general manager");
+      const roleId: string = user?.roleId || user?.dbUser?.roleId || "";
+      const role = roleId ? await storage.getUserRole(roleId) : null;
+      const roleName = (role?.name || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
       if (!isAdminLike) {
         return res.status(403).json({ error: "Only admin users can approve selection options." });
       }
