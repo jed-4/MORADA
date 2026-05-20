@@ -488,7 +488,7 @@ function AuthWrapper() {
             {/* Sidebar and main content below header */}
             <div className="flex flex-1 overflow-hidden gap-2">
               <SidebarNav />
-              <main className="flex-1 overflow-auto">
+              <main className="flex-1 overflow-hidden">
                 <ErrorBoundary>
                   <Router />
                 </ErrorBoundary>

@@ -214,6 +214,7 @@ export default function SystemConfigurationPage() {
   }
 
   return (
+    <div className="h-full overflow-y-auto">
     <div className="p-6 max-w-6xl">
       <div className="flex items-center gap-2 mb-6">
         <Button
@@ -1292,6 +1293,7 @@ export default function SystemConfigurationPage() {
           </div>
         </form>
       </Form>
+    </div>
     </div>
   );
 }
