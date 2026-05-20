@@ -269,7 +269,7 @@ function SelectionRow({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-          className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+          className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
           data-testid={`button-expand-${selection.id}`}
           aria-label={expanded ? "Collapse" : "Expand"}
         >

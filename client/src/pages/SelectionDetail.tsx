@@ -696,7 +696,7 @@ export default function SelectionDetail() {
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <button
             onClick={goBack}
-            className="hover:text-foreground transition-colors"
+            className="text-xs font-sans hover:text-foreground transition-colors"
             data-testid="button-back"
           >
             Selections
