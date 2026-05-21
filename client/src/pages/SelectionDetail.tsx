@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CreatableFieldSelect } from "@/components/ui/creatable-field-select";
 import {
   Dialog,
   DialogContent,
@@ -1182,20 +1183,15 @@ export default function SelectionDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Category</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm shadow-none border-border" data-testid="select-category">
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {selectionCategories?.options?.map((opt) => (
-                                <SelectItem key={opt.key} value={opt.name}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <FormControl>
+                            <CreatableFieldSelect
+                              categoryKey="selection.category"
+                              value={field.value || ""}
+                              onValueChange={field.onChange}
+                              placeholder="Select category"
+                              data-testid="select-category"
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1206,20 +1202,15 @@ export default function SelectionDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className="text-data text-muted-foreground uppercase tracking-wide">Location</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm shadow-none border-border" data-testid="select-room">
-                                <SelectValue placeholder="Select location" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {locationCategories?.options?.map((opt) => (
-                                <SelectItem key={opt.key} value={opt.name}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <FormControl>
+                            <CreatableFieldSelect
+                              categoryKey="selection.room"
+                              value={field.value || ""}
+                              onValueChange={field.onChange}
+                              placeholder="Select location"
+                              data-testid="select-room"
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}

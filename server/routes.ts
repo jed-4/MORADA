@@ -2490,6 +2490,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Quick-add a new option to a field category by key (no special permission required — any team member)
+  app.post("/api/field-categories/by-key/:key/options/quick-add", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      if (!categoryWithOptions) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      const trimmedName = name.trim();
+      const key = trimmedName.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+      const maxSort = categoryWithOptions.options.reduce((m: number, o: any) => Math.max(m, o.sortOrder ?? 0), 0);
+      const option = await storage.createFieldOption({
+        categoryId: categoryWithOptions.id,
+        key: key || `custom_${Date.now()}`,
+        name: trimmedName,
+        isActive: true,
+        isDefault: false,
+        isCompleted: false,
+        isActionable: false,
+        sortOrder: maxSort + 1,
+      });
+      res.status(201).json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create field option" });
+    }
+  });
+
   app.get("/api/field-categories/:id", async (req, res) => {
     try {
       const category = await storage.getFieldCategory(req.params.id);
