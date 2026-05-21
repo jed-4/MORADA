@@ -185,9 +185,10 @@ interface SortableRowProps {
   gridTemplate: string;
   dropIndicator?: 'above' | 'below' | null;
   activeDragId?: string | null;
+  onDoubleClick?: () => void;
 }
 
-const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator, activeDragId }: SortableRowProps) => {
+const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator, activeDragId, onDoubleClick }: SortableRowProps) => {
   const {
     attributes,
     listeners,
@@ -270,6 +271,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       className={`relative ${className} group hover-elevate transition-colors border-b border-border/50 last:border-b-0`}
       data-testid={`row-item-${id}`}
       data-sortable-id={id}
+      onDoubleClick={onDoubleClick}
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
@@ -463,6 +465,8 @@ export default function EstimateDetail() {
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [isAddNotesOpen, setIsAddNotesOpen] = useState(false);
+  const [isEditNotesOpen, setIsEditNotesOpen] = useState(false);
 
   // Edit estimate dialog state
   const [isEditEstimateDialogOpen, setIsEditEstimateDialogOpen] = useState(false);
@@ -2693,7 +2697,7 @@ export default function EstimateDetail() {
     priceIncTax: true, // Calculated by backend
   }).extend({
     unitCostExTax: z.number().min(0, "Cost must be positive"),
-    quantity: z.number().min(0.01, "Quantity must be greater than 0"),
+    quantity: z.number().min(0, "Quantity must be 0 or greater"),
     markupPercent: z.number().min(0).optional().nullable(),
   });
 
@@ -3287,6 +3291,7 @@ export default function EstimateDetail() {
           allowance: item.allowance || 'None',
           order: item.order || 0,
         });
+        setIsEditNotesOpen(Boolean(item.notes));
       }
     }
   }, [editingItemId, items, editForm]);
@@ -3771,7 +3776,7 @@ export default function EstimateDetail() {
     
     const rows = [
       // Parent item row - CSS Grid
-      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator} activeDragId={activeId}>
+      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator} activeDragId={activeId} onDoubleClick={!isLocked ? () => { setEditingItemId(item.id); setIsEditDialogOpen(true); } : undefined}>
         {/* Checkbox cell */}
         <div className="h-9 px-2 flex items-center" role="gridcell">
           <Checkbox
@@ -3906,7 +3911,7 @@ export default function EstimateDetail() {
       subItems.forEach((subItem, subIndex) => {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className={`${buildRowBg(subItem, subIndex)} hover:bg-primary/5 transition-colors`} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
+          <SortableRow key={subItem.id} id={subItem.id} className={`${buildRowBg(subItem, subIndex)} hover:bg-primary/5 transition-colors`} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId} onDoubleClick={!isLocked ? () => { setEditingItemId(subItem.id); setIsEditDialogOpen(true); } : undefined}>
             <div className="h-9 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
@@ -6140,7 +6145,7 @@ export default function EstimateDetail() {
 
               {/* Pricing Section */}
               <div className="space-y-4">
-                <h4 className="text-sm font-medium">Pricing <span className="text-muted-foreground font-normal">GST on expenses</span></h4>
+                <h4 className="text-sm font-medium">Pricing</h4>
                 
                 <div className="grid grid-cols-3 gap-4">
                   <FormField
@@ -6158,7 +6163,7 @@ export default function EstimateDetail() {
                               min="0"
                               placeholder="Unit cost ex. tax"
                               className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              value={field.value === 0 ? '' : field.value}
+                              value={field.value === 0 ? '' : Number(field.value).toFixed(2)}
                               onChange={(e) => {
                                 const value = e.target.value;
                                 if (value === '') {
@@ -6260,19 +6265,28 @@ export default function EstimateDetail() {
 
               <Separator className="my-4" />
 
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Internal Notes (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-item-notes" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddNotesOpen(v => !v)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+                >
+                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isAddNotesOpen ? 'rotate-90' : ''}`} />
+                  Internal Notes (Optional)
+                </button>
+                <FormField
+                  control={form.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem className={isAddNotesOpen ? '' : 'hidden'}>
+                      <FormControl>
+                        <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-item-notes" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <FormField
                 control={form.control}
@@ -6742,7 +6756,7 @@ export default function EstimateDetail() {
 
                   {/* Pricing Section */}
                   <div className="space-y-4">
-                    <h4 className="text-sm font-medium">Pricing <span className="text-muted-foreground font-normal">GST on expenses</span></h4>
+                    <h4 className="text-sm font-medium">Pricing</h4>
                     
                     <div className="grid grid-cols-3 gap-4">
                       <FormField
@@ -6760,7 +6774,7 @@ export default function EstimateDetail() {
                                   min="0"
                                   placeholder="Unit cost ex. tax"
                                   className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  value={field.value === 0 ? '' : field.value}
+                                  value={field.value === 0 ? '' : Number(field.value).toFixed(2)}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     if (value === '') {
@@ -6917,19 +6931,28 @@ export default function EstimateDetail() {
 
                   <Separator className="my-4" />
 
-                  <FormField
-                    control={editForm.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Internal Notes (Optional)</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-edit-item-notes" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditNotesOpen(v => !v)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+                    >
+                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isEditNotesOpen ? 'rotate-90' : ''}`} />
+                      Internal Notes (Optional)
+                    </button>
+                    <FormField
+                      control={editForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem className={isEditNotesOpen ? '' : 'hidden'}>
+                          <FormControl>
+                            <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-edit-item-notes" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <FormField
                     control={editForm.control}
