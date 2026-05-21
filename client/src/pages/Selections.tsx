@@ -262,16 +262,13 @@ function SelectionRow({
         className={`group grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
           isChecked ? "bg-primary/5" : "hover:bg-muted/30"
         }`}
-        onClick={() => onEdit(selection.id)}
+        onClick={onToggleExpand}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* First column: expand/collapse toggle */}
-        <div
-          className="flex items-center justify-center flex-shrink-0 h-full"
-          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-        >
+        {/* First column: expand/collapse chevron */}
+        <div className="flex items-center justify-center flex-shrink-0">
           <ChevronRight
-            className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 opacity-0 group-hover:opacity-100 ${expanded ? "rotate-90" : ""}`}
+            className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
           />
         </div>
 
@@ -280,9 +277,14 @@ function SelectionRow({
 
         {/* Selection name + sub-label */}
         <div className="min-w-0">
-          <div className="text-[12px] font-medium text-foreground truncate" data-testid={`text-name-${selection.id}`}>
+          <a
+            href={`/selections/${selection.id}`}
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onEdit(selection.id); }}
+            className="text-[12px] font-medium text-foreground truncate hover:underline block"
+            data-testid={`text-name-${selection.id}`}
+          >
             {selection.name}
-          </div>
+          </a>
           {selectedOption ? (
             <div className="text-[10px] text-muted-foreground/60 truncate">{selectedOption.name}</div>
           ) : selection.description ? (
@@ -1188,6 +1190,15 @@ export default function Selections() {
                   onCheck={handleCheck}
                   projectId={projectId!}
                 />
+                {expandedRows.has(sel.id) && (
+                  <OptionsPanel
+                    selection={sel}
+                    onSelectOption={(optionId) =>
+                      selectOptionMutation.mutate({ selectionId: sel.id, optionId })
+                    }
+                    isPending={selectOptionMutation.isPending}
+                  />
+                )}
               </div>
             ))}
           </div>
