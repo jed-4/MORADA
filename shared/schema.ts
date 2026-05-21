@@ -1451,6 +1451,7 @@ export const selectionOptions = pgTable("selection_options", {
   lockedAt: timestamp("locked_at"),
   productId: integer("product_id"), // Link to product library entry (set via save-to-library or add-from-library)
   specifications: json("specifications").$type<Record<string, any>>(), // Structured product specs (dimensions, finish, material, etc.)
+  notes: text("notes"), // Internal notes for trades team
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

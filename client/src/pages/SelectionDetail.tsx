@@ -574,6 +574,7 @@ export default function SelectionDetail() {
       selectionId: id || "",
       name: "",
       description: "",
+      notes: "",
       sku: "",
       brand: "",
       category: "",
@@ -753,6 +754,7 @@ export default function SelectionDetail() {
       selectionId: option.selectionId,
       name: option.name,
       description: option.description || "",
+      notes: (option as any).notes || "",
       sku: option.sku || "",
       brand: option.brand || "",
       category: option.category || "",
@@ -792,6 +794,7 @@ export default function SelectionDetail() {
       selectionId: id || "",
       name: "",
       description: "",
+      notes: "",
       sku: "",
       brand: "",
       category: "",
@@ -1587,12 +1590,10 @@ export default function SelectionDetail() {
                   const isApproved = !!option.approvedAt;
                   const isLocked = !!option.lockedAt;
                   return (
-                    <Tooltip key={option.id}>
-                    <TooltipTrigger asChild>
                     <Card 
+                      key={option.id}
                       className={cn(
-                        "transition-all duration-200 group",
-                        "hover-elevate cursor-pointer",
+                        "transition-all duration-200 group hover-elevate cursor-pointer",
                         option.isSelectedByClient && !isApproved && "ring-1 ring-[hsl(var(--amber))]",
                         isApproved && "ring-1 ring-[hsl(var(--sage))]"
                       )}
@@ -1766,13 +1767,6 @@ export default function SelectionDetail() {
                         </div>
                       </CardContent>
                     </Card>
-                    </TooltipTrigger>
-                    {isLocked && (
-                      <TooltipContent>
-                        <p className="text-xs">This option is locked</p>
-                      </TooltipContent>
-                    )}
-                    </Tooltip>
                   );
                 })}
               </div>
@@ -2233,6 +2227,35 @@ export default function SelectionDetail() {
                           data-testid="input-option-description"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Notes to trades */}
+                <FormField
+                  control={optionForm.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        Notes to trades
+                        {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                      </FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Instructions, warnings, or notes for your trades team…"
+                          rows={2}
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-option-notes"
+                        />
+                      </FormControl>
+                      {field.value && (
+                        <p className="text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                          Visible to your internal team only — not the client.
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
