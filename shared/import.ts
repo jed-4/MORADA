@@ -60,6 +60,7 @@ const TYPE_ALIASES: Record<string, string[]> = {
   "Labour": ["labour", "labor", "lab", "l", "work", "install", "installation"],
   "Subcontractor": ["subcontractor", "subcontractors", "sub", "subs", "subbie", "subbies", "sc", "subcon", "sub-contractor", "sub-contractors", "sub contractor", "sub contractors"],
   "Fee": ["fee", "fees", "margin", "overhead", "overheads", "o/h", "oh"],
+  "Equipment": ["equipment", "equip", "eq", "plant", "hire", "machinery", "tools"],
 };
 
 // Generic fuzzy match function for string options
@@ -140,7 +141,7 @@ export function matchAllowance(rawValue: string | undefined): FuzzyMatch<string>
 
 // Match cost types with common aliases
 export function matchType(rawValue: string | undefined): FuzzyMatch<string> | undefined {
-  const validTypes = ["Material", "Labour", "Subcontractor", "Fee"];
+  const validTypes = ["Material", "Labour", "Subcontractor", "Fee", "Equipment"];
   return fuzzyMatchString(rawValue, validTypes, TYPE_ALIASES);
 }
 
@@ -248,7 +249,7 @@ export function matchGroup(
 // This schema is used for validating imported data from CSV/Excel files
 export const importEstimateItemSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["Material", "Labour", "Subcontractor", "Fee"]).default("Material"),
+  type: z.enum(["Material", "Labour", "Subcontractor", "Fee", "Equipment"]).default("Material"),
   description: z.string().optional(),
   quantity: z.number().default(1),
   unitType: z.string().default("each"),
@@ -1060,7 +1061,7 @@ export const importEstimateGroupSchema = z.object({
 export const importEstimateWithGroupsItemSchema = z.object({
   groupName: z.string().min(1, "Group name is required"),
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["Material", "Labour", "Subcontractor", "Fee"]).default("Material"),
+  type: z.enum(["Material", "Labour", "Subcontractor", "Fee", "Equipment"]).default("Material"),
   description: z.string().optional(),
   quantity: z.number().default(1),
   unitType: z.string().default("each"),
@@ -1131,10 +1132,11 @@ export function parseBuildernRow(row: any): { isGroup: boolean; groupName?: stri
     const markupPercent = parseFloat(row["Markup %"]) || 0;
     
     // Map Cost Type to our types
-    let type: "Material" | "Labour" | "Subcontractor" | "Fee" = "Material";
+    let type: "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment" = "Material";
     if (costType === "LABOUR") type = "Labour";
     else if (costType === "SUBCONTRACTOR") type = "Subcontractor";
     else if (costType === "FEE") type = "Fee";
+    else if (costType === "EQUIPMENT") type = "Equipment";
     else if (costType === "ALLOWANCE") type = "Material"; // Treat allowance as material
     
     // Map allowance type
@@ -1192,9 +1194,10 @@ export function parseWunderbuildRow(row: any, previousCategory: string = ""): { 
   if (costingItem && category) {
     // Map Cost Type to our types
     const costType = String(row["Cost Type"] || "").trim();
-    let type: "Material" | "Labour" | "Subcontractor" | "Fee" = "Material";
+    let type: "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment" = "Material";
     if (costType.toLowerCase().includes("labour")) type = "Labour";
     else if (costType.toLowerCase().includes("sub")) type = "Subcontractor";
+    else if (costType.toLowerCase().includes("equipment") || costType.toLowerCase().includes("plant")) type = "Equipment";
     else if (costType.toLowerCase() === "supplier") type = "Material";
     
     return {

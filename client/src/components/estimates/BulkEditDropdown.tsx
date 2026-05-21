@@ -95,6 +95,7 @@ export function BulkEditDropdown({
         { value: "Labour", label: "Labour" },
         { value: "Subcontractor", label: "Subcontractor" },
         { value: "Fee", label: "Fee" },
+        { value: "Equipment", label: "Equipment" },
       ],
     },
     { key: "costCode", label: "Cost Code", kind: "costCode" },

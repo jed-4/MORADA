@@ -4174,6 +4174,7 @@ export default function EstimateDetail() {
           Labour: 'bg-status-success-bg text-status-success dark:bg-green-900/30 dark:text-green-400',
           Subcontractor: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
           Fee: 'bg-primary/10 text-primary dark:bg-primary/20',
+          Equipment: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
         };
         const typeColor = typeColors[item.type] || typeColors.Material;
         if (isEditing) {
@@ -4194,6 +4195,7 @@ export default function EstimateDetail() {
                   <SelectItem value="Labour">Labour</SelectItem>
                   <SelectItem value="Subcontractor">Subcontractor</SelectItem>
                   <SelectItem value="Fee">Fee</SelectItem>
+                  <SelectItem value="Equipment">Equipment</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -98,7 +98,7 @@ export function ImportEstimateItemsDialog({
   const [allowanceCorrections, setAllowanceCorrections] = useState<Record<string, string>>({});
   
   // Valid options for dropdowns
-  const VALID_TYPES = ["Material", "Labour", "Subcontractor", "Fee"];
+  const VALID_TYPES = ["Material", "Labour", "Subcontractor", "Fee", "Equipment"];
   const VALID_ALLOWANCES = ["None", "Prime Cost", "Provisional Sum"];
 
   // Fetch cost codes for matching

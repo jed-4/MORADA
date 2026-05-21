@@ -4770,7 +4770,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate the patch with a strict whitelist + types. Anything not
       // listed here is silently dropped; anything malformed is rejected.
       const bulkPatchSchema = z.object({
-        type: z.enum(['Material', 'Labour', 'Subcontractor', 'Fee']).optional(),
+        type: z.enum(['Material', 'Labour', 'Subcontractor', 'Fee', 'Equipment']).optional(),
         costCode: z.string().nullable().optional(),
         costCategoryId: z.string().nullable().optional(),
         groupId: z.string().nullable().optional(),

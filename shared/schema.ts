@@ -891,7 +891,7 @@ export const estimateItems = pgTable("estimate_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment"
   groupId: varchar("group_id").references(() => estimateGroups.id), // Reference to estimate groups
   parentItemId: varchar("parent_item_id").references((): any => estimateItems.id, { onDelete: "cascade" }), // For sub-items (3-level nesting)
   costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
@@ -2152,7 +2152,7 @@ export const variationItems = pgTable("variation_items", {
   taxable: boolean("taxable").notNull().default(true), // For GST calculation
   sortOrder: integer("sort_order").notNull().default(0), // For ordering
   itemType: text("item_type").notNull().default("cost_line"), // "cost_line" | "allowance"
-  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee" | "Equipment"
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | "hr" etc
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Builder cost per unit in dollars
   markupPercent: integer("markup_percent"), // Item-level markup % (null = 0%)
