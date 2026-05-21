@@ -1002,6 +1002,28 @@ export default function Selections() {
     },
   });
 
+  // ── Grouping helpers ── must be above the early return to respect Rules of Hooks ──
+  const groupedFiltered = useMemo(() => {
+    if (groupBy === "none") return null;
+    const key = groupBy === "category" ? "category" : "room";
+    const groups = new Map<string, typeof filtered>();
+    for (const sel of filtered) {
+      const g = (sel as any)[key] || "Uncategorised";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(sel);
+    }
+    return groups;
+  }, [filtered, groupBy]);
+
+  const allGroupKeys = useMemo(() => (groupedFiltered ? [...groupedFiltered.keys()] : []), [groupedFiltered]);
+
+  // Initialise all groups as expanded when grouping first turns on
+  useEffect(() => {
+    if (groupBy !== "none" && allGroupKeys.length > 0 && expandedGroupIds.size === 0) {
+      setExpandedGroupIds(new Set(allGroupKeys));
+    }
+  }, [groupBy, allGroupKeys]);
+
   if (!currentProject) {
     return (
       <div className="p-6">
@@ -1024,28 +1046,6 @@ export default function Selections() {
   ];
 
   const varianceMeta = formatVarianceCents(stats.variance);
-
-  // ── Grouping helpers ────────────────────────────────────────────────────────
-  const groupedFiltered = useMemo(() => {
-    if (groupBy === "none") return null;
-    const key = groupBy === "category" ? "category" : "room";
-    const groups = new Map<string, typeof filtered>();
-    for (const sel of filtered) {
-      const g = (sel as any)[key] || "Uncategorised";
-      if (!groups.has(g)) groups.set(g, []);
-      groups.get(g)!.push(sel);
-    }
-    return groups;
-  }, [filtered, groupBy]);
-
-  const allGroupKeys = useMemo(() => (groupedFiltered ? [...groupedFiltered.keys()] : []), [groupedFiltered]);
-
-  // Initialise all groups as expanded when grouping first turns on
-  useEffect(() => {
-    if (groupBy !== "none" && allGroupKeys.length > 0 && expandedGroupIds.size === 0) {
-      setExpandedGroupIds(new Set(allGroupKeys));
-    }
-  }, [groupBy, allGroupKeys]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroupIds((prev) => {
@@ -1408,83 +1408,95 @@ export default function Selections() {
           <div></div>
         </div>
 
-        {/* Body */}
-        {isLoading ? (
-          <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading selections…</div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-base font-medium mb-2">No selections found</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              {searchTerm || categoryFilter || statusTab !== "all"
-                ? "Try adjusting your filters."
-                : "Create your first selection to get started."}
-            </p>
-            {!searchTerm && !categoryFilter && statusTab === "all" && (
-              <Button onClick={handleAddSelection} disabled={createSelectionMutation.isPending} size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Selection
-              </Button>
-            )}
-          </div>
-        ) : groupBy !== "none" && groupedFiltered ? (
-          /* Grouped rendering — DnD disabled */
-          <div>
-            {allGroupKeys.map((groupKey) => {
-              const groupItems = groupedFiltered.get(groupKey) || [];
-              const isOpen = expandedGroupIds.has(groupKey);
-              return (
-                <div key={groupKey}>
-                  {/* Group header */}
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(groupKey)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b border-border/50 hover-elevate text-left"
-                  >
-                    {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">{groupKey}</span>
-                    <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 ml-0.5">{groupItems.length}</span>
-                  </button>
-                  {/* Group items */}
-                  {isOpen && groupItems.map((sel) => (
-                    <div key={sel.id}>
-                      <SortableSelectionRow
-                        selection={sel}
-                        expanded={expandedRows.has(sel.id)}
-                        onToggleExpand={() => toggleExpand(sel.id)}
-                        onSelectOption={(selectionId, optionId) =>
-                          selectOptionMutation.mutate({ selectionId, optionId })
-                        }
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onDuplicate={handleDuplicate}
-                        isPending={selectOptionMutation.isPending}
-                        isChecked={checkedIds.has(sel.id)}
-                        onCheck={handleCheck}
-                        projectId={projectId!}
-                        isDraggable={false}
-                      />
-                      {expandedRows.has(sel.id) && (
-                        <OptionsPanel
-                          selection={sel}
-                          onSelectOption={(optionId) =>
-                            selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                          }
-                          isPending={selectOptionMutation.isPending}
-                        />
-                      )}
+        {/* Body — DndContext always mounted so hook count stays stable */}
+        <DndContext
+          sensors={dndSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          {isLoading ? (
+            <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading selections…</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-12">
+              <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-base font-medium mb-2">No selections found</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                {searchTerm || categoryFilter || statusTab !== "all"
+                  ? "Try adjusting your filters."
+                  : "Create your first selection to get started."}
+              </p>
+              {!searchTerm && !categoryFilter && statusTab === "all" && (
+                <Button onClick={handleAddSelection} disabled={createSelectionMutation.isPending} size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Selection
+                </Button>
+              )}
+            </div>
+          ) : groupBy !== "none" && groupedFiltered ? (
+            /* Grouped rendering — DnD enabled within each group */
+            <div>
+              {allGroupKeys.map((groupKey) => {
+                const groupItems = groupedFiltered.get(groupKey) || [];
+                const isOpen = expandedGroupIds.has(groupKey);
+                return (
+                  <div key={groupKey}>
+                    {/* Floating group header — sticky, compact, does not occupy a full row */}
+                    <div className="sticky top-[34px] z-[9]">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(groupKey)}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-background/90 backdrop-blur-sm border-b border-border/40 text-left w-full"
+                      >
+                        {isOpen
+                          ? <ChevronDown className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                          : <ChevronRight className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
+                        <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest">{groupKey}</span>
+                        <span className="text-[9px] text-muted-foreground/40 bg-muted/50 rounded px-1 py-px ml-0.5">{groupItems.length}</span>
+                      </button>
                     </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <DndContext
-            sensors={dndSensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+                    {/* Group items with sortable context */}
+                    {isOpen && (
+                      <SortableContext
+                        items={groupItems.map((s) => s.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {groupItems.map((sel) => (
+                          <div key={sel.id}>
+                            <SortableSelectionRow
+                              selection={sel}
+                              expanded={expandedRows.has(sel.id)}
+                              onToggleExpand={() => toggleExpand(sel.id)}
+                              onSelectOption={(selectionId, optionId) =>
+                                selectOptionMutation.mutate({ selectionId, optionId })
+                              }
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                              onDuplicate={handleDuplicate}
+                              isPending={selectOptionMutation.isPending}
+                              isChecked={checkedIds.has(sel.id)}
+                              onCheck={handleCheck}
+                              projectId={projectId!}
+                              isDraggable={isDraggable}
+                            />
+                            {expandedRows.has(sel.id) && (
+                              <OptionsPanel
+                                selection={sel}
+                                onSelectOption={(optionId) =>
+                                  selectOptionMutation.mutate({ selectionId: sel.id, optionId })
+                                }
+                                isPending={selectOptionMutation.isPending}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </SortableContext>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Flat rendering */
             <SortableContext
               items={filtered.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
@@ -1521,8 +1533,8 @@ export default function Selections() {
                 ))}
               </div>
             </SortableContext>
-          </DndContext>
-        )}
+          )}
+        </DndContext>
       </div>
 
       {/* Bulk action toolbar */}
