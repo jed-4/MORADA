@@ -197,6 +197,7 @@ export default function SelectionDetail() {
   const [notesInitialized, setNotesInitialized] = useState(false);
   const [optionSpecifications, setOptionSpecifications] = useState<Record<string, any>>({});
   const [specsOpen, setSpecsOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [detailSpecImageUrlInput, setDetailSpecImageUrlInput] = useState("");
   const [optionsSearchExpanded, setOptionsSearchExpanded] = useState(false);
@@ -745,6 +746,7 @@ export default function SelectionDetail() {
     setEditingOption(option);
     setOptionSpecifications((option as any).specifications || {});
     setSpecsOpen(!!(((option as any).specifications) && Object.keys((option as any).specifications).length > 0));
+    setNotesOpen(!!((option as any).notes));
     setGstInclusive(option.gstInclusive || false);
     setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
     setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
@@ -786,6 +788,7 @@ export default function SelectionDetail() {
     setEditingOption(null);
     setOptionSpecifications({});
     setSpecsOpen(false);
+    setNotesOpen(false);
     setGstInclusive(false);
     setUnitCostDisplayStr("");
     setTotalCostDisplayStr("");
@@ -2232,34 +2235,6 @@ export default function SelectionDetail() {
                   )}
                 />
 
-                {/* Notes to trades */}
-                <FormField
-                  control={optionForm.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        Notes to trades
-                        {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />}
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Instructions, warnings, or notes for your trades team…"
-                          rows={2}
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-option-notes"
-                        />
-                      </FormControl>
-                      {field.value && (
-                        <p className="text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                          Visible to your internal team only — not the client.
-                        </p>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
                 <Separator />
 
@@ -2855,6 +2830,46 @@ export default function SelectionDetail() {
                     </div>
                   );
                 })()}
+
+                {/* Notes to trades — collapsible */}
+                <FormField
+                  control={optionForm.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <div className="border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                        onClick={() => setNotesOpen(o => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {notesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Notes to trades
+                          {field.value && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                        </span>
+                      </button>
+                      {notesOpen && (
+                        <div className="p-3 space-y-2 border-t">
+                          <FormControl>
+                            <Textarea
+                              placeholder="Instructions, warnings, or notes for your trades team…"
+                              rows={3}
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-option-notes"
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <p className="text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                              Visible to your internal team only — not the client.
+                            </p>
+                          )}
+                          <FormMessage />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                />
 
                 <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
                   <Button 

@@ -76,6 +76,7 @@ import {
   ChevronLeft,
   BookCopy,
   CheckSquare,
+  Filter,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -1245,13 +1246,11 @@ export default function Selections() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${groupBy !== "none" ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
+                  className={`h-6 w-6 flex items-center justify-center border rounded-md hover-elevate active-elevate-2 ${groupBy !== "none" ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
                   data-testid="button-group-by"
                   aria-label="Group by"
                 >
-                  <Layers className="w-3 h-3" />
-                  <span>{groupBy === "category" ? "Category" : groupBy === "location" ? "Location" : "Group"}</span>
-                  <ChevronDown className="w-3 h-3" />
+                  <Layers className="w-3.5 h-3.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1271,13 +1270,11 @@ export default function Selections() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="h-6 px-2 text-xs border border-border/50 rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-muted-foreground"
+                  className={`h-6 w-6 flex items-center justify-center border rounded-md hover-elevate active-elevate-2 ${categoryFilter ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
                   data-testid="button-category-filter"
+                  aria-label="Filter by category"
                 >
-                  <span className="truncate max-w-[140px]">
-                    {categoryFilter || "Category"}
-                  </span>
-                  <ChevronDown className="w-3 h-3" />
+                  <Filter className="w-3.5 h-3.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1295,18 +1292,6 @@ export default function Selections() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Templates toggle */}
-            <button
-              type="button"
-              onClick={() => setShowTemplatePanel((p) => !p)}
-              className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${showTemplatePanel ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
-              data-testid="button-toggle-templates"
-              aria-label="Templates"
-            >
-              <LayoutTemplate className="w-3 h-3" />
-              <span>Templates</span>
-            </button>
 
             {/* Add Selection primary */}
             <button
@@ -1335,6 +1320,14 @@ export default function Selections() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem
+                  onClick={() => setShowTemplatePanel((p) => !p)}
+                  data-testid="button-toggle-templates"
+                >
+                  <LayoutTemplate className="w-3.5 h-3.5 mr-2" />
+                  {showTemplatePanel ? "Hide Templates" : "Show Templates"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem
                   checked={showSummaryCards}
                   onCheckedChange={(c) => setShowSummaryCards(!!c)}
