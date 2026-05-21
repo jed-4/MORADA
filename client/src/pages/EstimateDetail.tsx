@@ -188,6 +188,69 @@ interface SortableRowProps {
   onDoubleClick?: () => void;
 }
 
+function FormattedNumberInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  isMonetary = false,
+  "data-testid": testId,
+}: {
+  value: number;
+  onChange: (val: number) => void;
+  placeholder?: string;
+  className?: string;
+  isMonetary?: boolean;
+  "data-testid"?: string;
+}) {
+  const [rawText, setRawText] = React.useState('');
+  const [isFocused, setIsFocused] = React.useState(false);
+  const formatDisplay = (n: number) => {
+    if (n === 0) return '';
+    return n.toLocaleString('en-AU', {
+      minimumFractionDigits: isMonetary ? 2 : 0,
+      maximumFractionDigits: isMonetary ? 2 : 4,
+    });
+  };
+  const displayValue = isFocused ? rawText : formatDisplay(value);
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={displayValue}
+      placeholder={placeholder}
+      className={className}
+      data-testid={testId}
+      onFocus={(e) => {
+        setIsFocused(true);
+        setRawText(value === 0 ? '' : String(value));
+        setTimeout(() => e.target.select(), 0);
+      }}
+      onChange={(e) => {
+        const str = e.target.value;
+        setRawText(str);
+        const stripped = str.replace(/,/g, '');
+        const parsed = parseFloat(stripped);
+        if (!isNaN(parsed)) {
+          onChange(isMonetary ? Math.round(parsed * 100) / 100 : Math.round(parsed * 10000) / 10000);
+        } else if (str === '' || str === '.') {
+          onChange(0);
+        }
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        const stripped = rawText.replace(/,/g, '');
+        const parsed = parseFloat(stripped);
+        if (isNaN(parsed) || parsed < 0) {
+          onChange(0);
+        } else {
+          onChange(isMonetary ? Math.round(parsed * 100) / 100 : Math.round(parsed * 10000) / 10000);
+        }
+      }}
+    />
+  );
+}
+
 const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator, activeDragId, onDoubleClick }: SortableRowProps) => {
   const {
     attributes,
@@ -467,6 +530,8 @@ export default function EstimateDetail() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [isAddNotesOpen, setIsAddNotesOpen] = useState(false);
   const [isEditNotesOpen, setIsEditNotesOpen] = useState(false);
+  const [isAddDescOpen, setIsAddDescOpen] = useState(false);
+  const [isEditDescOpen, setIsEditDescOpen] = useState(false);
 
   // Edit estimate dialog state
   const [isEditEstimateDialogOpen, setIsEditEstimateDialogOpen] = useState(false);
@@ -3292,6 +3357,7 @@ export default function EstimateDetail() {
           order: item.order || 0,
         });
         setIsEditNotesOpen(Boolean(item.notes));
+        setIsEditDescOpen(Boolean(item.description));
       }
     }
   }, [editingItemId, items, editForm]);
@@ -5903,19 +5969,28 @@ export default function EstimateDetail() {
                 )}
               />
               
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-item-description" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddDescOpen(v => !v)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+                >
+                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isAddDescOpen ? 'rotate-90' : ''}`} />
+                  Description (Optional)
+                </button>
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem className={isAddDescOpen ? '' : 'hidden'}>
+                      <FormControl>
+                        <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-item-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -6095,17 +6170,10 @@ export default function EstimateDetail() {
                     <FormItem>
                       <FormLabel>Quantity</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          step="0.01" 
-                          min="0.01"
+                        <FormattedNumberInput
+                          value={field.value ?? 0}
+                          onChange={field.onChange}
                           placeholder="1"
-                          {...field}
-                          onChange={(e) => {
-                            const qty = parseFloat(e.target.value) || 0;
-                            const rounded = Math.round(qty * 100) / 100;
-                            field.onChange(rounded);
-                          }}
                           data-testid="input-item-quantity"
                         />
                       </FormControl>
@@ -6156,28 +6224,13 @@ export default function EstimateDetail() {
                         <FormLabel>Unit cost ex. tax *</FormLabel>
                         <FormControl>
                           <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                            <Input 
-                              type="number" 
-                              step="0.01" 
-                              min="0"
-                              placeholder="Unit cost ex. tax"
-                              className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              value={field.value === 0 ? '' : Number(field.value).toFixed(2)}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                if (value === '') {
-                                  field.onChange(0);
-                                } else {
-                                  const cost = parseFloat(value) || 0;
-                                  // 2dp to match shared/pricing.ts
-                                  const rounded = Math.round(cost * 100) / 100;
-                                  field.onChange(rounded);
-                                }
-                              }}
-                              onBlur={field.onBlur}
-                              name={field.name}
-                              ref={field.ref}
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                            <FormattedNumberInput
+                              value={field.value ?? 0}
+                              onChange={field.onChange}
+                              isMonetary
+                              placeholder="0.00"
+                              className="pl-6"
                               data-testid="input-item-builder-cost"
                             />
                           </div>
@@ -6194,7 +6247,7 @@ export default function EstimateDetail() {
                         const unitCost = form.watch("unitCostExTax") || 0;
                         const taxRate = estimate?.taxRate ?? 10;
                         const tax = Math.round(unitCost * taxRate / 100 * 100) / 100;
-                        return parseFloat(tax.toFixed(2)).toString();
+                        return tax.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       })()}
                     </div>
                   </div>
@@ -6202,30 +6255,21 @@ export default function EstimateDetail() {
                   <div>
                     <label className="text-sm font-medium mb-2 block">Unit cost inc. tax *</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                      <Input 
-                        type="number" 
-                        step="0.01" 
-                        min="0"
-                        placeholder="Unit cost inc. tax"
-                        className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm z-10">$</span>
+                      <FormattedNumberInput
                         value={(() => {
                           const unitCost = form.watch("unitCostExTax") || 0;
                           const taxRate = estimate?.taxRate ?? 10;
-                          const incTax = Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
-                          return incTax === 0 ? '' : parseFloat(incTax.toFixed(2)).toString();
+                          return Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
                         })()}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === '') {
-                            form.setValue("unitCostExTax", 0);
-                          } else {
-                            const taxRate = estimate?.taxRate ?? 10;
-                            const incTax = parseFloat(value) || 0;
-                            const exTax = Math.round(incTax / (1 + taxRate / 100) * 100) / 100;
-                            form.setValue("unitCostExTax", exTax);
-                          }
+                        onChange={(incTax) => {
+                          const taxRate = estimate?.taxRate ?? 10;
+                          const exTax = Math.round(incTax / (1 + taxRate / 100) * 100) / 100;
+                          form.setValue("unitCostExTax", exTax);
                         }}
+                        isMonetary
+                        placeholder="0.00"
+                        className="pl-6"
                         data-testid="input-item-unit-cost-inc-tax"
                       />
                     </div>
@@ -6421,51 +6465,46 @@ export default function EstimateDetail() {
               </div>
               </div>
 
-              {/* Price Summary Footer - Fixed at bottom */}
+              {/* Sticky summary bar */}
               {(() => {
-                // Single source of truth: shared/pricing.ts (2dp).
                 const qty = form.watch("quantity") || 0;
                 const unitCost = form.watch("unitCostExTax") || 0;
                 const markup = form.watch("markupPercent") || 0;
                 const taxRate = estimate?.taxRate ?? 10;
-                const priced = computeEstimateItemPrice({
-                  unitCostExTax: unitCost,
-                  quantity: qty,
-                  markupPercent: markup,
-                  projectMarkupPercent: 0,
-                  taxRate,
-                });
+                const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
+                const round2 = (n: number) => Math.round(n * 100) / 100;
+                const fmt = (n: number) => n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
                 return (
-                  <div className="border-t bg-muted/30 p-6 space-y-3">
-                    <div className="flex items-start justify-between">
+                  <div className="border-t bg-muted/30 px-6 py-3 shrink-0">
+                    <div className="grid grid-cols-4 gap-2">
                       <div>
-                        <h4 className="text-sm font-medium mb-2">Description</h4>
-                        <div className="flex gap-6 text-sm text-muted-foreground">
-                          <span>Cost ex. tax ${priced.builderCost.toFixed(2)}</span>
-                          <span>Markup ex. tax ${priced.lineMarkupAmount.toFixed(2)}</span>
-                          <span>Tax ${priced.taxAmount.toFixed(2)}</span>
-                        </div>
+                        <p className="text-[10px] text-muted-foreground">Builder ex Tax</p>
+                        <p className="text-sm font-semibold">{fmt(priced.builderCost)}</p>
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t">
                       <div>
-                        <p className="text-sm text-muted-foreground mb-1">Amount</p>
-                        <p className="text-2xl font-semibold">${priced.lineIncTax.toFixed(2)}</p>
+                        <p className="text-[10px] text-muted-foreground">Builder inc Tax</p>
+                        <p className="text-sm font-semibold">{fmt(round2(priced.builderCost * (1 + taxRate / 100)))}</p>
                       </div>
-
-                      <div className="flex gap-2">
-                        <Button type="button" variant="outline" onClick={handleCloseAddItem} data-testid="button-cancel-add-item">
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
-                          {addItemMutation.isPending ? "Adding..." : "Add item"}
-                        </Button>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Client ex Tax</p>
+                        <p className="text-sm font-semibold">{fmt(priced.lineExTax)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Client inc Tax</p>
+                        <p className="text-sm font-semibold text-primary">{fmt(priced.lineIncTax)}</p>
                       </div>
                     </div>
                   </div>
                 );
               })()}
+              <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background shrink-0">
+                <Button type="button" variant="outline" onClick={handleCloseAddItem} data-testid="button-cancel-add-item">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
+                  {addItemMutation.isPending ? "Adding..." : "Add item"}
+                </Button>
+              </div>
             </form>
           </Form>
         </DialogContent>
@@ -6514,19 +6553,28 @@ export default function EstimateDetail() {
                     )}
                   />
                   
-                  <FormField
-                    control={editForm.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description (Optional)</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-edit-item-description" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditDescOpen(v => !v)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+                    >
+                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isEditDescOpen ? 'rotate-90' : ''}`} />
+                      Description (Optional)
+                    </button>
+                    <FormField
+                      control={editForm.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem className={isEditDescOpen ? '' : 'hidden'}>
+                          <FormControl>
+                            <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-edit-item-description" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
@@ -6706,17 +6754,10 @@ export default function EstimateDetail() {
                         <FormItem>
                           <FormLabel>Quantity</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              step="0.01" 
-                              min="0.01"
+                            <FormattedNumberInput
+                              value={field.value ?? 0}
+                              onChange={field.onChange}
                               placeholder="1"
-                              {...field}
-                              onChange={(e) => {
-                                const qty = parseFloat(e.target.value) || 0;
-                                const rounded = Math.round(qty * 100) / 100;
-                                field.onChange(rounded);
-                              }}
                               data-testid="input-edit-item-quantity"
                             />
                           </FormControl>
@@ -6767,27 +6808,13 @@ export default function EstimateDetail() {
                             <FormLabel>Unit cost ex. tax *</FormLabel>
                             <FormControl>
                               <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                                <Input 
-                                  type="number" 
-                                  step="0.01" 
-                                  min="0"
-                                  placeholder="Unit cost ex. tax"
-                                  className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  value={field.value === 0 ? '' : Number(field.value).toFixed(2)}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    if (value === '') {
-                                      field.onChange(0);
-                                    } else {
-                                      const cost = parseFloat(value) || 0;
-                                      const rounded = Math.round(cost * 100) / 100;
-                                      field.onChange(rounded);
-                                    }
-                                  }}
-                                  onBlur={field.onBlur}
-                                  name={field.name}
-                                  ref={field.ref}
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                                <FormattedNumberInput
+                                  value={field.value ?? 0}
+                                  onChange={field.onChange}
+                                  isMonetary
+                                  placeholder="0.00"
+                                  className="pl-6"
                                   data-testid="input-edit-item-builder-cost"
                                 />
                               </div>
@@ -6804,7 +6831,7 @@ export default function EstimateDetail() {
                             const unitCost = editForm.watch("unitCostExTax") || 0;
                             const taxRate = estimate?.taxRate ?? 10;
                             const tax = Math.round(unitCost * taxRate / 100 * 100) / 100;
-                            return tax.toFixed(2);
+                            return tax.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                           })()}
                         </div>
                       </div>
@@ -6812,31 +6839,21 @@ export default function EstimateDetail() {
                       <div>
                         <label className="text-sm font-medium mb-2 block">Unit cost inc. tax *</label>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                          <Input 
-                            type="number" 
-                            step="0.01" 
-                            min="0"
-                            placeholder="Unit cost inc. tax"
-                            className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm z-10">$</span>
+                          <FormattedNumberInput
                             value={(() => {
                               const unitCost = editForm.watch("unitCostExTax") || 0;
                               const taxRate = estimate?.taxRate ?? 10;
-                              const incTax = Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
-                              return incTax === 0 ? '' : incTax.toFixed(2);
+                              return Math.round(unitCost * (1 + taxRate / 100) * 100) / 100;
                             })()}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '') {
-                                editForm.setValue("unitCostExTax", 0);
-                              } else {
-                                const taxRate = estimate?.taxRate ?? 10;
-                                const incTax = parseFloat(value) || 0;
-                                const exTax = incTax / (1 + taxRate / 100);
-                                const rounded = Math.round(exTax * 100) / 100;
-                                editForm.setValue("unitCostExTax", rounded);
-                              }
+                            onChange={(incTax) => {
+                              const taxRate = estimate?.taxRate ?? 10;
+                              const exTax = Math.round(incTax / (1 + taxRate / 100) * 100) / 100;
+                              editForm.setValue("unitCostExTax", exTax);
                             }}
+                            isMonetary
+                            placeholder="0.00"
+                            className="pl-6"
                             data-testid="input-edit-item-unit-cost-inc-tax"
                           />
                         </div>
@@ -6874,60 +6891,6 @@ export default function EstimateDetail() {
                     />
                   </div>
 
-                  {/* Calculated Totals */}
-                  {(() => {
-                    const qty = editForm.watch("quantity") || 0;
-                    const unitCost = editForm.watch("unitCostExTax") || 0;
-                    const markupRaw = editForm.watch("markupPercent");
-                    const markup = markupRaw != null ? markupRaw : (editingItem?.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
-                    const taxRate = estimate?.taxRate ?? 10;
-
-                    // Single source of truth: shared/pricing.ts (2dp).
-                    const priced = computeEstimateItemPrice({
-                      unitCostExTax: unitCost,
-                      quantity: qty,
-                      markupPercent: markup,
-                      projectMarkupPercent: 0,
-                      taxRate,
-                    });
-                    const round2 = (n: number) => Math.round(n * 100) / 100;
-                    const builderCostExTax = priced.builderCost;
-                    const builderCostIncTax = round2(builderCostExTax * (1 + taxRate / 100));
-                    const clientPriceExTax = priced.lineExTax;
-                    const clientPriceIncTax = priced.lineIncTax;
-                    
-                    return (qty > 0 && unitCost > 0) ? (
-                      <div className="p-4 bg-muted/30 rounded-lg border space-y-2">
-                        <h4 className="text-sm font-semibold mb-2">Calculated Totals</h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="space-y-1">
-                            <p className="text-muted-foreground">Builder's Cost ex Tax</p>
-                            <p className="font-semibold">
-                              {formatCurrency(builderCostExTax)}
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-muted-foreground">Builder's Cost inc Tax</p>
-                            <p className="font-semibold">
-                              {formatCurrency(builderCostIncTax)}
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-muted-foreground">Client Price ex Tax</p>
-                            <p className="font-semibold">
-                              {formatCurrency(clientPriceExTax)}
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-muted-foreground">Client Price inc Tax</p>
-                            <p className="font-semibold text-primary">
-                              {formatCurrency(clientPriceIncTax)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null;
-                  })()}
 
                   <Separator className="my-4" />
 
@@ -7087,6 +7050,39 @@ export default function EstimateDetail() {
                   </div>
 
                   </div>
+                  {/* Sticky summary bar */}
+                  {(() => {
+                    const qty = editForm.watch("quantity") || 0;
+                    const unitCost = editForm.watch("unitCostExTax") || 0;
+                    const markupRaw = editForm.watch("markupPercent");
+                    const markup = markupRaw != null ? markupRaw : (editingItem?.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
+                    const taxRate = estimate?.taxRate ?? 10;
+                    const priced = computeEstimateItemPrice({ unitCostExTax: unitCost, quantity: qty, markupPercent: markup, projectMarkupPercent: 0, taxRate });
+                    const round2 = (n: number) => Math.round(n * 100) / 100;
+                    const fmt = (n: number) => n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+                    return (
+                      <div className="border-t bg-muted/30 px-6 py-3 shrink-0">
+                        <div className="grid grid-cols-4 gap-2">
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Builder ex Tax</p>
+                            <p className="text-sm font-semibold">{fmt(priced.builderCost)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Builder inc Tax</p>
+                            <p className="text-sm font-semibold">{fmt(round2(priced.builderCost * (1 + taxRate / 100)))}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Client ex Tax</p>
+                            <p className="text-sm font-semibold">{fmt(priced.lineExTax)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Client inc Tax</p>
+                            <p className="text-sm font-semibold text-primary">{fmt(priced.lineIncTax)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background shrink-0">
                     <Button
                       type="button"
