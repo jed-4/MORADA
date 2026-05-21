@@ -1004,6 +1004,14 @@ export default function SelectionDetail() {
                   </div>
                 </div>
 
+                {/* Description */}
+                {selection.description && (
+                  <div className="w-full mt-2">
+                    <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Description</div>
+                    <div className="text-sm text-foreground">{selection.description}</div>
+                  </div>
+                )}
+
                 {/* Estimate link */}
                 {selection.estimateItemId && (
                   <div>
