@@ -70,6 +70,9 @@ interface SelectionItem {
   room?: string;
   allowanceType?: "PC" | "PS";
   budgetAmount?: number;
+  deadline?: string | null;
+  clientCanSeePrice?: boolean;
+  clientCanChange?: boolean;
   sortOrder: number;
   options?: SelectionOption[];
 }
@@ -197,6 +200,9 @@ export default function SelectionTemplateDetail() {
     description: "",
     allowanceType: undefined,
     budgetAmount: undefined,
+    deadline: undefined,
+    clientCanSeePrice: true,
+    clientCanChange: true,
   });
 
   const sensors = useSensors(
@@ -370,8 +376,12 @@ export default function SelectionTemplateDetail() {
       categoryName: newItem.categoryName || "General",
       itemName: newItem.itemName.trim(),
       description: newItem.description?.trim(),
+      room: newItem.room?.trim() || undefined,
       allowanceType: newItem.allowanceType,
       budgetAmount: newItem.budgetAmount ? Math.round(newItem.budgetAmount * 100) : undefined,
+      deadline: newItem.deadline || null,
+      clientCanSeePrice: newItem.clientCanSeePrice ?? true,
+      clientCanChange: newItem.clientCanChange ?? true,
       sortOrder: items.length,
     };
 
@@ -383,6 +393,9 @@ export default function SelectionTemplateDetail() {
       description: "",
       allowanceType: undefined,
       budgetAmount: undefined,
+      deadline: undefined,
+      clientCanSeePrice: true,
+      clientCanChange: true,
     });
   };
 
@@ -660,6 +673,42 @@ export default function SelectionTemplateDetail() {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Room / Location</Label>
+                <Input
+                  placeholder="e.g., Kitchen, Master Bath"
+                  value={newItem.room || ""}
+                  onChange={(e) => setNewItem({ ...newItem, room: e.target.value })}
+                  data-testid="input-room"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Deadline</Label>
+                <Input
+                  type="date"
+                  value={newItem.deadline || ""}
+                  onChange={(e) => setNewItem({ ...newItem, deadline: e.target.value || null })}
+                  data-testid="input-deadline"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <Label className="font-normal text-sm">Client can see price</Label>
+              <Switch
+                checked={newItem.clientCanSeePrice ?? true}
+                onCheckedChange={(v) => setNewItem({ ...newItem, clientCanSeePrice: v })}
+                data-testid="switch-client-see-price"
+              />
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <Label className="font-normal text-sm">Client can change selection</Label>
+              <Switch
+                checked={newItem.clientCanChange ?? true}
+                onCheckedChange={(v) => setNewItem({ ...newItem, clientCanChange: v })}
+                data-testid="switch-client-change"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>
@@ -755,6 +804,42 @@ export default function SelectionTemplateDetail() {
                     data-testid="input-edit-budget"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Room / Location</Label>
+                  <Input
+                    placeholder="e.g., Kitchen, Master Bath"
+                    value={editingItem.room || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, room: e.target.value })}
+                    data-testid="input-edit-room"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Deadline</Label>
+                  <Input
+                    type="date"
+                    value={editingItem.deadline || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, deadline: e.target.value || null })}
+                    data-testid="input-edit-deadline"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <Label className="font-normal text-sm">Client can see price</Label>
+                <Switch
+                  checked={editingItem.clientCanSeePrice ?? true}
+                  onCheckedChange={(v) => setEditingItem({ ...editingItem, clientCanSeePrice: v })}
+                  data-testid="switch-edit-client-see-price"
+                />
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <Label className="font-normal text-sm">Client can change selection</Label>
+                <Switch
+                  checked={editingItem.clientCanChange ?? true}
+                  onCheckedChange={(v) => setEditingItem({ ...editingItem, clientCanChange: v })}
+                  data-testid="switch-edit-client-change"
+                />
               </div>
             </div>
           )}

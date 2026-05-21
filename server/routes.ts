@@ -24241,6 +24241,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Selection Template Apply / Save-as-Template ────────────────────────────
+
+  async function applyTemplateItems(
+    items: any[],
+    projectId: string,
+    selectionType: string,
+    storage: any
+  ): Promise<string[]> {
+    const selectionIds: string[] = [];
+    for (const item of items) {
+      const selection = await storage.createSelection({
+        projectId,
+        name: item.itemName,
+        description: item.description || null,
+        category: item.categoryName || null,
+        room: item.room || null,
+        selectionType: selectionType || "selection",
+        status: "draft",
+        allowance: item.budgetAmount || null,
+        clientCanSeePrice: item.clientCanSeePrice ?? true,
+        clientCanChange: item.clientCanChange ?? true,
+        deadline: item.deadline || null,
+        sortOrder: item.sortOrder ?? 0,
+      });
+      selectionIds.push(selection.id);
+      for (const opt of (item.options || [])) {
+        const option = await storage.createSelectionOption({
+          selectionId: selection.id,
+          name: opt.name,
+          brand: opt.brand || null,
+          sku: opt.sku || null,
+          description: opt.description || null,
+          category: opt.category || null,
+          subcategory: opt.subcategory || null,
+          unitCost: opt.unitCost ?? null,
+          quantity: opt.quantity ?? null,
+          unitType: opt.unitType || null,
+          markupPercent: opt.markupPercent ?? null,
+          totalCost: opt.totalCost ?? null,
+          url: opt.url || null,
+          visibleToClient: opt.visibleToClient ?? true,
+          gstInclusive: opt.gstInclusive ?? false,
+          sortOrder: opt.sortOrder ?? 0,
+        });
+        const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
+        for (let idx = 0; idx < imageUrls.length; idx++) {
+          const filePath = imageUrls[idx];
+          await storage.createOptionAttachment({
+            optionId: option.id,
+            fileName: filePath.split("/").pop() || "image.jpg",
+            filePath,
+            fileType: "image",
+            mimeType: "image/jpeg",
+            sortOrder: idx,
+          });
+        }
+      }
+    }
+    return selectionIds;
+  }
+
+  app.post("/api/selection-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { projectId } = req.body;
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      const template = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      if (!template) return res.status(404).json({ error: "Template not found" });
+      const project = await storage.getProject(projectId);
+      if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
+      const items = (template.templateData as any[]) || [];
+      const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
+      res.json({ created: selectionIds.length, selectionIds });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to apply template", details: error.message });
+    }
+  });
+
+  app.post("/api/selection-templates/:id/apply-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { projectId, itemIds } = req.body;
+      if (!projectId || !Array.isArray(itemIds)) return res.status(400).json({ error: "projectId and itemIds[] are required" });
+      const template = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      if (!template) return res.status(404).json({ error: "Template not found" });
+      const project = await storage.getProject(projectId);
+      if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
+      const allItems = (template.templateData as any[]) || [];
+      const items = allItems.filter((item: any) => itemIds.includes(item.id));
+      const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
+      res.json({ created: selectionIds.length, selectionIds });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to apply template items", details: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/save-as-template", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { projectId } = req.params;
+      const { name, category, description } = req.body;
+      if (!name) return res.status(400).json({ error: "name is required" });
+      const project = await storage.getProject(projectId);
+      if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
+      const selectionsWithOptions = await storage.getSelectionsWithOptions(projectId);
+      const templateData = await Promise.all(
+        selectionsWithOptions.map(async (sel: any) => {
+          const optionsWithImages = await Promise.all(
+            (sel.options || []).map(async (opt: any) => {
+              const attachments = await storage.getOptionAttachments(opt.id);
+              return {
+                id: crypto.randomUUID(),
+                name: opt.name, brand: opt.brand, sku: opt.sku,
+                description: opt.description, category: opt.category,
+                subcategory: opt.subcategory, unitCost: opt.unitCost,
+                quantity: opt.quantity, unitType: opt.unitType,
+                markupPercent: opt.markupPercent, totalCost: opt.totalCost,
+                url: opt.url, visibleToClient: opt.visibleToClient,
+                gstInclusive: opt.gstInclusive, sortOrder: opt.sortOrder,
+                imageUrls: attachments.map((a: any) => a.filePath),
+              };
+            })
+          );
+          return {
+            id: crypto.randomUUID(),
+            itemName: sel.name,
+            categoryName: sel.category || "General",
+            description: sel.description,
+            room: sel.room,
+            allowanceType: sel.allowance ? "PC" : undefined,
+            budgetAmount: sel.allowance,
+            deadline: sel.deadline,
+            clientCanSeePrice: sel.clientCanSeePrice,
+            clientCanChange: sel.clientCanChange,
+            sortOrder: sel.sortOrder ?? 0,
+            options: optionsWithImages,
+          };
+        })
+      );
+      const template = await storage.createSelectionTemplate({
+        companyId: user.companyId,
+        name,
+        category: category || null,
+        description: description || null,
+        templateData,
+        selectionType: "selection",
+        isPublic: false,
+        isArchived: false,
+        createdBy: user.id,
+        createdByName: user.name || user.email || null,
+      });
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to save as template", details: error.message });
+    }
+  });
+
   // RFQ Templates routes
   app.get("/api/rfq-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {

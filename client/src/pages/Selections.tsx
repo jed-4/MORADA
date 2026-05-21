@@ -18,6 +18,7 @@ import {
   type SelectionOption,
   type OptionAttachment,
   type Contact,
+  type SelectionTemplate,
 } from "@shared/schema";
 import {
   DropdownMenu,
@@ -25,6 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -69,6 +71,11 @@ import {
   FileText,
   Copy,
   GripVertical,
+  LayoutTemplate,
+  Layers,
+  ChevronLeft,
+  BookCopy,
+  CheckSquare,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -616,6 +623,17 @@ export default function Selections() {
   const [showCreatePOModal, setShowCreatePOModal] = useState(false);
   const [createPOSupplierId, setCreatePOSupplierId] = useState<string>("");
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
+  const [showTemplatePanel, setShowTemplatePanel] = useState<boolean>(() => {
+    return localStorage.getItem("selections-template-panel") === "true";
+  });
+  const [groupBy, setGroupBy] = useState<"none" | "category" | "location">(() => {
+    return (localStorage.getItem("selections-group-by") as "none" | "category" | "location") || "none";
+  });
+  const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateCategory, setSaveTemplateCategory] = useState("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -631,6 +649,14 @@ export default function Selections() {
   useEffect(() => {
     localStorage.setItem("selections-cards-visible", String(showSummaryCards));
   }, [showSummaryCards]);
+
+  useEffect(() => {
+    localStorage.setItem("selections-template-panel", String(showTemplatePanel));
+  }, [showTemplatePanel]);
+
+  useEffect(() => {
+    localStorage.setItem("selections-group-by", groupBy);
+  }, [groupBy]);
 
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -707,6 +733,12 @@ export default function Selections() {
   // Fetch selection categories for filter
   const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
+  });
+
+  // Fetch selection templates for the template panel
+  const { data: selectionTemplates = [] } = useQuery<SelectionTemplate[]>({
+    queryKey: ["/api/selection-templates"],
+    queryFn: () => apiRequest("/api/selection-templates", "GET"),
   });
 
   // Fetch contacts for supplier picker in Create PO modal
@@ -916,6 +948,38 @@ export default function Selections() {
     },
   });
 
+  const applyTemplateMutation = useMutation({
+    mutationFn: async ({ templateId, itemIds }: { templateId: string; itemIds?: string[] }) => {
+      const endpoint = itemIds
+        ? `/api/selection-templates/${templateId}/apply-items`
+        : `/api/selection-templates/${templateId}/apply`;
+      return await apiRequest(endpoint, "POST", itemIds ? { projectId, itemIds } : { projectId });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+      toast({ title: `${data.created} selection${data.created !== 1 ? "s" : ""} added from template` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to apply template", description: err?.message ?? "Something went wrong.", variant: "destructive" });
+    },
+  });
+
+  const saveAsTemplateMutation = useMutation({
+    mutationFn: async ({ name, category }: { name: string; category?: string }) => {
+      return await apiRequest(`/api/projects/${projectId}/save-as-template`, "POST", { name, category: category || null });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
+      setShowSaveTemplateDialog(false);
+      setSaveTemplateName("");
+      setSaveTemplateCategory("");
+      toast({ title: "Template saved", description: "Your selections have been saved as a template." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to save template", description: err?.message ?? "Something went wrong.", variant: "destructive" });
+    },
+  });
+
   if (!currentProject) {
     return (
       <div className="p-6">
@@ -939,8 +1003,39 @@ export default function Selections() {
 
   const varianceMeta = formatVarianceCents(stats.variance);
 
+  // ── Grouping helpers ────────────────────────────────────────────────────────
+  const groupedFiltered = useMemo(() => {
+    if (groupBy === "none") return null;
+    const key = groupBy === "category" ? "category" : "room";
+    const groups = new Map<string, typeof filtered>();
+    for (const sel of filtered) {
+      const g = (sel as any)[key] || "Uncategorised";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(sel);
+    }
+    return groups;
+  }, [filtered, groupBy]);
+
+  const allGroupKeys = useMemo(() => (groupedFiltered ? [...groupedFiltered.keys()] : []), [groupedFiltered]);
+
+  // Initialise all groups as expanded when grouping first turns on
+  useEffect(() => {
+    if (groupBy !== "none" && allGroupKeys.length > 0 && expandedGroupIds.size === 0) {
+      setExpandedGroupIds(new Set(allGroupKeys));
+    }
+  }, [groupBy, allGroupKeys]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
   return (
-    <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+    <div className="flex h-full bg-background rounded-lg border overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
       {/* Summary strip (hideable) */}
       {showSummaryCards && (
         <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0 flex-wrap">
@@ -1121,7 +1216,33 @@ export default function Selections() {
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-            {/* Category dropdown */}
+            {/* Group-by dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${groupBy !== "none" ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
+                  data-testid="button-group-by"
+                  aria-label="Group by"
+                >
+                  <Layers className="w-3 h-3" />
+                  <span>{groupBy === "category" ? "Category" : groupBy === "location" ? "Location" : "Group"}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setGroupBy("none")}>
+                  <span className={groupBy === "none" ? "font-medium" : ""}>No grouping</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setGroupBy("category")}>
+                  <span className={groupBy === "category" ? "font-medium" : ""}>Group by Category</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setGroupBy("location")}>
+                  <span className={groupBy === "location" ? "font-medium" : ""}>Group by Location</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Category filter dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -1149,6 +1270,18 @@ export default function Selections() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Templates toggle */}
+            <button
+              type="button"
+              onClick={() => setShowTemplatePanel((p) => !p)}
+              className={`h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 ${showTemplatePanel ? "border-primary/50 text-primary bg-primary/5" : "border-border/50 text-muted-foreground"}`}
+              data-testid="button-toggle-templates"
+              aria-label="Templates"
+            >
+              <LayoutTemplate className="w-3 h-3" />
+              <span>Templates</span>
+            </button>
 
             {/* Add Selection primary */}
             <button
@@ -1209,6 +1342,14 @@ export default function Selections() {
                       <FileText className="w-3.5 h-3.5 mr-2" />
                       Export Schedule PDF
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setShowSaveTemplateDialog(true)}
+                      data-testid="option-save-as-template"
+                    >
+                      <BookCopy className="w-3.5 h-3.5 mr-2" />
+                      Save as Template
+                    </DropdownMenuItem>
                   </>
                 )}
               </DropdownMenuContent>
@@ -1263,6 +1404,57 @@ export default function Selections() {
                 Add Selection
               </Button>
             )}
+          </div>
+        ) : groupBy !== "none" && groupedFiltered ? (
+          /* Grouped rendering — DnD disabled */
+          <div>
+            {allGroupKeys.map((groupKey) => {
+              const groupItems = groupedFiltered.get(groupKey) || [];
+              const isOpen = expandedGroupIds.has(groupKey);
+              return (
+                <div key={groupKey}>
+                  {/* Group header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(groupKey)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b border-border/50 hover-elevate text-left"
+                  >
+                    {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">{groupKey}</span>
+                    <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 ml-0.5">{groupItems.length}</span>
+                  </button>
+                  {/* Group items */}
+                  {isOpen && groupItems.map((sel) => (
+                    <div key={sel.id}>
+                      <SortableSelectionRow
+                        selection={sel}
+                        expanded={expandedRows.has(sel.id)}
+                        onToggleExpand={() => toggleExpand(sel.id)}
+                        onSelectOption={(selectionId, optionId) =>
+                          selectOptionMutation.mutate({ selectionId, optionId })
+                        }
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        isPending={selectOptionMutation.isPending}
+                        isChecked={checkedIds.has(sel.id)}
+                        onCheck={handleCheck}
+                        projectId={projectId!}
+                        isDraggable={false}
+                      />
+                      {expandedRows.has(sel.id) && (
+                        <OptionsPanel
+                          selection={sel}
+                          onSelectOption={(optionId) =>
+                            selectOptionMutation.mutate({ selectionId: sel.id, optionId })
+                          }
+                          isPending={selectOptionMutation.isPending}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <DndContext
@@ -1416,6 +1608,158 @@ export default function Selections() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Save as Template Dialog */}
+      <Dialog open={showSaveTemplateDialog} onOpenChange={(open) => { if (!open) { setShowSaveTemplateDialog(false); setSaveTemplateName(""); setSaveTemplateCategory(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookCopy className="w-4 h-4" />
+              Save as Template
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Save all {filtered.length} visible selection{filtered.length !== 1 ? "s" : ""} as a reusable template.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Template Name *</label>
+              <Input
+                placeholder="e.g., Standard 4-bed Home"
+                value={saveTemplateName}
+                onChange={(e) => setSaveTemplateName(e.target.value)}
+                data-testid="input-save-template-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Category <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <Input
+                placeholder="e.g., Residential, Commercial"
+                value={saveTemplateCategory}
+                onChange={(e) => setSaveTemplateCategory(e.target.value)}
+                data-testid="input-save-template-category"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowSaveTemplateDialog(false); setSaveTemplateName(""); setSaveTemplateCategory(""); }} disabled={saveAsTemplateMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (saveTemplateName.trim()) saveAsTemplateMutation.mutate({ name: saveTemplateName.trim(), category: saveTemplateCategory.trim() || undefined }); }}
+              disabled={saveAsTemplateMutation.isPending || !saveTemplateName.trim()}
+              data-testid="button-confirm-save-template"
+            >
+              {saveAsTemplateMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : <><BookCopy className="w-3.5 h-3.5 mr-1.5" />Save Template</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      </div>{/* end main flex-col */}
+
+      {/* Template Panel */}
+      {showTemplatePanel && (
+        <div className="w-80 border-l bg-background flex flex-col overflow-hidden shrink-0" data-testid="panel-templates">
+          {/* Panel header */}
+          <div className="h-9 flex items-center justify-between px-3 border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <LayoutTemplate className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-sm font-medium">Templates</span>
+              <span className="text-xs text-muted-foreground bg-muted rounded px-1.5 py-0.5">{selectionTemplates.length}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTemplatePanel(false)}
+              className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate text-muted-foreground"
+              data-testid="button-close-template-panel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Panel body */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {selectionTemplates.length === 0 ? (
+              <div className="text-center py-8 text-xs text-muted-foreground">
+                <LayoutTemplate className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                No templates yet
+              </div>
+            ) : (
+              selectionTemplates.map((tmpl) => {
+                const tmplItems: any[] = (tmpl.templateData as any[]) || [];
+                const isExpanded = expandedTemplateIds.has(tmpl.id);
+                return (
+                  <div key={tmpl.id} className="border rounded-md overflow-hidden">
+                    {/* Template header row */}
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-muted/30">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedTemplateIds((prev) => { const n = new Set(prev); if (n.has(tmpl.id)) n.delete(tmpl.id); else n.add(tmpl.id); return n; })}
+                        className="flex-1 flex items-center gap-1.5 text-left min-w-0"
+                      >
+                        {isExpanded ? <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />}
+                        <span className="text-xs font-medium truncate">{tmpl.name}</span>
+                        {tmpl.category && <span className="text-[10px] text-muted-foreground border rounded px-1 py-0 shrink-0">{tmpl.category}</span>}
+                        <span className="text-[10px] text-muted-foreground shrink-0">{tmplItems.length}</span>
+                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={!projectId || applyTemplateMutation.isPending}
+                            onClick={() => projectId && applyTemplateMutation.mutate({ templateId: tmpl.id })}
+                            className="h-5 px-1.5 text-[10px] border border-primary/30 text-primary rounded hover-elevate active-elevate-2 disabled:opacity-40 shrink-0"
+                            data-testid={`button-apply-template-${tmpl.id}`}
+                          >
+                            Apply all
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">Apply all {tmplItems.length} items to this project</TooltipContent>
+                      </Tooltip>
+                    </div>
+
+                    {/* Expanded items */}
+                    {isExpanded && (
+                      <div className="divide-y divide-border/50">
+                        {tmplItems.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground px-3 py-2">No items in this template</p>
+                        ) : (
+                          tmplItems.map((item: any) => (
+                            <div key={item.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{item.itemName}</p>
+                                {(item.categoryName || item.room) && (
+                                  <p className="text-[10px] text-muted-foreground truncate">
+                                    {[item.categoryName, item.room].filter(Boolean).join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                              {item.budgetAmount && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">${(item.budgetAmount / 100).toLocaleString("en-AU", { maximumFractionDigits: 0 })}</span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={!projectId || applyTemplateMutation.isPending}
+                                onClick={() => projectId && applyTemplateMutation.mutate({ templateId: tmpl.id, itemIds: [item.id] })}
+                                className="h-5 px-1.5 text-[10px] border rounded hover-elevate active-elevate-2 disabled:opacity-40 shrink-0 text-muted-foreground"
+                                data-testid={`button-apply-item-${item.id}`}
+                              >
+                                Add
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

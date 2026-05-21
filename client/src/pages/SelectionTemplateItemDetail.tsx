@@ -87,6 +87,9 @@ interface SelectionItem {
   room?: string;
   allowanceType?: "PC" | "PS";
   budgetAmount?: number;
+  deadline?: string | null;
+  clientCanSeePrice?: boolean;
+  clientCanChange?: boolean;
   sortOrder: number;
   options?: SelectionOption[];
 }
