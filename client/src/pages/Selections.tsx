@@ -279,7 +279,7 @@ function SelectionRow({
         className={`group grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
           isChecked ? "bg-primary/5" : "hover:bg-muted/30"
         }`}
-        onClick={onToggleExpand}
+        onClick={() => onEdit(selection.id)}
         data-testid={`row-selection-${selection.id}`}
       >
         {/* Drag handle */}
@@ -292,7 +292,10 @@ function SelectionRow({
         </div>
 
         {/* Second column: expand/collapse chevron */}
-        <div className="flex items-center justify-center flex-shrink-0">
+        <div
+          className="flex items-center justify-center flex-shrink-0"
+          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+        >
           <ChevronRight
             className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
           />
