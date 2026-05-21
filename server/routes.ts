@@ -11028,6 +11028,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Convert approved selections into a single Purchase Order
+  app.post("/api/selections/batch-sort", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      if (!Array.isArray(updates) || updates.some((u: any) => !u.id || typeof u.sortOrder !== "number")) {
+        return res.status(400).json({ error: "updates must be an array of {id, sortOrder}" });
+      }
+      await storage.batchUpdateSelectionSortOrder(updates);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error batch-sorting selections:", error);
+      res.status(500).json({ error: "Failed to update sort order" });
+    }
+  });
+
   app.post("/api/selections/create-po", requireAuth, requireTeamMember, async (req, res) => {
     try {
       if (!req.user?.companyId) {

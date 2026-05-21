@@ -7,6 +7,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useProject } from "@/contexts/ProjectContext";
 import { cn } from "@/lib/utils";
+import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   type Selection,
   type InsertSelection,
@@ -65,6 +68,7 @@ import {
   HardHat,
   FileText,
   Copy,
+  GripVertical,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 
@@ -225,6 +229,8 @@ interface SelectionRowProps {
   isChecked: boolean;
   onCheck: (id: string, checked: boolean) => void;
   projectId: string;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+  isDraggable?: boolean;
 }
 
 function SelectionRow({
@@ -238,6 +244,8 @@ function SelectionRow({
   isChecked,
   onCheck,
   projectId,
+  dragHandleProps,
+  isDraggable = false,
 }: SelectionRowProps) {
   const derived = getDerivedStatus(selection);
   const selectedOption = getSelectedOption(selection);
@@ -259,13 +267,22 @@ function SelectionRow({
   return (
     <>
       <div
-        className={`group grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
+        className={`group grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center h-12 px-3 border-b border-border cursor-pointer ${
           isChecked ? "bg-primary/5" : "hover:bg-muted/30"
         }`}
         onClick={onToggleExpand}
         data-testid={`row-selection-${selection.id}`}
       >
-        {/* First column: expand/collapse chevron */}
+        {/* Drag handle */}
+        <div
+          className={`flex items-center justify-center flex-shrink-0 ${isDraggable ? "cursor-grab opacity-0 group-hover:opacity-100" : "opacity-0 pointer-events-none"}`}
+          onClick={(e) => e.stopPropagation()}
+          {...(isDraggable ? dragHandleProps : {})}
+        >
+          <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+        </div>
+
+        {/* Second column: expand/collapse chevron */}
         <div className="flex items-center justify-center flex-shrink-0">
           <ChevronRight
             className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
@@ -561,6 +578,31 @@ function OptionsPanel({ selection, onSelectOption, isPending }: OptionsPanelProp
   );
 }
 
+function SortableSelectionRow(props: SelectionRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.selection.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: "relative",
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <SelectionRow {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────
 // Main page
 // ───────────────────────────────────────────────────────────────────────
@@ -573,9 +615,14 @@ export default function Selections() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showCreatePOModal, setShowCreatePOModal] = useState(false);
   const [createPOSupplierId, setCreatePOSupplierId] = useState<string>("");
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
 
   const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
     const stored = localStorage.getItem("selections-cards-visible");
@@ -616,6 +663,46 @@ export default function Selections() {
     queryFn: () => apiRequest(`/api/selections/with-options?projectId=${projectId}`, "GET"),
     enabled: !!projectId,
   });
+
+  // Sync orderedIds from server data (preserve local order if already set for same IDs)
+  useEffect(() => {
+    const incoming = selectionsWithOptions.map((s) => s.id);
+    setOrderedIds((prev) => {
+      if (prev.length === 0) return incoming;
+      const prevSet = new Set(prev);
+      const incomingSet = new Set(incoming);
+      const same = incoming.every((id) => prevSet.has(id)) && prev.every((id) => incomingSet.has(id));
+      if (same) return prev; // preserve local drag order
+      // IDs changed (add/delete) — rebuild: keep existing order, add new at end, remove gone
+      const kept = prev.filter((id) => incomingSet.has(id));
+      const added = incoming.filter((id) => !prevSet.has(id));
+      return [...kept, ...added];
+    });
+  }, [selectionsWithOptions]);
+
+  const batchSortMutation = useMutation({
+    mutationFn: (updates: { id: string; sortOrder: number }[]) =>
+      apiRequest("/api/selections/batch-sort", "POST", { updates }),
+    onError: () => {
+      toast({ title: "Failed to save order", variant: "destructive" });
+      // Revert to server order
+      setOrderedIds(selectionsWithOptions.map((s) => s.id));
+    },
+  });
+
+  const isDraggable = !searchTerm && !categoryFilter && statusTab === "all";
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setOrderedIds((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      const next = arrayMove(prev, oldIndex, newIndex);
+      batchSortMutation.mutate(next.map((id, idx) => ({ id, sortOrder: idx })));
+      return next;
+    });
+  };
 
   // Fetch selection categories for filter
   const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
@@ -722,9 +809,13 @@ export default function Selections() {
     };
   }, [selectionsWithOptions]);
 
-  // Filtered list
+  // Filtered list — ordered by orderedIds (drag order), then filtered
   const filtered = useMemo(() => {
-    return selectionsWithOptions.filter((sel) => {
+    const idToSel = new Map(selectionsWithOptions.map((s) => [s.id, s]));
+    const ordered = orderedIds.length > 0
+      ? orderedIds.map((id) => idToSel.get(id)).filter(Boolean) as typeof selectionsWithOptions
+      : selectionsWithOptions;
+    return ordered.filter((sel) => {
       const d = getDerivedStatus(sel);
       // "ordered" tab shows both ordered + received
       if (statusTab === "ordered") {
@@ -745,7 +836,7 @@ export default function Selections() {
       }
       return true;
     });
-  }, [selectionsWithOptions, statusTab, categoryFilter, searchTerm]);
+  }, [selectionsWithOptions, orderedIds, statusTab, categoryFilter, searchTerm]);
 
   // Approved spend
   const approvedSpend = useMemo(() => {
@@ -1128,7 +1219,8 @@ export default function Selections() {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {/* Table header */}
-        <div className="grid grid-cols-[32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
+        <div className="grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
+          <div></div>
           <div className="flex items-center justify-center">
             <button
               type="button"
@@ -1173,35 +1265,47 @@ export default function Selections() {
             )}
           </div>
         ) : (
-          <div>
-            {filtered.map((sel) => (
-              <div key={sel.id}>
-                <SelectionRow
-                  selection={sel}
-                  expanded={expandedRows.has(sel.id)}
-                  onToggleExpand={() => toggleExpand(sel.id)}
-                  onSelectOption={(selectionId, optionId) =>
-                    selectOptionMutation.mutate({ selectionId, optionId })
-                  }
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  isPending={selectOptionMutation.isPending}
-                  isChecked={checkedIds.has(sel.id)}
-                  onCheck={handleCheck}
-                  projectId={projectId!}
-                />
-                {expandedRows.has(sel.id) && (
-                  <OptionsPanel
-                    selection={sel}
-                    onSelectOption={(optionId) =>
-                      selectOptionMutation.mutate({ selectionId: sel.id, optionId })
-                    }
-                    isPending={selectOptionMutation.isPending}
-                  />
-                )}
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={filtered.map((s) => s.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div>
+                {filtered.map((sel) => (
+                  <div key={sel.id}>
+                    <SortableSelectionRow
+                      selection={sel}
+                      expanded={expandedRows.has(sel.id)}
+                      onToggleExpand={() => toggleExpand(sel.id)}
+                      onSelectOption={(selectionId, optionId) =>
+                        selectOptionMutation.mutate({ selectionId, optionId })
+                      }
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      isPending={selectOptionMutation.isPending}
+                      isChecked={checkedIds.has(sel.id)}
+                      onCheck={handleCheck}
+                      projectId={projectId!}
+                      isDraggable={isDraggable}
+                    />
+                    {expandedRows.has(sel.id) && (
+                      <OptionsPanel
+                        selection={sel}
+                        onSelectOption={(optionId) =>
+                          selectOptionMutation.mutate({ selectionId: sel.id, optionId })
+                        }
+                        isPending={selectOptionMutation.isPending}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 

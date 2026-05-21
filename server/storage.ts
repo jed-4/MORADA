@@ -577,6 +577,7 @@ export interface IStorage {
   createSelection(selection: InsertSelection): Promise<Selection>;
   updateSelection(id: string, selection: Partial<InsertSelection>): Promise<Selection | undefined>;
   deleteSelection(id: string): Promise<boolean>;
+  batchUpdateSelectionSortOrder(updates: { id: string; sortOrder: number }[]): Promise<void>;
 
   // Selection Options CRUD
   getSelectionOptions(selectionId: string): Promise<SelectionOption[]>;
@@ -5401,7 +5402,14 @@ export class MemStorage implements IStorage {
   async getSelections(projectId: string): Promise<Selection[]> {
     return Array.from(this.selections.values())
       .filter(selection => selection.projectId === projectId)
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt.getTime() - b.createdAt.getTime());
+  }
+
+  async batchUpdateSelectionSortOrder(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    for (const { id, sortOrder } of updates) {
+      const sel = this.selections.get(id);
+      if (sel) this.selections.set(id, { ...sel, sortOrder });
+    }
   }
 
   async getSelection(id: string): Promise<Selection | undefined> {
@@ -7823,7 +7831,17 @@ export class DbStorage implements IStorage {
 
   // Selections CRUD
   async getSelections(projectId: string): Promise<Selection[]> {
-    return await db.select().from(schema.selections).where(eq(schema.selections.projectId, projectId));
+    return await db.select().from(schema.selections)
+      .where(eq(schema.selections.projectId, projectId))
+      .orderBy(schema.selections.sortOrder, schema.selections.createdAt);
+  }
+
+  async batchUpdateSelectionSortOrder(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    await Promise.all(
+      updates.map(({ id, sortOrder }) =>
+        db.update(schema.selections).set({ sortOrder }).where(eq(schema.selections.id, id))
+      )
+    );
   }
 
   async getSelection(id: string): Promise<Selection | undefined> {

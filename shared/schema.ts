@@ -1400,6 +1400,7 @@ export const selections = pgTable("selections", {
   status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
   deadline: timestamp("deadline"),
   allowance: integer("allowance"), // Budget allowance in cents
+  sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   clientCanChange: boolean("client_can_change").notNull().default(true),
   clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Source estimate item if created via "Create Selection" in estimate
