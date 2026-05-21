@@ -158,7 +158,9 @@ import {
   users as usersTable,
   userProjectAccess as userProjectAccessTable,
   userRoles as userRolesTable,
-  bills as billsTable
+  bills as billsTable,
+  selections,
+  selectionOptions
 } from "@shared/schema";
 import { matchSupplier } from "@shared/supplierMatcher";
 import {
@@ -11000,6 +11002,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(selection);
     } catch (error) {
       res.status(500).json({ error: "Failed to create selection" });
+    }
+  });
+
+  // Duplicate a selection (and its options) within the same project
+  app.post("/api/selections/:id/duplicate", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [original] = await db.select().from(selections).where(eq(selections.id, id));
+      if (!original) return res.status(404).json({ error: "Selection not found" });
+
+      const opts = await db.select().from(selectionOptions).where(eq(selectionOptions.selectionId, id));
+
+      const newSelId = randomUUID();
+      const [newSel] = await db.insert(selections).values({
+        ...original,
+        id: newSelId,
+        name: `${original.name} (Copy)`,
+        status: "draft",
+        portalToken: randomUUID(),
+        purchaseOrderId: null,
+        estimateItemId: null,
+        sortOrder: (original.sortOrder ?? 0) + 1,
+      }).returning();
+
+      if (opts.length > 0) {
+        await db.insert(selectionOptions).values(
+          opts.map((opt) => ({
+            ...opt,
+            id: randomUUID(),
+            selectionId: newSelId,
+            isSelectedByClient: false,
+            approvedAt: null,
+            approvedById: null,
+            approvedBy: null,
+            lockedAt: null,
+          }))
+        );
+      }
+
+      res.json({ selection: newSel, optionCount: opts.length });
+    } catch (error) {
+      console.error("Duplicate selection error:", error);
+      res.status(500).json({ error: "Failed to duplicate selection" });
     }
   });
 

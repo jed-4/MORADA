@@ -232,6 +232,7 @@ interface SelectionRowProps {
   onSelectOption: (selectionId: string, optionId: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (id: string) => void;
   isPending: boolean;
   isChecked: boolean;
   onCheck: (id: string, checked: boolean) => void;
@@ -247,6 +248,7 @@ function SelectionRow({
   onSelectOption,
   onEdit,
   onDelete,
+  onDuplicate,
   isPending,
   isChecked,
   onCheck,
@@ -414,6 +416,11 @@ function SelectionRow({
                 <Edit3 className="w-4 h-4 mr-2" />
                 Edit
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDuplicate(selection.id)} data-testid={`button-duplicate-${selection.id}`}>
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
@@ -631,6 +638,7 @@ export default function Selections() {
   });
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Set<string>>(new Set());
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [templateSearch, setTemplateSearch] = useState("");
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateCategory, setSaveTemplateCategory] = useState("");
@@ -780,6 +788,19 @@ export default function Selections() {
     },
   });
 
+  const duplicateSelectionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/selections/${id}/duplicate`, "POST");
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections/with-options", projectId] });
+      toast({ title: "Selection duplicated", description: `"${data.selection.name}" has been created.` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to duplicate selection.", variant: "destructive" });
+    },
+  });
+
   const selectOptionMutation = useMutation({
     mutationFn: async ({ selectionId, optionId }: { selectionId: string; optionId: string }) => {
       const sel = selectionsWithOptions.find((s) => s.id === selectionId);
@@ -914,6 +935,7 @@ export default function Selections() {
 
   const handleEdit = (id: string) => setLocation(`/selections/${id}`);
   const handleDelete = (id: string) => deleteSelectionMutation.mutate(id);
+  const handleDuplicate = (id: string) => duplicateSelectionMutation.mutate(id);
 
   const handleCheck = (id: string, checked: boolean) => {
     setCheckedIds((prev) => {
@@ -1435,6 +1457,7 @@ export default function Selections() {
                         }
                         onEdit={handleEdit}
                         onDelete={handleDelete}
+                        onDuplicate={handleDuplicate}
                         isPending={selectOptionMutation.isPending}
                         isChecked={checkedIds.has(sel.id)}
                         onCheck={handleCheck}
@@ -1478,6 +1501,7 @@ export default function Selections() {
                       }
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onDuplicate={handleDuplicate}
                       isPending={selectOptionMutation.isPending}
                       isChecked={checkedIds.has(sel.id)}
                       onCheck={handleCheck}
@@ -1678,6 +1702,29 @@ export default function Selections() {
             </button>
           </div>
 
+          {/* Panel search */}
+          <div className="px-2 py-1.5 border-b border-border flex-shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search templates…"
+                value={templateSearch}
+                onChange={(e) => setTemplateSearch(e.target.value)}
+                className="pl-7 h-7 text-xs"
+                data-testid="input-template-search"
+              />
+              {templateSearch && (
+                <button
+                  type="button"
+                  onClick={() => setTemplateSearch("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover-elevate text-muted-foreground"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Panel body */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {selectionTemplates.length === 0 ? (
@@ -1685,8 +1732,17 @@ export default function Selections() {
                 <LayoutTemplate className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 No templates yet
               </div>
-            ) : (
-              selectionTemplates.map((tmpl) => {
+            ) : (() => {
+              const visibleTemplates = templateSearch
+                ? selectionTemplates.filter((t) =>
+                    t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                    (t.category?.toLowerCase().includes(templateSearch.toLowerCase()))
+                  )
+                : selectionTemplates;
+              if (visibleTemplates.length === 0) return (
+                <div className="text-center py-8 text-xs text-muted-foreground">No templates match your search</div>
+              );
+              return visibleTemplates.map((tmpl) => {
                 const tmplItems: any[] = (tmpl.templateData as any[]) || [];
                 const isExpanded = expandedTemplateIds.has(tmpl.id);
                 return (
@@ -1754,8 +1810,8 @@ export default function Selections() {
                     )}
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
       )}

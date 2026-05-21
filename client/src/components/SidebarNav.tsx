@@ -55,6 +55,7 @@ import {
   PanelLeftClose,
   Building2,
   Briefcase,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +158,7 @@ const sections: Record<Exclude<SectionId, "projects" | "business">, { label: str
     icon: Library,
     items: [
       { title: "Templates", url: "/templates", icon: LayoutTemplate },
+      { title: "Product Library", url: "/product-library", icon: Package },
       { title: "Cost Codes", url: "/cost-codes", icon: Tag },
       { title: "Price List", url: "/price-list", icon: DollarSign },
       { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },

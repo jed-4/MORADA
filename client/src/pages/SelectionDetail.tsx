@@ -104,6 +104,7 @@ import {
   XCircle,
   FileText,
   File as FileIcon,
+  BookMarked,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -430,6 +431,27 @@ export default function SelectionDetail() {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err?.message ?? "Failed to unapprove option.", variant: "destructive" });
+    },
+  });
+
+  const saveToLibraryMutation = useMutation({
+    mutationFn: async (option: SelectionOption) => {
+      return await apiRequest("/api/products", "POST", {
+        name: option.name,
+        brand: option.brand ?? null,
+        sku: option.sku ?? null,
+        description: option.description ?? null,
+        defaultUnitCost: option.unitCost ?? 0,
+        unitType: option.unitType ?? "ea",
+        url: (option as any).productUrl ?? null,
+        isActive: true,
+      });
+    },
+    onSuccess: (_, option) => {
+      toast({ title: "Saved to Product Library", description: `"${option.name}" is now in your library.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to save", description: err?.message ?? "Could not save to Product Library.", variant: "destructive" });
     },
   });
 
@@ -1641,6 +1663,13 @@ export default function SelectionDetail() {
                                     </AlertDialogTrigger>
                                   )}
                                   <DropdownMenuItem
+                                    onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
+                                    disabled={saveToLibraryMutation.isPending}
+                                  >
+                                    <BookMarked className="w-4 h-4 mr-2" />
+                                    Save to Product Library
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
                                     onClick={(e) => { e.stopPropagation(); if (!isLocked) deleteOptionMutation.mutate(option.id); }}
                                     className="text-destructive"
                                     disabled={isLocked}
@@ -1895,6 +1924,13 @@ export default function SelectionDetail() {
                             Remove approval
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); saveToLibraryMutation.mutate(option); }}
+                          disabled={saveToLibraryMutation.isPending}
+                        >
+                          <BookMarked className="w-4 h-4 mr-2" />
+                          Save to Product Library
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => { e.stopPropagation(); if (!isLockedRow) deleteOptionMutation.mutate(option.id); }}
                           className="text-destructive"
