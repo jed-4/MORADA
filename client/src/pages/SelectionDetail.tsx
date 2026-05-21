@@ -1065,31 +1065,6 @@ export default function SelectionDetail() {
                   </div>
                 )}
 
-                {/* Notes to trades */}
-                <div className="w-full mt-2">
-                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
-                    Notes to trades
-                    {localNotes && (
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 ml-1" />
-                    )}
-                  </div>
-                  <Textarea
-                    rows={2}
-                    placeholder="Instructions, warnings, or notes for your trades team…"
-                    value={localNotes}
-                    onChange={(e) => {
-                      setLocalNotes(e.target.value);
-                    }}
-                    onBlur={(e) => handleSaveNotes(e.target.value)}
-                    className="text-xs resize-none"
-                  />
-                  {localNotes && (
-                    <div className="mt-1 px-2 py-1 rounded-md text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                      This note is visible to your internal team only — not the client.
-                    </div>
-                  )}
-                </div>
-
                 {/* Estimate link */}
                 {selection.estimateItemId && (
                   <div>
@@ -1617,11 +1592,11 @@ export default function SelectionDetail() {
                     <Card 
                       className={cn(
                         "transition-all duration-200 group",
-                        isLocked ? "cursor-not-allowed opacity-80" : "hover-elevate cursor-pointer",
+                        "hover-elevate cursor-pointer",
                         option.isSelectedByClient && !isApproved && "ring-1 ring-[hsl(var(--amber))]",
                         isApproved && "ring-1 ring-[hsl(var(--sage))]"
                       )}
-                      onClick={() => { if (!isLocked) handleEditOption(option); }}
+                      onClick={() => { if (isLocked) handleViewOption(option); else handleEditOption(option); }}
                       data-testid={`card-option-${option.id}`}
                     >
                       {/* Hero image */}
