@@ -193,6 +193,12 @@ export default function SelectionDetail() {
   const [searchTerm, setSearchTerm] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [optionsView, setOptionsView] = useState<"table" | "grid">("grid");
+  const [localNotes, setLocalNotes] = useState<string>("");
+  const [notesInitialized, setNotesInitialized] = useState(false);
+  const [optionSpecifications, setOptionSpecifications] = useState<Record<string, any>>({});
+  const [specsOpen, setSpecsOpen] = useState(false);
+  const [specPickerOpen, setSpecPickerOpen] = useState(false);
+  const [detailSpecImageUrlInput, setDetailSpecImageUrlInput] = useState("");
   const [optionsSearchExpanded, setOptionsSearchExpanded] = useState(false);
   const optionsSearchRef = useRef<HTMLInputElement>(null);
   const optionsSearchWrapRef = useRef<HTMLDivElement>(null);
@@ -202,6 +208,7 @@ export default function SelectionDetail() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
+  const noteSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -256,6 +263,10 @@ export default function SelectionDetail() {
         clientCanChange: selection.clientCanChange,
         clientCanSeePrice: selection.clientCanSeePrice,
       });
+      if (!notesInitialized) {
+        setLocalNotes((selection as any).notes || "");
+        setNotesInitialized(true);
+      }
     }
   }, [selection]);
 
@@ -672,15 +683,30 @@ export default function SelectionDetail() {
     });
   };
 
+  const handleSaveNotes = (value: string) => {
+    if (noteSaveRef.current) clearTimeout(noteSaveRef.current);
+    noteSaveRef.current = setTimeout(() => {
+      apiRequest(`/api/selections/${id}`, "PATCH", { notes: value }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      });
+    }, 600);
+  };
+
   const onOptionSubmit = async (data: InsertSelectionOption) => {
+    const dataWithSpecs = {
+      ...data,
+      specifications: optionSpecifications && Object.keys(optionSpecifications).length > 0
+        ? optionSpecifications
+        : null,
+    };
     if (editingOption) {
-      updateOptionMutation.mutate({ optionId: editingOption.id, data });
+      updateOptionMutation.mutate({ optionId: editingOption.id, data: dataWithSpecs as InsertSelectionOption });
     } else {
       try {
         const newOption = await createOptionMutation.mutateAsync({
-          ...data,
+          ...dataWithSpecs,
           selectionId: id || "",
-        });
+        } as InsertSelectionOption);
         if (pendingImages.length > 0 && newOption?.id) {
           setUploadingImage(true);
           try {
@@ -716,6 +742,8 @@ export default function SelectionDetail() {
 
   const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
+    setOptionSpecifications((option as any).specifications || {});
+    setSpecsOpen(!!(((option as any).specifications) && Object.keys((option as any).specifications).length > 0));
     setGstInclusive(option.gstInclusive || false);
     setUnitCostDisplayStr(option.unitCost ? (option.unitCost / 100).toFixed(2) : "");
     setTotalCostDisplayStr(option.totalCost ? (option.totalCost / 100).toFixed(2) : "");
@@ -754,6 +782,8 @@ export default function SelectionDetail() {
   const handleAddOption = () => {
     setIsAddingOption(true);
     setEditingOption(null);
+    setOptionSpecifications({});
+    setSpecsOpen(false);
     setGstInclusive(false);
     setUnitCostDisplayStr("");
     setTotalCostDisplayStr("");
@@ -1034,6 +1064,31 @@ export default function SelectionDetail() {
                     <div className="text-sm text-foreground">{selection.description}</div>
                   </div>
                 )}
+
+                {/* Notes to trades */}
+                <div className="w-full mt-2">
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+                    Notes to trades
+                    {localNotes && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 ml-1" />
+                    )}
+                  </div>
+                  <Textarea
+                    rows={2}
+                    placeholder="Instructions, warnings, or notes for your trades team…"
+                    value={localNotes}
+                    onChange={(e) => {
+                      setLocalNotes(e.target.value);
+                    }}
+                    onBlur={(e) => handleSaveNotes(e.target.value)}
+                    className="text-xs resize-none"
+                  />
+                  {localNotes && (
+                    <div className="mt-1 px-2 py-1 rounded-md text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      This note is visible to your internal team only — not the client.
+                    </div>
+                  )}
+                </div>
 
                 {/* Estimate link */}
                 {selection.estimateItemId && (
@@ -2641,6 +2696,167 @@ export default function SelectionDetail() {
                     </div>
                   )}
                 </div>
+
+                <Separator />
+
+                {/* Specifications */}
+                {(() => {
+                  const FINISH_OPTS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
+                  const MATERIAL_OPTS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
+                  const EXTRA_FIELDS = [
+                    { key: "diameter", label: "Diameter (mm)", type: "number" },
+                    { key: "weight", label: "Weight (kg)", type: "number" },
+                    { key: "colour", label: "Colour", type: "text" },
+                    { key: "colourCode", label: "Colour code", type: "text" },
+                    { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
+                    { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
+                    { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
+                    { key: "mountingType", label: "Mounting type", type: "text" },
+                    { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
+                    { key: "thickness", label: "Thickness (mm)", type: "number" },
+                    { key: "slipRatingP", label: "Slip rating — Wet", type: "text" },
+                    { key: "slipRatingR", label: "Slip rating — Oil", type: "text" },
+                    { key: "wattage", label: "Wattage (W)", type: "number" },
+                    { key: "lumens", label: "Lumens (lm)", type: "number" },
+                    { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
+                    { key: "ipRating", label: "IP rating", type: "text" },
+                    { key: "dimmable", label: "Dimmable", type: "boolean" },
+                    { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
+                    { key: "warranty", label: "Warranty (years)", type: "number" },
+                    { key: "leadTime", label: "Lead time (weeks)", type: "number" },
+                    { key: "fireRating", label: "Fire rating", type: "text" },
+                  ];
+                  const setSpec = (key: string, value: any) => setOptionSpecifications(s => ({ ...s, [key]: value }));
+                  const removeSpec = (key: string) => setOptionSpecifications(s => { const n = { ...s }; delete n[key]; return n; });
+                  const activeCount = Object.keys(optionSpecifications).filter(k => k !== 'custom' && optionSpecifications[k] !== undefined && optionSpecifications[k] !== "").length;
+                  return (
+                    <div className="border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                        onClick={() => setSpecsOpen(o => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Product Specifications
+                          {activeCount > 0 && (
+                            <Badge variant="secondary" className="h-4 text-[10px]">{activeCount} set</Badge>
+                          )}
+                        </span>
+                      </button>
+                      {specsOpen && (
+                        <div className="p-3 space-y-3 border-t">
+                          <div className="grid grid-cols-3 gap-2">
+                            {["width","height","depth"].map(key => (
+                              <div key={key} className="space-y-1">
+                                <Label className="text-xs">{key === "width" ? "Width (mm)" : key === "height" ? "Height (mm)" : "Depth (mm)"}</Label>
+                                <Input type="number" min="0" className="h-8 text-xs"
+                                  value={optionSpecifications[key] ?? ""}
+                                  onChange={e => setSpec(key, e.target.value ? parseFloat(e.target.value) : undefined)} />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Finish</Label>
+                              <Select value={optionSpecifications.finish ?? ""} onValueChange={v => setSpec("finish", v || undefined)}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                                <SelectContent>{FINISH_OPTS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Material</Label>
+                              <Select value={optionSpecifications.material ?? ""} onValueChange={v => setSpec("material", v || undefined)}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                                <SelectContent>{MATERIAL_OPTS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          {EXTRA_FIELDS.filter(f => {
+                            const v = optionSpecifications[f.key];
+                            return v !== undefined && v !== "" && v !== null;
+                          }).map(f => (
+                            <div key={f.key} className="flex items-center gap-2">
+                              <Label className="text-xs w-40 shrink-0">{f.label}</Label>
+                              {f.type === "boolean" ? (
+                                <Switch checked={!!optionSpecifications[f.key]} onCheckedChange={checked => setSpec(f.key, checked)} />
+                              ) : (
+                                <div className="flex-1 flex items-center gap-1">
+                                  <Input type={f.type === "number" ? "number" : "text"} min="0" className="h-8 text-xs flex-1"
+                                    value={optionSpecifications[f.key] ?? ""}
+                                    onChange={e => setSpec(f.key, f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined)} />
+                                  <button type="button" className="p-1 text-muted-foreground hover:text-foreground" onClick={() => removeSpec(f.key)}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {((optionSpecifications.custom || []) as { label: string; value: string }[]).map((c, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <Input className="h-8 text-xs w-28 shrink-0" placeholder="Label" value={c.label}
+                                onChange={e => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom[idx] = { ...custom[idx], label: e.target.value };
+                                  setSpec("custom", custom);
+                                }} />
+                              <Input className="h-8 text-xs flex-1" placeholder="Value" value={c.value}
+                                onChange={e => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom[idx] = { ...custom[idx], value: e.target.value };
+                                  setSpec("custom", custom);
+                                }} />
+                              <button type="button" className="p-1 text-muted-foreground hover:text-foreground shrink-0"
+                                onClick={() => {
+                                  const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[])];
+                                  custom.splice(idx, 1);
+                                  setSpec("custom", custom);
+                                }}>
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="relative">
+                            <button type="button"
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-md px-2 py-1"
+                              onClick={() => setSpecPickerOpen(o => !o)}>
+                              <Plus className="h-3 w-3" />
+                              Add detail
+                            </button>
+                            {specPickerOpen && (
+                              <div className="absolute bottom-full mb-1 left-0 z-50 bg-popover border rounded-md shadow-md p-2 min-w-52 max-h-64 overflow-y-auto">
+                                {EXTRA_FIELDS.filter(f => {
+                                  const v = optionSpecifications[f.key];
+                                  return v === undefined || v === "" || v === null;
+                                }).map(f => (
+                                  <button key={f.key} type="button"
+                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent"
+                                    onClick={() => {
+                                      setSpec(f.key, f.type === "boolean" ? false : f.type === "number" ? undefined : "");
+                                      setSpecPickerOpen(false);
+                                    }}>
+                                    {f.label}
+                                  </button>
+                                ))}
+                                <div className="border-t pt-1 mt-1">
+                                  <button type="button"
+                                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent text-muted-foreground"
+                                    onClick={() => {
+                                      const custom = [...((optionSpecifications.custom || []) as {label:string;value:string}[]), { label: "", value: "" }];
+                                      setSpec("custom", custom);
+                                      setSpecPickerOpen(false);
+                                    }}>
+                                    + Custom field
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
                   <Button 

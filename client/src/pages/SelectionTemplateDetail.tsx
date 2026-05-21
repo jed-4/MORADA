@@ -43,6 +43,10 @@ import {
   CheckSquare,
   Settings,
   DollarSign,
+  Calendar,
+  Eye,
+  EyeOff,
+  MapPin,
 } from "lucide-react";
 import type { SelectionTemplate } from "@shared/schema";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
@@ -121,7 +125,7 @@ function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: Sortab
       </div>
       
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{item.itemName}</span>
           {item.categoryName && (
             <Badge variant="secondary" className="h-4 text-data">
@@ -132,6 +136,23 @@ function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: Sortab
             <Badge variant="outline" className="h-4 text-data">
               {item.allowanceType}
             </Badge>
+          )}
+          {item.room && (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <MapPin className="h-2.5 w-2.5" />
+              {item.room}
+            </span>
+          )}
+          {item.deadline && (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <Calendar className="h-2.5 w-2.5" />
+              {new Date(item.deadline).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+            </span>
+          )}
+          {item.clientCanSeePrice === false && (
+            <span title="Price hidden from client">
+              <EyeOff className="h-3 w-3 text-muted-foreground/60" />
+            </span>
           )}
         </div>
         {item.description && (

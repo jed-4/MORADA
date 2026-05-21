@@ -1410,6 +1410,7 @@ export const selections = pgTable("selections", {
   createdBy: varchar("created_by").references(() => users.id),
   portalToken: varchar("portal_token").unique(), // UUID used for /portal/selections/:token, generated lazily
   portalSentAt: timestamp("portal_sent_at"), // when portal link was last sent to client
+  notes: text("notes"), // Trades-facing notes (instructions, warnings, etc.)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1449,6 +1450,7 @@ export const selectionOptions = pgTable("selection_options", {
   approvedBy: text("approved_by"),
   lockedAt: timestamp("locked_at"),
   productId: integer("product_id"), // Link to product library entry (set via save-to-library or add-from-library)
+  specifications: json("specifications").$type<Record<string, any>>(), // Structured product specs (dimensions, finish, material, etc.)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
