@@ -706,6 +706,8 @@ export default function Selections() {
   useEffect(() => {
     const incoming = selectionsWithOptions.map((s) => s.id);
     setOrderedIds((prev) => {
+      // Both empty — data not yet loaded. Return prev (same ref) so we don't trigger a re-render.
+      if (incoming.length === 0 && prev.length === 0) return prev;
       if (prev.length === 0) return incoming;
       const prevSet = new Set(prev);
       const incomingSet = new Set(incoming);

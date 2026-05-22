@@ -47,6 +47,7 @@ import {
   Eye,
   EyeOff,
   MapPin,
+  Layers,
 } from "lucide-react";
 import type { SelectionTemplate } from "@shared/schema";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
@@ -567,17 +568,19 @@ export default function SelectionTemplateDetail() {
                 return (
                   <div key={category} className="border rounded-md">
                     <div 
-                      className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer"
+                      className="flex items-center gap-2 px-3 py-2 bg-muted/60 cursor-pointer hover-elevate"
                       onClick={() => toggleCategory(category)}
                     >
                       {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       )}
-                      <span className="font-medium text-sm">{category}</span>
-                      <Badge variant="outline" className="h-4 text-data">
-                        {categoryItems.length}
+                      <Layers className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="font-semibold text-sm">{category}</span>
+                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">group</span>
+                      <Badge variant="outline" className="h-4 text-data ml-auto">
+                        {categoryItems.length} {categoryItems.length === 1 ? "selection" : "selections"}
                       </Badge>
                     </div>
                     
