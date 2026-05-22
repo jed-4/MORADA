@@ -460,6 +460,7 @@ export default function SelectionDetail() {
       });
     },
     onSuccess: (_, option) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       toast({ title: "Saved to Product Library", description: `"${option.name}" is now in your library.` });
     },
     onError: (err: any) => {

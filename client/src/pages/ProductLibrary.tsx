@@ -42,7 +42,7 @@ interface Product {
   sku: string | null;
   category: string | null;
   subcategory: string | null;
-  unitCost: number | null;
+  defaultUnitCost: number | null;
   unitType: string | null;
   description: string | null;
   url: string | null;
@@ -91,7 +91,7 @@ export default function ProductLibrary() {
       sku: p.sku || "",
       category: p.category || "",
       subcategory: p.subcategory || "",
-      unitCost: p.unitCost != null ? p.unitCost / 100 : undefined,
+      unitCost: p.defaultUnitCost != null ? p.defaultUnitCost / 100 : undefined,
       unitType: p.unitType || "ea",
       description: p.description || "",
       url: p.url || "",
@@ -244,7 +244,7 @@ export default function ProductLibrary() {
               <div className="text-xs text-muted-foreground truncate font-mono">{p.sku || "—"}</div>
               <div className="text-xs text-muted-foreground truncate">{p.category || "—"}</div>
               <div className="text-xs text-right tabular-nums">
-                {p.unitCost != null ? formatCurrency(p.unitCost) : "—"}
+                {p.defaultUnitCost != null ? formatCurrency(p.defaultUnitCost) : "—"}
               </div>
               <div className="text-xs text-muted-foreground">{p.unitType || "ea"}</div>
               <div className="flex items-center justify-end">
