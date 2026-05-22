@@ -62,9 +62,20 @@ interface SelectionOption {
   description?: string;
   sku?: string;
   brand?: string;
+  category?: string;
+  subcategory?: string;
   unitCost?: number;
   quantity?: number;
+  unitType?: string;
+  markupPercent?: number;
+  totalCost?: number;
+  url?: string;
+  visibleToClient?: boolean;
+  gstInclusive?: boolean;
   sortOrder: number;
+  imageUrls?: string[];
+  imageUrl?: string;
+  specifications?: Record<string, any>;
 }
 
 interface SelectionItem {
@@ -78,6 +89,7 @@ interface SelectionItem {
   deadline?: string | null;
   clientCanSeePrice?: boolean;
   clientCanChange?: boolean;
+  notes?: string;
   sortOrder: number;
   options?: SelectionOption[];
 }

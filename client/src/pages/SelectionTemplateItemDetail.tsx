@@ -31,12 +31,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   ArrowLeft,
   Plus,
   Search,
@@ -45,18 +39,17 @@ import {
   Trash2,
   Package,
   DollarSign,
-  Settings,
   Loader2,
   Save,
   Eye,
   EyeOff,
-  CheckCircle,
   Star,
   Camera,
   X,
   ChevronDown,
   ChevronRight,
-  Link as LinkIcon,
+  LayoutGrid,
+  LayoutList,
 } from "lucide-react";
 import type { SelectionTemplate, FieldCategory } from "@shared/schema";
 
@@ -217,6 +210,7 @@ interface SelectionItem {
   deadline?: string | null;
   clientCanSeePrice?: boolean;
   clientCanChange?: boolean;
+  notes?: string;
   sortOrder: number;
   options?: SelectionOption[];
 }
@@ -226,13 +220,14 @@ export default function SelectionTemplateItemDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState("options");
   const [searchTerm, setSearchTerm] = useState("");
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [optionsView, setOptionsView] = useState<"grid" | "list">("grid");
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [gstInclusive, setGstInclusive] = useState(false);
-  
+  const [specsOpen, setSpecsOpen] = useState(false);
+  const [specPickerOpen, setSpecPickerOpen] = useState(false);
+
   const [optionForm, setOptionForm] = useState<Partial<SelectionOption>>({
     name: "",
     description: "",
@@ -247,25 +242,19 @@ export default function SelectionTemplateItemDetail() {
     imageUrls: [],
     specifications: {},
   });
-  const [imageUrlInput, setImageUrlInput] = useState("");
-  const [specsOpen, setSpecsOpen] = useState(false);
-  const [specPickerOpen, setSpecPickerOpen] = useState(false);
 
-  const [itemForm, setItemForm] = useState<Partial<SelectionItem>>({
-    itemName: "",
-    description: "",
-    categoryName: "",
-    room: "",
-    allowanceType: undefined,
-    budgetAmount: undefined,
-  });
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageUploadRef = useRef<HTMLInputElement>(null);
+
+  const [localItem, setLocalItem] = useState<Partial<SelectionItem>>({});
+  const [hasItemChanges, setHasItemChanges] = useState(false);
+  const [localNotes, setLocalNotes] = useState("");
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: categoryFieldCategory } = useQuery<FieldCategory>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
     queryFn: async () => {
-      const res = await fetch("/api/field-categories/by-key/selection.category", {
-        credentials: "include",
-      });
+      const res = await fetch("/api/field-categories/by-key/selection.category", { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -275,9 +264,7 @@ export default function SelectionTemplateItemDetail() {
     queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
     queryFn: async () => {
       if (!categoryFieldCategory?.id) return [];
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -287,9 +274,7 @@ export default function SelectionTemplateItemDetail() {
   const { data: template, isLoading } = useQuery<SelectionTemplate>({
     queryKey: ["/api/selection-templates", params.templateId],
     queryFn: async () => {
-      const res = await fetch(`/api/selection-templates/${params.templateId}`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/selection-templates/${params.templateId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch template");
       return res.json();
     },
@@ -329,37 +314,25 @@ export default function SelectionTemplateItemDetail() {
   };
 
   const hasLegacyData = (itemsToCheck: SelectionItem[]): boolean => {
-    return itemsToCheck.some(item => 
-      !item.id || item.options?.some(opt => !opt.id)
-    );
+    return itemsToCheck.some(item => !item.id || item.options?.some(opt => !opt.id));
   };
 
-  // Items with stable IDs (either from server or cached generated)
   const items: SelectionItem[] = useMemo(() => {
     const rawItems = (template?.templateData as SelectionItem[]) || [];
     return normalizeWithStableIds(rawItems);
   }, [template?.templateData]);
 
-  // Auto-save normalized data if legacy items lack IDs (one-time migration)
   useEffect(() => {
     if (!template || hasTriggeredMigration.current) return;
-    
     const rawItems = (template.templateData as SelectionItem[]) || [];
     if (rawItems.length > 0 && hasLegacyData(rawItems)) {
       hasTriggeredMigration.current = true;
       setIsNormalizing(true);
-      
       const normalized = normalizeWithStableIds(rawItems);
       apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", { templateData: normalized })
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
-        })
-        .catch(() => {
-          hasTriggeredMigration.current = false;
-        })
-        .finally(() => {
-          setIsNormalizing(false);
-        });
+        .then(() => { queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] }); })
+        .catch(() => { hasTriggeredMigration.current = false; })
+        .finally(() => { setIsNormalizing(false); });
     }
   }, [template, params.templateId]);
 
@@ -367,14 +340,19 @@ export default function SelectionTemplateItemDetail() {
 
   useEffect(() => {
     if (currentItem) {
-      setItemForm({
+      setLocalItem({
         itemName: currentItem.itemName,
         description: currentItem.description || "",
         categoryName: currentItem.categoryName || "",
         room: currentItem.room || "",
         allowanceType: currentItem.allowanceType,
-        budgetAmount: currentItem.budgetAmount ? currentItem.budgetAmount / 100 : undefined,
+        budgetAmount: currentItem.budgetAmount,
+        deadline: currentItem.deadline || null,
+        clientCanSeePrice: currentItem.clientCanSeePrice ?? true,
+        clientCanChange: currentItem.clientCanChange ?? true,
       });
+      setLocalNotes(currentItem.notes || "");
+      setHasItemChanges(false);
     }
   }, [currentItem?.id]);
 
@@ -387,48 +365,84 @@ export default function SelectionTemplateItemDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update template.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update template.", variant: "destructive" });
     },
   });
 
-  const handleSaveItemSettings = () => {
+  const handleSaveItem = () => {
     if (!currentItem) return;
-
     const updatedItems = items.map(item => {
       if (item.id === currentItem.id) {
         return {
           ...item,
-          itemName: itemForm.itemName || item.itemName,
-          description: itemForm.description,
-          categoryName: itemForm.categoryName || item.categoryName,
-          room: itemForm.room,
-          allowanceType: itemForm.allowanceType,
-          budgetAmount: itemForm.budgetAmount ? Math.round(itemForm.budgetAmount * 100) : undefined,
+          itemName: localItem.itemName || item.itemName,
+          description: localItem.description,
+          categoryName: localItem.categoryName || item.categoryName,
+          room: localItem.room,
+          allowanceType: localItem.allowanceType,
+          budgetAmount: localItem.budgetAmount,
+          deadline: localItem.deadline,
+          clientCanSeePrice: localItem.clientCanSeePrice,
+          clientCanChange: localItem.clientCanChange,
         };
       }
       return item;
     });
-
     updateMutation.mutate({ templateData: normalizeWithStableIds(updatedItems) }, {
       onSuccess: () => {
-        setSettingsDialogOpen(false);
-        toast({
-          title: "Item updated",
-          description: "Selection item settings have been saved.",
-        });
+        setHasItemChanges(false);
+        toast({ title: "Saved", description: "Item details updated." });
       },
     });
+  };
+
+  const handleNotesBlur = () => {
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => {
+      if (!currentItem || localNotes === (currentItem.notes || "")) return;
+      const updatedItems = items.map(item => {
+        if (item.id === currentItem.id) {
+          return { ...item, notes: localNotes || undefined };
+        }
+        return item;
+      });
+      updateMutation.mutate({ templateData: normalizeWithStableIds(updatedItems) });
+    }, 600);
+  };
+
+  const handleFileUpload = async (files: FileList) => {
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      setIsUploadingImage(true);
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const result = await apiRequest("/api/uploads/template-image", "POST", {
+          fileData: dataUrl,
+          fileName: file.name,
+          mimeType: file.type,
+        });
+        setOptionForm(prev => ({
+          ...prev,
+          imageUrls: [...(prev.imageUrls || []), result.url],
+        }));
+      } catch {
+        toast({ title: "Upload failed", description: "Failed to upload image.", variant: "destructive" });
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
   };
 
   const handleAddOption = () => {
     setEditingOption(null);
     setGstInclusive(false);
-    setImageUrlInput("");
     setSpecsOpen(false);
+    setSpecPickerOpen(false);
     setOptionForm({
       name: "",
       description: "",
@@ -449,14 +463,11 @@ export default function SelectionTemplateItemDetail() {
   const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
     setGstInclusive(option.gstInclusive || false);
-    setImageUrlInput("");
     setSpecsOpen(!!(option.specifications && Object.keys(option.specifications).length > 0));
-    // backward compat: if legacy imageUrl exists but no imageUrls array, migrate
+    setSpecPickerOpen(false);
     const imageUrls = option.imageUrls && option.imageUrls.length > 0
       ? option.imageUrls
-      : option.imageUrl
-        ? [option.imageUrl]
-        : [];
+      : option.imageUrl ? [option.imageUrl] : [];
     setOptionForm({
       name: option.name,
       description: option.description || "",
@@ -478,11 +489,7 @@ export default function SelectionTemplateItemDetail() {
 
   const handleSaveOption = () => {
     if (!optionForm.name?.trim() || !currentItem) {
-      toast({
-        title: "Missing name",
-        description: "Please enter an option name.",
-        variant: "destructive",
-      });
+      toast({ title: "Missing name", description: "Please enter an option name.", variant: "destructive" });
       return;
     }
 
@@ -502,7 +509,7 @@ export default function SelectionTemplateItemDetail() {
       unitType: optionForm.unitType || "ea",
       url: optionForm.url?.trim(),
       imageUrls: (optionForm.imageUrls || []).filter(Boolean),
-      imageUrl: undefined, // clear legacy field
+      imageUrl: undefined,
       visibleToClient: optionForm.visibleToClient ?? true,
       isSelectedByClient: optionForm.isSelectedByClient || false,
       markupPercent: optionForm.markupPercent,
@@ -525,9 +532,7 @@ export default function SelectionTemplateItemDetail() {
     }
 
     const updatedItems = items.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, options: updatedOptions };
-      }
+      if (item.id === currentItem.id) return { ...item, options: updatedOptions };
       return item;
     });
 
@@ -537,9 +542,7 @@ export default function SelectionTemplateItemDetail() {
         setEditingOption(null);
         toast({
           title: editingOption ? "Option updated" : "Option added",
-          description: editingOption
-            ? "The option has been updated successfully."
-            : "A new option has been added.",
+          description: editingOption ? "The option has been updated." : "A new option has been added.",
         });
       },
     });
@@ -547,41 +550,26 @@ export default function SelectionTemplateItemDetail() {
 
   const handleDeleteOption = (optionId: string) => {
     if (!currentItem) return;
-
     const updatedOptions = (currentItem.options || []).filter(opt => opt.id !== optionId);
-    
     const updatedItems = items.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, options: updatedOptions };
-      }
+      if (item.id === currentItem.id) return { ...item, options: updatedOptions };
       return item;
     });
-
     updateMutation.mutate({ templateData: normalizeWithStableIds(updatedItems) }, {
-      onSuccess: () => {
-        toast({
-          title: "Option deleted",
-          description: "The option has been removed.",
-        });
-      },
+      onSuccess: () => toast({ title: "Option deleted", description: "The option has been removed." }),
     });
   };
 
   const handleSelectOption = (optionId: string) => {
     if (!currentItem) return;
-
     const updatedOptions = (currentItem.options || []).map(opt => ({
       ...opt,
       isSelectedByClient: opt.id === optionId,
     }));
-
     const updatedItems = items.map(item => {
-      if (item.id === currentItem.id) {
-        return { ...item, options: updatedOptions };
-      }
+      if (item.id === currentItem.id) return { ...item, options: updatedOptions };
       return item;
     });
-
     updateMutation.mutate({ templateData: normalizeWithStableIds(updatedItems) });
   };
 
@@ -606,8 +594,7 @@ export default function SelectionTemplateItemDetail() {
         <Package className="h-12 w-12 text-muted-foreground" />
         <div className="text-sm text-muted-foreground">Selection item not found</div>
         <Button variant="outline" onClick={() => navigate(`/selection-templates/${params.templateId}`)}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Template
+          <ArrowLeft className="h-4 w-4 mr-2" />Back to Template
         </Button>
       </div>
     );
@@ -615,339 +602,451 @@ export default function SelectionTemplateItemDetail() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header Row 1 - Back + Title */}
-      <div className="h-9 bg-background flex items-center px-2 gap-3 border-b border-border flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => navigate(`/selection-templates/${params.templateId}`)}
-          data-testid="button-back"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold" data-testid="text-item-name">
-            {currentItem.itemName}
-          </h2>
-          {currentItem.categoryName && (
-            <Badge variant="secondary" className="text-xs">
-              {currentItem.categoryName}
-            </Badge>
-          )}
-          {currentItem.allowanceType && (
-            <Badge variant="outline" className="text-xs">
-              {currentItem.allowanceType}
-            </Badge>
-          )}
-        </div>
-        <Badge variant="outline" className="text-xs ml-auto">
-          {(currentItem.options || []).length} {(currentItem.options || []).length === 1 ? 'option' : 'options'}
-        </Badge>
-      </div>
-
-      {/* Header Row 2 - Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
+      {/* Sticky header */}
+      <div className="flex-shrink-0 border-b bg-background">
+        <div className="h-9 flex items-center px-2 gap-2">
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
-            onClick={() => setSettingsDialogOpen(true)}
-            data-testid="button-settings"
+            size="icon"
+            className="h-7 w-7 flex-shrink-0"
+            onClick={() => navigate(`/selection-templates/${params.templateId}`)}
           >
-            <Settings className="h-3 w-3 mr-1" />
-            Settings
+            <ArrowLeft className="h-4 w-4" />
           </Button>
+
+          <div className="flex items-center gap-1 text-xs min-w-0 flex-1">
+            <button
+              className="text-muted-foreground hover:text-foreground truncate max-w-40 transition-colors"
+              onClick={() => navigate(`/selection-templates/${params.templateId}`)}
+            >
+              {template.name}
+            </button>
+            <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+            <span className="font-medium text-foreground truncate">{currentItem.itemName}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+            {hasItemChanges && (
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleSaveItem}
+                disabled={updateMutation.isPending}
+                data-testid="button-save-item"
+              >
+                {updateMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-3 w-3 mr-1" />
+                )}
+                Save
+              </Button>
+            )}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
+              style={{ backgroundColor: CASVA_LILAC }}
+              onClick={handleAddOption}
+              data-testid="button-add-option"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Option</span>
+            </button>
+          </div>
         </div>
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
-          style={{ backgroundColor: CASVA_LILAC }}
-          onClick={handleAddOption}
-          data-testid="button-add-option"
-        >
-          <Plus className="w-3 h-3" />
-          <span>Add Option</span>
-        </button>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-2 border-b border-border">
-          <TabsList className="h-8">
-            <TabsTrigger value="options" className="text-xs h-6">Options</TabsTrigger>
-            <TabsTrigger value="details" className="text-xs h-6">Details</TabsTrigger>
-          </TabsList>
-        </div>
+      {/* Main scrollable content */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto p-4 space-y-5">
 
-        <TabsContent value="options" className="flex-1 overflow-auto p-4 mt-0">
-          {/* Search */}
-          <div className="mb-4">
-            <div className="relative w-48">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-              <Input
-                placeholder="Search options..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-7 pr-2 py-0 h-6 text-xs border"
-                data-testid="input-search-options"
-              />
-            </div>
+          {/* Item name + subtitle */}
+          <div>
+            <input
+              className="text-xl font-bold bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded w-full px-0.5 py-0.5 -ml-0.5"
+              value={localItem.itemName || ""}
+              onChange={(e) => { setLocalItem({ ...localItem, itemName: e.target.value }); setHasItemChanges(true); }}
+              placeholder="Item name..."
+              data-testid="input-item-name-inline"
+            />
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {[localItem.categoryName, localItem.room].filter(Boolean).join(" · ") || <span className="italic">No category set</span>}
+            </p>
           </div>
 
-          {filteredOptions.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-sm font-medium mb-2">No options yet</h3>
-              <p className="text-xs text-muted-foreground mb-4">
-                Add options for this selection item
-              </p>
-              <button
-                className="h-6 px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
-                style={{ backgroundColor: CASVA_LILAC }}
-                onClick={handleAddOption}
-                data-testid="button-add-first-option"
-              >
-                <Plus className="h-3 w-3" />
-                Add Option
-              </button>
-            </div>
-          ) : (
-            <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-              {filteredOptions.map((option) => {
-                const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
-                const specsLine = formatSpecsOneLiner(option.specifications);
-                return (
-                <div
-                  key={option.id}
-                  className={`border rounded-lg overflow-hidden bg-card hover-elevate transition-all ${
-                    option.isSelectedByClient ? 'ring-2 ring-primary' : ''
-                  }`}
-                  data-testid={`card-option-${option.id}`}
-                >
-                  {/* Hero image */}
-                  <div className="relative h-40 bg-muted flex items-center justify-center overflow-hidden">
-                    {heroUrl ? (
-                      <img
-                        src={heroUrl}
-                        alt={option.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                      />
-                    ) : (
-                      <Camera className="h-8 w-8 text-muted-foreground/30" />
-                    )}
-                    {/* Top-right menu */}
-                    <div className="absolute top-1 right-1">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 bg-black/40 text-white hover:bg-black/60"
-                            data-testid={`button-menu-option-${option.id}`}
-                          >
-                            <MoreVertical className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEditOption(option)}>
-                            <Edit3 className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
-                            <Star className="h-4 w-4 mr-2" />
-                            {option.isSelectedByClient ? 'Deselect' : 'Set as Default'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteOption(option.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    {/* Badges overlay */}
-                    <div className="absolute top-1 left-1 flex flex-col gap-1">
-                      {option.isSelectedByClient && (
-                        <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">Default</Badge>
-                      )}
-                      {!option.visibleToClient && (
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                          <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
+          {/* Item Details block */}
+          <div className="border rounded-md p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide text-[11px]">Item Details</h3>
 
-                  {/* Card body */}
-                  <div className="p-3 space-y-1">
-                    <div className="flex items-start justify-between gap-1">
-                      <h4 className="font-semibold text-sm leading-tight line-clamp-1">{option.name}</h4>
-                      {option.unitCost && (
-                        <div className="text-sm font-semibold text-nowrap flex items-center gap-0.5 ml-2 shrink-0">
-                          <DollarSign className="h-3 w-3" />
-                          {(option.unitCost / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
-                        </div>
-                      )}
-                    </div>
-                    {option.brand && (
-                      <p className="text-xs text-muted-foreground">{option.brand}{option.sku ? ` · ${option.sku}` : ''}</p>
-                    )}
-                    {!option.brand && option.sku && (
-                      <p className="text-xs text-muted-foreground">SKU: {option.sku}</p>
-                    )}
-                    {option.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{option.description}</p>
-                    )}
-                    {specsLine && (
-                      <p className="text-[10px] text-muted-foreground/80 line-clamp-1 mt-0.5">{specsLine}</p>
-                    )}
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="details" className="flex-1 overflow-auto p-4 mt-0">
-          <div className="max-w-2xl space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs text-muted-foreground">Category</Label>
-                <p className="text-sm">{currentItem.categoryName || '-'}</p>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Room/Location</Label>
-                <p className="text-sm">{currentItem.room || '-'}</p>
-              </div>
-            </div>
-            <div>
+            {/* Description */}
+            <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Description</Label>
-              <p className="text-sm">{currentItem.description || '-'}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs text-muted-foreground">Allowance Type</Label>
-                <p className="text-sm">{currentItem.allowanceType || '-'}</p>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Budget Amount</Label>
-                <p className="text-sm">
-                  {currentItem.budgetAmount
-                    ? `$${(currentItem.budgetAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}`
-                    : '-'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Item Settings Dialog */}
-      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-        <DialogContent data-testid="dialog-item-settings">
-          <DialogHeader>
-            <DialogTitle>Selection Item Settings</DialogTitle>
-            <DialogDescription>
-              Update this selection item's details.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Item Name *</Label>
-              <Input
-                value={itemForm.itemName || ""}
-                onChange={(e) => setItemForm({ ...itemForm, itemName: e.target.value })}
-                data-testid="input-item-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
               <Textarea
-                value={itemForm.description || ""}
-                onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
-                rows={2}
-                data-testid="input-description"
+                value={localItem.description || ""}
+                onChange={(e) => { setLocalItem({ ...localItem, description: e.target.value }); setHasItemChanges(true); }}
+                rows={3}
+                placeholder="Describe this selection item..."
+                className="text-sm resize-none"
+                data-testid="input-description-inline"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Category</Label>
+
+            {/* Notes to trades */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Notes to trades</Label>
+              <Textarea
+                value={localNotes}
+                onChange={(e) => setLocalNotes(e.target.value)}
+                onBlur={handleNotesBlur}
+                rows={3}
+                placeholder="Add notes for the trades team..."
+                className="text-sm resize-none"
+                data-testid="input-notes"
+              />
+              {localNotes && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-200">
+                  {localNotes}
+                </div>
+              )}
+            </div>
+
+            {/* Category + Room + Deadline */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Category</Label>
                 <Select
-                  value={itemForm.categoryName || ""}
-                  onValueChange={(value) => setItemForm({ ...itemForm, categoryName: value })}
+                  value={localItem.categoryName || ""}
+                  onValueChange={(v) => { setLocalItem({ ...localItem, categoryName: v }); setHasItemChanges(true); }}
                 >
-                  <SelectTrigger data-testid="select-category">
-                    <SelectValue placeholder="Select category..." />
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-category-inline">
+                    <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {categoryOptions.map((opt) => (
-                      <SelectItem key={opt.id} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
+                    {categoryOptions.map(opt => (
+                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Room/Location</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Room / Location</Label>
                 <Input
-                  value={itemForm.room || ""}
-                  onChange={(e) => setItemForm({ ...itemForm, room: e.target.value })}
-                  placeholder="e.g., Kitchen, Bathroom"
-                  data-testid="input-room"
+                  className="h-8 text-xs"
+                  value={localItem.room || ""}
+                  onChange={(e) => { setLocalItem({ ...localItem, room: e.target.value }); setHasItemChanges(true); }}
+                  placeholder="e.g., Kitchen"
+                  data-testid="input-room-inline"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Deadline</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={localItem.deadline ? localItem.deadline.substring(0, 10) : ""}
+                  onChange={(e) => { setLocalItem({ ...localItem, deadline: e.target.value || null }); setHasItemChanges(true); }}
+                  data-testid="input-deadline-inline"
                 />
               </div>
             </div>
+
+            {/* Allowance type + Budget */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Allowance Type</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Allowance type</Label>
                 <Select
-                  value={itemForm.allowanceType || ""}
-                  onValueChange={(value) => setItemForm({ ...itemForm, allowanceType: value as "PC" | "PS" | undefined })}
+                  value={localItem.allowanceType || "none"}
+                  onValueChange={(v) => { setLocalItem({ ...localItem, allowanceType: v === "none" ? undefined : v as "PC" | "PS" }); setHasItemChanges(true); }}
                 >
-                  <SelectTrigger data-testid="select-allowance-type">
-                    <SelectValue placeholder="Select type..." />
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-allowance-inline">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
                     <SelectItem value="PC">Prime Cost (PC)</SelectItem>
                     <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Budget Amount ($)</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Budget ($)</Label>
                 <Input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={itemForm.budgetAmount || ""}
-                  onChange={(e) => setItemForm({ ...itemForm, budgetAmount: parseFloat(e.target.value) || undefined })}
-                  data-testid="input-budget"
+                  className="h-8 text-xs"
+                  value={localItem.budgetAmount !== undefined ? localItem.budgetAmount / 100 : ""}
+                  onChange={(e) => { setLocalItem({ ...localItem, budgetAmount: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined }); setHasItemChanges(true); }}
+                  data-testid="input-budget-inline"
                 />
               </div>
             </div>
+
+            {/* Client permission switches */}
+            <div className="flex flex-wrap gap-6 pt-1">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={localItem.clientCanSeePrice ?? true}
+                  onCheckedChange={(v) => { setLocalItem({ ...localItem, clientCanSeePrice: v }); setHasItemChanges(true); }}
+                  data-testid="switch-client-price"
+                />
+                <Label className="text-sm">Client can see price</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={localItem.clientCanChange ?? true}
+                  onCheckedChange={(v) => { setLocalItem({ ...localItem, clientCanChange: v }); setHasItemChanges(true); }}
+                  data-testid="switch-client-change"
+                />
+                <Label className="text-sm">Client can change selection</Label>
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSettingsDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveItemSettings}
-              disabled={updateMutation.isPending}
-              style={{ backgroundColor: CASVA_LILAC }}
-              className="text-white hover:opacity-90"
-              data-testid="button-save-settings"
-            >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+          {/* Options section */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-semibold text-sm">Options</h3>
+              <Badge variant="outline" className="h-4 text-data">
+                {filteredOptions.length}
+              </Badge>
+              <div className="ml-auto flex items-center gap-1">
+                <div className="relative w-40">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                  <Input
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-7 h-7 text-xs"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${optionsView === "grid" ? "bg-muted" : ""}`}
+                  onClick={() => setOptionsView("grid")}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${optionsView === "list" ? "bg-muted" : ""}`}
+                  onClick={() => setOptionsView("list")}
+                  title="List view"
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {filteredOptions.length === 0 ? (
+              <div className="text-center py-12 border rounded-md bg-muted/20">
+                <Package className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <h3 className="text-sm font-medium mb-2">
+                  {searchTerm ? "No matching options" : "No options yet"}
+                </h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {searchTerm ? "Try a different search term" : "Add options for this selection item"}
+                </p>
+                {!searchTerm && (
+                  <button
+                    className="h-6 px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                    style={{ backgroundColor: CASVA_LILAC }}
+                    onClick={handleAddOption}
+                    data-testid="button-add-first-option"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add Option
+                  </button>
+                )}
+              </div>
+            ) : optionsView === "grid" ? (
+              <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {filteredOptions.map((option) => {
+                  const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
+                  const specsLine = formatSpecsOneLiner(option.specifications);
+                  return (
+                    <div
+                      key={option.id}
+                      className={`border rounded-lg overflow-hidden bg-card hover-elevate cursor-pointer transition-all ${option.isSelectedByClient ? "ring-2 ring-primary" : ""}`}
+                      onClick={() => handleEditOption(option)}
+                      data-testid={`card-option-${option.id}`}
+                    >
+                      <div className="relative h-40 bg-muted flex items-center justify-center overflow-hidden">
+                        {heroUrl ? (
+                          <img
+                            src={heroUrl}
+                            alt={option.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <Camera className="h-8 w-8 text-muted-foreground/30" />
+                        )}
+                        <div className="absolute top-1 right-1" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 bg-black/40 text-white hover:bg-black/60"
+                                data-testid={`button-menu-option-${option.id}`}
+                              >
+                                <MoreVertical className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditOption(option)}>
+                                <Edit3 className="h-4 w-4 mr-2" />Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
+                                <Star className="h-4 w-4 mr-2" />
+                                {option.isSelectedByClient ? "Deselect" : "Set as Default"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteOption(option.id)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="absolute top-1 left-1 flex flex-col gap-1">
+                          {option.isSelectedByClient && (
+                            <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">Default</Badge>
+                          )}
+                          {!option.visibleToClient && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="p-3 space-y-1">
+                        <div className="flex items-start justify-between gap-1">
+                          <h4 className="font-semibold text-sm leading-tight line-clamp-1">{option.name}</h4>
+                          {option.unitCost && (
+                            <div className="text-sm font-semibold text-nowrap flex items-center gap-0.5 ml-2 shrink-0">
+                              <DollarSign className="h-3 w-3" />
+                              {(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </div>
+                        {(option.brand || option.sku) && (
+                          <p className="text-xs text-muted-foreground">
+                            {option.brand}{option.sku ? ` · ${option.sku}` : ""}
+                          </p>
+                        )}
+                        {specsLine && (
+                          <p className="text-[10px] text-muted-foreground/80 line-clamp-1">{specsLine}</p>
+                        )}
+                        {option.quantity && option.quantity > 1 && (
+                          <p className="text-xs text-muted-foreground">Qty {option.quantity} {option.unitType || "ea"}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-muted/40 border-b">
+                    <tr>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 w-12">Img</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2">Option</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Brand</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden md:table-cell">SKU</th>
+                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Qty</th>
+                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Unit Cost</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Visibility</th>
+                      <th className="p-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOptions.map((option) => {
+                      const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
+                      return (
+                        <tr
+                          key={option.id}
+                          className="border-t hover-elevate cursor-pointer"
+                          onClick={() => handleEditOption(option)}
+                          data-testid={`row-option-${option.id}`}
+                        >
+                          <td className="p-2">
+                            {heroUrl ? (
+                              <img src={heroUrl} alt={option.name} className="w-9 h-9 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            ) : (
+                              <div className="w-9 h-9 rounded bg-muted flex items-center justify-center">
+                                <Camera className="h-4 w-4 text-muted-foreground/40" />
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <div className="font-medium text-xs">{option.name}</div>
+                            {option.isSelectedByClient && <Badge className="text-[9px] h-3.5 px-1 mt-0.5">Default</Badge>}
+                          </td>
+                          <td className="p-2 hidden sm:table-cell text-xs text-muted-foreground">{option.brand || "—"}</td>
+                          <td className="p-2 hidden md:table-cell text-xs text-muted-foreground font-mono">{option.sku || "—"}</td>
+                          <td className="p-2 text-right text-xs tabular-nums">{option.quantity || 1}</td>
+                          <td className="p-2 text-right text-xs tabular-nums">
+                            {option.unitCost ? `$${(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}` : "—"}
+                          </td>
+                          <td className="p-2 hidden sm:table-cell">
+                            {!option.visibleToClient && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1">
+                                <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditOption(option)}>
+                                  <Edit3 className="h-4 w-4 mr-2" />Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
+                                  <Star className="h-4 w-4 mr-2" />
+                                  {option.isSelectedByClient ? "Deselect" : "Set as Default"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDeleteOption(option.id)} className="text-destructive">
+                                  <Trash2 className="h-4 w-4 mr-2" />Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden file input for image uploads */}
+      <input
+        ref={imageUploadRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleFileUpload(e.target.files);
+            e.target.value = "";
+          }
+        }}
+      />
 
       {/* Option Dialog */}
       <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
@@ -979,7 +1078,7 @@ export default function SelectionTemplateItemDetail() {
                 />
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea
@@ -1049,9 +1148,7 @@ export default function SelectionTemplateItemDetail() {
                   value={optionForm.unitType || "ea"}
                   onValueChange={(value) => setOptionForm({ ...optionForm, unitType: value })}
                 >
-                  <SelectTrigger data-testid="select-unit-type">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger data-testid="select-unit-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ea">Each</SelectItem>
                     <SelectItem value="m2">m²</SelectItem>
@@ -1074,70 +1171,54 @@ export default function SelectionTemplateItemDetail() {
               </div>
             </div>
 
-            {/* Images */}
+            {/* Images — file upload */}
             <div className="space-y-2">
               <Label>Images</Label>
-              {(optionForm.imageUrls || []).length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {(optionForm.imageUrls || []).map((url, idx) => (
-                    <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted">
-                      <img
-                        src={url}
-                        alt={`Image ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                      />
-                      <button
-                        type="button"
-                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                        onClick={() => {
-                          const urls = [...(optionForm.imageUrls || [])];
-                          urls.splice(idx, 1);
-                          setOptionForm({ ...optionForm, imageUrls: urls });
-                        }}
-                      >
-                        <X className="h-4 w-4 text-white" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <Input
-                  value={imageUrlInput}
-                  onChange={(e) => setImageUrlInput(e.target.value)}
-                  placeholder="https://example.com/image.jpg"
-                  className="flex-1 text-xs"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && imageUrlInput.trim()) {
-                      e.preventDefault();
-                      setOptionForm({
-                        ...optionForm,
-                        imageUrls: [...(optionForm.imageUrls || []), imageUrlInput.trim()],
-                      });
-                      setImageUrlInput("");
-                    }
-                  }}
-                  data-testid="input-image-url"
-                />
-                <Button
+              <div className="flex flex-wrap gap-2">
+                {(optionForm.imageUrls || []).map((url, idx) => (
+                  <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted flex-shrink-0">
+                    <img
+                      src={url}
+                      alt={`Image ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={() => {
+                        const urls = [...(optionForm.imageUrls || [])];
+                        urls.splice(idx, 1);
+                        setOptionForm({ ...optionForm, imageUrls: urls });
+                      }}
+                    >
+                      <X className="h-4 w-4 text-white" />
+                    </button>
+                    {idx === 0 && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5">
+                        Hero
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!imageUrlInput.trim()}
-                  onClick={() => {
-                    if (!imageUrlInput.trim()) return;
-                    setOptionForm({
-                      ...optionForm,
-                      imageUrls: [...(optionForm.imageUrls || []), imageUrlInput.trim()],
-                    });
-                    setImageUrlInput("");
-                  }}
+                  className="w-16 h-16 rounded-md border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-1 hover-elevate cursor-pointer flex-shrink-0 text-muted-foreground"
+                  onClick={() => imageUploadRef.current?.click()}
+                  disabled={isUploadingImage}
+                  data-testid="button-add-image"
                 >
-                  Add
-                </Button>
+                  {isUploadingImage ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4" />
+                      <span className="text-[9px]">Add</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <p className="text-[10px] text-muted-foreground">Paste an image URL and press Add or Enter. First image is used as the hero.</p>
+              <p className="text-[10px] text-muted-foreground">First image is used as the hero on the card.</p>
             </div>
 
             <div className="flex items-center gap-6 pt-2">
@@ -1172,9 +1253,9 @@ export default function SelectionTemplateItemDetail() {
                 <span className="flex items-center gap-2">
                   {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   Product Specifications
-                  {optionForm.specifications && Object.keys(optionForm.specifications).filter(k => k !== 'custom').some(k => optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "") && (
+                  {optionForm.specifications && Object.keys(optionForm.specifications).filter(k => k !== "custom").some(k => optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "") && (
                     <Badge variant="secondary" className="h-4 text-[10px]">
-                      {Object.keys(optionForm.specifications).filter(k => k !== 'custom' && optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "").length} set
+                      {Object.keys(optionForm.specifications).filter(k => k !== "custom" && optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "").length} set
                     </Badge>
                   )}
                 </span>
@@ -1185,7 +1266,9 @@ export default function SelectionTemplateItemDetail() {
                   <div className="grid grid-cols-3 gap-2">
                     {["width", "height", "depth"].map((key) => (
                       <div key={key} className="space-y-1">
-                        <Label className="text-xs capitalize">{key === "depth" ? "Depth (mm)" : key === "width" ? "Width (mm)" : "Height (mm)"}</Label>
+                        <Label className="text-xs capitalize">
+                          {key === "depth" ? "Depth (mm)" : key === "width" ? "Width (mm)" : "Height (mm)"}
+                        </Label>
                         <Input
                           type="number"
                           min="0"
@@ -1206,9 +1289,7 @@ export default function SelectionTemplateItemDetail() {
                         value={optionForm.specifications?.finish ?? ""}
                         onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, finish: v || undefined } })}
                       >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select finish..." /></SelectTrigger>
                         <SelectContent>
                           {FINISH_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                         </SelectContent>
@@ -1220,9 +1301,7 @@ export default function SelectionTemplateItemDetail() {
                         value={optionForm.specifications?.material ?? ""}
                         onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, material: v || undefined } })}
                       >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select material..." /></SelectTrigger>
                         <SelectContent>
                           {MATERIAL_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                         </SelectContent>
@@ -1230,139 +1309,135 @@ export default function SelectionTemplateItemDetail() {
                     </div>
                   </div>
 
-                  {/* Additional spec fields (from picker) */}
-                  {SPEC_PICKER_GROUPS.flatMap(g => g.fields).filter(f => {
-                    const val = optionForm.specifications?.[f.key];
-                    return val !== undefined && val !== "" && val !== null;
-                  }).map(f => (
-                    <div key={f.key} className="flex items-center gap-2">
-                      <Label className="text-xs w-36 shrink-0">{f.label}</Label>
-                      {f.type === "boolean" ? (
-                        <Switch
-                          checked={!!optionForm.specifications?.[f.key]}
-                          onCheckedChange={(checked) => setOptionForm({
-                            ...optionForm,
-                            specifications: { ...optionForm.specifications, [f.key]: checked },
-                          })}
-                        />
-                      ) : (
-                        <div className="flex-1 flex items-center gap-1">
-                          <Input
-                            type={f.type === "number" ? "number" : "text"}
-                            min="0"
-                            className="h-8 text-xs flex-1"
-                            value={optionForm.specifications?.[f.key] ?? ""}
-                            onChange={(e) => setOptionForm({
-                              ...optionForm,
-                              specifications: {
-                                ...optionForm.specifications,
-                                [f.key]: f.type === "number" ? (e.target.value ? parseFloat(e.target.value) : undefined) : e.target.value || undefined,
-                              },
-                            })}
-                          />
+                  {/* Dynamic spec fields (added via picker) */}
+                  {SPEC_PICKER_GROUPS.flatMap(g => g.fields).map(field => {
+                    const val = optionForm.specifications?.[field.key];
+                    if (val === undefined || val === "") return null;
+                    return (
+                      <div key={field.key} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">{field.label}</Label>
                           <button
                             type="button"
-                            className="p-1 text-muted-foreground hover:text-foreground"
+                            className="text-[10px] text-muted-foreground hover:text-destructive"
                             onClick={() => {
-                              const specs = { ...optionForm.specifications };
-                              delete specs[f.key];
-                              setOptionForm({ ...optionForm, specifications: specs });
+                              const s = { ...optionForm.specifications };
+                              delete s[field.key];
+                              setOptionForm({ ...optionForm, specifications: s });
                             }}
                           >
-                            <X className="h-3.5 w-3.5" />
+                            Remove
                           </button>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {field.type === "boolean" ? (
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={!!val}
+                              onCheckedChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: v } })}
+                            />
+                            <Label className="text-xs">{val ? "Yes" : "No"}</Label>
+                          </div>
+                        ) : (
+                          <Input
+                            type={field.type}
+                            className="h-8 text-xs"
+                            value={val}
+                            onChange={(e) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "number" ? parseFloat(e.target.value) || undefined : e.target.value } })}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* Custom fields */}
-                  {((optionForm.specifications?.custom || []) as { label: string; value: string }[]).map((c, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Input
-                        className="h-8 text-xs w-28 shrink-0"
-                        placeholder="Label"
-                        value={c.label}
-                        onChange={(e) => {
-                          const custom = [...((optionForm.specifications?.custom || []) as { label: string; value: string }[])];
-                          custom[idx] = { ...custom[idx], label: e.target.value };
-                          setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                        }}
-                      />
-                      <Input
-                        className="h-8 text-xs flex-1"
-                        placeholder="Value"
-                        value={c.value}
-                        onChange={(e) => {
-                          const custom = [...((optionForm.specifications?.custom || []) as { label: string; value: string }[])];
-                          custom[idx] = { ...custom[idx], value: e.target.value };
-                          setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="p-1 text-muted-foreground hover:text-foreground shrink-0"
-                        onClick={() => {
-                          const custom = [...((optionForm.specifications?.custom || []) as { label: string; value: string }[])];
-                          custom.splice(idx, 1);
-                          setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                  {(optionForm.specifications?.custom || []).map((c: { label: string; value: string }, idx: number) => (
+                    <div key={idx} className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Label</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={c.label}
+                          onChange={(e) => {
+                            const custom = [...(optionForm.specifications?.custom || [])];
+                            custom[idx] = { ...custom[idx], label: e.target.value };
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Value</Label>
+                          <button
+                            type="button"
+                            className="text-[10px] text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const custom = (optionForm.specifications?.custom || []).filter((_: any, i: number) => i !== idx);
+                              setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={c.value}
+                          onChange={(e) => {
+                            const custom = [...(optionForm.specifications?.custom || [])];
+                            custom[idx] = { ...custom[idx], value: e.target.value };
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                          }}
+                        />
+                      </div>
                     </div>
                   ))}
 
-                  {/* + Add detail picker */}
-                  <div className="relative">
+                  {/* Add spec picker */}
+                  <div className="pt-1">
                     <button
                       type="button"
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-md px-2 py-1"
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
                       onClick={() => setSpecPickerOpen(!specPickerOpen)}
                     >
                       <Plus className="h-3 w-3" />
                       Add detail
                     </button>
                     {specPickerOpen && (
-                      <div className="absolute bottom-full mb-1 left-0 z-50 bg-popover border rounded-md shadow-md p-2 min-w-48 max-h-64 overflow-y-auto">
+                      <div className="mt-2 border rounded-md p-2 space-y-2 bg-muted/20">
                         {SPEC_PICKER_GROUPS.map(group => (
-                          <div key={group.label} className="mb-2">
-                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-1">{group.label}</p>
-                            {group.fields.filter(f => {
-                              const val = optionForm.specifications?.[f.key];
-                              return val === undefined || val === "" || val === null;
-                            }).map(f => (
-                              <button
-                                key={f.key}
-                                type="button"
-                                className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent"
-                                onClick={() => {
-                                  const defaultVal = f.type === "boolean" ? false : f.type === "number" ? undefined : "";
-                                  setOptionForm({
-                                    ...optionForm,
-                                    specifications: { ...optionForm.specifications, [f.key]: defaultVal },
-                                  });
-                                  setSpecPickerOpen(false);
-                                }}
-                              >
-                                {f.label}
-                              </button>
-                            ))}
+                          <div key={group.label}>
+                            <p className="text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">{group.label}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {group.fields.map(field => {
+                                const alreadySet = optionForm.specifications?.[field.key] !== undefined;
+                                return (
+                                  <button
+                                    key={field.key}
+                                    type="button"
+                                    disabled={alreadySet}
+                                    className="text-[10px] px-1.5 py-0.5 border rounded hover-elevate disabled:opacity-40 disabled:cursor-not-allowed"
+                                    onClick={() => {
+                                      setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "boolean" ? false : field.type === "number" ? 0 : "" } });
+                                      setSpecPickerOpen(false);
+                                    }}
+                                  >
+                                    {field.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         ))}
-                        <div className="border-t pt-1 mt-1">
-                          <button
-                            type="button"
-                            className="w-full text-left text-xs px-2 py-1 rounded hover:bg-accent text-muted-foreground"
-                            onClick={() => {
-                              const custom = [...((optionForm.specifications?.custom || []) as { label: string; value: string }[]), { label: "", value: "" }];
-                              setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
-                              setSpecPickerOpen(false);
-                            }}
-                          >
-                            + Custom field
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="text-[10px] text-primary hover:underline"
+                          onClick={() => {
+                            const custom = [...(optionForm.specifications?.custom || []), { label: "", value: "" }];
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                            setSpecPickerOpen(false);
+                          }}
+                        >
+                          + Custom field
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1370,8 +1445,9 @@ export default function SelectionTemplateItemDetail() {
               )}
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOptionDialogOpen(false)}>
+            <Button variant="outline" onClick={() => { setOptionDialogOpen(false); setEditingOption(null); }}>
               Cancel
             </Button>
             <Button
@@ -1381,7 +1457,7 @@ export default function SelectionTemplateItemDetail() {
               className="text-white hover:opacity-90"
               data-testid="button-save-option"
             >
-              {updateMutation.isPending ? "Saving..." : editingOption ? "Save Changes" : "Add Option"}
+              {updateMutation.isPending ? "Saving..." : editingOption ? "Update Option" : "Add Option"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -7940,6 +7940,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
+  // Generic image upload for template options (base64 → object storage → returns URL)
+  app.post("/api/uploads/template-image", requireAuth, async (req: any, res) => {
+    try {
+      const { fileData, fileName, mimeType } = req.body || {};
+      if (!fileData || !fileName) {
+        return res.status(400).json({ error: "fileData and fileName are required" });
+      }
+      const { ObjectStorageService } = await import("./replit_integrations/object_storage/objectStorage");
+      const objectStorage = new ObjectStorageService();
+      let base64Body = fileData as string;
+      let resolvedMime = mimeType || "image/jpeg";
+      const dataUrlMatch = /^data:([^;]+);base64,(.+)$/.exec(fileData);
+      if (dataUrlMatch) {
+        resolvedMime = dataUrlMatch[1] || resolvedMime;
+        base64Body = dataUrlMatch[2];
+      }
+      const buffer = Buffer.from(base64Body, "base64");
+      const objectPath = await objectStorage.uploadObjectEntity(buffer, resolvedMime, "templates");
+      res.json({ url: objectPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to upload image" });
+    }
+  });
+
   // Serve uploaded objects (authenticated, company-scoped)
   app.get("/objects/company/:companyId/*", requireAuth, async (req: any, res) => {
     try {
@@ -24309,6 +24333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clientCanChange: item.clientCanChange ?? true,
         deadline: item.deadline || null,
         sortOrder: item.sortOrder ?? 0,
+        notes: item.notes || null,
       });
       selectionIds.push(selection.id);
       for (const opt of (item.options || [])) {
@@ -24329,6 +24354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           visibleToClient: opt.visibleToClient ?? true,
           gstInclusive: opt.gstInclusive ?? false,
           sortOrder: opt.sortOrder ?? 0,
+          specifications: opt.specifications || null,
         });
         const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
         for (let idx = 0; idx < imageUrls.length; idx++) {
