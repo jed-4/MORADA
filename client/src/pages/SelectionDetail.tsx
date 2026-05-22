@@ -1072,6 +1072,25 @@ export default function SelectionDetail() {
                   </div>
                 )}
 
+                {/* Notes to trades */}
+                <div className="w-full mt-1">
+                  <div className="text-data text-muted-foreground uppercase tracking-wide mb-1">Notes to Trades</div>
+                  {localNotes && (
+                    <p className="mb-1.5 text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      Visible to your internal team only — not the client.
+                    </p>
+                  )}
+                  <Textarea
+                    value={localNotes}
+                    onChange={(e) => setLocalNotes(e.target.value)}
+                    onBlur={(e) => handleSaveNotes(e.target.value)}
+                    placeholder="Instructions, warnings, or notes for your trades team…"
+                    rows={2}
+                    className="text-sm resize-none"
+                    data-testid="input-selection-notes"
+                  />
+                </div>
+
                 {/* Estimate link */}
                 {selection.estimateItemId && (
                   <div>
