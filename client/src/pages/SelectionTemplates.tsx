@@ -465,26 +465,14 @@ export default function SelectionTemplates() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Row 1 - Title & Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold">Selection Templates</h2>
-          <Badge variant="secondary" className="text-xs">
-            {templates.length} {templates.length === 1 ? "template" : "templates"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleOpenAdd}
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Template</span>
-          </button>
-        </div>
+      {/* Row 1 - Breadcrumb */}
+      <div className="h-9 bg-background flex items-center px-3 gap-1.5 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">Templates</span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+        <span className="text-xs font-semibold">Selections</span>
       </div>
 
-      {/* Row 2 - Search & Group By */}
+      {/* Row 2 - Search, Group By & New Template */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5 flex-1">
           <div className="relative w-48">
@@ -508,6 +496,13 @@ export default function SelectionTemplates() {
               <SelectItem value="none">None</SelectItem>
             </SelectContent>
           </Select>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleOpenAdd}
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Template</span>
+          </button>
         </div>
       </div>
 
