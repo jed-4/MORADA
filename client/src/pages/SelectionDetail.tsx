@@ -1567,7 +1567,7 @@ export default function SelectionDetail() {
                   data-testid="button-add-option"
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" />
-                  Add Option
+                  Add Product
                 </Button>
               </div>
             </div>
@@ -1582,7 +1582,7 @@ export default function SelectionDetail() {
                 {!searchTerm && (
                   <Button onClick={handleAddOption} data-testid="button-add-first-option">
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Option
+                    Add Product
                   </Button>
                 )}
               </div>
@@ -2139,12 +2139,12 @@ export default function SelectionDetail() {
         <DialogContent className="sm:max-w-[700px] max-h-[95vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>
-              {editingOption ? "Edit Option" : "Add New Option"}
+              {editingOption ? "Edit Product" : "Add Product"}
             </DialogTitle>
             <DialogDescription>
               {editingOption 
-                ? "Update the option details below."
-                : "Add a new option for clients to choose from."
+                ? "Update the product details below."
+                : "Add a new product for clients to choose from."
               }
             </DialogDescription>
           </DialogHeader>
@@ -2889,7 +2889,7 @@ export default function SelectionDetail() {
                     {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
                       <Loader2 className="w-4 h-4 animate-spin mr-2" />
                     )}
-                    {editingOption ? "Update Option" : "Add Option"}
+                    {editingOption ? "Update Product" : "Add Product"}
                   </Button>
                 </div>
               </form>

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { type SelectionTemplate } from "@shared/schema";
+import { type SelectionTemplate, type FieldCategoryWithOptions } from "@shared/schema";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   DataTable,
@@ -85,6 +85,10 @@ export default function SelectionTemplates() {
 
   const { data: templates = [], isLoading } = useQuery<SelectionTemplate[]>({
     queryKey: ["/api/selection-templates"],
+  });
+
+  const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/selection.category"],
   });
 
   const createMutation = useMutation({
@@ -536,11 +540,19 @@ export default function SelectionTemplates() {
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Residential">Residential</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                  <SelectItem value="Renovation">Renovation</SelectItem>
-                  <SelectItem value="Extension">Extension</SelectItem>
-                  <SelectItem value="Custom">Custom</SelectItem>
+                  {selectionCategories?.options?.length ? (
+                    selectionCategories.options.map((opt) => (
+                      <SelectItem key={opt.key} value={opt.name}>{opt.name}</SelectItem>
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="Tiles">Tiles</SelectItem>
+                      <SelectItem value="Flooring">Flooring</SelectItem>
+                      <SelectItem value="Fixtures">Fixtures</SelectItem>
+                      <SelectItem value="Appliances">Appliances</SelectItem>
+                      <SelectItem value="Joinery">Joinery</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>

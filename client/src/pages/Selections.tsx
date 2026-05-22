@@ -1023,8 +1023,8 @@ export default function Selections() {
 
   // Initialise all groups as expanded when grouping first turns on
   useEffect(() => {
-    if (groupBy !== "none" && allGroupKeys.length > 0 && expandedGroupIds.size === 0) {
-      setExpandedGroupIds(new Set(allGroupKeys));
+    if (groupBy !== "none" && allGroupKeys.length > 0) {
+      setExpandedGroupIds((prev) => prev.size === 0 ? new Set(allGroupKeys) : prev);
     }
   }, [groupBy, allGroupKeys]);
 
