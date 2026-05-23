@@ -65,6 +65,7 @@ import {
   PlayCircle,
   FolderOpen,
   ChevronsUpDown,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -140,6 +141,10 @@ export default function SelectionTemplates() {
   const [applyProjectSearch, setApplyProjectSearch] = useState("");
   const [groupsComboboxOpen, setGroupsComboboxOpen] = useState(false);
   const [groupsComboboxSearch, setGroupsComboboxSearch] = useState("");
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
+  const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
+  const [bulkApplyProjectId, setBulkApplyProjectId] = useState("");
+  const [bulkApplyProjectSearch, setBulkApplyProjectSearch] = useState("");
 
   const { toast } = useToast();
   const { user } = useAuth();
@@ -156,7 +161,7 @@ export default function SelectionTemplates() {
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: !!applyDialogTemplate,
+    enabled: !!applyDialogTemplate || bulkApplyOpen,
   });
 
   const { data: categoryFieldCategory } = useQuery<any>({
@@ -258,6 +263,29 @@ export default function SelectionTemplates() {
       toast({ title: "Template duplicated", description: "The template has been duplicated successfully." });
     },
     onError: () => toast({ title: "Error", description: "Failed to duplicate template.", variant: "destructive" }),
+  });
+
+  const bulkApplyMutation = useMutation({
+    mutationFn: async ({ templateIds, projectId }: { templateIds: string[]; projectId: string }) => {
+      const results = await Promise.all(
+        templateIds.map(templateId =>
+          apiRequest(`/api/selection-templates/${templateId}/apply`, "POST", { projectId })
+        )
+      );
+      return { results, projectId };
+    },
+    onSuccess: ({ results, projectId }) => {
+      const project = projects.find(p => p.id === projectId);
+      const total = results.reduce((sum: number, r: any) => sum + (r.created || 0), 0);
+      toast({
+        title: "Templates applied",
+        description: `${total} selection${total !== 1 ? "s" : ""} added to ${project?.name || "project"}.`,
+      });
+      setBulkApplyOpen(false);
+      setSelectedTemplateIds(new Set());
+      setBulkApplyProjectId("");
+    },
+    onError: () => toast({ title: "Error", description: "Failed to apply templates.", variant: "destructive" }),
   });
 
   const applyMutation = useMutation({
@@ -455,29 +483,22 @@ export default function SelectionTemplates() {
     const tAny = template as any;
     const templateGroups = (template.groups || []) as { id: string; name: string }[];
     const optionCount = getOptionCount(template);
+    const isSelected = selectedTemplateIds.has(template.id);
 
     return (
       <div key={template.id} className="border rounded-md bg-card mx-2 mb-2">
-        <div className="flex items-center gap-2 p-3">
+        <div className="flex items-center gap-2 px-3 py-2.5">
           <div
             className="flex-1 min-w-0 cursor-pointer"
             onClick={() => navigate(`/selection-templates/${template.id}`)}
           >
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-semibold text-sm">{template.name}</span>
-              {template.category && (
-                <Badge variant="secondary" className={cn("h-4 px-1.5 text-data", getCategoryColor(template.category))}>
-                  {template.category}
-                </Badge>
-              )}
               {templateGroups.map(g => (
                 <Badge key={g.id} variant="outline" className="h-4 px-1.5 text-data">
                   {g.name}
                 </Badge>
               ))}
-              <span className="text-xs text-muted-foreground">
-                {optionCount} {optionCount === 1 ? "option" : "options"}
-              </span>
             </div>
             {template.description && (
               <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{template.description}</p>
@@ -503,15 +524,32 @@ export default function SelectionTemplates() {
             )}
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs px-2 flex-shrink-0"
-            onClick={(e) => { e.stopPropagation(); openApplyDialog(template); }}
-          >
-            <PlayCircle className="h-3 w-3 mr-1" />
-            Apply
-          </Button>
+          {/* Right meta column: category + option count */}
+          <div className="flex flex-col items-end gap-0.5 min-w-[72px] flex-shrink-0">
+            {template.category ? (
+              <Badge variant="secondary" className={cn("h-4 px-1.5 text-data", getCategoryColor(template.category))}>
+                {template.category}
+              </Badge>
+            ) : (
+              <span className="text-[10px] text-muted-foreground/40">—</span>
+            )}
+            <span className="text-[10px] text-muted-foreground">
+              {optionCount} {optionCount === 1 ? "option" : "options"}
+            </span>
+          </div>
+
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={(checked) => {
+              setSelectedTemplateIds(prev => {
+                const next = new Set(prev);
+                if (checked) next.add(template.id); else next.delete(template.id);
+                return next;
+              });
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-shrink-0"
+          />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -527,6 +565,10 @@ export default function SelectionTemplates() {
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenEdit(template); }}>
                 <Edit3 className="h-4 w-4 mr-2" />
                 Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openApplyDialog(template); }}>
+                <PlayCircle className="h-4 w-4 mr-2" />
+                Apply to project
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(template); }}>
                 <Copy className="h-4 w-4 mr-2" />
@@ -1083,6 +1125,88 @@ export default function SelectionTemplates() {
           </div>
           <DialogFooter>
             <Button onClick={() => setIsManagingGroups(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Floating bulk selection bar */}
+      {selectedTemplateIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground mr-1">
+            {selectedTemplateIds.size} selected
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => { setBulkApplyProjectId(""); setBulkApplyProjectSearch(""); setBulkApplyOpen(true); }}
+          >
+            <PlayCircle className="w-3 h-3 mr-1" />
+            Add to project
+          </Button>
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => setSelectedTemplateIds(new Set())}
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+
+      {/* Bulk apply to project dialog */}
+      <Dialog open={bulkApplyOpen} onOpenChange={setBulkApplyOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add to project</DialogTitle>
+            <DialogDescription>
+              Apply {selectedTemplateIds.size} template{selectedTemplateIds.size !== 1 ? "s" : ""} to a project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search projects..."
+                value={bulkApplyProjectSearch}
+                onChange={(e) => setBulkApplyProjectSearch(e.target.value)}
+                className="pl-7 h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {projects
+                .filter(p => !bulkApplyProjectSearch || p.name.toLowerCase().includes(bulkApplyProjectSearch.toLowerCase()))
+                .map(p => (
+                  <button
+                    key={p.id}
+                    className={cn(
+                      "w-full text-left px-3 py-2 rounded-md text-sm border hover-elevate",
+                      bulkApplyProjectId === p.id ? "border-primary bg-primary/5" : "bg-card"
+                    )}
+                    onClick={() => setBulkApplyProjectId(p.id)}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              {projects.filter(p => !bulkApplyProjectSearch || p.name.toLowerCase().includes(bulkApplyProjectSearch.toLowerCase())).length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No projects found</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkApplyOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!bulkApplyProjectId || bulkApplyMutation.isPending}
+              onClick={() => {
+                if (!bulkApplyProjectId) return;
+                bulkApplyMutation.mutate({ templateIds: Array.from(selectedTemplateIds), projectId: bulkApplyProjectId });
+              }}
+            >
+              {bulkApplyMutation.isPending ? "Applying..." : "Apply"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

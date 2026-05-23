@@ -3750,27 +3750,31 @@ export default function Schedule() {
             {selectedItems.size} selected
           </span>
           <div className="w-px h-4 bg-border" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'completed' })}
-            disabled={bulkStatusMutation.isPending}
-            data-testid="button-bulk-complete"
-          >
-            <Check className="w-3 h-3 mr-1" />
-            Complete
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'in_progress' })}
-            disabled={bulkStatusMutation.isPending}
-            data-testid="button-bulk-in-progress"
-          >
-            In progress
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                disabled={bulkStatusMutation.isPending}
+                data-testid="button-bulk-status"
+              >
+                <ChevronUp className="w-3 h-3 mr-1" />
+                Set status
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="min-w-[160px]">
+              {statusOptions.map((opt: any) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: opt.value })}
+                >
+                  <div className="w-2 h-2 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: opt.color || '#6B7280' }} />
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="w-px h-4 bg-border" />
           <Button
             size="sm"

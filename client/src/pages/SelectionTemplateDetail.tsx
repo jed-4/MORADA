@@ -183,6 +183,8 @@ export default function SelectionTemplateDetail() {
   const [specsOpen, setSpecsOpen] = useState(false);
   const [specPickerOpen, setSpecPickerOpen] = useState(false);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
+  const [productLibraryOpen, setProductLibraryOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
 
   const [optionForm, setOptionForm] = useState<Partial<SelectionOption>>({
     name: "",
@@ -248,6 +250,11 @@ export default function SelectionTemplateDetail() {
 
   const { data: groups = [] } = useQuery<SelectionTemplateGroup[]>({
     queryKey: ["/api/selection-template-groups"],
+  });
+
+  const { data: products = [] } = useQuery<any[]>({
+    queryKey: ["/api/products"],
+    enabled: productLibraryOpen,
   });
 
   useEffect(() => {
@@ -374,6 +381,32 @@ export default function SelectionTemplateDetail() {
       imageUrls: [],
       specifications: {},
     });
+    setOptionDialogOpen(true);
+  };
+
+  const handleSelectFromLibrary = (product: any) => {
+    setEditingOption(null);
+    setGstInclusive(product.gstInclusive || false);
+    setSpecsOpen(!!(product.specifications && Object.keys(product.specifications).length > 0));
+    setSpecPickerOpen(false);
+    const imageUrls = (product.images || []).map((img: any) => img.url || img).filter(Boolean);
+    setOptionForm({
+      name: product.name || "",
+      description: product.description || "",
+      sku: product.sku || "",
+      brand: product.brand || "",
+      category: product.category || "",
+      unitCost: product.unitCost ? product.unitCost / 100 : undefined,
+      quantity: 1,
+      unitType: product.unitType || "ea",
+      url: product.url || "",
+      imageUrls,
+      visibleToClient: true,
+      isSelectedByClient: false,
+      markupPercent: product.markupPercent,
+      specifications: product.specifications || {},
+    });
+    setProductLibraryOpen(false);
     setOptionDialogOpen(true);
   };
 
@@ -514,7 +547,7 @@ export default function SelectionTemplateDetail() {
         <div className="h-9 flex items-center px-3 gap-1.5 border-b">
           <button
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate("/selection-templates")}
+            onClick={() => navigate("/templates")}
           >
             Templates
           </button>
@@ -529,55 +562,45 @@ export default function SelectionTemplateDetail() {
           <span className="text-xs font-semibold truncate">{template.name || "Untitled"}</span>
         </div>
 
-        {/* Row 2 — Name + Actions */}
-        <div className="h-9 flex items-center px-2 gap-2 border-b">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <input
-              className="font-semibold text-sm bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded px-0.5 py-0.5 min-w-0 flex-1 max-w-xs"
-              value={localMeta.itemName}
-              onChange={(e) => { setLocalMeta({ ...localMeta, itemName: e.target.value }); setHasMetaChanges(true); }}
-              placeholder="Template name..."
-            />
-            {localMeta.categoryName && (
-              <Badge variant="secondary" className="h-5 px-1.5 text-xs flex-shrink-0">{localMeta.categoryName}</Badge>
-            )}
-            {templateGroups.map(g => (
-              <Badge key={g.id} variant="outline" className="h-5 px-1.5 text-xs flex-shrink-0">{g.name}</Badge>
-            ))}
-            <button
-              className="h-5 w-5 text-muted-foreground hover-elevate rounded flex items-center justify-center flex-shrink-0"
-              onClick={() => setGroupsDialogOpen(true)}
-              title="Edit groups"
+        {/* Row 2 — Actions */}
+        <div className="h-9 flex items-center px-2 gap-2 border-b justify-end">
+          {hasMetaChanges && (
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleSaveMeta}
+              disabled={updateMutation.isPending}
             >
-              <Tags className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-            {hasMetaChanges && (
-              <Button
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleSaveMeta}
-                disabled={updateMutation.isPending}
+              {updateMutation.isPending ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Save className="h-3 w-3 mr-1" />
+              )}
+              Save
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
+                style={{ backgroundColor: CASVA_LILAC }}
               >
-                {updateMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3 mr-1" />
-                )}
-                Save
-              </Button>
-            )}
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
-              style={{ backgroundColor: CASVA_LILAC }}
-              onClick={handleAddOption}
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Option</span>
-            </button>
-          </div>
+                <Plus className="w-3 h-3" />
+                <span>Add Option</span>
+                <ChevronDown className="w-2.5 h-2.5 ml-0.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleAddOption}>
+                <Plus className="h-3.5 w-3.5 mr-2" />
+                New option
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setProductSearch(""); setProductLibraryOpen(true); }}>
+                <Package className="h-3.5 w-3.5 mr-2" />
+                From product library
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -588,6 +611,17 @@ export default function SelectionTemplateDetail() {
           {/* Item Details block */}
           <div className="border rounded-md p-4 space-y-4">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide text-[11px]">Item Details</h3>
+
+            {/* Item Name */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Item Name</Label>
+              <Input
+                className="h-8 text-sm"
+                value={localMeta.itemName}
+                onChange={(e) => { setLocalMeta({ ...localMeta, itemName: e.target.value }); setHasMetaChanges(true); }}
+                placeholder="Template name..."
+              />
+            </div>
 
             {/* Description */}
             <div className="space-y-1.5">
@@ -1396,6 +1430,71 @@ export default function SelectionTemplateDetail() {
               {updateMutation.isPending ? "Saving..." : editingOption ? "Update Option" : "Add Option"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Library Dialog */}
+      <Dialog open={productLibraryOpen} onOpenChange={setProductLibraryOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Product Library</DialogTitle>
+            <DialogDescription>Select a product to add as an option.</DialogDescription>
+          </DialogHeader>
+          <div className="flex-shrink-0 mb-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                className="pl-7 h-8 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {products.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                No products in library yet
+              </div>
+            ) : (() => {
+              const filtered = products.filter(p =>
+                !productSearch ||
+                p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                p.brand?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+              );
+              if (filtered.length === 0) {
+                return <div className="text-center py-8 text-sm text-muted-foreground">No products match your search</div>;
+              }
+              return filtered.map(product => (
+                <button
+                  key={product.id}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md border bg-card hover-elevate text-left"
+                  onClick={() => handleSelectFromLibrary(product)}
+                >
+                  {(product.images?.[0]?.url || product.imageUrl) ? (
+                    <img src={product.images?.[0]?.url || product.imageUrl} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{product.name}</div>
+                    {(product.brand || product.sku) && (
+                      <div className="text-xs text-muted-foreground">
+                        {[product.brand, product.sku ? `SKU: ${product.sku}` : null].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    {product.unitCost && (
+                      <div className="text-xs text-muted-foreground">${(product.unitCost / 100).toFixed(2)}</div>
+                    )}
+                  </div>
+                </button>
+              ));
+            })()}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
