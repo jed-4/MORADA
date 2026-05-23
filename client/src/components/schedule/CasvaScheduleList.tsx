@@ -79,7 +79,6 @@ export function CasvaScheduleList({
     }
   }, [allCollapsed, items]);
 
-  const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
@@ -501,12 +500,6 @@ export function CasvaScheduleList({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    const rippleId = `${itemId}-${Date.now()}`;
-    setRipples(prev => [...prev, { id: rippleId, x, y }]);
-    
-    setTimeout(() => {
-      setRipples(prev => prev.filter(r => r.id !== rippleId));
-    }, 600);
   };
 
   const handleTouchStart = (e: React.TouchEvent, item: ScheduleItem) => {
@@ -646,19 +639,6 @@ export function CasvaScheduleList({
                       locked={locked}
                     />
                     
-                    {ripples.filter(r => r.id.startsWith(item.id)).map((ripple) => (
-                      <span
-                        key={ripple.id}
-                        className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
-                        style={{
-                          left: ripple.x,
-                          top: ripple.y,
-                          width: 0,
-                          height: 0,
-                          transform: 'translate(-50%, -50%)',
-                        }}
-                      />
-                    ))}
                   </TableRow>
 
                   {!isCollapsed && subtasks.map((subtask) => {
@@ -707,19 +687,6 @@ export function CasvaScheduleList({
                             locked={locked}
                           />
                           
-                          {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
-                            <span
-                              key={ripple.id}
-                              className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
-                              style={{
-                                left: ripple.x,
-                                top: ripple.y,
-                                width: 0,
-                                height: 0,
-                                transform: 'translate(-50%, -50%)',
-                              }}
-                            />
-                          ))}
                         </TableRow>
 
                         {grandchildren.map((grandchild) => (
@@ -764,19 +731,6 @@ export function CasvaScheduleList({
                               indentLevel={2}
                               locked={locked}
                             />
-                            {ripples.filter(r => r.id.startsWith(grandchild.id)).map((ripple) => (
-                              <span
-                                key={ripple.id}
-                                className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
-                                style={{
-                                  left: ripple.x,
-                                  top: ripple.y,
-                                  width: 0,
-                                  height: 0,
-                                  transform: 'translate(-50%, -50%)',
-                                }}
-                              />
-                            ))}
                           </TableRow>
                         ))}
                       </Fragment>

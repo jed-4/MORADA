@@ -3775,6 +3775,27 @@ export default function Schedule() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => {
+              const allCompleted = Array.from(selectedItems).every(id =>
+                scheduleItems.find((i: ScheduleItem) => i.id === id)?.status === 'completed'
+              );
+              bulkStatusMutation.mutate({
+                itemIds: Array.from(selectedItems),
+                status: allCompleted ? 'not_started' : 'completed',
+              });
+            }}
+            disabled={bulkStatusMutation.isPending}
+            data-testid="button-bulk-toggle-complete"
+          >
+            <Check className="w-3 h-3 mr-1" />
+            {Array.from(selectedItems).every(id =>
+              scheduleItems.find((i: ScheduleItem) => i.id === id)?.status === 'completed'
+            ) ? 'Mark incomplete' : 'Mark complete'}
+          </Button>
           <div className="w-px h-4 bg-border" />
           <Button
             size="sm"
