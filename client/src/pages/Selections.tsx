@@ -1380,7 +1380,7 @@ export default function Selections() {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {/* Table header */}
-        <div className="grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted/30 border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
+        <div className="grid grid-cols-[16px_32px_40px_minmax(160px,1fr)_120px_120px_100px_100px_100px_100px_110px_90px_32px] gap-3 items-center bg-muted border-b border-border h-[34px] px-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground sticky top-0 z-10">
           <div></div>
           <div className="flex items-center justify-center">
             <button
