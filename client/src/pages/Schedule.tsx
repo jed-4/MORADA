@@ -2124,62 +2124,6 @@ export default function Schedule() {
                   </Card>
                 ) : (
                   <>
-                    {selectedItems.size > 0 && (
-                      <div className="flex items-center flex-wrap gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {selectedItems.size} selected
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'completed' })}
-                          disabled={bulkStatusMutation.isPending}
-                          data-testid="button-bulk-complete"
-                        >
-                          <Check className="w-3 h-3 mr-1" />
-                          Mark complete
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'in_progress' })}
-                          disabled={bulkStatusMutation.isPending}
-                          data-testid="button-bulk-in-progress"
-                        >
-                          Mark in progress
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            if (!projectId) {
-                              toast({
-                                title: "Error",
-                                description: "No project selected",
-                                variant: "destructive",
-                              });
-                              return;
-                            }
-                            if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
-                              bulkDeleteMutation.mutate(Array.from(selectedItems));
-                            }
-                          }}
-                          disabled={bulkDeleteMutation.isPending || !projectId}
-                          data-testid="button-bulk-delete"
-                        >
-                          <Trash2 className="w-3 h-3 mr-1" />
-                          {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedItems(new Set())}
-                          data-testid="button-clear-selection"
-                        >
-                          Clear
-                        </Button>
-                      </div>
-                    )}
                     <CasvaScheduleList
                       items={filteredItems}
                       noteCounts={noteCounts}
@@ -3799,6 +3743,66 @@ export default function Schedule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Floating bulk action bar — list view only */}
+      {selectedItems.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-3 py-2" data-testid="bulk-action-bar">
+          <span className="text-xs font-medium text-muted-foreground mr-1" data-testid="bulk-count">
+            {selectedItems.size} selected
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'completed' })}
+            disabled={bulkStatusMutation.isPending}
+            data-testid="button-bulk-complete"
+          >
+            <Check className="w-3 h-3 mr-1" />
+            Complete
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'in_progress' })}
+            disabled={bulkStatusMutation.isPending}
+            data-testid="button-bulk-in-progress"
+          >
+            In progress
+          </Button>
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-destructive"
+            onClick={() => {
+              if (!projectId) {
+                toast({ title: "Error", description: "No project selected", variant: "destructive" });
+                return;
+              }
+              if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
+                bulkDeleteMutation.mutate(Array.from(selectedItems));
+              }
+            }}
+            disabled={bulkDeleteMutation.isPending || !projectId}
+            data-testid="button-bulk-delete"
+          >
+            <Trash2 className="w-3 h-3 mr-1" />
+            {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+          </Button>
+          <div className="w-px h-4 bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => setSelectedItems(new Set())}
+            data-testid="button-clear-selection"
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
     </ScheduleViewProvider>
   );
 }

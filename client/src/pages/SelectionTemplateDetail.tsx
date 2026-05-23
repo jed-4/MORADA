@@ -509,17 +509,28 @@ export default function SelectionTemplateDetail() {
   return (
     <div className="h-full flex flex-col">
       {/* Sticky header */}
-      <div className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
-        <div className="h-9 flex items-center px-2 gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0"
+      <div className="flex-shrink-0 bg-background sticky top-0 z-10">
+        {/* Row 1 — Breadcrumbs */}
+        <div className="h-9 flex items-center px-3 gap-1.5 border-b">
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => navigate("/selection-templates")}
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+            Templates
+          </button>
+          <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => navigate("/selection-templates")}
+          >
+            Selections
+          </button>
+          <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-semibold truncate">{template.name || "Untitled"}</span>
+        </div>
 
+        {/* Row 2 — Name + Actions */}
+        <div className="h-9 flex items-center px-2 gap-2 border-b">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <input
               className="font-semibold text-sm bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded px-0.5 py-0.5 min-w-0 flex-1 max-w-xs"
