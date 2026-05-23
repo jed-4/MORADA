@@ -168,26 +168,31 @@ export default function SelectionTemplates() {
     queryKey: ["/api/field-categories/by-key/selection.category"],
   });
 
-  const categoryOptions = useMemo(() => {
-    const fallback = [
-      { id: "1", label: "Residential", value: "Residential" },
-      { id: "2", label: "Commercial", value: "Commercial" },
-      { id: "3", label: "Renovation", value: "Renovation" },
-      { id: "4", label: "General", value: "General" },
-    ];
-    const raw: any[] = categoryFieldCategory?.options ?? [];
-    if (raw.length > 0) {
-      return raw
-        .map((opt: any) => ({
-          id: String(opt.id ?? opt.value ?? opt.label ?? ""),
-          label: String(opt.label ?? opt.value ?? ""),
-          value: String(opt.value ?? opt.label ?? ""),
-        }))
-        .filter(opt => opt.label)
-        .sort((a, b) => a.label.localeCompare(b.label));
-    }
-    return fallback;
-  }, [categoryFieldCategory]);
+  const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
+    queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
+    queryFn: async () => {
+      if (!categoryFieldCategory?.id) return [];
+      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!categoryFieldCategory?.id,
+  });
+
+  const { data: roomFieldCategory } = useQuery<any>({
+    queryKey: ["/api/field-categories/by-key/selection.room"],
+  });
+
+  const { data: roomOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
+    queryKey: ["/api/field-categories", roomFieldCategory?.id, "options"],
+    queryFn: async () => {
+      if (!roomFieldCategory?.id) return [];
+      const res = await fetch(`/api/field-categories/${roomFieldCategory.id}/options`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!roomFieldCategory?.id,
+  });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof initialFormData) => {
@@ -746,12 +751,20 @@ export default function SelectionTemplates() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="room">Room / Location</Label>
-                <Input
-                  id="room"
-                  value={formData.room}
-                  onChange={(e) => setFormData({ ...formData, room: e.target.value })}
-                  placeholder="e.g., Kitchen"
-                />
+                <Select
+                  value={formData.room || "_none"}
+                  onValueChange={(v) => setFormData({ ...formData, room: v === "_none" ? "" : v })}
+                >
+                  <SelectTrigger id="room">
+                    <SelectValue placeholder="Select room" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    {roomOptions.map(opt => (
+                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">

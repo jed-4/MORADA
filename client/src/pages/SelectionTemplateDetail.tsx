@@ -238,6 +238,21 @@ export default function SelectionTemplateDetail() {
     enabled: !!categoryFieldCategory?.id,
   });
 
+  const { data: roomFieldCategory } = useQuery<any>({
+    queryKey: ["/api/field-categories/by-key/selection.room"],
+  });
+
+  const { data: roomOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
+    queryKey: ["/api/field-categories", roomFieldCategory?.id, "options"],
+    queryFn: async () => {
+      if (!roomFieldCategory?.id) return [];
+      const res = await fetch(`/api/field-categories/${roomFieldCategory.id}/options`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!roomFieldCategory?.id,
+  });
+
   const { data: template, isLoading } = useQuery<SelectionTemplate>({
     queryKey: ["/api/selection-templates", params.templateId],
     queryFn: async () => {
@@ -656,12 +671,20 @@ export default function SelectionTemplateDetail() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Room / Location</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={localMeta.room}
-                  onChange={(e) => { setLocalMeta({ ...localMeta, room: e.target.value }); setHasMetaChanges(true); }}
-                  placeholder="e.g., Kitchen"
-                />
+                <Select
+                  value={localMeta.room || "_none"}
+                  onValueChange={(v) => { setLocalMeta({ ...localMeta, room: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select room" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    {roomOptions.map(opt => (
+                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Deadline</Label>
