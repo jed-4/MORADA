@@ -78,6 +78,7 @@ interface NotesParams {
 
 interface NotesProps {
   projectId?: string | null;
+  embedded?: boolean;
 }
 
 // ─── Note list item ──────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ function NoteListItem({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
+export default function Notes({ projectId: propProjectId, embedded }: NotesProps = {}) {
   // ── selected / edit state ──────────────────────────────────────────────────
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -608,14 +609,15 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
   return (
     <div className="flex flex-col h-full" data-testid="notes-page">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {effectiveProjectId && currentProject ? currentProject.name : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Notes</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {effectiveProjectId && currentProject ? currentProject.name : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Notes</span>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0">
       {/* ── LEFT PANEL ─────────────────────────────────────────────────── */}
       <div className="w-72 shrink-0 border-r flex flex-col overflow-hidden">

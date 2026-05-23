@@ -45,7 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
-export default function RFIs() {
+export default function RFIs({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
@@ -372,14 +372,15 @@ export default function RFIs() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-rfis">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">RFIs</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">RFIs</span>
+        </div>
+      )}
       {/* Toolbar — flush h-9 row with bottom divider */}
       <div className="h-9 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
           {/* Status tabs — left, scrollable when narrow */}

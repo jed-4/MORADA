@@ -860,15 +860,15 @@ export default function CustomizableProjectOverview() {
       case "messages":
         return <Messages projectId={currentProject.id} />;
       case "notes":
-        return <Notes projectId={currentProject.id} />;
+        return <Notes projectId={currentProject.id} embedded />;
       case "scope":
         return <ProjectScope />;
       case "schedule":
         return <Schedule />;
       case "tasks":
-        return <Tasks />;
+        return <Tasks embedded />;
       case "timesheets":
-        return <Timesheets />;
+        return <Timesheets embedded />;
       case "files":
         return <ProjectFiles />;
       case "takeoff":
@@ -876,9 +876,9 @@ export default function CustomizableProjectOverview() {
       case "estimates":
         return <ProjectEstimates />;
       case "proposals":
-        return <Proposals />;
+        return <Proposals embedded />;
       case "bills":
-        return <Bills />;
+        return <Bills embedded />;
       case "budget":
         return <Budget />;
       case "calendar":
@@ -886,29 +886,29 @@ export default function CustomizableProjectOverview() {
       case "selections":
         return <Selections />;
       case "rfqs":
-        return <RFQs />;
+        return <RFQs embedded />;
       case "rfis":
-        return <RFIs />;
+        return <RFIs embedded />;
       case "allowances":
         return <Allowances />;
       case "defects":
-        return <Defects />;
+        return <Defects embedded />;
       case "purchase-orders":
-        return <PurchaseOrders />;
+        return <PurchaseOrders embedded />;
       case "variations":
-        return <Variations />;
+        return <Variations embedded />;
       case "client-invoices":
-        return <ClientInvoices />;
+        return <ClientInvoices embedded />;
       case "invoices":
-        return <ClientInvoices />;
+        return <ClientInvoices embedded />;
       case "site-diary":
-        return <SiteDiaryEntries />;
+        return <SiteDiaryEntries embedded />;
       case "team":
         return <ProjectTeam />;
       case "checklists":
         return <ProjectChecklists />;
       case "minutes":
-        return <Minutes />;
+        return <Minutes embedded />;
       default:
         return null; // overview renders inline below
     }

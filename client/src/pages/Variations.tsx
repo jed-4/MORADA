@@ -203,7 +203,7 @@ function DroppableColumn({ id, children }: { id: string; children: React.ReactNo
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function Variations() {
+export default function Variations({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
@@ -673,14 +673,15 @@ export default function Variations() {
   return (
     <div className="flex flex-col h-full" data-testid="page-variations">
 
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {projectIdFromUrl ? (getProject(projectIdFromUrl)?.name ?? "All Projects") : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Variations</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {projectIdFromUrl ? (getProject(projectIdFromUrl)?.name ?? "All Projects") : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Variations</span>
+        </div>
+      )}
 
       {/* ── Unified header card ── */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">

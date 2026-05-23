@@ -93,7 +93,7 @@ const PROJECT_COL_WIDTH = 160;
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ClientInvoices() {
+export default function ClientInvoices({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
@@ -441,14 +441,15 @@ export default function ClientInvoices() {
   return (
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
 
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Client Invoices</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {projectIdFromUrl && currentProject ? currentProject.name : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Client Invoices</span>
+        </div>
+      )}
 
       {/* Unified header card — title row + finance summary */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">

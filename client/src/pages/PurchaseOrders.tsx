@@ -84,7 +84,7 @@ function formatCurrency(cents: number): string {
   }).format(cents / 100);
 }
 
-export default function PurchaseOrders() {
+export default function PurchaseOrders({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId;
@@ -555,14 +555,15 @@ export default function PurchaseOrders() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {isProjectContext && currentProject ? currentProject.name : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Purchase Orders</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {isProjectContext && currentProject ? currentProject.name : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Purchase Orders</span>
+        </div>
+      )}
       {/* Single header row - Status tabs + toolbar */}
       <div className="bg-background flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1 overflow-x-auto">

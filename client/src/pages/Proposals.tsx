@@ -58,7 +58,7 @@ import { revisionLabel, formatViewedTooltip } from "@/components/proposals/propo
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-export default function Proposals() {
+export default function Proposals({ embedded }: { embedded?: boolean } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const pageTitle = usePageTitle({ pageName: "Proposals" });
@@ -522,14 +522,15 @@ export default function Proposals() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {params.projectId ? (projects.find(p => p.id === params.projectId)?.name ?? "All Projects") : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Proposals</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {params.projectId ? (projects.find(p => p.id === params.projectId)?.name ?? "All Projects") : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Proposals</span>
+        </div>
+      )}
       {/* Header */}
       <div className="border-b bg-background">
         <div className="p-4 sm:p-6">

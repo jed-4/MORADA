@@ -182,7 +182,7 @@ function hasIssues(entry: SiteDiaryEntry): boolean {
   return false;
 }
 
-export default function SiteDiaryEntries() {
+export default function SiteDiaryEntries({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
   const { user } = useAuth();
   const params = useParams();
@@ -467,14 +467,15 @@ export default function SiteDiaryEntries() {
 
   return (
     <div className="flex flex-col h-full" data-testid="page-site-diary">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {isProjectFromUrl ? (projects.find(p => p.id === projectIdFromUrl)?.name ?? "All Projects") : "All Projects"}
-        </span>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Site Diary</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-1 px-4 pt-3 pb-1 flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {isProjectFromUrl ? (projects.find(p => p.id === projectIdFromUrl)?.name ?? "All Projects") : "All Projects"}
+          </span>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground" data-testid="text-page-title">Site Diary</span>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="h-9 bg-background flex items-center justify-between px-3 gap-3 border-b border-border flex-shrink-0">
         {/* Left: View toggle (icon only) + search + filter */}
