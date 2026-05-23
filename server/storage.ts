@@ -106,7 +106,8 @@ import {
   type FavoriteCostCode, type InsertFavoriteCostCode,
   type RfqTemplate, type InsertRfqTemplate,
   type RfiTemplate, type InsertRfiTemplate,
-  type TemplateCategory, type InsertTemplateCategory
+  type TemplateCategory, type InsertTemplateCategory,
+  type SelectionTemplateGroup, type InsertSelectionTemplateGroup,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -1055,6 +1056,12 @@ export interface IStorage {
   createTemplateCategory(category: InsertTemplateCategory & { companyId: string }): Promise<TemplateCategory>;
   updateTemplateCategory(id: string, category: Partial<InsertTemplateCategory>, companyId: string): Promise<TemplateCategory | undefined>;
   deleteTemplateCategory(id: string, companyId: string): Promise<boolean>;
+
+  // Selection Template Groups CRUD
+  getSelectionTemplateGroups(companyId: string): Promise<SelectionTemplateGroup[]>;
+  createSelectionTemplateGroup(group: InsertSelectionTemplateGroup & { companyId: string }): Promise<SelectionTemplateGroup>;
+  updateSelectionTemplateGroup(id: string, group: Partial<InsertSelectionTemplateGroup>, companyId: string): Promise<SelectionTemplateGroup | undefined>;
+  deleteSelectionTemplateGroup(id: string, companyId: string): Promise<boolean>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -18588,6 +18595,53 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteTemplateCategory:", error);
+      throw error;
+    }
+  }
+
+  async getSelectionTemplateGroups(companyId: string): Promise<SelectionTemplateGroup[]> {
+    try {
+      return await db.select()
+        .from(schema.selectionTemplateGroups)
+        .where(eq(schema.selectionTemplateGroups.companyId, companyId))
+        .orderBy(asc(schema.selectionTemplateGroups.sortOrder), asc(schema.selectionTemplateGroups.name));
+    } catch (error) {
+      console.error("Database error in getSelectionTemplateGroups:", error);
+      throw error;
+    }
+  }
+
+  async createSelectionTemplateGroup(group: InsertSelectionTemplateGroup & { companyId: string }): Promise<SelectionTemplateGroup> {
+    try {
+      const result = await db.insert(schema.selectionTemplateGroups).values(group).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createSelectionTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  async updateSelectionTemplateGroup(id: string, group: Partial<InsertSelectionTemplateGroup>, companyId: string): Promise<SelectionTemplateGroup | undefined> {
+    try {
+      const result = await db.update(schema.selectionTemplateGroups)
+        .set(group)
+        .where(and(eq(schema.selectionTemplateGroups.id, id), eq(schema.selectionTemplateGroups.companyId, companyId)))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateSelectionTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  async deleteSelectionTemplateGroup(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.selectionTemplateGroups)
+        .where(and(eq(schema.selectionTemplateGroups.id, id), eq(schema.selectionTemplateGroups.companyId, companyId)))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteSelectionTemplateGroup:", error);
       throw error;
     }
   }

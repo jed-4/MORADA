@@ -3645,6 +3645,23 @@ export const insertEstimateTemplateSchema = createInsertSchema(estimateTemplates
 export type InsertEstimateTemplate = z.infer<typeof insertEstimateTemplateSchema>;
 export type EstimateTemplate = typeof estimateTemplates.$inferSelect;
 
+// Selection Template Groups (user-defined groups for organizing templates e.g. Bathroom, Kitchen)
+export const selectionTemplateGroups = pgTable("selection_template_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSelectionTemplateGroupSchema = createInsertSchema(selectionTemplateGroups).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+});
+export type InsertSelectionTemplateGroup = z.infer<typeof insertSelectionTemplateGroupSchema>;
+export type SelectionTemplateGroup = typeof selectionTemplateGroups.$inferSelect;
+
 // Selection Templates (reusable selection templates with categories and items)
 export const selectionTemplates = pgTable("selection_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3659,6 +3676,7 @@ export const selectionTemplates = pgTable("selection_templates", {
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   isArchived: boolean("is_archived").notNull().default(false),
+  groupId: varchar("group_id").references(() => selectionTemplateGroups.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

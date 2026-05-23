@@ -92,6 +92,8 @@ import {
   updateEstimateTemplateSchema,
   insertSelectionTemplateSchema,
   updateSelectionTemplateSchema,
+  insertSelectionTemplateGroupSchema,
+  type SelectionTemplateGroup,
   insertActivityNoteSchema,
   insertCalendarViewSchema,
   insertTimesheetAllowanceSchema,
@@ -24185,6 +24187,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Selection Templates routes
+  // Selection Template Groups CRUD
+  app.get("/api/selection-template-groups", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const groups = await storage.getSelectionTemplateGroups(user.companyId);
+      res.json(groups);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch selection template groups", details: error.message });
+    }
+  });
+
+  app.post("/api/selection-template-groups", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { name, sortOrder } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
+      const group = await storage.createSelectionTemplateGroup({ name: name.trim(), sortOrder: sortOrder ?? 0, companyId: user.companyId });
+      res.status(201).json(group);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create selection template group", details: error.message });
+    }
+  });
+
+  app.patch("/api/selection-template-groups/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { name, sortOrder } = req.body;
+      const group = await storage.updateSelectionTemplateGroup(req.params.id, { ...(name ? { name: name.trim() } : {}), ...(sortOrder !== undefined ? { sortOrder } : {}) }, user.companyId);
+      if (!group) return res.status(404).json({ error: "Group not found" });
+      res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update selection template group", details: error.message });
+    }
+  });
+
+  app.delete("/api/selection-template-groups/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const success = await storage.deleteSelectionTemplateGroup(req.params.id, user.companyId);
+      if (!success) return res.status(404).json({ error: "Group not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete selection template group", details: error.message });
+    }
+  });
+
   app.get("/api/selection-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;

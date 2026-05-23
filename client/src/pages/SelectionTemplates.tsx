@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { type SelectionTemplate } from "@shared/schema";
+import { type SelectionTemplate, type SelectionTemplateGroup } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,10 @@ import {
   DollarSign,
   Layers,
   PlayCircle,
+  FolderOpen,
+  Pencil,
+  Settings2,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -101,7 +105,11 @@ export default function SelectionTemplates() {
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SelectionTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [groupBy, setGroupBy] = useState<"category" | "none">("category");
+  const [groupBy, setGroupBy] = useState<"category" | "group" | "none">("category");
+  const [isManagingGroups, setIsManagingGroups] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem(COLLAPSED_GROUPS_KEY);
@@ -125,10 +133,15 @@ export default function SelectionTemplates() {
     name: "",
     description: "",
     category: "",
+    groupId: "",
   });
 
   const { data: templates = [], isLoading } = useQuery<SelectionTemplate[]>({
     queryKey: ["/api/selection-templates"],
+  });
+
+  const { data: groups = [] } = useQuery<SelectionTemplateGroup[]>({
+    queryKey: ["/api/selection-template-groups"],
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -218,8 +231,34 @@ export default function SelectionTemplates() {
     onError: () => toast({ title: "Error", description: "Failed to apply template.", variant: "destructive" }),
   });
 
+  const createGroupMutation = useMutation({
+    mutationFn: async (name: string) => apiRequest("/api/selection-template-groups", "POST", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-template-groups"] });
+      setNewGroupName("");
+    },
+    onError: () => toast({ title: "Error", description: "Failed to create group.", variant: "destructive" }),
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) =>
+      apiRequest(`/api/selection-template-groups/${id}`, "PATCH", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-template-groups"] });
+      setEditingGroupId(null);
+      setEditingGroupName("");
+    },
+    onError: () => toast({ title: "Error", description: "Failed to rename group.", variant: "destructive" }),
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest(`/api/selection-template-groups/${id}`, "DELETE"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/selection-template-groups"] }),
+    onError: () => toast({ title: "Error", description: "Failed to delete group.", variant: "destructive" }),
+  });
+
   const handleOpenAdd = () => {
-    setFormData({ name: "", description: "", category: "" });
+    setFormData({ name: "", description: "", category: "", groupId: "" });
     setIsAddingTemplate(true);
   };
 
@@ -228,6 +267,7 @@ export default function SelectionTemplates() {
       name: template.name,
       description: template.description || "",
       category: template.category || "",
+      groupId: (template as any).groupId || "",
     });
     setEditingTemplate(template);
   };
@@ -244,6 +284,7 @@ export default function SelectionTemplates() {
           name: formData.name.trim(),
           description: formData.description.trim() || undefined,
           category: formData.category || undefined,
+          groupId: formData.groupId || undefined,
         },
       });
     } else {
@@ -251,6 +292,7 @@ export default function SelectionTemplates() {
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         category: formData.category || undefined,
+        groupId: formData.groupId || undefined,
       });
     }
   };
@@ -310,15 +352,32 @@ export default function SelectionTemplates() {
   }, [templates, searchTerm]);
 
   const groupedTemplates = useMemo(() => {
-    if (groupBy !== "category") return null;
-    const groups = new Map<string, SelectionTemplate[]>();
-    for (const t of filteredTemplates) {
-      const key = t.category || "General";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
+    if (groupBy === "category") {
+      const map = new Map<string, SelectionTemplate[]>();
+      for (const t of filteredTemplates) {
+        const key = t.category || "General";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+      return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
     }
-    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredTemplates, groupBy]);
+    if (groupBy === "group") {
+      const map = new Map<string, SelectionTemplate[]>();
+      for (const t of filteredTemplates) {
+        const gId = (t as any).groupId as string | null;
+        const grp = groups.find(g => g.id === gId);
+        const key = grp ? grp.name : "Ungrouped";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+      return [...map.entries()].sort(([a], [b]) => {
+        if (a === "Ungrouped") return 1;
+        if (b === "Ungrouped") return -1;
+        return a.localeCompare(b);
+      });
+    }
+    return null;
+  }, [filteredTemplates, groupBy, groups]);
 
   const filteredProjects = useMemo(() => {
     if (!applyProjectSearch) return projects;
@@ -487,15 +546,23 @@ export default function SelectionTemplates() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Group by</span>
-          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as "category" | "none")}>
-            <SelectTrigger className="h-6 text-xs w-32 px-2">
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as "category" | "group" | "none")}>
+            <SelectTrigger className="h-6 text-xs w-28 px-2">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="category">Template Group</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="group">Group</SelectItem>
               <SelectItem value="none">None</SelectItem>
             </SelectContent>
           </Select>
+          <button
+            className="h-6 px-1.5 text-xs border rounded-md text-muted-foreground hover-elevate flex items-center gap-0.5"
+            onClick={() => setIsManagingGroups(true)}
+            title="Manage groups"
+          >
+            <Settings2 className="w-3 h-3" />
+          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleOpenAdd}
@@ -529,24 +596,30 @@ export default function SelectionTemplates() {
               </button>
             )}
           </div>
-        ) : groupBy === "category" && groupedTemplates ? (
+        ) : groupedTemplates ? (
           <div className="space-y-1">
-            {groupedTemplates.map(([group, groupTemplates]) => {
-              const isCollapsed = collapsedGroups.has(group);
+            {groupedTemplates.map(([grpName, groupTemplates]) => {
+              const isCollapsed = collapsedGroups.has(grpName);
               return (
-                <div key={group}>
+                <div key={grpName}>
                   <div
                     className="flex items-center gap-2 px-3 py-1.5 bg-muted/60 cursor-pointer hover-elevate mx-2 rounded-md mb-1"
-                    onClick={() => toggleGroup(group)}
+                    onClick={() => toggleGroup(grpName)}
                   >
                     {isCollapsed ? (
                       <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     ) : (
                       <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     )}
-                    <Layers className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    <span className="font-semibold text-sm">{group}</span>
-                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">group</span>
+                    {groupBy === "group" ? (
+                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <Layers className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
+                    <span className="font-semibold text-sm">{grpName}</span>
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">
+                      {groupBy === "group" ? "group" : "category"}
+                    </span>
                     <Badge variant="outline" className="h-4 text-data ml-auto">
                       {groupTemplates.length} {groupTemplates.length === 1 ? "template" : "templates"}
                     </Badge>
@@ -570,7 +643,7 @@ export default function SelectionTemplates() {
           if (!open) {
             setIsAddingTemplate(false);
             setEditingTemplate(null);
-            setFormData({ name: "", description: "", category: "" });
+            setFormData({ name: "", description: "", category: "", groupId: "" });
           }
         }}
       >
@@ -592,19 +665,36 @@ export default function SelectionTemplates() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="category">Template Group</Label>
+              <Label htmlFor="category">Category</Label>
               <Select
                 value={formData.category}
                 onValueChange={(value) => setFormData({ ...formData, category: value })}
               >
                 <SelectTrigger id="category">
-                  <SelectValue placeholder="Select group" />
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Residential">Residential</SelectItem>
                   <SelectItem value="Commercial">Commercial</SelectItem>
                   <SelectItem value="Renovation">Renovation</SelectItem>
                   <SelectItem value="General">General</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group">Group</Label>
+              <Select
+                value={formData.groupId}
+                onValueChange={(value) => setFormData({ ...formData, groupId: value === "_none" ? "" : value })}
+              >
+                <SelectTrigger id="group">
+                  <SelectValue placeholder="Assign to group (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No group</SelectItem>
+                  {groups.map(g => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -620,7 +710,7 @@ export default function SelectionTemplates() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsAddingTemplate(false); setEditingTemplate(null); setFormData({ name: "", description: "", category: "" }); }}>
+            <Button variant="outline" onClick={() => { setIsAddingTemplate(false); setEditingTemplate(null); setFormData({ name: "", description: "", category: "", groupId: "" }); }}>
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
@@ -756,6 +846,77 @@ export default function SelectionTemplates() {
                 </>
               )}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Groups Dialog */}
+      <Dialog open={isManagingGroups} onOpenChange={setIsManagingGroups}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Manage Groups</DialogTitle>
+            <DialogDescription>
+              Create and organise groups to categorise your selection templates (e.g. Bathroom, Kitchen, Roofing).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {groups.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-2">No groups yet. Add one below.</p>
+            )}
+            {groups.map(g => (
+              <div key={g.id} className="flex items-center gap-2">
+                {editingGroupId === g.id ? (
+                  <>
+                    <Input
+                      value={editingGroupName}
+                      onChange={e => setEditingGroupName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && editingGroupName.trim()) updateGroupMutation.mutate({ id: g.id, name: editingGroupName });
+                        if (e.key === "Escape") { setEditingGroupId(null); setEditingGroupName(""); }
+                      }}
+                      className="h-7 text-sm flex-1"
+                      autoFocus
+                    />
+                    <Button size="sm" className="h-7 text-xs px-2"
+                      onClick={() => editingGroupName.trim() && updateGroupMutation.mutate({ id: g.id, name: editingGroupName })}
+                      disabled={updateGroupMutation.isPending}
+                    >Save</Button>
+                    <Button size="sm" variant="ghost" className="h-7 px-2"
+                      onClick={() => { setEditingGroupId(null); setEditingGroupName(""); }}
+                    ><X className="h-3 w-3" /></Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm">{g.name}</span>
+                    <Button size="icon" variant="ghost" className="h-7 w-7"
+                      onClick={() => { setEditingGroupId(g.id); setEditingGroupName(g.name); }}
+                    ><Pencil className="h-3 w-3" /></Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                      onClick={() => deleteGroupMutation.mutate(g.id)}
+                      disabled={deleteGroupMutation.isPending}
+                    ><Trash2 className="h-3 w-3" /></Button>
+                  </>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-1 border-t">
+              <Input
+                value={newGroupName}
+                onChange={e => setNewGroupName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
+                placeholder="New group name..."
+                className="h-7 text-sm flex-1"
+              />
+              <Button size="sm" className="h-7 text-xs px-2"
+                onClick={() => newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
+                disabled={createGroupMutation.isPending || !newGroupName.trim()}
+              >
+                <Plus className="h-3 w-3 mr-1" />Add
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsManagingGroups(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
