@@ -1,17 +1,15 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { FieldCategory } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -21,38 +19,41 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/hooks/use-toast";
-import { 
-  ArrowLeft, 
-  Plus, 
-  MoreVertical, 
-  Trash2, 
-  Edit3, 
-  GripVertical,
-  ChevronDown,
-  ChevronRight,
-  CheckSquare,
-  Settings,
+import {
+  ArrowLeft,
+  Plus,
+  Search,
+  MoreVertical,
+  Edit3,
+  Trash2,
+  Package,
   DollarSign,
-  Calendar,
+  Loader2,
+  Save,
   Eye,
   EyeOff,
-  MapPin,
-  Layers,
+  Star,
+  Camera,
+  X,
+  ChevronDown,
+  ChevronRight,
+  LayoutGrid,
+  LayoutList,
+  Tags,
 } from "lucide-react";
-import type { SelectionTemplate } from "@shared/schema";
-import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
-import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import type { SelectionTemplate, SelectionTemplateGroup, FieldCategory } from "@shared/schema";
 
 const CASVA_LILAC = 'hsl(var(--primary))';
 
@@ -65,204 +66,161 @@ interface SelectionOption {
   category?: string;
   subcategory?: string;
   unitCost?: number;
-  quantity?: number;
-  unitType?: string;
+  unitTax?: number;
+  gstInclusive?: boolean;
   markupPercent?: number;
   totalCost?: number;
+  quantity?: number;
+  unitType?: string;
   url?: string;
-  visibleToClient?: boolean;
-  gstInclusive?: boolean;
-  sortOrder: number;
-  imageUrls?: string[];
   imageUrl?: string;
+  imageUrls?: string[];
+  visibleToClient?: boolean;
+  isSelectedByClient?: boolean;
+  sortOrder: number;
   specifications?: Record<string, any>;
 }
 
-interface SelectionItem {
-  id: string;
-  categoryName: string;
-  itemName: string;
-  description?: string;
-  room?: string;
-  allowanceType?: "PC" | "PS";
-  budgetAmount?: number;
-  deadline?: string | null;
-  clientCanSeePrice?: boolean;
-  clientCanChange?: boolean;
-  notes?: string;
-  sortOrder: number;
-  options?: SelectionOption[];
-}
+const SPEC_PICKER_GROUPS = [
+  {
+    label: "Dimensions",
+    fields: [
+      { key: "diameter", label: "Diameter (mm)", type: "number" },
+      { key: "weight", label: "Weight (kg)", type: "number" },
+    ],
+  },
+  {
+    label: "Appearance",
+    fields: [
+      { key: "colour", label: "Colour", type: "text" },
+      { key: "colourCode", label: "Colour code", type: "text" },
+    ],
+  },
+  {
+    label: "Technical — Tapware",
+    fields: [
+      { key: "flowRate", label: "Flow rate (L/min)", type: "number" },
+      { key: "spoutHeight", label: "Spout height (mm)", type: "number" },
+      { key: "spoutReach", label: "Spout reach (mm)", type: "number" },
+      { key: "mountingType", label: "Mounting type", type: "text" },
+      { key: "welsRating", label: "WELS rating (1–6)", type: "number" },
+    ],
+  },
+  {
+    label: "Technical — Tiles & Flooring",
+    fields: [
+      { key: "thickness", label: "Thickness (mm)", type: "number" },
+      { key: "slipRatingP", label: "Slip rating — Wet (P0–P5)", type: "text" },
+      { key: "slipRatingR", label: "Slip rating — Oil (R9–R13)", type: "text" },
+    ],
+  },
+  {
+    label: "Technical — Lighting",
+    fields: [
+      { key: "wattage", label: "Wattage (W)", type: "number" },
+      { key: "lumens", label: "Lumens (lm)", type: "number" },
+      { key: "colourTemp", label: "Colour temperature (K)", type: "number" },
+      { key: "ipRating", label: "IP rating", type: "text" },
+      { key: "dimmable", label: "Dimmable", type: "boolean" },
+    ],
+  },
+  {
+    label: "Technical — Appliances",
+    fields: [
+      { key: "energyRating", label: "Energy rating (1–10)", type: "number" },
+    ],
+  },
+  {
+    label: "Compliance",
+    fields: [
+      { key: "warranty", label: "Warranty (years)", type: "number" },
+      { key: "leadTime", label: "Lead time (weeks)", type: "number" },
+      { key: "fireRating", label: "Fire rating", type: "text" },
+    ],
+  },
+];
 
-interface SortableItemProps {
-  item: SelectionItem;
-  templateId: string;
-  onEdit: (item: SelectionItem) => void;
-  onDelete: (id: string) => void;
-  onNavigate: (itemId: string) => void;
-}
+const FINISH_OPTIONS = ["Chrome", "Brushed Nickel", "Matte Black", "Brushed Gold", "Brushed Brass", "White", "Black", "Powder Coat", "Custom"];
+const MATERIAL_OPTIONS = ["Brass", "Stainless Steel", "Ceramic", "Porcelain", "Timber", "Glass", "Acrylic", "Custom"];
 
-function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: SortableItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const optionCount = item.options?.length || 0;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group cursor-pointer"
-      onClick={() => onNavigate(item.id)}
-      data-testid={`card-item-${item.id}`}
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab hover:bg-muted rounded p-1"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-      
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{item.itemName}</span>
-          {item.categoryName && (
-            <Badge variant="secondary" className="h-4 text-data">
-              {item.categoryName}
-            </Badge>
-          )}
-          {item.allowanceType && (
-            <Badge variant="outline" className="h-4 text-data">
-              {item.allowanceType}
-            </Badge>
-          )}
-          {item.room && (
-            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-              <MapPin className="h-2.5 w-2.5" />
-              {item.room}
-            </span>
-          )}
-          {item.deadline && (
-            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-              <Calendar className="h-2.5 w-2.5" />
-              {new Date(item.deadline).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-            </span>
-          )}
-          {item.clientCanSeePrice === false && (
-            <span title="Price hidden from client">
-              <EyeOff className="h-3 w-3 text-muted-foreground/60" />
-            </span>
-          )}
-        </div>
-        {item.description && (
-          <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
-        )}
-      </div>
-
-      {optionCount > 0 && (
-        <Badge variant="outline" className="h-4 text-data">
-          {optionCount} {optionCount === 1 ? 'option' : 'options'}
-        </Badge>
-      )}
-
-      {item.budgetAmount && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <DollarSign className="h-3 w-3" />
-          {(item.budgetAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
-        </div>
-      )}
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 opacity-0 group-hover:opacity-100"
-            onClick={(e) => e.stopPropagation()}
-            data-testid={`button-menu-item-${item.id}`}
-          >
-            <MoreVertical className="h-3 w-3" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(item); }} data-testid={`menu-edit-${item.id}`}>
-            <Edit3 className="h-4 w-4 mr-2" />
-            Quick Edit
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} 
-            className="text-destructive"
-            data-testid={`menu-delete-${item.id}`}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
+function formatSpecsOneLiner(specs: Record<string, any> | undefined): string {
+  if (!specs) return "";
+  const parts: string[] = [];
+  if (specs.width && specs.height) {
+    const dims = [specs.width, specs.height, specs.depth].filter(Boolean).map(String).join(" × ");
+    parts.push(dims + "mm");
+  }
+  if (specs.material) parts.push(specs.material);
+  if (specs.finish) parts.push(specs.finish);
+  if (specs.colour) parts.push(specs.colour);
+  if (specs.welsRating) parts.push(`WELS ${"★".repeat(specs.welsRating)}`);
+  if (specs.wattage) parts.push(`${specs.wattage}W`);
+  if (specs.lumens) parts.push(`${specs.lumens}lm`);
+  if (specs.colourTemp) parts.push(`${specs.colourTemp}K`);
+  if (specs.ipRating) parts.push(specs.ipRating);
+  if (specs.dimmable) parts.push("Dimmable");
+  if (specs.slipRatingP) parts.push(specs.slipRatingP);
+  if (specs.thickness) parts.push(`${specs.thickness}mm thick`);
+  if (specs.warranty) parts.push(`${specs.warranty}yr warranty`);
+  if (specs.custom) {
+    specs.custom.forEach((c: { label: string; value: string }) => {
+      if (c.label && c.value) parts.push(`${c.label}: ${c.value}`);
+    });
+  }
+  return parts.join(" · ");
 }
 
 export default function SelectionTemplateDetail() {
   const params = useParams<{ templateId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<SelectionItem | null>(null);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['General']));
-  
-  const [newItem, setNewItem] = useState<Partial<SelectionItem>>({
-    categoryName: "General",
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [optionsView, setOptionsView] = useState<"grid" | "list">("grid");
+  const [optionDialogOpen, setOptionDialogOpen] = useState(false);
+  const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
+  const [gstInclusive, setGstInclusive] = useState(false);
+  const [specsOpen, setSpecsOpen] = useState(false);
+  const [specPickerOpen, setSpecPickerOpen] = useState(false);
+  const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
+
+  const [optionForm, setOptionForm] = useState<Partial<SelectionOption>>({
+    name: "",
+    description: "",
+    sku: "",
+    brand: "",
+    category: "",
+    unitCost: undefined,
+    quantity: 1,
+    unitType: "ea",
+    visibleToClient: true,
+    isSelectedByClient: false,
+    imageUrls: [],
+    specifications: {},
+  });
+
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageUploadRef = useRef<HTMLInputElement>(null);
+
+  const [localMeta, setLocalMeta] = useState({
     itemName: "",
     description: "",
-    allowanceType: undefined,
-    budgetAmount: undefined,
-    deadline: undefined,
+    categoryName: "",
+    room: "",
+    allowanceType: undefined as "PC" | "PS" | undefined,
+    budgetAmount: undefined as number | undefined,
+    deadline: null as string | null,
     clientCanSeePrice: true,
     clientCanChange: true,
+    groupIds: [] as string[],
   });
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
-  );
-
-  const { data: template, isLoading } = useQuery<SelectionTemplate>({
-    queryKey: ["/api/selection-templates", params.templateId],
-    queryFn: async () => {
-      const res = await fetch(`/api/selection-templates/${params.templateId}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch template");
-      return res.json();
-    },
-    enabled: !!params.templateId,
-  });
+  const [hasMetaChanges, setHasMetaChanges] = useState(false);
+  const hasMigratedRef = useRef(false);
 
   const { data: categoryFieldCategory } = useQuery<FieldCategory>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
     queryFn: async () => {
-      const res = await fetch("/api/field-categories/by-key/selection.category", {
-        credentials: "include",
-      });
+      const res = await fetch("/api/field-categories/by-key/selection.category", { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -271,214 +229,297 @@ export default function SelectionTemplateDetail() {
   const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
     queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
     queryFn: async () => {
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory?.id}/options`, {
-        credentials: "include",
-      });
+      if (!categoryFieldCategory?.id) return [];
+      const res = await fetch(`/api/field-categories/${categoryFieldCategory.id}/options`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
     enabled: !!categoryFieldCategory?.id,
   });
 
-  const sortedCategoryOptions = useMemo(() => {
-    return [...categoryOptions].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [categoryOptions]);
+  const { data: template, isLoading } = useQuery<SelectionTemplate>({
+    queryKey: ["/api/selection-templates", params.templateId],
+    queryFn: async () => {
+      const res = await fetch(`/api/selection-templates/${params.templateId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch template");
+      return res.json();
+    },
+    enabled: !!params.templateId,
+  });
+
+  const { data: groups = [] } = useQuery<SelectionTemplateGroup[]>({
+    queryKey: ["/api/selection-template-groups"],
+  });
+
+  useEffect(() => {
+    if (template) {
+      const tAny = template as any;
+      setLocalMeta({
+        itemName: template.name,
+        description: template.description || "",
+        categoryName: template.category || "",
+        room: tAny.room || "",
+        allowanceType: tAny.allowanceType || undefined,
+        budgetAmount: tAny.budgetAmount || undefined,
+        deadline: tAny.deadline || null,
+        clientCanSeePrice: tAny.clientCanSeePrice ?? true,
+        clientCanChange: tAny.clientCanChange ?? true,
+        groupIds: tAny.groupIds || [],
+      });
+      setHasMetaChanges(false);
+    }
+  }, [template?.id]);
+
+  // Auto-migrate old format (SelectionItem[]) to new flat format (SelectionOption[])
+  useEffect(() => {
+    if (!template || hasMigratedRef.current) return;
+    const data = (template.templateData as any[]) || [];
+    if (data.length === 0 || !('itemName' in data[0])) return;
+
+    hasMigratedRef.current = true;
+    const firstItem = data[0];
+    const allOptions = data.flatMap((item: any, itemIdx: number) =>
+      (item.options || []).map((opt: any, optIdx: number) => ({
+        ...opt,
+        id: opt.id || crypto.randomUUID(),
+        sortOrder: opt.sortOrder ?? (itemIdx * 1000 + optIdx),
+      }))
+    );
+
+    apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", {
+      room: firstItem.room || undefined,
+      allowanceType: firstItem.allowanceType || undefined,
+      budgetAmount: firstItem.budgetAmount || undefined,
+      clientCanSeePrice: firstItem.clientCanSeePrice ?? true,
+      clientCanChange: firstItem.clientCanChange ?? true,
+      deadline: firstItem.deadline || undefined,
+      templateData: allOptions,
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
+      toast({ title: "Template updated", description: "This template has been converted to the new format." });
+    }).catch(() => {
+      hasMigratedRef.current = false;
+    });
+  }, [template, params.templateId]);
+
+  const options: SelectionOption[] = useMemo(() => {
+    const data = (template?.templateData as any[]) || [];
+    if (data.length === 0) return [];
+
+    if ('itemName' in data[0]) {
+      // Old format still loading — show options from all items while migration runs
+      return data.flatMap((item: any, itemIdx: number) =>
+        (item.options || []).map((opt: any, optIdx: number) => ({
+          ...opt,
+          id: opt.id || `old-${itemIdx}-${optIdx}`,
+          sortOrder: opt.sortOrder ?? (itemIdx * 1000 + optIdx),
+        }))
+      );
+    }
+
+    return data.map((opt: any, idx: number) => ({
+      ...opt,
+      id: opt.id || crypto.randomUUID(),
+      sortOrder: opt.sortOrder ?? idx,
+    }));
+  }, [template?.templateData]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<SelectionTemplate>) => {
+    mutationFn: async (data: Record<string, any>) => {
       return await apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
-      toast({
-        title: "Template updated",
-        description: "Your changes have been saved.",
-      });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update template.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update template.", variant: "destructive" });
     },
   });
 
-  const [isNormalizing, setIsNormalizing] = useState(false);
-  const normalizedCache = useRef<Map<string, string>>(new Map());
-  const hasTriggeredMigration = useRef(false);
-
-  const getStableId = (originalId: string | undefined, fallbackKey: string): string => {
-    if (originalId) return originalId;
-    const cached = normalizedCache.current.get(fallbackKey);
-    if (cached) return cached;
-    const newId = crypto.randomUUID();
-    normalizedCache.current.set(fallbackKey, newId);
-    return newId;
-  };
-
-  const normalizeWithStableIds = (itemsToNormalize: SelectionItem[]): SelectionItem[] => {
-    return itemsToNormalize.map((item, idx) => {
-      const itemKey = `item-${idx}`;
-      return {
-        ...item,
-        id: getStableId(item.id, itemKey),
-        sortOrder: item.sortOrder ?? idx,
-        options: (item.options || []).map((opt, optIdx) => {
-          const optKey = `${itemKey}-opt-${optIdx}`;
-          return {
-            ...opt,
-            id: getStableId(opt.id, optKey),
-            sortOrder: opt.sortOrder ?? optIdx,
-          };
-        }),
-      };
+  const handleSaveMeta = () => {
+    updateMutation.mutate({
+      name: localMeta.itemName.trim() || template?.name,
+      description: localMeta.description.trim() || undefined,
+      category: localMeta.categoryName || undefined,
+      room: localMeta.room.trim() || undefined,
+      allowanceType: localMeta.allowanceType || undefined,
+      budgetAmount: localMeta.budgetAmount || undefined,
+      deadline: localMeta.deadline || undefined,
+      clientCanSeePrice: localMeta.clientCanSeePrice,
+      clientCanChange: localMeta.clientCanChange,
+      groupIds: localMeta.groupIds,
+    }, {
+      onSuccess: () => {
+        setHasMetaChanges(false);
+        toast({ title: "Saved", description: "Template details updated." });
+      },
     });
   };
 
-  const hasLegacyData = (itemsToCheck: SelectionItem[]): boolean => {
-    return itemsToCheck.some(item => 
-      !item.id || item.options?.some(opt => !opt.id)
-    );
-  };
-
-  // Items with stable IDs (either from server or cached generated)
-  const items: SelectionItem[] = useMemo(() => {
-    const rawItems = (template?.templateData as SelectionItem[]) || [];
-    return normalizeWithStableIds(rawItems);
-  }, [template?.templateData]);
-
-  // Auto-save normalized data if legacy items lack IDs (one-time migration)
-  useEffect(() => {
-    if (!template || hasTriggeredMigration.current) return;
-    
-    const rawItems = (template.templateData as SelectionItem[]) || [];
-    if (rawItems.length > 0 && hasLegacyData(rawItems)) {
-      hasTriggeredMigration.current = true;
-      setIsNormalizing(true);
-      
-      const normalized = normalizeWithStableIds(rawItems);
-      apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", { templateData: normalized })
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
-        })
-        .catch(() => {
-          hasTriggeredMigration.current = false;
-        })
-        .finally(() => {
-          setIsNormalizing(false);
+  const handleFileUpload = async (files: FileList) => {
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      setIsUploadingImage(true);
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
         });
+        const result = await apiRequest("/api/uploads/template-image", "POST", {
+          fileData: dataUrl,
+          fileName: file.name,
+          mimeType: file.type,
+        });
+        setOptionForm(prev => ({
+          ...prev,
+          imageUrls: [...(prev.imageUrls || []), result.url],
+        }));
+      } catch {
+        toast({ title: "Upload failed", description: "Failed to upload image.", variant: "destructive" });
+      } finally {
+        setIsUploadingImage(false);
+      }
     }
-  }, [template, params.templateId]);
-
-  const categories = [...new Set(items.map(item => item.categoryName || 'General'))];
-  if (categories.length === 0) categories.push('General');
-
-  const getItemsByCategory = (category: string) => {
-    return items.filter(item => (item.categoryName || 'General') === category)
-      .sort((a, b) => a.sortOrder - b.sortOrder);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = items.findIndex(item => item.id === active.id);
-    const newIndex = items.findIndex(item => item.id === over.id);
-
-    const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({
-      ...item,
-      sortOrder: idx,
-    }));
-
-    updateMutation.mutate({ templateData: newItems });
+  const handleAddOption = () => {
+    setEditingOption(null);
+    setGstInclusive(false);
+    setSpecsOpen(false);
+    setSpecPickerOpen(false);
+    setOptionForm({
+      name: "",
+      description: "",
+      sku: "",
+      brand: "",
+      category: "",
+      unitCost: undefined,
+      quantity: 1,
+      unitType: "ea",
+      visibleToClient: true,
+      isSelectedByClient: false,
+      imageUrls: [],
+      specifications: {},
+    });
+    setOptionDialogOpen(true);
   };
 
-  const handleAddItem = () => {
-    if (!newItem.itemName?.trim()) {
-      toast({
-        title: "Missing name",
-        description: "Please enter an item name.",
-        variant: "destructive",
-      });
+  const handleEditOption = (option: SelectionOption) => {
+    setEditingOption(option);
+    setGstInclusive(option.gstInclusive || false);
+    setSpecsOpen(!!(option.specifications && Object.keys(option.specifications).length > 0));
+    setSpecPickerOpen(false);
+    const imageUrls = option.imageUrls && option.imageUrls.length > 0
+      ? option.imageUrls
+      : option.imageUrl ? [option.imageUrl] : [];
+    setOptionForm({
+      name: option.name,
+      description: option.description || "",
+      sku: option.sku || "",
+      brand: option.brand || "",
+      category: option.category || "",
+      unitCost: option.unitCost ? option.unitCost / 100 : undefined,
+      quantity: option.quantity || 1,
+      unitType: option.unitType || "ea",
+      url: option.url || "",
+      imageUrls,
+      visibleToClient: option.visibleToClient ?? true,
+      isSelectedByClient: option.isSelectedByClient || false,
+      markupPercent: option.markupPercent,
+      specifications: option.specifications || {},
+    });
+    setOptionDialogOpen(true);
+  };
+
+  const handleSaveOption = () => {
+    if (!optionForm.name?.trim()) {
+      toast({ title: "Missing name", description: "Please enter an option name.", variant: "destructive" });
       return;
     }
 
-    const newItemData: SelectionItem = {
-      id: crypto.randomUUID(),
-      categoryName: newItem.categoryName || "General",
-      itemName: newItem.itemName.trim(),
-      description: newItem.description?.trim(),
-      room: newItem.room?.trim() || undefined,
-      allowanceType: newItem.allowanceType,
-      budgetAmount: newItem.budgetAmount ? Math.round(newItem.budgetAmount * 100) : undefined,
-      deadline: newItem.deadline || null,
-      clientCanSeePrice: newItem.clientCanSeePrice ?? true,
-      clientCanChange: newItem.clientCanChange ?? true,
-      sortOrder: items.length,
-    };
+    const builtOption = (base: Partial<SelectionOption>) => ({
+      ...base,
+      name: optionForm.name!.trim(),
+      description: optionForm.description?.trim(),
+      sku: optionForm.sku?.trim(),
+      brand: optionForm.brand?.trim(),
+      category: optionForm.category?.trim(),
+      unitCost: optionForm.unitCost ? Math.round(optionForm.unitCost * 100) : undefined,
+      gstInclusive,
+      quantity: optionForm.quantity || 1,
+      unitType: optionForm.unitType || "ea",
+      url: optionForm.url?.trim(),
+      imageUrls: (optionForm.imageUrls || []).filter(Boolean),
+      imageUrl: undefined,
+      visibleToClient: optionForm.visibleToClient ?? true,
+      isSelectedByClient: optionForm.isSelectedByClient || false,
+      markupPercent: optionForm.markupPercent,
+      specifications: optionForm.specifications && Object.keys(optionForm.specifications).length > 0
+        ? optionForm.specifications
+        : undefined,
+    });
 
-    updateMutation.mutate({ templateData: [...items, newItemData] });
-    setAddItemDialogOpen(false);
-    setNewItem({
-      categoryName: "General",
-      itemName: "",
-      description: "",
-      allowanceType: undefined,
-      budgetAmount: undefined,
-      deadline: undefined,
-      clientCanSeePrice: true,
-      clientCanChange: true,
+    let updatedOptions: SelectionOption[];
+
+    if (editingOption) {
+      updatedOptions = options.map(opt =>
+        opt.id === editingOption.id ? builtOption(opt) as SelectionOption : opt
+      );
+    } else {
+      const newOption: SelectionOption = {
+        ...builtOption({}) as SelectionOption,
+        id: crypto.randomUUID(),
+        sortOrder: options.length,
+      };
+      updatedOptions = [...options, newOption];
+    }
+
+    updateMutation.mutate({ templateData: updatedOptions }, {
+      onSuccess: () => {
+        setOptionDialogOpen(false);
+        setEditingOption(null);
+        toast({
+          title: editingOption ? "Option updated" : "Option added",
+          description: editingOption ? "The option has been updated." : "A new option has been added.",
+        });
+      },
     });
   };
 
-  const handleEditItem = (item: SelectionItem) => {
-    setEditingItem({
-      ...item,
-      budgetAmount: item.budgetAmount ? item.budgetAmount / 100 : undefined,
-    });
-    setEditDialogOpen(true);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingItem) return;
-
-    const updatedItems = items.map(item => 
-      item.id === editingItem.id 
-        ? { 
-            ...editingItem, 
-            budgetAmount: editingItem.budgetAmount ? Math.round(editingItem.budgetAmount * 100) : undefined 
-          } 
-        : item
-    );
-
-    updateMutation.mutate({ templateData: updatedItems });
-    setEditDialogOpen(false);
-    setEditingItem(null);
-  };
-
-  const handleDeleteItem = (itemId: string) => {
-    const updatedItems = items.filter(item => item.id !== itemId);
-    updateMutation.mutate({ templateData: updatedItems });
-  };
-
-  const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
-      }
-      return next;
+  const handleDeleteOption = (optionId: string) => {
+    const updatedOptions = options.filter(opt => opt.id !== optionId);
+    updateMutation.mutate({ templateData: updatedOptions }, {
+      onSuccess: () => toast({ title: "Option deleted", description: "The option has been removed." }),
     });
   };
+
+  const handleSelectOption = (optionId: string) => {
+    const updatedOptions = options.map(opt => ({
+      ...opt,
+      isSelectedByClient: opt.id === optionId ? !opt.isSelectedByClient : opt.isSelectedByClient,
+    }));
+    updateMutation.mutate({ templateData: updatedOptions });
+  };
+
+  const filteredOptions = options.filter(option =>
+    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    option.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    option.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    option.sku?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const templateGroups = useMemo(() => {
+    const tAny = template as any;
+    return (tAny?.groups || []) as { id: string; name: string }[];
+  }, [template]);
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-sm text-muted-foreground">Loading template...</div>
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -486,10 +527,10 @@ export default function SelectionTemplateDetail() {
   if (!template) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4">
+        <Package className="h-12 w-12 text-muted-foreground" />
         <div className="text-sm text-muted-foreground">Template not found</div>
         <Button variant="outline" onClick={() => navigate("/selection-templates")}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Templates
+          <ArrowLeft className="h-4 w-4 mr-2" />Back to Templates
         </Button>
       </div>
     );
@@ -497,198 +538,137 @@ export default function SelectionTemplateDetail() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header Row 1 - Back + Title */}
-      <div className="h-9 bg-background flex items-center px-2 gap-3 border-b border-border flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => navigate("/selection-templates")}
-          data-testid="button-back"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-sm font-semibold" data-testid="text-template-name">
-          {template.name}
-        </h2>
-        <Badge variant="outline" className="text-xs">
-          {template.selectionType === "design" ? "Design" : "Selection"}
-        </Badge>
-        {template.category && (
-          <Badge variant="secondary" className="text-xs">
-            {template.category}
-          </Badge>
-        )}
-        <Badge variant="outline" className="text-xs">
-          {items.length} {items.length === 1 ? 'item' : 'items'}
-        </Badge>
-      </div>
-
-      {/* Header Row 2 - Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
+      {/* Sticky header */}
+      <div className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
+        <div className="h-9 flex items-center px-2 gap-2">
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
-            onClick={() => setSettingsDialogOpen(true)}
-            data-testid="button-settings"
+            size="icon"
+            className="h-7 w-7 flex-shrink-0"
+            onClick={() => navigate("/selection-templates")}
           >
-            <Settings className="h-3 w-3 mr-1" />
-            Settings
+            <ArrowLeft className="h-4 w-4" />
           </Button>
-        </div>
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setAddItemDialogOpen(true)}
-          data-testid="button-add-item"
-        >
-          <Plus className="w-3 h-3" />
-          <span>Add Item</span>
-        </button>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
-        {items.length === 0 ? (
-          <div className="text-center py-12">
-            <CheckSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-sm font-medium mb-2">No items yet</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Add selection items to this template
-            </p>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <input
+              className="font-semibold text-sm bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded px-0.5 py-0.5 min-w-0 flex-1 max-w-xs"
+              value={localMeta.itemName}
+              onChange={(e) => { setLocalMeta({ ...localMeta, itemName: e.target.value }); setHasMetaChanges(true); }}
+              placeholder="Template name..."
+            />
+            {localMeta.categoryName && (
+              <Badge variant="secondary" className="h-5 px-1.5 text-xs flex-shrink-0">{localMeta.categoryName}</Badge>
+            )}
+            {templateGroups.map(g => (
+              <Badge key={g.id} variant="outline" className="h-5 px-1.5 text-xs flex-shrink-0">{g.name}</Badge>
+            ))}
             <button
-              className="h-6 px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
-              onClick={() => setAddItemDialogOpen(true)}
-              data-testid="button-add-first-item"
+              className="h-5 w-5 text-muted-foreground hover-elevate rounded flex items-center justify-center flex-shrink-0"
+              onClick={() => setGroupsDialogOpen(true)}
+              title="Edit groups"
             >
-              <Plus className="h-3 w-3" />
-              Add Item
+              <Tags className="h-3 w-3" />
             </button>
           </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="space-y-4">
-              {categories.map(category => {
-                const categoryItems = getItemsByCategory(category);
-                const isExpanded = expandedCategories.has(category);
-                
-                return (
-                  <div key={category} className="border rounded-md">
-                    <div 
-                      className="flex items-center gap-2 px-3 py-2 bg-muted/60 cursor-pointer hover-elevate"
-                      onClick={() => toggleCategory(category)}
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      )}
-                      <Layers className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                      <span className="font-semibold text-sm">{category}</span>
-                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">group</span>
-                      <Badge variant="outline" className="h-4 text-data ml-auto">
-                        {categoryItems.length} {categoryItems.length === 1 ? "selection" : "selections"}
-                      </Badge>
-                    </div>
-                    
-                    {isExpanded && (
-                      <div className="p-2 space-y-2">
-                        <SortableContext
-                          items={categoryItems.map(item => item.id)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          {categoryItems.map(item => (
-                            <SortableItem
-                              key={item.id}
-                              item={item}
-                              templateId={params.templateId || ""}
-                              onEdit={handleEditItem}
-                              onDelete={handleDeleteItem}
-                              onNavigate={(itemId) => navigate(`/selection-templates/${params.templateId}/items/${itemId}`)}
-                            />
-                          ))}
-                        </SortableContext>
-                        
-                        {categoryItems.length === 0 && (
-                          <div className="text-center py-4 text-xs text-muted-foreground">
-                            No items in this category
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </DndContext>
-        )}
+
+          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+            {hasMetaChanges && (
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleSaveMeta}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-3 w-3 mr-1" />
+                )}
+                Save
+              </Button>
+            )}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
+              style={{ backgroundColor: CASVA_LILAC }}
+              onClick={handleAddOption}
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Option</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Add Item Dialog */}
-      <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
-        <DialogContent data-testid="dialog-add-item">
-          <DialogHeader>
-            <DialogTitle>Add Selection Item</DialogTitle>
-            <DialogDescription>
-              Add a new item to this selection template.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Item Name *</Label>
-              <Input
-                placeholder="e.g., Kitchen Benchtop"
-                value={newItem.itemName || ""}
-                onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
-                data-testid="input-item-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select
-                value={newItem.categoryName || "General"}
-                onValueChange={(value) => setNewItem({ ...newItem, categoryName: value })}
-              >
-                <SelectTrigger data-testid="select-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sortedCategoryOptions.length > 0 ? (
-                    sortedCategoryOptions.map((opt) => (
-                      <SelectItem key={opt.id} value={opt.label}>
-                        {opt.label}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="General">General</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
+      {/* Main scrollable content */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto p-4 space-y-5">
+
+          {/* Item Details block */}
+          <div className="border rounded-md p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide text-[11px]">Item Details</h3>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Description</Label>
               <Textarea
+                value={localMeta.description}
+                onChange={(e) => { setLocalMeta({ ...localMeta, description: e.target.value }); setHasMetaChanges(true); }}
+                rows={3}
                 placeholder="Describe this selection item..."
-                value={newItem.description || ""}
-                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                rows={2}
-                data-testid="input-description"
+                className="text-sm resize-none"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Allowance Type</Label>
+
+            {/* Category + Room + Deadline */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Category</Label>
                 <Select
-                  value={newItem.allowanceType || "none"}
-                  onValueChange={(value) => setNewItem({ ...newItem, allowanceType: value === "none" ? undefined : value as "PC" | "PS" })}
+                  value={localMeta.categoryName || "_none"}
+                  onValueChange={(v) => { setLocalMeta({ ...localMeta, categoryName: v === "_none" ? "" : v }); setHasMetaChanges(true); }}
                 >
-                  <SelectTrigger data-testid="select-allowance-type">
-                    <SelectValue placeholder="Select type" />
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    {categoryOptions.map(opt => (
+                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Room / Location</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={localMeta.room}
+                  onChange={(e) => { setLocalMeta({ ...localMeta, room: e.target.value }); setHasMetaChanges(true); }}
+                  placeholder="e.g., Kitchen"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Deadline</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={localMeta.deadline ? localMeta.deadline.substring(0, 10) : ""}
+                  onChange={(e) => { setLocalMeta({ ...localMeta, deadline: e.target.value || null }); setHasMetaChanges(true); }}
+                />
+              </div>
+            </div>
+
+            {/* Allowance type + Budget */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Allowance type</Label>
+                <Select
+                  value={localMeta.allowanceType || "none"}
+                  onValueChange={(v) => { setLocalMeta({ ...localMeta, allowanceType: v === "none" ? undefined : v as "PC" | "PS" }); setHasMetaChanges(true); }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
@@ -697,258 +677,742 @@ export default function SelectionTemplateDetail() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Budget Amount ($)</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Budget ($)</Label>
                 <Input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={newItem.budgetAmount || ""}
-                  onChange={(e) => setNewItem({ ...newItem, budgetAmount: parseFloat(e.target.value) || undefined })}
-                  data-testid="input-budget"
+                  className="h-8 text-xs"
+                  value={localMeta.budgetAmount !== undefined ? localMeta.budgetAmount / 100 : ""}
+                  onChange={(e) => {
+                    setLocalMeta({ ...localMeta, budgetAmount: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined });
+                    setHasMetaChanges(true);
+                  }}
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Room / Location</Label>
-                <Input
-                  placeholder="e.g., Kitchen, Master Bath"
-                  value={newItem.room || ""}
-                  onChange={(e) => setNewItem({ ...newItem, room: e.target.value })}
-                  data-testid="input-room"
+
+            {/* Client permission switches */}
+            <div className="flex flex-wrap gap-6 pt-1">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={localMeta.clientCanSeePrice}
+                  onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanSeePrice: v }); setHasMetaChanges(true); }}
                 />
+                <Label className="text-sm">Client can see price</Label>
               </div>
-              <div className="space-y-2">
-                <Label>Deadline</Label>
-                <Input
-                  type="date"
-                  value={newItem.deadline || ""}
-                  onChange={(e) => setNewItem({ ...newItem, deadline: e.target.value || null })}
-                  data-testid="input-deadline"
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={localMeta.clientCanChange}
+                  onCheckedChange={(v) => { setLocalMeta({ ...localMeta, clientCanChange: v }); setHasMetaChanges(true); }}
                 />
+                <Label className="text-sm">Client can change selection</Label>
               </div>
             </div>
-            <div className="flex items-center justify-between py-1">
-              <Label className="font-normal text-sm">Client can see price</Label>
-              <Switch
-                checked={newItem.clientCanSeePrice ?? true}
-                onCheckedChange={(v) => setNewItem({ ...newItem, clientCanSeePrice: v })}
-                data-testid="switch-client-see-price"
-              />
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <Label className="font-normal text-sm">Client can change selection</Label>
-              <Switch
-                checked={newItem.clientCanChange ?? true}
-                onCheckedChange={(v) => setNewItem({ ...newItem, clientCanChange: v })}
-                data-testid="switch-client-change"
-              />
+
+            {/* Groups */}
+            <div className="space-y-1.5 pt-1 border-t">
+              <Label className="text-xs text-muted-foreground">Groups</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {groups.map((g) => (
+                  <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
+                    <Checkbox
+                      checked={localMeta.groupIds.includes(g.id)}
+                      onCheckedChange={(checked) => {
+                        setLocalMeta(prev => ({
+                          ...prev,
+                          groupIds: checked
+                            ? [...prev.groupIds, g.id]
+                            : prev.groupIds.filter(id => id !== g.id),
+                        }));
+                        setHasMetaChanges(true);
+                      }}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span className="text-xs">{g.name}</span>
+                  </label>
+                ))}
+                {groups.length === 0 && (
+                  <span className="text-xs text-muted-foreground italic">No groups created yet</span>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Options section */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-semibold text-sm">Options</h3>
+              <Badge variant="outline" className="h-4 text-data">
+                {filteredOptions.length}
+              </Badge>
+              <div className="ml-auto flex items-center gap-1">
+                <div className="relative w-40">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                  <Input
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-7 h-7 text-xs"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${optionsView === "grid" ? "bg-muted" : ""}`}
+                  onClick={() => setOptionsView("grid")}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${optionsView === "list" ? "bg-muted" : ""}`}
+                  onClick={() => setOptionsView("list")}
+                  title="List view"
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {filteredOptions.length === 0 ? (
+              <div className="text-center py-12 border rounded-md bg-muted/20">
+                <Package className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <h3 className="text-sm font-medium mb-2">
+                  {searchTerm ? "No matching options" : "No options yet"}
+                </h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {searchTerm ? "Try a different search term" : "Add options that clients can choose from"}
+                </p>
+                {!searchTerm && (
+                  <button
+                    className="h-6 px-2 text-xs border rounded-md text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                    style={{ backgroundColor: CASVA_LILAC }}
+                    onClick={handleAddOption}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add Option
+                  </button>
+                )}
+              </div>
+            ) : optionsView === "grid" ? (
+              <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {filteredOptions.map((option) => {
+                  const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
+                  const specsLine = formatSpecsOneLiner(option.specifications);
+                  return (
+                    <div
+                      key={option.id}
+                      className={`border rounded-lg overflow-hidden bg-card hover-elevate cursor-pointer transition-all ${option.isSelectedByClient ? "ring-2 ring-primary" : ""}`}
+                      onClick={() => handleEditOption(option)}
+                    >
+                      <div className="relative h-40 bg-muted flex items-center justify-center overflow-hidden">
+                        {heroUrl ? (
+                          <img
+                            src={heroUrl}
+                            alt={option.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <Camera className="h-8 w-8 text-muted-foreground/30" />
+                        )}
+                        <div className="absolute top-1 right-1" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 bg-black/40 text-white hover:bg-black/60"
+                              >
+                                <MoreVertical className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditOption(option)}>
+                                <Edit3 className="h-4 w-4 mr-2" />Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
+                                <Star className="h-4 w-4 mr-2" />
+                                {option.isSelectedByClient ? "Remove Default" : "Set as Default"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteOption(option.id)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="absolute top-1 left-1 flex flex-col gap-1">
+                          {option.isSelectedByClient && (
+                            <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">Default</Badge>
+                          )}
+                          {!option.visibleToClient && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="p-3 space-y-1">
+                        <div className="flex items-start justify-between gap-1">
+                          <h4 className="font-semibold text-sm leading-tight line-clamp-1">{option.name}</h4>
+                          {option.unitCost && (
+                            <div className="text-sm font-semibold text-nowrap flex items-center gap-0.5 ml-2 shrink-0">
+                              <DollarSign className="h-3 w-3" />
+                              {(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </div>
+                        {(option.brand || option.sku) && (
+                          <p className="text-xs text-muted-foreground">
+                            {option.brand}{option.sku ? ` · ${option.sku}` : ""}
+                          </p>
+                        )}
+                        {specsLine && (
+                          <p className="text-[10px] text-muted-foreground/80 line-clamp-1">{specsLine}</p>
+                        )}
+                        {option.quantity && option.quantity > 1 && (
+                          <p className="text-xs text-muted-foreground">Qty {option.quantity} {option.unitType || "ea"}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-muted/40 border-b">
+                    <tr>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 w-12">Img</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2">Option</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Brand</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden md:table-cell">SKU</th>
+                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Qty</th>
+                      <th className="text-right text-[11px] text-muted-foreground font-medium p-2">Unit Cost</th>
+                      <th className="text-left text-[11px] text-muted-foreground font-medium p-2 hidden sm:table-cell">Visibility</th>
+                      <th className="p-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOptions.map((option) => {
+                      const heroUrl = option.imageUrls?.[0] || option.imageUrl || null;
+                      return (
+                        <tr
+                          key={option.id}
+                          className="border-t hover-elevate cursor-pointer"
+                          onClick={() => handleEditOption(option)}
+                        >
+                          <td className="p-2">
+                            {heroUrl ? (
+                              <img src={heroUrl} alt={option.name} className="w-9 h-9 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            ) : (
+                              <div className="w-9 h-9 rounded bg-muted flex items-center justify-center">
+                                <Camera className="h-4 w-4 text-muted-foreground/40" />
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <div className="font-medium text-xs">{option.name}</div>
+                            {option.isSelectedByClient && <Badge className="text-[9px] h-3.5 px-1 mt-0.5">Default</Badge>}
+                          </td>
+                          <td className="p-2 hidden sm:table-cell text-xs text-muted-foreground">{option.brand || "—"}</td>
+                          <td className="p-2 hidden md:table-cell text-xs text-muted-foreground font-mono">{option.sku || "—"}</td>
+                          <td className="p-2 text-right text-xs tabular-nums">{option.quantity || 1}</td>
+                          <td className="p-2 text-right text-xs tabular-nums">
+                            {option.unitCost ? `$${(option.unitCost / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}` : "—"}
+                          </td>
+                          <td className="p-2 hidden sm:table-cell">
+                            {!option.visibleToClient && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1">
+                                <EyeOff className="h-2.5 w-2.5 mr-0.5" />Hidden
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditOption(option)}>
+                                  <Edit3 className="h-4 w-4 mr-2" />Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleSelectOption(option.id)}>
+                                  <Star className="h-4 w-4 mr-2" />
+                                  {option.isSelectedByClient ? "Remove Default" : "Set as Default"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDeleteOption(option.id)} className="text-destructive">
+                                  <Trash2 className="h-4 w-4 mr-2" />Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden file input for image uploads */}
+      <input
+        ref={imageUploadRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleFileUpload(e.target.files);
+            e.target.value = "";
+          }
+        }}
+      />
+
+      {/* Groups Dialog */}
+      <Dialog open={groupsDialogOpen} onOpenChange={setGroupsDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Groups</DialogTitle>
+            <DialogDescription>Assign this template to one or more groups.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1 py-2 max-h-64 overflow-y-auto">
+            {groups.map((g) => (
+              <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover-elevate cursor-pointer">
+                <Checkbox
+                  checked={localMeta.groupIds.includes(g.id)}
+                  onCheckedChange={(checked) => {
+                    setLocalMeta(prev => ({
+                      ...prev,
+                      groupIds: checked
+                        ? [...prev.groupIds, g.id]
+                        : prev.groupIds.filter(id => id !== g.id),
+                    }));
+                    setHasMetaChanges(true);
+                  }}
+                />
+                <span className="text-sm">{g.name}</span>
+              </label>
+            ))}
+            {groups.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                No groups created yet. Create groups from the templates list page.
+              </p>
+            )}
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAddItem}
-              disabled={updateMutation.isPending}
-              className="bg-primary hover:bg-primary/90"
-              data-testid="button-confirm-add"
-            >
-              {updateMutation.isPending ? "Adding..." : "Add Item"}
-            </Button>
+            <Button onClick={() => setGroupsDialogOpen(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Item Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent data-testid="dialog-edit-item">
+      {/* Option Dialog */}
+      <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Selection Item</DialogTitle>
+            <DialogTitle>{editingOption ? "Edit Option" : "Add Option"}</DialogTitle>
             <DialogDescription>
-              Update this selection item.
+              {editingOption ? "Update this selection option." : "Add a new option for this selection."}
             </DialogDescription>
           </DialogHeader>
-          {editingItem && (
-            <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Item Name *</Label>
+                <Label>Option Name *</Label>
                 <Input
-                  value={editingItem.itemName}
-                  onChange={(e) => setEditingItem({ ...editingItem, itemName: e.target.value })}
-                  data-testid="input-edit-name"
+                  value={optionForm.name || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, name: e.target.value })}
+                  placeholder="e.g., Marble Benchtop"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Brand</Label>
+                <Input
+                  value={optionForm.brand || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, brand: e.target.value })}
+                  placeholder="e.g., Caesarstone"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={optionForm.description || ""}
+                onChange={(e) => setOptionForm({ ...optionForm, description: e.target.value })}
+                rows={2}
+                placeholder="Describe this option..."
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>SKU / Product Code</Label>
+                <Input
+                  value={optionForm.sku || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, sku: e.target.value })}
+                  placeholder="e.g., CS-MARBLE-01"
                 />
               </div>
               <div className="space-y-2">
                 <Label>Category</Label>
+                <Input
+                  value={optionForm.category || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, category: e.target.value })}
+                  placeholder="e.g., Benchtops"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>URL / Link</Label>
+                <Input
+                  value={optionForm.url || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, url: e.target.value })}
+                  placeholder="https://..."
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Unit Cost ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={optionForm.unitCost || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, unitCost: parseFloat(e.target.value) || undefined })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={optionForm.quantity || 1}
+                  onChange={(e) => setOptionForm({ ...optionForm, quantity: parseInt(e.target.value) || 1 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Unit Type</Label>
                 <Select
-                  value={editingItem.categoryName || "General"}
-                  onValueChange={(value) => setEditingItem({ ...editingItem, categoryName: value })}
+                  value={optionForm.unitType || "ea"}
+                  onValueChange={(value) => setOptionForm({ ...optionForm, unitType: value })}
                 >
-                  <SelectTrigger data-testid="select-edit-category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {sortedCategoryOptions.length > 0 ? (
-                      sortedCategoryOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={opt.label}>
-                          {opt.label}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="General">General</SelectItem>
-                    )}
+                    <SelectItem value="ea">Each</SelectItem>
+                    <SelectItem value="m2">m²</SelectItem>
+                    <SelectItem value="lm">Linear Meter</SelectItem>
+                    <SelectItem value="set">Set</SelectItem>
+                    <SelectItem value="pack">Pack</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea
-                  value={editingItem.description || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                  rows={2}
-                  data-testid="input-edit-description"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Allowance Type</Label>
-                  <Select
-                    value={editingItem.allowanceType || "none"}
-                    onValueChange={(value) => setEditingItem({ ...editingItem, allowanceType: value === "none" ? undefined : value as "PC" | "PS" })}
-                  >
-                    <SelectTrigger data-testid="select-edit-allowance">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="PC">Prime Cost (PC)</SelectItem>
-                      <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Budget Amount ($)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editingItem.budgetAmount || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, budgetAmount: parseFloat(e.target.value) || undefined })}
-                    data-testid="input-edit-budget"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Room / Location</Label>
-                  <Input
-                    placeholder="e.g., Kitchen, Master Bath"
-                    value={editingItem.room || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, room: e.target.value })}
-                    data-testid="input-edit-room"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Deadline</Label>
-                  <Input
-                    type="date"
-                    value={editingItem.deadline || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, deadline: e.target.value || null })}
-                    data-testid="input-edit-deadline"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between py-1">
-                <Label className="font-normal text-sm">Client can see price</Label>
-                <Switch
-                  checked={editingItem.clientCanSeePrice ?? true}
-                  onCheckedChange={(v) => setEditingItem({ ...editingItem, clientCanSeePrice: v })}
-                  data-testid="switch-edit-client-see-price"
-                />
-              </div>
-              <div className="flex items-center justify-between py-1">
-                <Label className="font-normal text-sm">Client can change selection</Label>
-                <Switch
-                  checked={editingItem.clientCanChange ?? true}
-                  onCheckedChange={(v) => setEditingItem({ ...editingItem, clientCanChange: v })}
-                  data-testid="switch-edit-client-change"
+                <Label>Markup (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={optionForm.markupPercent || ""}
+                  onChange={(e) => setOptionForm({ ...optionForm, markupPercent: parseFloat(e.target.value) || undefined })}
                 />
               </div>
             </div>
-          )}
+
+            {/* Images */}
+            <div className="space-y-2">
+              <Label>Images</Label>
+              <div className="flex flex-wrap gap-2">
+                {(optionForm.imageUrls || []).map((url, idx) => (
+                  <div key={idx} className="relative group w-16 h-16 rounded-md overflow-hidden border bg-muted flex-shrink-0">
+                    <img
+                      src={url}
+                      alt={`Image ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={() => {
+                        const urls = [...(optionForm.imageUrls || [])];
+                        urls.splice(idx, 1);
+                        setOptionForm({ ...optionForm, imageUrls: urls });
+                      }}
+                    >
+                      <X className="h-4 w-4 text-white" />
+                    </button>
+                    {idx === 0 && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5">
+                        Hero
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="w-16 h-16 rounded-md border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-1 hover-elevate cursor-pointer flex-shrink-0 text-muted-foreground"
+                  onClick={() => imageUploadRef.current?.click()}
+                  disabled={isUploadingImage}
+                >
+                  {isUploadingImage ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4" />
+                      <span className="text-[9px]">Add</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">First image is used as the hero on the card.</p>
+            </div>
+
+            <div className="flex items-center gap-6 pt-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={gstInclusive}
+                  onCheckedChange={setGstInclusive}
+                />
+                <Label className="text-sm">Price includes GST</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={optionForm.visibleToClient ?? true}
+                  onCheckedChange={(checked) => setOptionForm({ ...optionForm, visibleToClient: checked })}
+                />
+                <Label className="text-sm flex items-center gap-1">
+                  {optionForm.visibleToClient ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  Visible to client
+                </Label>
+              </div>
+            </div>
+
+            {/* Specifications collapsible */}
+            <div className="border rounded-md overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover-elevate bg-muted/40 text-left"
+                onClick={() => setSpecsOpen(!specsOpen)}
+              >
+                <span className="flex items-center gap-2">
+                  {specsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  Product Specifications
+                  {optionForm.specifications && Object.keys(optionForm.specifications).filter(k => k !== "custom").some(k => optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "") && (
+                    <Badge variant="secondary" className="h-4 text-[10px]">
+                      {Object.keys(optionForm.specifications).filter(k => k !== "custom" && optionForm.specifications![k] !== undefined && optionForm.specifications![k] !== "").length} set
+                    </Badge>
+                  )}
+                </span>
+              </button>
+              {specsOpen && (
+                <div className="p-3 space-y-3 border-t">
+                  <div className="grid grid-cols-3 gap-2">
+                    {["width", "height", "depth"].map((key) => (
+                      <div key={key} className="space-y-1">
+                        <Label className="text-xs capitalize">
+                          {key === "depth" ? "Depth (mm)" : key === "width" ? "Width (mm)" : "Height (mm)"}
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          className="h-8 text-xs"
+                          value={optionForm.specifications?.[key] ?? ""}
+                          onChange={(e) => setOptionForm({
+                            ...optionForm,
+                            specifications: { ...optionForm.specifications, [key]: e.target.value ? parseFloat(e.target.value) : undefined },
+                          })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Finish</Label>
+                      <Select
+                        value={optionForm.specifications?.finish ?? ""}
+                        onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, finish: v || undefined } })}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select finish..." /></SelectTrigger>
+                        <SelectContent>
+                          {FINISH_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Material</Label>
+                      <Select
+                        value={optionForm.specifications?.material ?? ""}
+                        onValueChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, material: v || undefined } })}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select material..." /></SelectTrigger>
+                        <SelectContent>
+                          {MATERIAL_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {SPEC_PICKER_GROUPS.flatMap(g => g.fields).map(field => {
+                    const val = optionForm.specifications?.[field.key];
+                    if (val === undefined || val === "") return null;
+                    return (
+                      <div key={field.key} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">{field.label}</Label>
+                          <button
+                            type="button"
+                            className="text-[10px] text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const s = { ...optionForm.specifications };
+                              delete s[field.key];
+                              setOptionForm({ ...optionForm, specifications: s });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        {field.type === "boolean" ? (
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={!!val}
+                              onCheckedChange={(v) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: v } })}
+                            />
+                            <Label className="text-xs">{val ? "Yes" : "No"}</Label>
+                          </div>
+                        ) : (
+                          <Input
+                            type={field.type}
+                            className="h-8 text-xs"
+                            value={val}
+                            onChange={(e) => setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "number" ? parseFloat(e.target.value) || undefined : e.target.value } })}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {(optionForm.specifications?.custom || []).map((c: { label: string; value: string }, idx: number) => (
+                    <div key={idx} className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Label</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={c.label}
+                          onChange={(e) => {
+                            const custom = [...(optionForm.specifications?.custom || [])];
+                            custom[idx] = { ...custom[idx], label: e.target.value };
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Value</Label>
+                          <button
+                            type="button"
+                            className="text-[10px] text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const custom = (optionForm.specifications?.custom || []).filter((_: any, i: number) => i !== idx);
+                              setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={c.value}
+                          onChange={(e) => {
+                            const custom = [...(optionForm.specifications?.custom || [])];
+                            custom[idx] = { ...custom[idx], value: e.target.value };
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                      onClick={() => setSpecPickerOpen(!specPickerOpen)}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add detail
+                    </button>
+                    {specPickerOpen && (
+                      <div className="mt-2 border rounded-md p-2 space-y-2 bg-muted/20">
+                        {SPEC_PICKER_GROUPS.map(group => (
+                          <div key={group.label}>
+                            <p className="text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">{group.label}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {group.fields.map(field => {
+                                const alreadySet = optionForm.specifications?.[field.key] !== undefined;
+                                return (
+                                  <button
+                                    key={field.key}
+                                    type="button"
+                                    disabled={alreadySet}
+                                    className="text-[10px] px-1.5 py-0.5 border rounded hover-elevate disabled:opacity-40 disabled:cursor-not-allowed"
+                                    onClick={() => {
+                                      setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, [field.key]: field.type === "boolean" ? false : field.type === "number" ? 0 : "" } });
+                                      setSpecPickerOpen(false);
+                                    }}
+                                  >
+                                    {field.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          className="text-[10px] text-primary hover:underline"
+                          onClick={() => {
+                            const custom = [...(optionForm.specifications?.custom || []), { label: "", value: "" }];
+                            setOptionForm({ ...optionForm, specifications: { ...optionForm.specifications, custom } });
+                            setSpecPickerOpen(false);
+                          }}
+                        >
+                          + Custom field
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+            <Button variant="outline" onClick={() => { setOptionDialogOpen(false); setEditingOption(null); }}>
               Cancel
             </Button>
             <Button
-              onClick={handleSaveEdit}
+              onClick={handleSaveOption}
               disabled={updateMutation.isPending}
-              className="bg-primary hover:bg-primary/90"
-              data-testid="button-save-edit"
+              style={{ backgroundColor: CASVA_LILAC }}
+              className="text-white hover:opacity-90"
             >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings Dialog */}
-      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-        <DialogContent data-testid="dialog-settings">
-          <DialogHeader>
-            <DialogTitle>Template Settings</DialogTitle>
-            <DialogDescription>
-              Update template name, category, and description.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Template Name</Label>
-              <Input
-                value={template.name}
-                onChange={(e) => updateMutation.mutate({ name: e.target.value })}
-                data-testid="input-settings-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Input
-                value={template.category || ""}
-                onChange={(e) => updateMutation.mutate({ category: e.target.value })}
-                placeholder="e.g., Residential, Commercial"
-                data-testid="input-settings-category"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={template.description || ""}
-                onChange={(e) => updateMutation.mutate({ description: e.target.value })}
-                placeholder="Describe this template..."
-                rows={3}
-                data-testid="input-settings-description"
-              />
-            </div>
-            <div className="flex items-center justify-between py-2">
-              <div className="space-y-0.5">
-                <Label>Design Template</Label>
-                <p className="text-xs text-muted-foreground">
-                  Design templates are for standard design options. Selection templates are for project-specific choices.
-                </p>
-              </div>
-              <Switch
-                checked={template.selectionType === "design"}
-                onCheckedChange={(checked) => updateMutation.mutate({ selectionType: checked ? "design" : "selection" })}
-                data-testid="switch-selection-type"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setSettingsDialogOpen(false)}>
-              Done
+              {updateMutation.isPending ? "Saving..." : editingOption ? "Update Option" : "Add Option"}
             </Button>
           </DialogFooter>
         </DialogContent>

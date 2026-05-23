@@ -24286,13 +24286,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      const { groupIds, ...rest } = validationResult.data;
       const templateData = {
-        ...validationResult.data,
+        ...rest,
         companyId: user.companyId,
         createdBy: user.id,
       };
-      const template = await storage.createSelectionTemplate(templateData);
-      res.status(201).json(template);
+      const template = await storage.createSelectionTemplate(templateData as any);
+      if (groupIds && groupIds.length > 0) {
+        await storage.replaceTemplateGroups(template.id, groupIds);
+      }
+      const enriched = await storage.getSelectionTemplate(template.id, user.companyId);
+      res.status(201).json(enriched ?? template);
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to create selection template",
@@ -24321,12 +24326,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const updatedTemplate = await storage.updateSelectionTemplate(
-        req.params.id,
-        validationResult.data,
-        user.companyId
-      );
-      res.json(updatedTemplate);
+      const { groupIds, ...updateData } = validationResult.data;
+      await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
+      if (groupIds !== undefined) {
+        await storage.replaceTemplateGroups(req.params.id, groupIds);
+      }
+      const enriched = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      res.json(enriched);
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to update selection template",
@@ -24436,8 +24442,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.getProject(projectId);
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const items = (template.templateData as any[]) || [];
-      const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
-      res.json({ created: selectionIds.length, selectionIds });
+      const isOldFormat = items.length > 0 && 'itemName' in items[0];
+      if (isOldFormat) {
+        const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
+        res.json({ created: selectionIds.length, selectionIds });
+      } else {
+        // New flat format: template itself is one selection item
+        const tpl = template as any;
+        const existingSelections = await storage.getSelectionsForProject(projectId);
+        const maxOrder = existingSelections.reduce((m: number, s: any) => Math.max(m, s.sortOrder ?? 0), 0);
+        const selection = await storage.createSelection({
+          projectId,
+          name: template.name,
+          description: template.description || null,
+          category: template.category || null,
+          room: tpl.room || null,
+          selectionType: template.selectionType || "selection",
+          status: "draft",
+          allowance: tpl.budgetAmount || null,
+          clientCanSeePrice: tpl.clientCanSeePrice ?? true,
+          clientCanChange: tpl.clientCanChange ?? true,
+          deadline: tpl.deadline || null,
+          sortOrder: maxOrder + 1,
+          notes: null,
+        } as any);
+        for (let idx = 0; idx < items.length; idx++) {
+          const opt = items[idx];
+          const option = await storage.createSelectionOption({
+            selectionId: selection.id,
+            name: opt.name,
+            brand: opt.brand || null,
+            sku: opt.sku || null,
+            description: opt.description || null,
+            category: opt.category || null,
+            subcategory: opt.subcategory || null,
+            unitCost: opt.unitCost ?? null,
+            quantity: opt.quantity ?? null,
+            unitType: opt.unitType || null,
+            markupPercent: opt.markupPercent ?? null,
+            totalCost: opt.totalCost ?? null,
+            url: opt.url || null,
+            visibleToClient: opt.visibleToClient ?? true,
+            gstInclusive: opt.gstInclusive ?? false,
+            sortOrder: opt.sortOrder ?? idx,
+            specifications: opt.specifications || null,
+          });
+          const imageUrls: string[] = opt.imageUrls || (opt.imageUrl ? [opt.imageUrl] : []);
+          for (let imgIdx = 0; imgIdx < imageUrls.length; imgIdx++) {
+            const filePath = imageUrls[imgIdx];
+            await storage.createOptionAttachment({
+              optionId: option.id,
+              fileName: filePath.split("/").pop() || "image.jpg",
+              filePath,
+              fileType: "image",
+              mimeType: "image/jpeg",
+              sortOrder: imgIdx,
+            });
+          }
+        }
+        res.json({ created: 1, selectionIds: [selection.id] });
+      }
     } catch (error: any) {
       res.status(500).json({ error: "Failed to apply template", details: error.message });
     }
@@ -24454,6 +24518,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.getProject(projectId);
       if (!project || project.companyId !== user.companyId) return res.status(403).json({ error: "Project not found or access denied" });
       const allItems = (template.templateData as any[]) || [];
+      const isOldFormat = allItems.length > 0 && 'itemName' in allItems[0];
+      if (!isOldFormat) {
+        return res.status(400).json({ error: "Use /apply for new-format templates" });
+      }
       const items = allItems.filter((item: any) => itemIds.includes(item.id));
       const selectionIds = await applyTemplateItems(items, projectId, template.selectionType, storage);
       res.json({ created: selectionIds.length, selectionIds });

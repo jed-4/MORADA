@@ -3677,6 +3677,12 @@ export const selectionTemplates = pgTable("selection_templates", {
   createdByName: text("created_by_name"),
   isArchived: boolean("is_archived").notNull().default(false),
   groupId: varchar("group_id").references(() => selectionTemplateGroups.id, { onDelete: "set null" }),
+  room: text("room"),
+  allowanceType: text("allowance_type"),
+  budgetAmount: integer("budget_amount"),
+  clientCanSeePrice: boolean("client_can_see_price").notNull().default(true),
+  clientCanChange: boolean("client_can_change").notNull().default(true),
+  deadline: text("deadline"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -3688,6 +3694,7 @@ export const insertSelectionTemplateSchema = createInsertSchema(selectionTemplat
   updatedAt: true,
 }).extend({
   templateData: z.array(z.any()),
+  groupIds: z.array(z.string()).optional(),
 });
 
 export type InsertSelectionTemplate = z.infer<typeof insertSelectionTemplateSchema>;
@@ -3699,6 +3706,21 @@ export type UpdateEstimateTemplate = z.infer<typeof updateEstimateTemplateSchema
 
 export const updateSelectionTemplateSchema = insertSelectionTemplateSchema.partial();
 export type UpdateSelectionTemplate = z.infer<typeof updateSelectionTemplateSchema>;
+
+// Selection Template Group Memberships (many-to-many: templates ↔ groups)
+export const selectionTemplateGroupMemberships = pgTable("selection_template_group_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => selectionTemplates.id, { onDelete: "cascade" }),
+  groupId: varchar("group_id").notNull().references(() => selectionTemplateGroups.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSelectionTemplateGroupMembershipSchema = createInsertSchema(selectionTemplateGroupMemberships).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertSelectionTemplateGroupMembership = z.infer<typeof insertSelectionTemplateGroupMembershipSchema>;
+export type SelectionTemplateGroupMembership = typeof selectionTemplateGroupMemberships.$inferSelect;
 
 // Update schemas for schedules
 export const updateScheduleSchema = insertScheduleSchema.partial();

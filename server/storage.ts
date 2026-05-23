@@ -1062,6 +1062,7 @@ export interface IStorage {
   createSelectionTemplateGroup(group: InsertSelectionTemplateGroup & { companyId: string }): Promise<SelectionTemplateGroup>;
   updateSelectionTemplateGroup(id: string, group: Partial<InsertSelectionTemplateGroup>, companyId: string): Promise<SelectionTemplateGroup | undefined>;
   deleteSelectionTemplateGroup(id: string, companyId: string): Promise<boolean>;
+  replaceTemplateGroups(templateId: string, groupIds: string[]): Promise<void>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -18264,7 +18265,7 @@ export class DbStorage implements IStorage {
   }
 
   // Selection Templates CRUD
-  async getSelectionTemplates(companyId: string, category?: string): Promise<SelectionTemplate[]> {
+  async getSelectionTemplates(companyId: string, category?: string): Promise<any[]> {
     try {
       const conditions = [
         eq(schema.selectionTemplates.isArchived, false),
@@ -18278,16 +18279,40 @@ export class DbStorage implements IStorage {
         conditions.push(eq(schema.selectionTemplates.category, category));
       }
       
-      return await db.select()
+      const templates = await db.select()
         .from(schema.selectionTemplates)
         .where(and(...conditions));
+
+      if (templates.length === 0) return [];
+
+      const templateIds = templates.map(t => t.id);
+      const memberships = await db.select({
+        templateId: schema.selectionTemplateGroupMemberships.templateId,
+        groupId: schema.selectionTemplateGroupMemberships.groupId,
+        groupName: schema.selectionTemplateGroups.name,
+      })
+        .from(schema.selectionTemplateGroupMemberships)
+        .innerJoin(schema.selectionTemplateGroups, eq(schema.selectionTemplateGroupMemberships.groupId, schema.selectionTemplateGroups.id))
+        .where(inArray(schema.selectionTemplateGroupMemberships.templateId, templateIds));
+
+      const groupMap = new Map<string, { id: string; name: string }[]>();
+      for (const m of memberships) {
+        if (!groupMap.has(m.templateId)) groupMap.set(m.templateId, []);
+        groupMap.get(m.templateId)!.push({ id: m.groupId, name: m.groupName });
+      }
+
+      return templates.map(t => ({
+        ...t,
+        groups: groupMap.get(t.id) || [],
+        groupIds: (groupMap.get(t.id) || []).map(g => g.id),
+      }));
     } catch (error) {
       console.error("Database error in getSelectionTemplates:", error);
       throw error;
     }
   }
 
-  async getSelectionTemplate(id: string, companyId: string): Promise<SelectionTemplate | undefined> {
+  async getSelectionTemplate(id: string, companyId: string): Promise<any | undefined> {
     try {
       const result = await db.select()
         .from(schema.selectionTemplates)
@@ -18295,10 +18320,23 @@ export class DbStorage implements IStorage {
         .limit(1);
       
       const template = result[0];
-      if (template && (template.companyId === companyId || template.isPublic)) {
-        return template;
+      if (!template || !(template.companyId === companyId || template.isPublic)) {
+        return undefined;
       }
-      return undefined;
+
+      const memberships = await db.select({
+        groupId: schema.selectionTemplateGroupMemberships.groupId,
+        groupName: schema.selectionTemplateGroups.name,
+      })
+        .from(schema.selectionTemplateGroupMemberships)
+        .innerJoin(schema.selectionTemplateGroups, eq(schema.selectionTemplateGroupMemberships.groupId, schema.selectionTemplateGroups.id))
+        .where(eq(schema.selectionTemplateGroupMemberships.templateId, id));
+
+      return {
+        ...template,
+        groups: memberships.map(m => ({ id: m.groupId, name: m.groupName })),
+        groupIds: memberships.map(m => m.groupId),
+      };
     } catch (error) {
       console.error("Database error in getSelectionTemplate:", error);
       throw error;
@@ -18344,6 +18382,20 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteSelectionTemplate:", error);
+      throw error;
+    }
+  }
+
+  async replaceTemplateGroups(templateId: string, groupIds: string[]): Promise<void> {
+    try {
+      await db.delete(schema.selectionTemplateGroupMemberships)
+        .where(eq(schema.selectionTemplateGroupMemberships.templateId, templateId));
+      if (groupIds.length > 0) {
+        await db.insert(schema.selectionTemplateGroupMemberships)
+          .values(groupIds.map(groupId => ({ templateId, groupId })));
+      }
+    } catch (error) {
+      console.error("Database error in replaceTemplateGroups:", error);
       throw error;
     }
   }

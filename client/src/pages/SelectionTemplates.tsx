@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   CheckSquare,
   Plus,
@@ -49,39 +50,20 @@ import {
   Layers,
   PlayCircle,
   FolderOpen,
-  Pencil,
   Settings2,
-  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-interface SelectionOptionMini {
-  id: string;
-  name: string;
-  sortOrder: number;
-}
-
-interface SelectionItem {
-  id: string;
-  categoryName: string;
-  itemName: string;
-  description?: string;
-  room?: string;
-  allowanceType?: "PC" | "PS";
-  budgetAmount?: number;
-  deadline?: string | null;
-  clientCanSeePrice?: boolean;
-  clientCanChange?: boolean;
-  notes?: string;
-  sortOrder: number;
-  options?: SelectionOptionMini[];
-}
-
 interface Project {
   id: string;
   name: string;
+}
+
+interface TemplateWithGroups extends SelectionTemplate {
+  groups?: { id: string; name: string }[];
+  groupIds?: string[];
 }
 
 const COLLAPSED_GROUPS_KEY = "template-groups-collapsed";
@@ -95,19 +77,37 @@ function getCategoryColor(category: string | null | undefined) {
   }
 }
 
-function getItemsFromTemplate(template: SelectionTemplate): SelectionItem[] {
-  const data = template.templateData as SelectionItem[] | null;
-  return (data || []).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+function getOptionCount(template: TemplateWithGroups): number {
+  const data = (template.templateData as any[]) || [];
+  if (data.length === 0) return 0;
+  if ('itemName' in data[0]) {
+    return data.reduce((sum: number, item: any) => sum + (item.options?.length || 0), 0);
+  }
+  return data.length;
 }
+
+const initialFormData = {
+  name: "",
+  description: "",
+  category: "",
+  room: "",
+  allowanceType: "" as "" | "PC" | "PS",
+  budgetAmount: "" as number | "",
+  deadline: "",
+  clientCanSeePrice: true,
+  clientCanChange: true,
+  groupIds: [] as string[],
+};
 
 export default function SelectionTemplates() {
   const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<SelectionTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<TemplateWithGroups | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<"category" | "group" | "none">("category");
   const [isManagingGroups, setIsManagingGroups] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupNameInline, setNewGroupNameInline] = useState("");
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
@@ -118,9 +118,8 @@ export default function SelectionTemplates() {
       return new Set<string>();
     }
   });
-  const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
 
-  const [applyDialogTemplate, setApplyDialogTemplate] = useState<SelectionTemplate | null>(null);
+  const [applyDialogTemplate, setApplyDialogTemplate] = useState<TemplateWithGroups | null>(null);
   const [applyMode, setApplyMode] = useState<"all" | "items">("all");
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [applyProjectId, setApplyProjectId] = useState("");
@@ -129,14 +128,9 @@ export default function SelectionTemplates() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    category: "",
-    groupId: "",
-  });
+  const [formData, setFormData] = useState({ ...initialFormData });
 
-  const { data: templates = [], isLoading } = useQuery<SelectionTemplate[]>({
+  const { data: templates = [], isLoading } = useQuery<TemplateWithGroups[]>({
     queryKey: ["/api/selection-templates"],
   });
 
@@ -149,10 +143,34 @@ export default function SelectionTemplates() {
     enabled: !!applyDialogTemplate,
   });
 
+  const { data: categoryFieldCategory } = useQuery<any>({
+    queryKey: ["/api/field-categories/by-key/selection-category"],
+  });
+
+  const categoryOptions = useMemo(() => {
+    if (!categoryFieldCategory) return [
+      { id: "1", label: "Residential" },
+      { id: "2", label: "Commercial" },
+      { id: "3", label: "Renovation" },
+      { id: "4", label: "General" },
+    ];
+    const opts = (categoryFieldCategory.options || []) as { id: string; label: string }[];
+    return opts.sort((a, b) => a.label.localeCompare(b.label));
+  }, [categoryFieldCategory]);
+
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; category?: string }) => {
+    mutationFn: async (data: typeof initialFormData) => {
       return await apiRequest("/api/selection-templates", "POST", {
-        ...data,
+        name: data.name,
+        description: data.description || undefined,
+        category: data.category || undefined,
+        room: data.room || undefined,
+        allowanceType: data.allowanceType || undefined,
+        budgetAmount: data.budgetAmount !== "" ? Math.round(Number(data.budgetAmount) * 100) : undefined,
+        deadline: data.deadline || undefined,
+        clientCanSeePrice: data.clientCanSeePrice,
+        clientCanChange: data.clientCanChange,
+        groupIds: data.groupIds,
         templateData: [],
         createdBy: user?.id,
         createdByName: user?.firstName && user?.lastName
@@ -160,24 +178,30 @@ export default function SelectionTemplates() {
           : user?.email,
       });
     },
-    onSuccess: () => {
+    onSuccess: (newTemplate: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
       toast({ title: "Template created", description: "Your new selection template has been created." });
       setIsAddingTemplate(false);
-      setFormData({ name: "", description: "", category: "" });
+      setFormData({ ...initialFormData });
+      navigate(`/selection-templates/${newTemplate.id}`);
     },
     onError: () => toast({ title: "Error", description: "Failed to create template.", variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<SelectionTemplate> }) => {
-      return await apiRequest(`/api/selection-templates/${id}`, "PATCH", data);
+    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof initialFormData> }) => {
+      return await apiRequest(`/api/selection-templates/${id}`, "PATCH", {
+        ...data,
+        budgetAmount: data.budgetAmount !== "" && data.budgetAmount != null
+          ? Math.round(Number(data.budgetAmount) * 100)
+          : undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
       toast({ title: "Template updated", description: "The template has been updated successfully." });
       setEditingTemplate(null);
-      setFormData({ name: "", description: "", category: "" });
+      setFormData({ ...initialFormData });
     },
     onError: () => toast({ title: "Error", description: "Failed to update template.", variant: "destructive" }),
   });
@@ -194,8 +218,8 @@ export default function SelectionTemplates() {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: async (template: SelectionTemplate) => {
-      const { id, createdAt, updatedAt, isArchived, ...rest } = template;
+    mutationFn: async (template: TemplateWithGroups) => {
+      const { id, createdAt, updatedAt, isArchived, groups: _g, groupIds: _gIds, ...rest } = template as any;
       return await apiRequest("/api/selection-templates", "POST", {
         ...rest,
         name: `${template.name} (Copy)`,
@@ -258,17 +282,26 @@ export default function SelectionTemplates() {
   });
 
   const handleOpenAdd = () => {
-    setFormData({ name: "", description: "", category: "", groupId: "" });
+    setFormData({ ...initialFormData });
+    setNewGroupNameInline("");
     setIsAddingTemplate(true);
   };
 
-  const handleOpenEdit = (template: SelectionTemplate) => {
+  const handleOpenEdit = (template: TemplateWithGroups) => {
+    const tAny = template as any;
     setFormData({
       name: template.name,
       description: template.description || "",
       category: template.category || "",
-      groupId: (template as any).groupId || "",
+      room: tAny.room || "",
+      allowanceType: tAny.allowanceType || "",
+      budgetAmount: tAny.budgetAmount ? tAny.budgetAmount / 100 : "",
+      deadline: tAny.deadline || "",
+      clientCanSeePrice: tAny.clientCanSeePrice ?? true,
+      clientCanChange: tAny.clientCanChange ?? true,
+      groupIds: tAny.groupIds || [],
     });
+    setNewGroupNameInline("");
     setEditingTemplate(template);
   };
 
@@ -280,21 +313,21 @@ export default function SelectionTemplates() {
     if (editingTemplate) {
       updateMutation.mutate({
         id: editingTemplate.id,
-        data: {
-          name: formData.name.trim(),
-          description: formData.description.trim() || undefined,
-          category: formData.category || undefined,
-          groupId: formData.groupId || undefined,
-        },
+        data: formData,
       });
     } else {
-      createMutation.mutate({
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        category: formData.category || undefined,
-        groupId: formData.groupId || undefined,
-      });
+      createMutation.mutate(formData);
     }
+  };
+
+  const addGroupInline = (name: string) => {
+    if (!name.trim()) return;
+    createGroupMutation.mutate(name, {
+      onSuccess: (newGroup: any) => {
+        setFormData(prev => ({ ...prev, groupIds: [...prev.groupIds, newGroup.id] }));
+        setNewGroupNameInline("");
+      },
+    });
   };
 
   const toggleGroup = (group: string) => {
@@ -307,16 +340,7 @@ export default function SelectionTemplates() {
     });
   };
 
-  const toggleExpand = (templateId: string) => {
-    setExpandedTemplates(prev => {
-      const next = new Set(prev);
-      if (next.has(templateId)) next.delete(templateId);
-      else next.add(templateId);
-      return next;
-    });
-  };
-
-  const openApplyDialog = (template: SelectionTemplate) => {
+  const openApplyDialog = (template: TemplateWithGroups) => {
     setApplyDialogTemplate(template);
     setApplyMode("all");
     setSelectedItemIds(new Set());
@@ -330,7 +354,9 @@ export default function SelectionTemplates() {
       return;
     }
     if (!applyDialogTemplate) return;
-    if (applyMode === "items") {
+    const data = (applyDialogTemplate.templateData as any[]) || [];
+    const isOldFormat = data.length > 0 && 'itemName' in data[0];
+    if (isOldFormat && applyMode === "items") {
       if (selectedItemIds.size === 0) {
         toast({ title: "Select items", description: "Please select at least one item to apply.", variant: "destructive" });
         return;
@@ -353,7 +379,7 @@ export default function SelectionTemplates() {
 
   const groupedTemplates = useMemo(() => {
     if (groupBy === "category") {
-      const map = new Map<string, SelectionTemplate[]>();
+      const map = new Map<string, TemplateWithGroups[]>();
       for (const t of filteredTemplates) {
         const key = t.category || "General";
         if (!map.has(key)) map.set(key, []);
@@ -362,13 +388,19 @@ export default function SelectionTemplates() {
       return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
     }
     if (groupBy === "group") {
-      const map = new Map<string, SelectionTemplate[]>();
+      const map = new Map<string, TemplateWithGroups[]>();
       for (const t of filteredTemplates) {
-        const gId = (t as any).groupId as string | null;
-        const grp = groups.find(g => g.id === gId);
-        const key = grp ? grp.name : "Ungrouped";
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(t);
+        const tGroups = (t.groups || []) as { id: string; name: string }[];
+        if (tGroups.length === 0) {
+          const key = "Ungrouped";
+          if (!map.has(key)) map.set(key, []);
+          map.get(key)!.push(t);
+        } else {
+          for (const g of tGroups) {
+            if (!map.has(g.name)) map.set(g.name, []);
+            map.get(g.name)!.push(t);
+          }
+        }
       }
       return [...map.entries()].sort(([a], [b]) => {
         if (a === "Ungrouped") return 1;
@@ -377,7 +409,7 @@ export default function SelectionTemplates() {
       });
     }
     return null;
-  }, [filteredTemplates, groupBy, groups]);
+  }, [filteredTemplates, groupBy]);
 
   const filteredProjects = useMemo(() => {
     if (!applyProjectSearch) return projects;
@@ -386,24 +418,21 @@ export default function SelectionTemplates() {
 
   const applyItems = useMemo(() => {
     if (!applyDialogTemplate) return [];
-    return getItemsFromTemplate(applyDialogTemplate);
+    const data = (applyDialogTemplate.templateData as any[]) || [];
+    if (data.length > 0 && 'itemName' in data[0]) {
+      return data.sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+    return [];
   }, [applyDialogTemplate]);
 
-  const renderTemplateCard = (template: SelectionTemplate) => {
-    const items = getItemsFromTemplate(template);
-    const itemCount = items.length;
-    const isExpanded = expandedTemplates.has(template.id);
+  const renderTemplateCard = (template: TemplateWithGroups) => {
+    const tAny = template as any;
+    const templateGroups = (template.groups || []) as { id: string; name: string }[];
+    const optionCount = getOptionCount(template);
 
     return (
       <div key={template.id} className="border rounded-md bg-card mx-2 mb-2">
         <div className="flex items-center gap-2 p-3">
-          <button
-            className="flex-shrink-0 text-muted-foreground hover-elevate rounded p-0.5"
-            onClick={() => toggleExpand(template.id)}
-          >
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-
           <div
             className="flex-1 min-w-0 cursor-pointer"
             onClick={() => navigate(`/selection-templates/${template.id}`)}
@@ -415,10 +444,36 @@ export default function SelectionTemplates() {
                   {template.category}
                 </Badge>
               )}
-              <span className="text-xs text-muted-foreground">{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+              {templateGroups.map(g => (
+                <Badge key={g.id} variant="outline" className="h-4 px-1.5 text-data">
+                  {g.name}
+                </Badge>
+              ))}
+              <span className="text-xs text-muted-foreground">
+                {optionCount} {optionCount === 1 ? "option" : "options"}
+              </span>
             </div>
             {template.description && (
               <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{template.description}</p>
+            )}
+            {(tAny.room || tAny.deadline || tAny.allowanceType) && (
+              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                {tAny.room && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <MapPin className="h-2.5 w-2.5" />{tAny.room}
+                  </span>
+                )}
+                {tAny.deadline && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <Calendar className="h-2.5 w-2.5" />{format(new Date(tAny.deadline), "d MMM")}
+                  </span>
+                )}
+                {tAny.allowanceType && (
+                  <Badge variant="outline" className="h-3.5 px-1 text-[10px]">
+                    {tAny.allowanceType}{tAny.budgetAmount ? ` $${(tAny.budgetAmount / 100).toLocaleString("en-AU", { minimumFractionDigits: 0 })}` : ""}
+                  </Badge>
+                )}
+              </div>
             )}
           </div>
 
@@ -445,7 +500,7 @@ export default function SelectionTemplates() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenEdit(template); }}>
                 <Edit3 className="h-4 w-4 mr-2" />
-                Rename
+                Edit
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(template); }}>
                 <Copy className="h-4 w-4 mr-2" />
@@ -461,63 +516,6 @@ export default function SelectionTemplates() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-
-        {isExpanded && items.length > 0 && (
-          <div className="border-t">
-            {items.map((item, idx) => (
-              <div
-                key={item.id || idx}
-                className="flex items-center gap-2 px-4 py-2 border-b last:border-b-0 hover-elevate cursor-pointer"
-                onClick={() => item.id && navigate(`/selection-templates/${template.id}/items/${item.id}`)}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium">{item.itemName}</span>
-                    {item.categoryName && (
-                      <Badge variant="secondary" className="h-3.5 px-1 text-[10px]">{item.categoryName}</Badge>
-                    )}
-                    {item.allowanceType && (
-                      <Badge variant="outline" className="h-3.5 px-1 text-[10px]">{item.allowanceType}</Badge>
-                    )}
-                    {item.room && (
-                      <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                        <MapPin className="h-2.5 w-2.5" />{item.room}
-                      </span>
-                    )}
-                    {item.deadline && (
-                      <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                        <Calendar className="h-2.5 w-2.5" />
-                        {format(new Date(item.deadline), "d MMM")}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {item.budgetAmount && (
-                    <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                      <DollarSign className="h-2.5 w-2.5" />
-                      {(item.budgetAmount / 100).toLocaleString("en-AU", { minimumFractionDigits: 0 })}
-                    </span>
-                  )}
-                  {(item.options?.length ?? 0) > 0 && (
-                    <Badge variant="outline" className="h-3.5 px-1 text-[10px]">
-                      {item.options!.length} {item.options!.length === 1 ? "option" : "options"}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {isExpanded && items.length === 0 && (
-          <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-            No items in this template yet.{" "}
-            <button className="underline hover:no-underline" onClick={() => navigate(`/selection-templates/${template.id}`)}>
-              Add items
-            </button>
-          </div>
-        )}
       </div>
     );
   };
@@ -643,60 +641,57 @@ export default function SelectionTemplates() {
           if (!open) {
             setIsAddingTemplate(false);
             setEditingTemplate(null);
-            setFormData({ name: "", description: "", category: "", groupId: "" });
+            setFormData({ ...initialFormData });
+            setNewGroupNameInline("");
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingTemplate ? "Edit Template" : "New Selection Template"}</DialogTitle>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>{editingTemplate ? "Edit Template" : "Add Selection Item"}</DialogTitle>
             <DialogDescription>
-              {editingTemplate ? "Update the template details below." : "Create a new selection template to reuse across projects."}
+              {editingTemplate
+                ? "Update the template details below."
+                : "Create a new selection template. You'll be taken to the options editor after saving."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-2 overflow-y-auto flex-1">
             <div className="space-y-2">
-              <Label htmlFor="name">Template Name *</Label>
+              <Label htmlFor="name">Item Name *</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Standard Kitchen Selections"
+                placeholder="e.g., Kitchen Benchtop"
+                autoFocus
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(value) => setFormData({ ...formData, category: value })}
-              >
-                <SelectTrigger id="category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Residential">Residential</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                  <SelectItem value="Renovation">Renovation</SelectItem>
-                  <SelectItem value="General">General</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="group">Group</Label>
-              <Select
-                value={formData.groupId}
-                onValueChange={(value) => setFormData({ ...formData, groupId: value === "_none" ? "" : value })}
-              >
-                <SelectTrigger id="group">
-                  <SelectValue placeholder="Assign to group (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">No group</SelectItem>
-                  {groups.map(g => (
-                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoryOptions.map(opt => (
+                      <SelectItem key={opt.id} value={opt.label}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="room">Room / Location</Label>
+                <Input
+                  id="room"
+                  value={formData.room}
+                  onChange={(e) => setFormData({ ...formData, room: e.target.value })}
+                  placeholder="e.g., Kitchen"
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
@@ -704,19 +699,141 @@ export default function SelectionTemplates() {
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Brief description of the template..."
-                rows={3}
+                placeholder="Brief description of this selection item..."
+                rows={2}
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Allowance Type</Label>
+                <Select
+                  value={formData.allowanceType || "_none"}
+                  onValueChange={(v) => setFormData({ ...formData, allowanceType: v === "_none" ? "" : v as "PC" | "PS" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    <SelectItem value="PC">Prime Cost (PC)</SelectItem>
+                    <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="budget">Budget Amount ($)</Label>
+                <Input
+                  id="budget"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.budgetAmount}
+                  onChange={(e) => setFormData({ ...formData, budgetAmount: e.target.value === "" ? "" : parseFloat(e.target.value) })}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="deadline">Deadline</Label>
+              <Input
+                id="deadline"
+                type="date"
+                value={formData.deadline}
+                onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+              />
+            </div>
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="font-normal text-sm">Client can see price</Label>
+                  <p className="text-xs text-muted-foreground">Show budget/cost to clients</p>
+                </div>
+                <Switch
+                  checked={formData.clientCanSeePrice}
+                  onCheckedChange={(v) => setFormData({ ...formData, clientCanSeePrice: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="font-normal text-sm">Client can change selection</Label>
+                  <p className="text-xs text-muted-foreground">Allow clients to modify</p>
+                </div>
+                <Switch
+                  checked={formData.clientCanChange}
+                  onCheckedChange={(v) => setFormData({ ...formData, clientCanChange: v })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Groups</Label>
+              <div className="border rounded-md max-h-32 overflow-y-auto p-2 space-y-0.5">
+                {groups.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-1 py-2 text-center">No groups yet. Create one below.</p>
+                ) : (
+                  groups.map((g) => (
+                    <label
+                      key={g.id}
+                      className="flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer hover-elevate"
+                    >
+                      <Checkbox
+                        checked={formData.groupIds.includes(g.id)}
+                        onCheckedChange={(checked) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            groupIds: checked
+                              ? [...prev.groupIds, g.id]
+                              : prev.groupIds.filter(id => id !== g.id),
+                          }));
+                        }}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span className="text-sm">{g.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="New group name..."
+                  value={newGroupNameInline}
+                  onChange={(e) => setNewGroupNameInline(e.target.value)}
+                  className="h-8 text-xs flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newGroupNameInline.trim()) {
+                      e.preventDefault();
+                      addGroupInline(newGroupNameInline);
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={!newGroupNameInline.trim() || createGroupMutation.isPending}
+                  onClick={() => addGroupInline(newGroupNameInline)}
+                >
+                  {createGroupMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
+                </Button>
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsAddingTemplate(false); setEditingTemplate(null); setFormData({ name: "", description: "", category: "", groupId: "" }); }}>
+          <DialogFooter className="flex-shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddingTemplate(false);
+                setEditingTemplate(null);
+                setFormData({ ...initialFormData });
+                setNewGroupNameInline("");
+              }}
+            >
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
               {(createMutation.isPending || updateMutation.isPending) ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
-              ) : editingTemplate ? "Update Template" : "Create Template"}
+              ) : editingTemplate ? "Save Changes" : "Create & Edit Options"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -728,12 +845,14 @@ export default function SelectionTemplates() {
           <DialogHeader>
             <DialogTitle>Apply Template to Project</DialogTitle>
             <DialogDescription>
-              {applyDialogTemplate?.name} — {applyItems.length} item{applyItems.length !== 1 ? "s" : ""}
+              {applyDialogTemplate?.name}
+              {applyItems.length > 0
+                ? ` — ${applyItems.length} item${applyItems.length !== 1 ? "s" : ""}`
+                : " — will create 1 selection"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2 overflow-y-auto flex-1">
-            {/* Project picker */}
             <div className="space-y-2">
               <Label>Project *</Label>
               <div className="relative">
@@ -750,101 +869,60 @@ export default function SelectionTemplates() {
                   <SelectValue placeholder="Select a project..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredProjects.map((p) => (
+                  {filteredProjects.map(p => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Apply mode */}
-            <div className="space-y-2">
-              <Label>What to apply</Label>
-              <RadioGroup value={applyMode} onValueChange={(v) => setApplyMode(v as "all" | "items")} className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="all" id="apply-all" />
-                  <Label htmlFor="apply-all" className="text-sm font-normal cursor-pointer">
-                    Apply entire template ({applyItems.length} item{applyItems.length !== 1 ? "s" : ""})
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="items" id="apply-select" />
-                  <Label htmlFor="apply-select" className="text-sm font-normal cursor-pointer">
-                    Select specific items
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
+            {applyItems.length > 0 && (
+              <div className="space-y-2">
+                <Label>Apply Mode</Label>
+                <RadioGroup value={applyMode} onValueChange={(v) => setApplyMode(v as "all" | "items")}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="all" id="mode-all" />
+                    <Label htmlFor="mode-all" className="font-normal cursor-pointer">Apply all items</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="items" id="mode-items" />
+                    <Label htmlFor="mode-items" className="font-normal cursor-pointer">Select specific items</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
 
-            {/* Item selection */}
-            {applyMode === "items" && (
-              <div className="space-y-1 border rounded-md overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {selectedItemIds.size} of {applyItems.length} selected
-                  </span>
-                  <button
-                    className="text-xs text-primary hover:underline"
-                    onClick={() => {
-                      if (selectedItemIds.size === applyItems.length) {
-                        setSelectedItemIds(new Set());
-                      } else {
-                        setSelectedItemIds(new Set(applyItems.map(i => i.id)));
-                      }
-                    }}
-                  >
-                    {selectedItemIds.size === applyItems.length ? "Deselect all" : "Select all"}
-                  </button>
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {applyItems.map((item, idx) => (
-                    <label
-                      key={item.id || idx}
-                      className="flex items-center gap-3 px-3 py-2 hover-elevate cursor-pointer border-b last:border-b-0"
-                    >
-                      <Checkbox
-                        checked={selectedItemIds.has(item.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedItemIds(prev => {
-                            const next = new Set(prev);
-                            if (checked) next.add(item.id);
-                            else next.delete(item.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm">{item.itemName}</span>
-                        {item.categoryName && (
-                          <span className="text-xs text-muted-foreground ml-2">{item.categoryName}</span>
-                        )}
-                      </div>
-                      {(item.options?.length ?? 0) > 0 && (
-                        <Badge variant="outline" className="h-4 text-[10px]">
-                          {item.options!.length} opts
-                        </Badge>
+            {applyItems.length > 0 && applyMode === "items" && (
+              <div className="space-y-1 max-h-48 overflow-y-auto border rounded-md p-2">
+                {applyItems.map((item: any) => (
+                  <label key={item.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover-elevate cursor-pointer">
+                    <Checkbox
+                      checked={selectedItemIds.has(item.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedItemIds(prev => {
+                          const next = new Set(prev);
+                          if (checked) next.add(item.id);
+                          else next.delete(item.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{item.itemName}</span>
+                      {item.options?.length > 0 && (
+                        <span className="text-xs text-muted-foreground ml-2">{item.options.length} options</span>
                       )}
-                    </label>
-                  ))}
-                </div>
+                    </div>
+                  </label>
+                ))}
               </div>
             )}
           </div>
 
-          <DialogFooter className="flex-shrink-0 pt-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setApplyDialogTemplate(null)}>Cancel</Button>
-            <Button
-              onClick={handleApply}
-              disabled={applyMutation.isPending || !applyProjectId}
-            >
-              {applyMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</>
-              ) : (
-                <>
-                  <PlayCircle className="h-4 w-4 mr-2" />
-                  Apply {applyMode === "all" ? `All ${applyItems.length}` : `${selectedItemIds.size}`} Item{(applyMode === "all" ? applyItems.length : selectedItemIds.size) !== 1 ? "s" : ""}
-                </>
-              )}
+            <Button onClick={handleApply} disabled={applyMutation.isPending}>
+              {applyMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</> : "Apply Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -852,71 +930,72 @@ export default function SelectionTemplates() {
 
       {/* Manage Groups Dialog */}
       <Dialog open={isManagingGroups} onOpenChange={setIsManagingGroups}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Manage Groups</DialogTitle>
-            <DialogDescription>
-              Create and organise groups to categorise your selection templates (e.g. Bathroom, Kitchen, Roofing).
-            </DialogDescription>
+            <DialogDescription>Create and manage template groups for organization.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            {groups.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-2">No groups yet. Add one below.</p>
-            )}
-            {groups.map(g => (
-              <div key={g.id} className="flex items-center gap-2">
-                {editingGroupId === g.id ? (
-                  <>
-                    <Input
-                      value={editingGroupName}
-                      onChange={e => setEditingGroupName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter" && editingGroupName.trim()) updateGroupMutation.mutate({ id: g.id, name: editingGroupName });
-                        if (e.key === "Escape") { setEditingGroupId(null); setEditingGroupName(""); }
-                      }}
-                      className="h-7 text-sm flex-1"
-                      autoFocus
-                    />
-                    <Button size="sm" className="h-7 text-xs px-2"
-                      onClick={() => editingGroupName.trim() && updateGroupMutation.mutate({ id: g.id, name: editingGroupName })}
-                      disabled={updateGroupMutation.isPending}
-                    >Save</Button>
-                    <Button size="sm" variant="ghost" className="h-7 px-2"
-                      onClick={() => { setEditingGroupId(null); setEditingGroupName(""); }}
-                    ><X className="h-3 w-3" /></Button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm">{g.name}</span>
-                    <Button size="icon" variant="ghost" className="h-7 w-7"
-                      onClick={() => { setEditingGroupId(g.id); setEditingGroupName(g.name); }}
-                    ><Pencil className="h-3 w-3" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                      onClick={() => deleteGroupMutation.mutate(g.id)}
-                      disabled={deleteGroupMutation.isPending}
-                    ><Trash2 className="h-3 w-3" /></Button>
-                  </>
-                )}
-              </div>
-            ))}
-            <div className="flex items-center gap-2 pt-1 border-t">
+          <div className="space-y-4 py-2">
+            <div className="flex gap-2">
               <Input
                 value={newGroupName}
-                onChange={e => setNewGroupName(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
+                onChange={(e) => setNewGroupName(e.target.value)}
                 placeholder="New group name..."
-                className="h-7 text-sm flex-1"
+                className="h-8 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newGroupName.trim()) {
+                    createGroupMutation.mutate(newGroupName);
+                  }
+                }}
               />
-              <Button size="sm" className="h-7 text-xs px-2"
+              <Button
+                size="sm"
+                className="h-8"
                 onClick={() => newGroupName.trim() && createGroupMutation.mutate(newGroupName)}
-                disabled={createGroupMutation.isPending || !newGroupName.trim()}
+                disabled={!newGroupName.trim() || createGroupMutation.isPending}
               >
-                <Plus className="h-3 w-3 mr-1" />Add
+                <Plus className="h-4 w-4" />
               </Button>
+            </div>
+            <div className="space-y-1 max-h-64 overflow-y-auto">
+              {(groups as SelectionTemplateGroup[]).map(g => (
+                <div key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md border bg-card">
+                  {editingGroupId === g.id ? (
+                    <>
+                      <Input
+                        value={editingGroupName}
+                        onChange={(e) => setEditingGroupName(e.target.value)}
+                        className="h-7 text-xs flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") updateGroupMutation.mutate({ id: g.id, name: editingGroupName });
+                          if (e.key === "Escape") { setEditingGroupId(null); setEditingGroupName(""); }
+                        }}
+                      />
+                      <Button size="sm" className="h-6 text-xs px-2" onClick={() => updateGroupMutation.mutate({ id: g.id, name: editingGroupName })}>
+                        Save
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm flex-1">{g.name}</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditingGroupId(g.id); setEditingGroupName(g.name); }}>
+                        <Edit3 className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteGroupMutation.mutate(g.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {groups.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">No groups yet. Create one above.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsManagingGroups(false)}>Done</Button>
+            <Button onClick={() => setIsManagingGroups(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -220,6 +220,13 @@ export default function SelectionTemplateItemDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
+  // Redirect to the new flat template detail page
+  useEffect(() => {
+    if (params.templateId) {
+      navigate(`/selection-templates/${params.templateId}`, { replace: true });
+    }
+  }, [params.templateId]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [optionsView, setOptionsView] = useState<"grid" | "list">("grid");
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
