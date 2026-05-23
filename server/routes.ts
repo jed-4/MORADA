@@ -29650,6 +29650,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
             tax: taxCents,
             total: totalCents,
             paidAmount: amountPaidCents,
+            companyId,
             sendToXero: true,
             xeroInvoiceId,
             xeroPaidStatus: xeroStatus,

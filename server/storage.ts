@@ -14361,11 +14361,18 @@ export class DbStorage implements IStorage {
 
   async getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]> {
     try {
-      let query = db.select().from(schema.bills);
+      let query = db.select({ bill: schema.bills })
+        .from(schema.bills)
+        .leftJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id));
       const conditions = [];
 
       if (companyId) {
-        conditions.push(or(eq(schema.bills.companyId, companyId), isNull(schema.bills.companyId)));
+        conditions.push(
+          or(
+            eq(schema.bills.companyId, companyId),
+            and(isNull(schema.bills.companyId), eq(schema.projects.companyId, companyId))
+          )
+        );
       }
       if (projectId) {
         conditions.push(eq(schema.bills.projectId, projectId));
@@ -14378,7 +14385,8 @@ export class DbStorage implements IStorage {
         query = query.where(and(...conditions)) as any;
       }
       
-      return await query.orderBy(desc(schema.bills.createdAt));
+      const rows = await (query as any).orderBy(desc(schema.bills.createdAt));
+      return rows.map((r: any) => r.bill ?? r) as Bill[];
     } catch (error) {
       console.error("Database error in getBills:", error);
       throw error;
@@ -14560,6 +14568,15 @@ export class DbStorage implements IStorage {
 
   async deleteBill(id: string): Promise<void> {
     try {
+      const lineItems = await db.select({ id: schema.billLineItems.id })
+        .from(schema.billLineItems)
+        .where(eq(schema.billLineItems.billId, id));
+      for (const li of lineItems) {
+        await db.delete(schema.billLineItemAllowances)
+          .where(eq(schema.billLineItemAllowances.billLineItemId, li.id));
+      }
+      await db.delete(schema.billLineItems)
+        .where(eq(schema.billLineItems.billId, id));
       await db.delete(schema.bills)
         .where(eq(schema.bills.id, id));
     } catch (error) {
