@@ -3491,8 +3491,8 @@ export default function Schedule() {
                 {scheduleTemplates.map((template: any) => (
                   <Card
                     key={template.id}
-                    className="p-4 hover-elevate cursor-pointer"
-                    onClick={() => loadTemplateMutation.mutate(template.id)}
+                    className={`p-4 hover-elevate ${loadTemplateMutation.isPending ? "opacity-50 pointer-events-none cursor-not-allowed" : "cursor-pointer"}`}
+                    onClick={() => { if (!loadTemplateMutation.isPending) loadTemplateMutation.mutate(template.id); }}
                     data-testid={`template-card-${template.id}`}
                   >
                     <div className="flex items-start justify-between">

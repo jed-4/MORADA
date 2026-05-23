@@ -23040,8 +23040,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk delete schedule items
-  app.post("/api/schedule-items/bulk-delete", requireAuth, async (req, res) => {
+  app.post("/api/schedule-items/bulk-delete", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const user = req.user as any;
       const { itemIds, projectId: requestedProjectId } = req.body;
       
       if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
@@ -23052,67 +23053,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Valid projectId is required" });
       }
 
-      // Verify project exists and user has access
+      // Verify project exists and belongs to the user's company
       const project = await storage.getProject(requestedProjectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      
-      // Verify user belongs to the project's company
-      if (req.user && project.companyId) {
-        const membership = await storage.getTeamMemberByUserAndCompany(req.user.id, project.companyId);
-        if (!membership) {
-          return res.status(403).json({ error: "Access denied to this project" });
-        }
+      if (project.companyId !== user?.companyId) {
+        return res.status(403).json({ error: "Access denied to this project" });
       }
 
-      // Get items info before deletion and verify they belong to the project
-      const items: any[] = [];
-      const validItemIds: string[] = [];
-      
-      for (const id of itemIds) {
-        const item = await storage.getScheduleItem(id);
-        if (item) {
-          const schedule = await storage.getScheduleById(item.scheduleId);
-          if (schedule && schedule.projectId === requestedProjectId) {
-            items.push(item);
-            validItemIds.push(id);
-          }
-        }
-      }
+      // Single query: find all provided IDs that belong to a schedule under this project
+      // Joins schedule_items → schedules and filters by projectId + requested IDs
+      const validItems = await db
+        .select({ id: scheduleItems.id, name: scheduleItems.name, scheduleId: scheduleItems.scheduleId })
+        .from(scheduleItems)
+        .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+        .where(and(
+          inArray(scheduleItems.id, itemIds),
+          eq(schedules.projectId, requestedProjectId)
+        ));
 
-      if (validItemIds.length === 0) {
+      if (validItems.length === 0) {
+        console.error(`[bulk-delete] No valid items found. requested=${itemIds.length} itemIds, projectId=${requestedProjectId}, companyId=${user?.companyId}`);
         return res.status(404).json({ error: "No valid items found for this project" });
       }
 
-      // Delete only validated items
-      let deletedCount = 0;
-      for (const id of validItemIds) {
-        const success = await storage.deleteScheduleItem(id);
-        if (success) deletedCount++;
-      }
+      const validItemIds = validItems.map(i => i.id);
 
-      // Log activity for bulk deletion
+      // Bulk delete in one query
+      await db.delete(scheduleItems).where(inArray(scheduleItems.id, validItemIds));
+
+      // Log activity
       try {
-        if (requestedProjectId && req.user && items.length > 0) {
+        if (req.user && validItems.length > 0) {
           const userName = req.user.firstName && req.user.lastName 
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
-          
           await storage.createActivity({
             projectId: requestedProjectId,
             userId: req.user.id,
             userName,
             activityType: "schedule",
             action: "deleted",
-            description: `removed ${deletedCount} schedule items`,
+            description: `removed ${validItems.length} schedule items`,
             entityId: null,
             entityName: null,
             metadata: { 
-              changes: items.map(item => ({ name: item.name, change: "removed", itemId: item.id, scheduleId: item.scheduleId })),
-              scheduleIds: Array.from(new Set(items.map(item => item.scheduleId))),
+              changes: validItems.map(item => ({ name: item.name, change: "removed", itemId: item.id })),
               bulkDelete: true,
-              count: deletedCount
+              count: validItems.length
             }
           });
         }
@@ -23120,8 +23109,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Failed to log bulk delete activity:", activityError);
       }
 
-      res.json({ deleted: deletedCount, requested: itemIds.length });
+      res.json({ deleted: validItems.length, requested: itemIds.length });
     } catch (error: any) {
+      console.error("[bulk-delete] Error:", error);
       res.status(500).json({ 
         error: "Failed to bulk delete schedule items",
         details: error.message 

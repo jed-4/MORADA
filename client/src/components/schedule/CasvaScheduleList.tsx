@@ -562,7 +562,7 @@ export function CasvaScheduleList({
   })();
 
   return (
-    <div className="border rounded-lg bg-card overflow-hidden relative" style={{ maxHeight }} ref={tableContainerRef}>
+    <div className="border rounded-lg bg-card overflow-hidden relative" style={{ height: maxHeight }} ref={tableContainerRef}>
       <ScrollArea className="w-full h-full">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
