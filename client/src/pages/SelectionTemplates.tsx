@@ -28,6 +28,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -46,11 +60,11 @@ import {
   ChevronRight,
   MapPin,
   Calendar,
-  DollarSign,
+  Check,
   Layers,
   PlayCircle,
   FolderOpen,
-  Settings2,
+  ChevronsUpDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -124,6 +138,8 @@ export default function SelectionTemplates() {
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [applyProjectId, setApplyProjectId] = useState("");
   const [applyProjectSearch, setApplyProjectSearch] = useState("");
+  const [groupsComboboxOpen, setGroupsComboboxOpen] = useState(false);
+  const [groupsComboboxSearch, setGroupsComboboxSearch] = useState("");
 
   const { toast } = useToast();
   const { user } = useAuth();
@@ -144,18 +160,28 @@ export default function SelectionTemplates() {
   });
 
   const { data: categoryFieldCategory } = useQuery<any>({
-    queryKey: ["/api/field-categories/by-key/selection-category"],
+    queryKey: ["/api/field-categories/by-key/selection.category"],
   });
 
   const categoryOptions = useMemo(() => {
-    if (!categoryFieldCategory) return [
-      { id: "1", label: "Residential" },
-      { id: "2", label: "Commercial" },
-      { id: "3", label: "Renovation" },
-      { id: "4", label: "General" },
+    const fallback = [
+      { id: "1", label: "Residential", value: "Residential" },
+      { id: "2", label: "Commercial", value: "Commercial" },
+      { id: "3", label: "Renovation", value: "Renovation" },
+      { id: "4", label: "General", value: "General" },
     ];
-    const opts = (categoryFieldCategory.options || []) as { id: string; label: string }[];
-    return opts.sort((a, b) => a.label.localeCompare(b.label));
+    const raw: any[] = categoryFieldCategory?.options ?? [];
+    if (raw.length > 0) {
+      return raw
+        .map((opt: any) => ({
+          id: String(opt.id ?? opt.value ?? opt.label ?? ""),
+          label: String(opt.label ?? opt.value ?? ""),
+          value: String(opt.value ?? opt.label ?? ""),
+        }))
+        .filter(opt => opt.label)
+        .sort((a, b) => a.label.localeCompare(b.label));
+    }
+    return fallback;
   }, [categoryFieldCategory]);
 
   const createMutation = useMutation({
@@ -370,11 +396,11 @@ export default function SelectionTemplates() {
   const filteredTemplates = useMemo(() => {
     return templates
       .filter(t =>
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.category?.toLowerCase().includes(searchTerm.toLowerCase())
       )
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   }, [templates, searchTerm]);
 
   const groupedTemplates = useMemo(() => {
@@ -555,13 +581,6 @@ export default function SelectionTemplates() {
             </SelectContent>
           </Select>
           <button
-            className="h-6 px-1.5 text-xs border rounded-md text-muted-foreground hover-elevate flex items-center gap-0.5"
-            onClick={() => setIsManagingGroups(true)}
-            title="Manage groups"
-          >
-            <Settings2 className="w-3 h-3" />
-          </button>
-          <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:opacity-90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleOpenAdd}
           >
@@ -678,7 +697,7 @@ export default function SelectionTemplates() {
                   </SelectTrigger>
                   <SelectContent>
                     {categoryOptions.map(opt => (
-                      <SelectItem key={opt.id} value={opt.label}>{opt.label}</SelectItem>
+                      <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -765,57 +784,125 @@ export default function SelectionTemplates() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Groups</Label>
-              <div className="border rounded-md max-h-32 overflow-y-auto p-2 space-y-0.5">
-                {groups.length === 0 ? (
-                  <p className="text-xs text-muted-foreground px-1 py-2 text-center">No groups yet. Create one below.</p>
-                ) : (
-                  groups.map((g) => (
-                    <label
-                      key={g.id}
-                      className="flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer hover-elevate"
-                    >
-                      <Checkbox
-                        checked={formData.groupIds.includes(g.id)}
-                        onCheckedChange={(checked) => {
-                          setFormData(prev => ({
-                            ...prev,
-                            groupIds: checked
-                              ? [...prev.groupIds, g.id]
-                              : prev.groupIds.filter(id => id !== g.id),
-                          }));
-                        }}
-                        className="h-3.5 w-3.5"
-                      />
-                      <span className="text-sm">{g.name}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="New group name..."
-                  value={newGroupNameInline}
-                  onChange={(e) => setNewGroupNameInline(e.target.value)}
-                  className="h-8 text-xs flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newGroupNameInline.trim()) {
-                      e.preventDefault();
-                      addGroupInline(newGroupNameInline);
-                    }
-                  }}
-                />
-                <Button
+              <div className="flex items-center justify-between">
+                <Label>Groups</Label>
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={!newGroupNameInline.trim() || createGroupMutation.isPending}
-                  onClick={() => addGroupInline(newGroupNameInline)}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setIsManagingGroups(true)}
                 >
-                  {createGroupMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
-                </Button>
+                  Manage groups
+                </button>
               </div>
+              <Popover open={groupsComboboxOpen} onOpenChange={setGroupsComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between font-normal"
+                  >
+                    <span className="truncate text-sm">
+                      {formData.groupIds.length === 0
+                        ? "Select groups..."
+                        : formData.groupIds.length === 1
+                          ? (groups as SelectionTemplateGroup[]).find(g => g.id === formData.groupIds[0])?.name ?? "1 group"
+                          : `${formData.groupIds.length} groups`}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput
+                      placeholder="Search or create group..."
+                      value={groupsComboboxSearch}
+                      onValueChange={setGroupsComboboxSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {groupsComboboxSearch.trim() ? (
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left hover:bg-accent"
+                            onClick={() => {
+                              if (groupsComboboxSearch.trim()) {
+                                addGroupInline(groupsComboboxSearch.trim());
+                                setGroupsComboboxSearch("");
+                              }
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Create &ldquo;{groupsComboboxSearch.trim()}&rdquo;
+                          </button>
+                        ) : (
+                          <span className="px-3 py-2 text-sm text-muted-foreground block">No groups yet.</span>
+                        )}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {(groups as SelectionTemplateGroup[]).map(g => (
+                          <CommandItem
+                            key={g.id}
+                            value={g.name}
+                            onSelect={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                groupIds: prev.groupIds.includes(g.id)
+                                  ? prev.groupIds.filter(id => id !== g.id)
+                                  : [...prev.groupIds, g.id],
+                              }));
+                            }}
+                          >
+                            <Check
+                              className={cn("mr-2 h-4 w-4", formData.groupIds.includes(g.id) ? "opacity-100" : "opacity-0")}
+                            />
+                            {g.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                      {groupsComboboxSearch.trim() && (groups as SelectionTemplateGroup[]).some(g =>
+                        g.name.toLowerCase().includes(groupsComboboxSearch.toLowerCase())
+                      ) && (
+                        <>
+                          <CommandSeparator />
+                          <CommandGroup>
+                            <CommandItem
+                              value={`__create__${groupsComboboxSearch}`}
+                              onSelect={() => {
+                                addGroupInline(groupsComboboxSearch.trim());
+                                setGroupsComboboxSearch("");
+                              }}
+                            >
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create &ldquo;{groupsComboboxSearch.trim()}&rdquo;
+                            </CommandItem>
+                          </CommandGroup>
+                        </>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {formData.groupIds.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {formData.groupIds.map(gId => {
+                    const g = (groups as SelectionTemplateGroup[]).find(x => x.id === gId);
+                    if (!g) return null;
+                    return (
+                      <Badge key={gId} variant="secondary" className="gap-1 pr-1">
+                        {g.name}
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, groupIds: prev.groupIds.filter(id => id !== gId) }))}
+                          className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                        >
+                          <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter className="flex-shrink-0">

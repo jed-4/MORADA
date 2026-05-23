@@ -1063,6 +1063,8 @@ export interface IStorage {
   updateSelectionTemplateGroup(id: string, group: Partial<InsertSelectionTemplateGroup>, companyId: string): Promise<SelectionTemplateGroup | undefined>;
   deleteSelectionTemplateGroup(id: string, companyId: string): Promise<boolean>;
   replaceTemplateGroups(templateId: string, groupIds: string[]): Promise<void>;
+  addTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
+  removeTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -18392,10 +18394,47 @@ export class DbStorage implements IStorage {
         .where(eq(schema.selectionTemplateGroupMemberships.templateId, templateId));
       if (groupIds.length > 0) {
         await db.insert(schema.selectionTemplateGroupMemberships)
-          .values(groupIds.map(groupId => ({ templateId, groupId })));
+          .values(groupIds.map(groupId => ({ templateId, groupId })))
+          .onConflictDoNothing();
       }
     } catch (error) {
       console.error("Database error in replaceTemplateGroups:", error);
+      throw error;
+    }
+  }
+
+  async addTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void> {
+    try {
+      const [template] = await db.select({ id: schema.selectionTemplates.id })
+        .from(schema.selectionTemplates)
+        .where(and(eq(schema.selectionTemplates.id, templateId), eq(schema.selectionTemplates.companyId, companyId)));
+      if (!template) throw new Error("Template not found or access denied");
+      const [group] = await db.select({ id: schema.selectionTemplateGroups.id })
+        .from(schema.selectionTemplateGroups)
+        .where(and(eq(schema.selectionTemplateGroups.id, groupId), eq(schema.selectionTemplateGroups.companyId, companyId)));
+      if (!group) throw new Error("Group not found or access denied");
+      await db.insert(schema.selectionTemplateGroupMemberships)
+        .values({ templateId, groupId })
+        .onConflictDoNothing();
+    } catch (error) {
+      console.error("Database error in addTemplateGroupMembership:", error);
+      throw error;
+    }
+  }
+
+  async removeTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void> {
+    try {
+      const [template] = await db.select({ id: schema.selectionTemplates.id })
+        .from(schema.selectionTemplates)
+        .where(and(eq(schema.selectionTemplates.id, templateId), eq(schema.selectionTemplates.companyId, companyId)));
+      if (!template) throw new Error("Template not found or access denied");
+      await db.delete(schema.selectionTemplateGroupMemberships)
+        .where(and(
+          eq(schema.selectionTemplateGroupMemberships.templateId, templateId),
+          eq(schema.selectionTemplateGroupMemberships.groupId, groupId)
+        ));
+    } catch (error) {
+      console.error("Database error in removeTemplateGroupMembership:", error);
       throw error;
     }
   }

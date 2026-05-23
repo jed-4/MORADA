@@ -24237,6 +24237,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Selection Template Group Memberships (add/remove individual) ────────────
+
+  app.post("/api/selection-template-group-memberships", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { templateId, groupId } = req.body;
+      if (!templateId || !groupId) return res.status(400).json({ error: "templateId and groupId are required" });
+      await storage.addTemplateGroupMembership(templateId, groupId, user.companyId);
+      res.status(201).json({ templateId, groupId });
+    } catch (error: any) {
+      if (error.message?.includes("not found or access denied")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to add group membership", details: error.message });
+    }
+  });
+
+  app.delete("/api/selection-template-group-memberships/:templateId/:groupId", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
+      const { templateId, groupId } = req.params;
+      await storage.removeTemplateGroupMembership(templateId, groupId, user.companyId);
+      res.status(204).send();
+    } catch (error: any) {
+      if (error.message?.includes("not found or access denied")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to remove group membership", details: error.message });
+    }
+  });
+
   app.get("/api/selection-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
@@ -24294,7 +24327,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       const template = await storage.createSelectionTemplate(templateData as any);
       if (groupIds && groupIds.length > 0) {
-        await storage.replaceTemplateGroups(template.id, groupIds);
+        // Security: only allow groupIds that belong to this company
+        const validGroups = await storage.getSelectionTemplateGroups(user.companyId);
+        const validGroupIds = new Set(validGroups.map((g: any) => g.id));
+        const safeGroupIds = groupIds.filter((id: string) => validGroupIds.has(id));
+        if (safeGroupIds.length > 0) {
+          await storage.replaceTemplateGroups(template.id, safeGroupIds);
+        }
       }
       const enriched = await storage.getSelectionTemplate(template.id, user.companyId);
       res.status(201).json(enriched ?? template);
@@ -24329,7 +24368,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupIds, ...updateData } = validationResult.data;
       await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
       if (groupIds !== undefined) {
-        await storage.replaceTemplateGroups(req.params.id, groupIds);
+        // Security: only allow groupIds that belong to this company
+        const validGroups = await storage.getSelectionTemplateGroups(user.companyId);
+        const validGroupIds = new Set(validGroups.map((g: any) => g.id));
+        const safeGroupIds = groupIds.filter((id: string) => validGroupIds.has(id));
+        await storage.replaceTemplateGroups(req.params.id, safeGroupIds);
       }
       const enriched = await storage.getSelectionTemplate(req.params.id, user.companyId);
       res.json(enriched);
