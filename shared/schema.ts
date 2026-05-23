@@ -3676,7 +3676,7 @@ export const selectionTemplates = pgTable("selection_templates", {
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   isArchived: boolean("is_archived").notNull().default(false),
-  groupId: varchar("group_id").references(() => selectionTemplateGroups.id, { onDelete: "set null" }),
+  // groupId: deprecated — replaced by many-to-many junction table selection_template_group_memberships. Column kept in DB for backward compatibility but not used in application logic.
   room: text("room"),
   allowanceType: text("allowance_type"),
   budgetAmount: integer("budget_amount"),

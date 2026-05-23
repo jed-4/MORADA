@@ -24333,7 +24333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const validGroupIds = new Set(validGroups.map((g: any) => g.id));
         const safeGroupIds = groupIds.filter((id: string) => validGroupIds.has(id));
         if (safeGroupIds.length > 0) {
-          await storage.replaceTemplateGroups(template.id, safeGroupIds);
+          await storage.replaceTemplateGroups(template.id, safeGroupIds, user.companyId);
         }
       }
       const enriched = await storage.getSelectionTemplate(template.id, user.companyId);
@@ -24367,13 +24367,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       const { groupIds, ...updateData } = validationResult.data;
-      await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
+      const updated = await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
+      if (!updated) {
+        return res.status(404).json({ error: "Selection template not found or access denied" });
+      }
       if (groupIds !== undefined) {
         // Security: only allow groupIds that belong to this company
         const validGroups = await storage.getSelectionTemplateGroups(user.companyId);
         const validGroupIds = new Set(validGroups.map((g: any) => g.id));
         const safeGroupIds = groupIds.filter((id: string) => validGroupIds.has(id));
-        await storage.replaceTemplateGroups(req.params.id, safeGroupIds);
+        await storage.replaceTemplateGroups(req.params.id, safeGroupIds, user.companyId);
       }
       const enriched = await storage.getSelectionTemplate(req.params.id, user.companyId);
       res.json(enriched);

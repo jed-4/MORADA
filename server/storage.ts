@@ -1062,7 +1062,7 @@ export interface IStorage {
   createSelectionTemplateGroup(group: InsertSelectionTemplateGroup & { companyId: string }): Promise<SelectionTemplateGroup>;
   updateSelectionTemplateGroup(id: string, group: Partial<InsertSelectionTemplateGroup>, companyId: string): Promise<SelectionTemplateGroup | undefined>;
   deleteSelectionTemplateGroup(id: string, companyId: string): Promise<boolean>;
-  replaceTemplateGroups(templateId: string, groupIds: string[]): Promise<void>;
+  replaceTemplateGroups(templateId: string, groupIds: string[], companyId: string): Promise<void>;
   addTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
   removeTemplateGroupMembership(templateId: string, groupId: string, companyId: string): Promise<void>;
 
@@ -18388,8 +18388,13 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async replaceTemplateGroups(templateId: string, groupIds: string[]): Promise<void> {
+  async replaceTemplateGroups(templateId: string, groupIds: string[], companyId: string): Promise<void> {
     try {
+      // Verify template belongs to company before mutating memberships
+      const [template] = await db.select({ id: schema.selectionTemplates.id })
+        .from(schema.selectionTemplates)
+        .where(and(eq(schema.selectionTemplates.id, templateId), eq(schema.selectionTemplates.companyId, companyId)));
+      if (!template) throw new Error("Template not found or access denied");
       await db.delete(schema.selectionTemplateGroupMemberships)
         .where(eq(schema.selectionTemplateGroupMemberships.templateId, templateId));
       if (groupIds.length > 0) {
