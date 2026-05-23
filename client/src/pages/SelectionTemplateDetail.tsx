@@ -215,7 +215,6 @@ export default function SelectionTemplateDetail() {
     groupIds: [] as string[],
   });
   const [hasMetaChanges, setHasMetaChanges] = useState(false);
-  const hasMigratedRef = useRef(false);
 
   const { data: categoryFieldCategory } = useQuery<FieldCategory>({
     queryKey: ["/api/field-categories/by-key/selection.category"],
@@ -270,37 +269,8 @@ export default function SelectionTemplateDetail() {
     }
   }, [template?.id]);
 
-  // Auto-migrate old format (SelectionItem[]) to new flat format (SelectionOption[])
-  useEffect(() => {
-    if (!template || hasMigratedRef.current) return;
-    const data = (template.templateData as any[]) || [];
-    if (data.length === 0 || !('itemName' in data[0])) return;
-
-    hasMigratedRef.current = true;
-    const firstItem = data[0];
-    const allOptions = data.flatMap((item: any, itemIdx: number) =>
-      (item.options || []).map((opt: any, optIdx: number) => ({
-        ...opt,
-        id: opt.id || crypto.randomUUID(),
-        sortOrder: opt.sortOrder ?? (itemIdx * 1000 + optIdx),
-      }))
-    );
-
-    apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", {
-      room: firstItem.room || undefined,
-      allowanceType: firstItem.allowanceType || undefined,
-      budgetAmount: firstItem.budgetAmount || undefined,
-      clientCanSeePrice: firstItem.clientCanSeePrice ?? true,
-      clientCanChange: firstItem.clientCanChange ?? true,
-      deadline: firstItem.deadline || undefined,
-      templateData: allOptions,
-    }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
-      toast({ title: "Template updated", description: "This template has been converted to the new format." });
-    }).catch(() => {
-      hasMigratedRef.current = false;
-    });
-  }, [template, params.templateId]);
+  // NOTE: Legacy templates (old SelectionItem[] format) are rendered read-compatibly below.
+  // No automatic silent migration is performed — templateData is only rewritten on explicit user save.
 
   const options: SelectionOption[] = useMemo(() => {
     const data = (template?.templateData as any[]) || [];

@@ -24255,11 +24255,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/selection-template-group-memberships/:templateId/:groupId", requireAuth, requireTeamMember, async (req, res) => {
+  app.delete("/api/selection-template-group-memberships", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.companyId) return res.status(401).json({ error: "Unauthorized" });
-      const { templateId, groupId } = req.params;
+      const { templateId, groupId } = req.body;
+      if (!templateId || !groupId) return res.status(400).json({ error: "templateId and groupId are required" });
       await storage.removeTemplateGroupMembership(templateId, groupId, user.companyId);
       res.status(204).send();
     } catch (error: any) {

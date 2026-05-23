@@ -3713,7 +3713,9 @@ export const selectionTemplateGroupMemberships = pgTable("selection_template_gro
   templateId: varchar("template_id").notNull().references(() => selectionTemplates.id, { onDelete: "cascade" }),
   groupId: varchar("group_id").notNull().references(() => selectionTemplateGroups.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  templateGroupUnique: uniqueIndex("selection_template_group_memberships_template_group_unique").on(table.templateId, table.groupId),
+}));
 
 export const insertSelectionTemplateGroupMembershipSchema = createInsertSchema(selectionTemplateGroupMemberships).omit({
   id: true,
