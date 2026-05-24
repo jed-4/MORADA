@@ -200,7 +200,11 @@ export class AutoBillCreatorService {
     // ── Resolve project ──────────────────────────────────────────────────────
     let projectId = options.defaultProjectId;
     let projectMatchConfident = !!options.defaultProjectId;
-    const projects = await storage.getProjects();
+    // Filter projects by companyId to avoid cross-tenant matches
+    const allProjects = await storage.getProjects();
+    const projects = companyId
+      ? allProjects.filter((p: any) => p.companyId === companyId)
+      : allProjects;
 
     if (!projectId) {
       const projectHint = emailParser.extractProjectHint(email);

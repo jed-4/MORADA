@@ -14369,8 +14369,11 @@ export class DbStorage implements IStorage {
       if (companyId) {
         conditions.push(
           or(
+            // Bill is directly owned by this company
             eq(schema.bills.companyId, companyId),
-            and(isNull(schema.bills.companyId), eq(schema.projects.companyId, companyId))
+            // Bill is linked to a project that belongs to this company (covers bills with
+            // null or mismatched companyId that were still assigned to a company project)
+            eq(schema.projects.companyId, companyId)
           )
         );
       }
