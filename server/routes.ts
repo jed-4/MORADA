@@ -11707,6 +11707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.user!.companyId!;
       const option = await storage.getSelectionOption(req.params.id);
       if (!option) return res.status(404).json({ error: "Option not found" });
+      if (!option.name?.trim()) return res.status(400).json({ error: "Option must have a name before saving to the library" });
       const product = await storage.createProduct({
         companyId,
         name: option.name,
