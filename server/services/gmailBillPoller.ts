@@ -145,20 +145,13 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         attachments,
       };
 
-      // Resolve companyId: prefer the company of the configured default user (most
-      // reliable in multi-tenant deployments), then fall back to first company in DB.
-      let companyId: string | undefined;
-      if (settings.billInboxDefaultUserId) {
-        const defaultUser = await storage.getUser(settings.billInboxDefaultUserId);
-        companyId = defaultUser?.companyId ?? undefined;
-      }
-      if (!companyId) {
-        companyId = await storage.getFirstCompanyId();
-      }
+      // Resolve companyId: bills belong to the company, not to any individual user.
+      // getFirstCompanyId() returns the company with the most real (non-system) users,
+      // so it reliably picks the correct tenant regardless of insertion order.
+      const companyId = await storage.getFirstCompanyId();
 
-      const defaultUserId = settings.billInboxDefaultUserId ?? null;
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
-        defaultUserId,
+        defaultUserId: null,
         autoMatch: true,
         gmailMessageId: messageId,
         companyId,

@@ -718,6 +718,7 @@ export interface IStorage {
   updateRFIComment(id: string, comment: Partial<InsertRfiComment>): Promise<RfiComment | undefined>;
   deleteRFIComment(id: string): Promise<boolean>;
 
+  syncCompanyName(): Promise<{ synced: boolean; name?: string }>;
   // Bills CRUD
   getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]>;
   backfillBillsCompanyId(): Promise<{ updated: number }>;
@@ -12921,6 +12922,25 @@ export class DbStorage implements IStorage {
     return company?.id;
   }
   
+  async syncCompanyName(): Promise<{ synced: boolean; name?: string }> {
+    try {
+      const settings = await this.getCompanySettings();
+      if (!settings?.companyName) return { synced: false };
+      const primaryId = await this.getFirstCompanyId();
+      if (!primaryId) return { synced: false };
+      await db.update(schema.companies)
+        .set({ name: settings.companyName })
+        .where(and(
+          eq(schema.companies.id, primaryId),
+          ne(schema.companies.name, settings.companyName),
+        ));
+      return { synced: true, name: settings.companyName };
+    } catch (err) {
+      console.error("syncCompanyName failed (non-fatal):", err);
+      return { synced: false };
+    }
+  }
+
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
     // Get existing settings
     const existing = await this.getCompanySettings();

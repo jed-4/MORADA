@@ -204,6 +204,15 @@ app.use((req, res, next) => {
     // run on every startup.
     healContactNames();
 
+    // Keep companies.name in sync with company_settings.company_name so there
+    // is a single source of truth for the company display name.
+    try {
+      const sync = await storage.syncCompanyName();
+      if (sync.synced) log(`Company name synced to "${sync.name}"`);
+    } catch (err) {
+      console.error("syncCompanyName failed (non-fatal):", err);
+    }
+
     // Backfill companyId on any bills that pre-date the company-scoping migration
     try {
       const backfillResult = await storage.backfillBillsCompanyId();
