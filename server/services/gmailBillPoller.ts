@@ -145,10 +145,16 @@ export async function pollBillInbox(): Promise<{ processed: number; errors: stri
         attachments,
       };
 
-      // Resolve companyId: bills belong to the company, not to any individual user.
-      // getFirstCompanyId() returns the company with the most real (non-system) users,
-      // so it reliably picks the correct tenant regardless of insertion order.
-      const companyId = await storage.getFirstCompanyId();
+      // The companyId is stored directly on the company_settings record — the same
+      // record that holds the Gmail credentials. Bills are scoped exclusively to that
+      // company; there is no fallback or guessing. If companyId is somehow missing
+      // (pre-migration data) we skip rather than risk cross-company contamination.
+      const companyId = settings.companyId ?? undefined;
+      if (!companyId) {
+        console.error('[BillInbox] company_settings.company_id is not set — cannot import bill safely. Run the startup backfill or set it manually.');
+        errors.push('company_id not configured on company settings');
+        continue;
+      }
 
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
         defaultUserId: null,

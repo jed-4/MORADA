@@ -995,6 +995,9 @@ export type EstimateNote = typeof estimateNotes.$inferSelect;
 // Company Settings
 export const companySettings = pgTable("company_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Explicit FK to the company that owns this settings record.
+  // Bills imported via the bill inbox are scoped exclusively to this company.
+  companyId: varchar("company_id").references(() => companies.id),
   companyName: text("company_name"),
   nickname: text("nickname"), // Short display name for header/UI
   email: text("email"),

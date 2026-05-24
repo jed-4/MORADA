@@ -719,6 +719,7 @@ export interface IStorage {
   deleteRFIComment(id: string): Promise<boolean>;
 
   syncCompanyName(): Promise<{ synced: boolean; name?: string }>;
+  backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }>;
   // Bills CRUD
   getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]>;
   backfillBillsCompanyId(): Promise<{ updated: number }>;
@@ -12922,6 +12923,24 @@ export class DbStorage implements IStorage {
     return company?.id;
   }
   
+  async backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }> {
+    try {
+      const [settings] = await db.select({ id: schema.companySettings.id, companyId: schema.companySettings.companyId })
+        .from(schema.companySettings).limit(1);
+      if (!settings) return { updated: false };
+      if (settings.companyId) return { updated: false }; // already set
+      const primaryId = await this.getFirstCompanyId();
+      if (!primaryId) return { updated: false };
+      await db.update(schema.companySettings)
+        .set({ companyId: primaryId })
+        .where(eq(schema.companySettings.id, settings.id));
+      return { updated: true };
+    } catch (err) {
+      console.error("backfillCompanySettingsCompanyId failed (non-fatal):", err);
+      return { updated: false };
+    }
+  }
+
   async syncCompanyName(): Promise<{ synced: boolean; name?: string }> {
     try {
       const settings = await this.getCompanySettings();

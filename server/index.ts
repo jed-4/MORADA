@@ -204,6 +204,16 @@ app.use((req, res, next) => {
     // run on every startup.
     healContactNames();
 
+    // Ensure company_settings.company_id is set — this is the authoritative link
+    // that scopes the bill inbox exclusively to one company. getFirstCompanyId()
+    // is only used here (one-time backfill). The poller never guesses.
+    try {
+      const csBackfill = await storage.backfillCompanySettingsCompanyId();
+      if (csBackfill.updated) log('company_settings.company_id backfilled from primary company');
+    } catch (err) {
+      console.error("backfillCompanySettingsCompanyId failed (non-fatal):", err);
+    }
+
     // Keep companies.name in sync with company_settings.company_name so there
     // is a single source of truth for the company display name.
     try {
