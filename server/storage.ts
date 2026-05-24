@@ -12902,6 +12902,21 @@ export class DbStorage implements IStorage {
   }
 
   async getFirstCompanyId(): Promise<string | undefined> {
+    // Prefer the company with the most real (non-system) users so we don't
+    // accidentally stamp data onto an orphaned or demo company.
+    const result = await db.execute(sql`
+      SELECT company_id
+      FROM users
+      WHERE company_id IS NOT NULL
+        AND email NOT LIKE '%@system.local'
+        AND email NOT LIKE '%orphaned%'
+      GROUP BY company_id
+      ORDER BY COUNT(*) DESC
+      LIMIT 1
+    `);
+    const rows = (result as any).rows ?? [];
+    if (rows.length > 0) return rows[0].company_id as string;
+    // Hard fallback: first company row
     const [company] = await db.select({ id: schema.companies.id }).from(schema.companies).limit(1);
     return company?.id;
   }
@@ -14488,13 +14503,69 @@ export class DbStorage implements IStorage {
 
   async backfillBillsCompanyId(): Promise<{ updated: number }> {
     try {
-      const companies = await db.select({ id: schema.companies.id }).from(schema.companies).limit(1);
-      if (companies.length === 0) return { updated: 0 };
-      const firstCompanyId = companies[0].id;
-      const result = await db.update(schema.bills)
-        .set({ companyId: firstCompanyId })
-        .where(isNull(schema.bills.companyId));
-      return { updated: (result as any).rowCount ?? 0 };
+      // Step 1: fill NULL companyId bills using the project's companyId where available
+      const step1 = await db.execute(sql`
+        UPDATE bills
+        SET company_id = p.company_id
+        FROM projects p
+        WHERE bills.project_id = p.id
+          AND bills.company_id IS NULL
+          AND p.company_id IS NOT NULL
+      `);
+      const step1Count = (step1 as any).rowCount ?? 0;
+
+      // Step 2: for any remaining NULL-company bills (no project), use the primary company
+      const primaryId = await this.getFirstCompanyId();
+      let step2Count = 0;
+      if (primaryId) {
+        const step2 = await db.update(schema.bills)
+          .set({ companyId: primaryId })
+          .where(isNull(schema.bills.companyId));
+        step2Count = (step2 as any).rowCount ?? 0;
+      }
+
+      // Step 3: fix bills whose company has no real users but whose project's company does.
+      // This corrects bills created by the poller when getFirstCompanyId() returned an
+      // orphaned/demo company instead of the real user-populated company.
+      const step3 = await db.execute(sql`
+        UPDATE bills
+        SET company_id = p.company_id
+        FROM projects p
+        WHERE bills.project_id = p.id
+          AND bills.company_id IS DISTINCT FROM p.company_id
+          AND p.company_id IN (
+            SELECT DISTINCT company_id FROM users
+            WHERE company_id IS NOT NULL
+              AND email NOT LIKE '%@system.local'
+              AND email NOT LIKE '%orphaned%'
+          )
+          AND bills.company_id NOT IN (
+            SELECT DISTINCT company_id FROM users
+            WHERE company_id IS NOT NULL
+              AND email NOT LIKE '%@system.local'
+              AND email NOT LIKE '%orphaned%'
+          )
+      `);
+      const step3Count = (step3 as any).rowCount ?? 0;
+
+      // Step 4: for bills still in an orphaned company but with no usable project company,
+      // move them to the primary (most-user-populated) company as a last resort.
+      let step4Count = 0;
+      if (primaryId) {
+        const step4 = await db.execute(sql`
+          UPDATE bills
+          SET company_id = ${primaryId}
+          WHERE company_id NOT IN (
+            SELECT DISTINCT company_id FROM users
+            WHERE company_id IS NOT NULL
+              AND email NOT LIKE '%@system.local'
+              AND email NOT LIKE '%orphaned%'
+          )
+        `);
+        step4Count = (step4 as any).rowCount ?? 0;
+      }
+
+      return { updated: step1Count + step2Count + step3Count + step4Count };
     } catch (error) {
       console.error("Database error in backfillBillsCompanyId:", error);
       return { updated: 0 };
