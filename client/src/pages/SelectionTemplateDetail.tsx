@@ -411,7 +411,7 @@ export default function SelectionTemplateDetail() {
       sku: product.sku || "",
       brand: product.brand || "",
       category: product.category || "",
-      unitCost: product.unitCost ? product.unitCost / 100 : undefined,
+      unitCost: product.defaultUnitCost ? product.defaultUnitCost / 100 : undefined,
       quantity: 1,
       unitType: product.unitType || "ea",
       url: product.url || "",
@@ -1510,8 +1510,8 @@ export default function SelectionTemplateDetail() {
                         {[product.brand, product.sku ? `SKU: ${product.sku}` : null].filter(Boolean).join(" · ")}
                       </div>
                     )}
-                    {product.unitCost && (
-                      <div className="text-xs text-muted-foreground">${(product.unitCost / 100).toFixed(2)}</div>
+                    {product.defaultUnitCost && (
+                      <div className="text-xs text-muted-foreground">${(product.defaultUnitCost / 100).toFixed(2)}</div>
                     )}
                   </div>
                 </button>
