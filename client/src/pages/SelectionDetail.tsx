@@ -448,20 +448,22 @@ export default function SelectionDetail() {
 
   const saveToLibraryMutation = useMutation({
     mutationFn: async (option: SelectionOption) => {
+      const productName = option.name?.trim() || selection?.name?.trim() || "Unnamed Product";
       return await apiRequest("/api/products", "POST", {
-        name: option.name,
+        name: productName,
         brand: option.brand ?? null,
         sku: option.sku ?? null,
         description: option.description ?? null,
-        defaultUnitCost: option.unitCost ?? 0,
+        defaultUnitCost: option.unitCost ?? null,
         unitType: option.unitType ?? "ea",
         url: (option as any).productUrl ?? null,
         isActive: true,
       });
     },
-    onSuccess: (_, option) => {
+    onSuccess: (product: any, option) => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      toast({ title: "Saved to Product Library", description: `"${option.name}" is now in your library.` });
+      const displayName = option.name?.trim() || selection?.name?.trim() || "Product";
+      toast({ title: "Saved to Product Library", description: `"${displayName}" is now in your library.` });
     },
     onError: (err: any) => {
       toast({ title: "Failed to save", description: err?.message ?? "Could not save to Product Library.", variant: "destructive" });
