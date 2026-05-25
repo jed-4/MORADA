@@ -898,8 +898,8 @@ export function TimesheetDialog({
 
                 <div className="border-t border-border" />
 
-                {/* Cost Code | Rate */}
-                <div className="grid grid-cols-[2fr_1fr] gap-3">
+                {/* Cost Code | Rate (rate only visible to admins) */}
+                <div className={currentUser?.isAdminLike ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <FormField
                     control={form.control}
                     name="costCodeId"
@@ -920,29 +920,31 @@ export function TimesheetDialog({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="hourlyRate"
-                    render={({ field }) => (
-                      <FormItem className="space-y-0">
-                        <Label className={labelClass}>Rate ($)</Label>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            {...field}
-                            className={inputClass}
-                            data-testid="input-hourly-rate"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {currentUser?.isAdminLike && (
+                    <FormField
+                      control={form.control}
+                      name="hourlyRate"
+                      render={({ field }) => (
+                        <FormItem className="space-y-0">
+                          <Label className={labelClass}>Rate ($)</Label>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              {...field}
+                              className={inputClass}
+                              data-testid="input-hourly-rate"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
 
-                {/* Duration & Total cost — 2-column */}
-                <div className="grid grid-cols-[2fr_1fr] gap-3">
+                {/* Duration & Total cost — Total only visible to admins */}
+                <div className={currentUser?.isAdminLike ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <div>
                     <Label className={labelClass}>Duration</Label>
                     <div
@@ -956,18 +958,20 @@ export function TimesheetDialog({
                       <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total hours</div>
                     </div>
                   </div>
-                  <div>
-                    <Label className={labelClass}>Total cost</Label>
-                    <div
-                      className="rounded-md border border-border bg-muted/30 px-4 py-2"
-                      data-testid="display-total"
-                    >
-                      <div style={{ fontSize: '20px', fontWeight: 600, lineHeight: 1.2 }} className="text-muted-foreground">
-                        ${displayTotal}
+                  {currentUser?.isAdminLike && (
+                    <div>
+                      <Label className={labelClass}>Total cost</Label>
+                      <div
+                        className="rounded-md border border-border bg-muted/30 px-4 py-2"
+                        data-testid="display-total"
+                      >
+                        <div style={{ fontSize: '20px', fontWeight: 600, lineHeight: 1.2 }} className="text-muted-foreground">
+                          ${displayTotal}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total cost</div>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total cost</div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Cost Code Split — available for new and existing timesheets */}
@@ -997,7 +1001,7 @@ export function TimesheetDialog({
                           {costCodeSplits.map((split) => (
                             <div
                               key={split.id}
-                              className="grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end"
+                              className={currentUser?.isAdminLike ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
                             >
                               <div className="space-y-1">
                                 <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
@@ -1020,17 +1024,19 @@ export function TimesheetDialog({
                                   data-testid={`input-split-duration-${split.id}`}
                                 />
                               </div>
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-muted-foreground">Rate</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={split.hourlyRate}
-                                  onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
-                                  className={inputClass}
-                                  data-testid={`input-split-rate-${split.id}`}
-                                />
-                              </div>
+                              {currentUser?.isAdminLike && (
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] text-muted-foreground">Rate</Label>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={split.hourlyRate}
+                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", e.target.value)}
+                                    className={inputClass}
+                                    data-testid={`input-split-rate-${split.id}`}
+                                  />
+                                </div>
+                              )}
                               <Button
                                 type="button"
                                 variant="ghost"

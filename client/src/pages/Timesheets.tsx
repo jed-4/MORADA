@@ -999,7 +999,8 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         },
       },
     ];
-    return cols;
+    // Hide cost columns from non-approvers
+    return canApproveTimesheets ? cols : cols.filter(c => c.id !== "rate" && c.id !== "total");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, user?.id, user?.roleName, duplicateMutation.isPending]);
 
@@ -1406,7 +1407,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 <TooltipContent side="bottom">Columns</TooltipContent>
               </Tooltip>
               <PopoverContent className="w-56 p-0" align="end">
-                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={PICKER_COLUMNS} />
+                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={canApproveTimesheets ? PICKER_COLUMNS : PICKER_COLUMNS.filter(c => c.id !== "rate" && c.id !== "total")} />
               </PopoverContent>
             </Popover>
           )}

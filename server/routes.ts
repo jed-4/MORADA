@@ -21228,8 +21228,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
       if (body.duration === "" || body.duration === null) body.duration = "0";
-      // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
-      if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       // If userId not supplied (mobile app omits it), resolve from the authenticated session
       if (!body.userId) {
         body.userId = (req.session as any)?.userId
@@ -21237,6 +21235,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           || (req as any).user?.id
           || null;
       }
+      // Determine if requester is admin-like
+      const reqUser = (req as any).user;
+      const reqDbUser = reqUser?.dbUser || reqUser;
+      const reqRoleName = (reqDbUser?.roleName || "").toLowerCase();
+      const requesterIsAdmin = reqRoleName.includes("admin") || reqRoleName.includes("owner") || reqRoleName.includes("general manager");
+      // Always auto-apply the target user's profile hourly rate for non-admins;
+      // admins may supply their own rate override.
+      if (!requesterIsAdmin && body.userId) {
+        const targetUser = await storage.getUser(body.userId);
+        const profileRate = targetUser?.hourlyRate ? parseFloat(targetUser.hourlyRate.toString()) : 0;
+        body.hourlyRate = profileRate.toString();
+        const dur = parseFloat(body.duration || "0");
+        body.total = (dur * profileRate).toFixed(2);
+      }
+      // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
+      if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       const timesheet = await storage.createTimesheet(body);
       res.json(timesheet);
     } catch (error: any) {
@@ -21507,6 +21521,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sanitise numeric fields — mobile app may send empty strings instead of null/0
       if (body.breakDuration === "" || body.breakDuration === null) body.breakDuration = "0";
       if (body.duration === "" || body.duration === null) body.duration = "0";
+      // Determine if requester is admin-like
+      const patchReqUser = (req as any).user;
+      const patchReqDbUser = patchReqUser?.dbUser || patchReqUser;
+      const patchReqRoleName = (patchReqDbUser?.roleName || "").toLowerCase();
+      const patchRequesterIsAdmin = patchReqRoleName.includes("admin") || patchReqRoleName.includes("owner") || patchReqRoleName.includes("general manager");
+      // Non-admins always get their profile rate applied — they cannot set their own rate
+      if (!patchRequesterIsAdmin) {
+        const targetUserId = body.userId || existing.userId;
+        const targetUser = await storage.getUser(targetUserId);
+        const profileRate = targetUser?.hourlyRate ? parseFloat(targetUser.hourlyRate.toString()) : 0;
+        body.hourlyRate = profileRate.toString();
+        const dur = parseFloat(body.duration || existing.duration?.toString() || "0");
+        body.total = (dur * profileRate).toFixed(2);
+      }
       // hourly_rate is NOT NULL in DB — treat missing/empty as 0 rather than null
       if (body.hourlyRate === "" || body.hourlyRate === null || body.hourlyRate === undefined) body.hourlyRate = "0";
       const timesheet = await storage.updateTimesheet(req.params.id, body);
