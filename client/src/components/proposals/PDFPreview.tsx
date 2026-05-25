@@ -1,16 +1,15 @@
 import { useState } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { Document, Page } from 'react-pdf';
+import { ensurePdfWorker } from '@/lib/pdfWorker';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface PDFPreviewProps {
   pdfBlob: Blob;
 }
 
 export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
+  ensurePdfWorker();
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 

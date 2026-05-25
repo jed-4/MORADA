@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Document, Page, pdfjs } from "react-pdf";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { Document, Page } from "react-pdf";
+import { ensurePdfWorker } from "@/lib/pdfWorker";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -30,8 +30,6 @@ import {
   pointInPolygon, distanceToPolyline, normalizeShapes,
   type Point,
 } from "./useTakeoffGeometry";
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface Props {
   plan: TakeoffPlan;

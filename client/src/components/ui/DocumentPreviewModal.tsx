@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { pdf } from "@react-pdf/renderer";
-import { Document as PdfDocument, Page as PdfPage, pdfjs } from "react-pdf";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { Document as PdfDocument, Page as PdfPage } from "react-pdf";
+import { ensurePdfWorker } from "@/lib/pdfWorker";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Download, Send, Loader2 } from "lucide-react";
@@ -21,7 +21,7 @@ export function DocumentPreviewModal({
   filename,
   onSend,
 }: DocumentPreviewModalProps) {
-  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+  ensurePdfWorker();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);

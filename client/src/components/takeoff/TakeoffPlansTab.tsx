@@ -1,7 +1,7 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
-import { Document, Page, pdfjs } from "react-pdf";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { Document, Page } from "react-pdf";
+import { ensurePdfWorker } from "@/lib/pdfWorker";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useUpload } from "@/hooks/use-upload";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +36,6 @@ import {
   ChevronRight, ChevronDown,
 } from "lucide-react";
 import type { TakeoffPlan, TakeoffPlanPage, TakeoffMeasurement } from "@shared/schema";
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface Props {
   projectId: string;

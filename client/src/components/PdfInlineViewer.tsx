@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+import { Document, Page } from "react-pdf";
+import { ensurePdfWorker } from "@/lib/pdfWorker";
 
 interface PdfInlineViewerProps {
   url: string;
 }
 
 export default function PdfInlineViewer({ url }: PdfInlineViewerProps) {
+  ensurePdfWorker();
   const [numPages, setNumPages] = useState<number>(0);
 
   return (
