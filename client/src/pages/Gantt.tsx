@@ -341,7 +341,10 @@ function useGanttRowDrag(
             apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
               parentItemId: nestTargetRef.current,
             }).then(() => {
-              invalidateScheduleItems();
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              if (itemsCacheKey) {
+                queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
+              }
             }).catch((err: any) => {
               console.error("[Gantt] Nest failed:", err);
               toast({
