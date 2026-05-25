@@ -338,14 +338,25 @@ function useGanttRowDrag(
           const activeItem = allItems.find(i => i.id === itemId);
           const targetItem = allItems.find(i => i.id === nestTargetRef.current);
           if (activeItem && targetItem) {
-            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-              parentItemId: nestTargetRef.current,
-            }).then(() => {
+            const newParentId = nestTargetRef.current;
+            const invalidate = () => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              if (itemsCacheKey) {
-                queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
-              }
+              if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
+            };
+            // Optimistic update — move item under parent instantly
+            const applyOptimistic = (old: any) => {
+              if (!Array.isArray(old)) return old;
+              return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: newParentId } : i);
+            };
+            queryClient.setQueryData([`/api/projects/${projectId}/schedule-items`], applyOptimistic);
+            if (itemsCacheKey) queryClient.setQueryData([itemsCacheKey], applyOptimistic);
+            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+              parentItemId: newParentId,
+            }).then(() => {
+              invalidate();
             }).catch((err: any) => {
+              // Revert optimistic update
+              invalidate();
               console.error("[Gantt] Nest failed:", err);
               toast({
                 title: "Failed to nest item",
@@ -393,20 +404,22 @@ function useGanttRowDrag(
             }
           } else if (activeItem?.parentItemId && !targetIsChild && targetItem?.id !== activeItem.parentItemId) {
             // Child dragged to top level (outside its group) — un-parent it
-            const ck2 = itemsCacheKey || `/api/projects/${projectId}/schedule-items`;
-            queryClient.setQueryData(
-              [ck2],
-              (old: any) => {
-                if (!Array.isArray(old)) return old;
-                return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
-              }
-            );
+            const invalidate = () => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
+            };
+            const applyOptimistic = (old: any) => {
+              if (!Array.isArray(old)) return old;
+              return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
+            };
+            queryClient.setQueryData([`/api/projects/${projectId}/schedule-items`], applyOptimistic);
+            if (itemsCacheKey) queryClient.setQueryData([itemsCacheKey], applyOptimistic);
             apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
               parentItemId: null,
             }).then(() => {
-              invalidateScheduleItems();
+              invalidate();
             }).catch(() => {
-              invalidateScheduleItems();
+              invalidate();
               toast({ title: "Failed to remove from group", variant: "destructive" });
             });
           }
