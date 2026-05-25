@@ -70,6 +70,7 @@ type TimesheetFormData = z.infer<typeof timesheetSchema>;
 
 interface CostCodeSplit {
   id: string;
+  dbId?: string;
   costCodeId: string;
   duration: string;
   hourlyRate: string;
@@ -246,6 +247,26 @@ export function TimesheetDialog({
         costCodeId: timesheet.costCodeId || "",
         labels: (timesheet.labels as string[]) || [],
       });
+      // Load existing cost-code splits
+      const existingSplits = (timesheet as any).costCodeSplits as any[] | undefined;
+      if (existingSplits && existingSplits.length > 0) {
+        setCostCodeSplits(
+          existingSplits.map((s: any) => ({
+            id: s.id,
+            dbId: s.id,
+            costCodeId: s.costCodeId || "",
+            duration: s.duration?.toString() || "",
+            hourlyRate: s.hourlyRate?.toString() || "50",
+            total: s.total?.toString() || "0",
+          }))
+        );
+        setIsSplit(true);
+        setShowCostCodeSplit(true);
+      } else {
+        setCostCodeSplits([]);
+        setIsSplit(false);
+        setShowCostCodeSplit(false);
+      }
     } else if (open && !timesheet) {
       setLastEditedField(null);
       form.reset({
@@ -375,6 +396,38 @@ export function TimesheetDialog({
           "PATCH",
           timesheetData
         );
+        // Sync splits: delete all existing DB splits then recreate
+        const existingSplits = (timesheet as any).costCodeSplits as any[] | undefined;
+        if (existingSplits && existingSplits.length > 0) {
+          for (const s of existingSplits) {
+            await apiRequest(`/api/timesheets/cost-codes/${s.id}`, "DELETE");
+          }
+        }
+        if (isSplit && costCodeSplits.length > 0) {
+          for (const split of costCodeSplits) {
+            await apiRequest(
+              `/api/timesheets/${timesheet.id}/cost-codes`,
+              "POST",
+              {
+                costCodeId: split.costCodeId,
+                duration: split.duration,
+                hourlyRate: split.hourlyRate,
+                total: split.total,
+              }
+            );
+          }
+        } else if (!isSplit) {
+          await apiRequest(
+            `/api/timesheets/${timesheet.id}/cost-codes`,
+            "POST",
+            {
+              costCodeId: data.costCodeId,
+              duration: duration.toString(),
+              hourlyRate: hourlyRate.toString(),
+              total: total,
+            }
+          );
+        }
         return res;
       } else {
         const created = await apiRequest(
@@ -917,9 +970,8 @@ export function TimesheetDialog({
                   </div>
                 </div>
 
-                {/* Cost Code Split (new entries only — opt-in) */}
-                {!timesheet && (
-                  <div>
+                {/* Cost Code Split — available for new and existing timesheets */}
+                <div>
                     <button
                       type="button"
                       onClick={() => {
@@ -1007,7 +1059,6 @@ export function TimesheetDialog({
                       </Card>
                     )}
                   </div>
-                )}
 
                 <div className="border-t border-border" />
 
