@@ -9,115 +9,120 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
 import { SidebarNav } from "@/components/SidebarNav";
-import Dashboard from "@/pages/Dashboard";
-import Tasks from "@/pages/Tasks";
-import Calendar from "@/pages/Calendar";
-import Notes from "@/pages/Notes";
-import Docs from "@/pages/Docs";
-import Minutes from "@/pages/Minutes";
-import MinuteDetail from "@/pages/MinuteDetail";
-import Templates from "@/pages/Templates";
-import Settings from "@/pages/Settings";
-import ProjectSettings from "@/pages/ProjectSettings";
-import SystemConfiguration from "@/pages/SystemConfiguration";
-import RolesPermissions from "@/pages/RolesPermissions";
-import Business from "@/pages/Business";
-import ComingSoonPage from "@/pages/ComingSoonPage";
-import Estimates from "@/pages/Estimates";
-import ProjectEstimates from "@/pages/ProjectEstimates";
-import ProjectCostings from "@/pages/ProjectCostings";
-import EstimateDetail from "@/pages/EstimateDetail";
-import Selections from "@/pages/Selections";
-import SelectionDetail from "@/pages/SelectionDetail";
-import Suppliers from "@/pages/Suppliers";
-import Trades from "@/pages/Trades";
-import Bills from "@/pages/Bills";
-import BillDetail from "@/pages/BillDetail";
-import Variations from "@/pages/Variations";
-import VariationDetail from "@/pages/VariationDetail";
-import ClientInvoices from "@/pages/ClientInvoices";
-import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
-import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
-import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
-import ScopeTemplates from "@/pages/ScopeTemplates";
-import ScopeTemplateDetail from "@/pages/ScopeTemplateDetail";
-import ScheduleTemplates from "@/pages/ScheduleTemplates";
-import ScheduleTemplateDetail from "@/pages/ScheduleTemplateDetail";
-import EstimateTemplates from "@/pages/EstimateTemplates";
-import EstimateTemplateDetail from "@/pages/EstimateTemplateDetail";
-import SelectionTemplates from "@/pages/SelectionTemplates";
-import SelectionTemplateDetail from "@/pages/SelectionTemplateDetail";
-import SelectionTemplateItemDetail from "@/pages/SelectionTemplateItemDetail";
-import POTemplates from "@/pages/POTemplates";
-import POTemplateDetail from "@/pages/POTemplateDetail";
-import RfqTemplates from "@/pages/RfqTemplates";
-import RfqTemplateDetail from "@/pages/RfqTemplateDetail";
-import RfiTemplates from "@/pages/RfiTemplates";
-import RfiTemplateDetail from "@/pages/RfiTemplateDetail";
-import ChecklistTemplates from "@/pages/ChecklistTemplates";
-import NoteTemplates from "@/pages/NoteTemplates";
-import TaskTemplates from "@/pages/TaskTemplates";
-import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
-import CostCodes from "@/pages/CostCodes";
-import Contacts from "@/pages/Contacts";
-import Budget from "@/pages/Budget";
-import ArchivedProjects from "@/pages/ArchivedProjects";
-import Schedule from "@/pages/Schedule";
-import Timesheets from "@/pages/Timesheets";
-import Allowances from "@/pages/Allowances";
-import AllowanceDetail from "@/pages/AllowanceDetail";
-import Defects from "@/pages/Defects";
-import Proposals from "@/pages/Proposals";
-import ProposalDetail from "@/pages/ProposalDetail";
-import BusinessProjects from "@/pages/BusinessProjects";
-import Takeoff from "@/pages/Takeoff";
-import FieldSettings from "@/pages/FieldSettings";
-import TaskSettings from "@/pages/TaskSettings";
-import BusinessCalendar from "@/pages/BusinessCalendar";
-import PersonalCalendar from "@/pages/PersonalCalendar";
-import UserProfile from "@/pages/UserProfile";
-import BusinessTasks from "@/pages/BusinessTasks";
-import Systems from "@/pages/Systems";
-import PriceListPage from "@/pages/PriceListPage";
-import AIPriceReviewPage from "@/pages/AIPriceReviewPage";
-import CreateRFQ from "@/pages/CreateRFQ";
-import CreateRFI from "@/pages/CreateRFI";
-import TeamManagement from "@/pages/TeamManagement";
-import UserProfileView from "@/pages/UserProfileView";
-import UserWorkspace from "@/pages/UserWorkspace";
-import NotFound from "@/pages/not-found";
-import PrivacyPolicy from "@/pages/PrivacyPolicy";
-import LandingPage from "@/pages/landing";
-import OnboardingPage from "@/pages/onboarding";
-import AcceptInvitation from "@/pages/AcceptInvitation";
-import AuthPage from "@/pages/AuthPage";
-import ResetPassword from "@/pages/ResetPassword";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
 import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { GlobalMessageNotifier } from "@/components/global-message-notifier";
-import Messages from "@/pages/Messages";
-import RFQs from "@/pages/RFQs";
-import RFQDetail from "@/pages/RFQDetail";
-import RFQPortal from "@/pages/RFQPortal";
-import VariationPortal from "@/pages/VariationPortal";
-import ProposalPortal from "@/pages/ProposalPortal";
-import SelectionPortal from "@/pages/SelectionPortal";
-import TradesPortal from "@/pages/TradesPortal";
-import ProductLibrary from "@/pages/ProductLibrary";
-import RFIs from "@/pages/RFIs";
-import RFIDetail from "@/pages/RFIDetail";
-import ProjectScope from "@/pages/ProjectScope";
-import ProjectTeam from "@/pages/ProjectTeam";
-import PurchaseOrders from "@/pages/PurchaseOrders";
-import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
-import ProjectChecklists from "@/pages/ProjectChecklists";
-import ChecklistInstanceDetail from "@/pages/ChecklistInstanceDetail";
-import ProjectFiles from "@/pages/ProjectFiles";
-import ProjectActivity from "@/pages/ProjectActivity";
-import LabourEstimate from "@/pages/LabourEstimate";
+
+// All page imports are lazy-loaded so each route gets its own bundle chunk.
+// This eliminates the entire class of "Cannot access '…' before initialization"
+// TDZ crashes that occur when Vite's production bundler resolves circular
+// module initialization order across a single giant static-import chunk.
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Tasks = lazy(() => import("@/pages/Tasks"));
+const Calendar = lazy(() => import("@/pages/Calendar"));
+const Notes = lazy(() => import("@/pages/Notes"));
+const Docs = lazy(() => import("@/pages/Docs"));
+const Minutes = lazy(() => import("@/pages/Minutes"));
+const MinuteDetail = lazy(() => import("@/pages/MinuteDetail"));
+const Templates = lazy(() => import("@/pages/Templates"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const ProjectSettings = lazy(() => import("@/pages/ProjectSettings"));
+const SystemConfiguration = lazy(() => import("@/pages/SystemConfiguration"));
+const RolesPermissions = lazy(() => import("@/pages/RolesPermissions"));
+const Business = lazy(() => import("@/pages/Business"));
+const ComingSoonPage = lazy(() => import("@/pages/ComingSoonPage"));
+const Estimates = lazy(() => import("@/pages/Estimates"));
+const ProjectEstimates = lazy(() => import("@/pages/ProjectEstimates"));
+const ProjectCostings = lazy(() => import("@/pages/ProjectCostings"));
+const EstimateDetail = lazy(() => import("@/pages/EstimateDetail"));
+const Selections = lazy(() => import("@/pages/Selections"));
+const SelectionDetail = lazy(() => import("@/pages/SelectionDetail"));
+const Suppliers = lazy(() => import("@/pages/Suppliers"));
+const Trades = lazy(() => import("@/pages/Trades"));
+const Bills = lazy(() => import("@/pages/Bills"));
+const BillDetail = lazy(() => import("@/pages/BillDetail"));
+const Variations = lazy(() => import("@/pages/Variations"));
+const VariationDetail = lazy(() => import("@/pages/VariationDetail"));
+const ClientInvoices = lazy(() => import("@/pages/ClientInvoices"));
+const ClientInvoiceDetail = lazy(() => import("@/pages/ClientInvoiceDetail"));
+const SiteDiaryTemplates = lazy(() => import("@/pages/SiteDiaryTemplates"));
+const SiteDiaryEntries = lazy(() => import("@/pages/SiteDiaryEntries"));
+const ScopeTemplates = lazy(() => import("@/pages/ScopeTemplates"));
+const ScopeTemplateDetail = lazy(() => import("@/pages/ScopeTemplateDetail"));
+const ScheduleTemplates = lazy(() => import("@/pages/ScheduleTemplates"));
+const ScheduleTemplateDetail = lazy(() => import("@/pages/ScheduleTemplateDetail"));
+const EstimateTemplates = lazy(() => import("@/pages/EstimateTemplates"));
+const EstimateTemplateDetail = lazy(() => import("@/pages/EstimateTemplateDetail"));
+const SelectionTemplates = lazy(() => import("@/pages/SelectionTemplates"));
+const SelectionTemplateDetail = lazy(() => import("@/pages/SelectionTemplateDetail"));
+const SelectionTemplateItemDetail = lazy(() => import("@/pages/SelectionTemplateItemDetail"));
+const POTemplates = lazy(() => import("@/pages/POTemplates"));
+const POTemplateDetail = lazy(() => import("@/pages/POTemplateDetail"));
+const RfqTemplates = lazy(() => import("@/pages/RfqTemplates"));
+const RfqTemplateDetail = lazy(() => import("@/pages/RfqTemplateDetail"));
+const RfiTemplates = lazy(() => import("@/pages/RfiTemplates"));
+const RfiTemplateDetail = lazy(() => import("@/pages/RfiTemplateDetail"));
+const ChecklistTemplates = lazy(() => import("@/pages/ChecklistTemplates"));
+const NoteTemplates = lazy(() => import("@/pages/NoteTemplates"));
+const TaskTemplates = lazy(() => import("@/pages/TaskTemplates"));
+const ChecklistTemplateDetail = lazy(() => import("@/pages/ChecklistTemplateDetail"));
+const CostCodes = lazy(() => import("@/pages/CostCodes"));
+const Contacts = lazy(() => import("@/pages/Contacts"));
+const Budget = lazy(() => import("@/pages/Budget"));
+const ArchivedProjects = lazy(() => import("@/pages/ArchivedProjects"));
+const Schedule = lazy(() => import("@/pages/Schedule"));
+const Timesheets = lazy(() => import("@/pages/Timesheets"));
+const Allowances = lazy(() => import("@/pages/Allowances"));
+const AllowanceDetail = lazy(() => import("@/pages/AllowanceDetail"));
+const Defects = lazy(() => import("@/pages/Defects"));
+const Proposals = lazy(() => import("@/pages/Proposals"));
+const ProposalDetail = lazy(() => import("@/pages/ProposalDetail"));
+const BusinessProjects = lazy(() => import("@/pages/BusinessProjects"));
+const Takeoff = lazy(() => import("@/pages/Takeoff"));
+const FieldSettings = lazy(() => import("@/pages/FieldSettings"));
+const TaskSettings = lazy(() => import("@/pages/TaskSettings"));
+const BusinessCalendar = lazy(() => import("@/pages/BusinessCalendar"));
+const PersonalCalendar = lazy(() => import("@/pages/PersonalCalendar"));
+const UserProfile = lazy(() => import("@/pages/UserProfile"));
+const BusinessTasks = lazy(() => import("@/pages/BusinessTasks"));
+const Systems = lazy(() => import("@/pages/Systems"));
+const PriceListPage = lazy(() => import("@/pages/PriceListPage"));
+const AIPriceReviewPage = lazy(() => import("@/pages/AIPriceReviewPage"));
+const CreateRFQ = lazy(() => import("@/pages/CreateRFQ"));
+const CreateRFI = lazy(() => import("@/pages/CreateRFI"));
+const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
+const UserProfileView = lazy(() => import("@/pages/UserProfileView"));
+const UserWorkspace = lazy(() => import("@/pages/UserWorkspace"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
+const LandingPage = lazy(() => import("@/pages/landing"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
+const AuthPage = lazy(() => import("@/pages/AuthPage"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const Messages = lazy(() => import("@/pages/Messages"));
+const RFQs = lazy(() => import("@/pages/RFQs"));
+const RFQDetail = lazy(() => import("@/pages/RFQDetail"));
+const RFQPortal = lazy(() => import("@/pages/RFQPortal"));
+const VariationPortal = lazy(() => import("@/pages/VariationPortal"));
+const ProposalPortal = lazy(() => import("@/pages/ProposalPortal"));
+const SelectionPortal = lazy(() => import("@/pages/SelectionPortal"));
+const TradesPortal = lazy(() => import("@/pages/TradesPortal"));
+const ProductLibrary = lazy(() => import("@/pages/ProductLibrary"));
+const RFIs = lazy(() => import("@/pages/RFIs"));
+const RFIDetail = lazy(() => import("@/pages/RFIDetail"));
+const ProjectScope = lazy(() => import("@/pages/ProjectScope"));
+const ProjectTeam = lazy(() => import("@/pages/ProjectTeam"));
+const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
+const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail"));
+const ProjectChecklists = lazy(() => import("@/pages/ProjectChecklists"));
+const ChecklistInstanceDetail = lazy(() => import("@/pages/ChecklistInstanceDetail"));
+const ProjectFiles = lazy(() => import("@/pages/ProjectFiles"));
+const ProjectActivity = lazy(() => import("@/pages/ProjectActivity"));
+const LabourEstimate = lazy(() => import("@/pages/LabourEstimate"));
 
 function Router() {
   const { user } = useAuth();
@@ -337,17 +342,19 @@ function Router() {
 function UnauthenticatedRoutes() {
   // Handle public routes for unauthenticated users
   return (
-    <Switch>
-      <Route path="/auth" component={AuthPage} />
-      <Route path="/accept-invite/:token" component={AcceptInvitation} />
-      <Route path="/portal/rfq/:token" component={RFQPortal} />
-      <Route path="/portal/variation/:token" component={VariationPortal} />
-      <Route path="/portal/proposal/:id" component={ProposalPortal} />
-      <Route path="/portal/selections/:token" component={SelectionPortal} />
-      <Route path="/portal/project/:token/trades" component={TradesPortal} />
-      <Route path="/" component={AuthPage} />
-      <Route component={AuthPage} />
-    </Switch>
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+      <Switch>
+        <Route path="/auth" component={AuthPage} />
+        <Route path="/accept-invite/:token" component={AcceptInvitation} />
+        <Route path="/portal/rfq/:token" component={RFQPortal} />
+        <Route path="/portal/variation/:token" component={VariationPortal} />
+        <Route path="/portal/proposal/:id" component={ProposalPortal} />
+        <Route path="/portal/selections/:token" component={SelectionPortal} />
+        <Route path="/portal/project/:token/trades" component={TradesPortal} />
+        <Route path="/" component={AuthPage} />
+        <Route component={AuthPage} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -411,7 +418,9 @@ function AuthWrapper() {
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(debugInfo, null, 2)}</pre>
           </div>
         )}
-        <OnboardingPage />
+        <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <OnboardingPage />
+        </Suspense>
       </>
     );
   }
@@ -490,7 +499,9 @@ function AuthWrapper() {
               <SidebarNav />
               <main className="flex-1 overflow-hidden flex flex-col">
                 <ErrorBoundary>
-                  <Router />
+                  <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+                    <Router />
+                  </Suspense>
                 </ErrorBoundary>
               </main>
             </div>
