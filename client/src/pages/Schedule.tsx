@@ -195,8 +195,6 @@ export default function Schedule() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [newItemDependencies, setNewItemDependencies] = useState<any[]>([]);
-  const [showCreateLinked, setShowCreateLinked] = useState(false);
-  const [createLinkedForm, setCreateLinkedForm] = useState({ name: '', startDate: '', duration: '1' });
   const [allCollapsed, setAllCollapsed] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
@@ -2755,102 +2753,7 @@ export default function Schedule() {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setShowCreateLinked(v => !v);
-                      setCreateLinkedForm({ name: '', startDate: formData.endDate || '', duration: '1' });
-                    }}
-                    data-testid="button-create-linked-task"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Create &amp; link task
-                  </Button>
                 </div>
-
-                {showCreateLinked && (
-                  <div className="p-3 rounded-md border bg-muted/30 space-y-2">
-                    <div className="text-xs font-medium text-muted-foreground">New linked predecessor task</div>
-                    <Input
-                      placeholder="Task name"
-                      value={createLinkedForm.name}
-                      onChange={e => setCreateLinkedForm(f => ({ ...f, name: e.target.value }))}
-                      data-testid="input-linked-task-name"
-                    />
-                    <div className="flex gap-2">
-                      <Input
-                        type="date"
-                        value={createLinkedForm.startDate}
-                        onChange={e => setCreateLinkedForm(f => ({ ...f, startDate: e.target.value }))}
-                        className="flex-1"
-                        data-testid="input-linked-task-start"
-                      />
-                      <Input
-                        type="number"
-                        min="1"
-                        placeholder="Duration (days)"
-                        value={createLinkedForm.duration}
-                        onChange={e => setCreateLinkedForm(f => ({ ...f, duration: e.target.value }))}
-                        className="w-28"
-                        data-testid="input-linked-task-duration"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={!createLinkedForm.name.trim()}
-                        onClick={async () => {
-                          if (!createLinkedForm.name.trim() || !projectId) return;
-                          try {
-                            const duration = Math.max(1, parseInt(createLinkedForm.duration) || 1);
-                            let endDate = createLinkedForm.startDate;
-                            if (createLinkedForm.startDate) {
-                              const start = new Date(createLinkedForm.startDate + 'T00:00:00');
-                              endDate = addWorkingDays(start, duration - 1).toISOString().split('T')[0];
-                            }
-                            const newTask = await apiRequest(`/api/projects/${projectId}/schedule-items`, "POST", {
-                              name: createLinkedForm.name.trim(),
-                              startDate: createLinkedForm.startDate || null,
-                              endDate: endDate || null,
-                              duration,
-                              type: 'task',
-                              status: 'not_started',
-                            });
-                            if (isEditingExisting && editingId) {
-                              const updatedItem = await apiRequest(`/api/schedule-items/${editingId}/dependencies`, "POST", {
-                                predecessorId: newTask.id,
-                                type: "FS",
-                              });
-                              setEditingItem(updatedItem);
-                            } else {
-                              setActiveDeps([...activeDeps, { id: newTask.id, type: 'FS', lag: 0, _name: newTask.name }]);
-                            }
-                            invalidateScheduleItems();
-                            setShowCreateLinked(false);
-                            setCreateLinkedForm({ name: '', startDate: '', duration: '1' });
-                            toast({ title: "Task created and linked" });
-                          } catch (err: any) {
-                            toast({ title: "Failed to create task", description: err.message, variant: "destructive" });
-                          }
-                        }}
-                        data-testid="button-confirm-linked-task"
-                      >
-                        Create &amp; link
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowCreateLinked(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
 
                 <div className="space-y-2">
                   {activeDeps.length > 0 ? (
@@ -2985,9 +2888,6 @@ export default function Schedule() {
                     </p>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Dependencies control when this item can start. It will wait for predecessor items to finish (Finish-to-Start).
-                </p>
 
                 {editingItem?.id && (() => {
                   const successors = scheduleItems.filter(item =>
