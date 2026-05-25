@@ -720,6 +720,7 @@ export interface IStorage {
 
   syncCompanyName(): Promise<{ synced: boolean; name?: string }>;
   backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }>;
+  healUserRoleNameCache(): Promise<{ updated: number }>;
   // Bills CRUD
   getBills(projectId?: string | null, status?: string, companyId?: string): Promise<Bill[]>;
   backfillBillsCompanyId(): Promise<{ updated: number }>;

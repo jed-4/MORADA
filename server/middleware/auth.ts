@@ -62,6 +62,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    // Enrich roleName from the roles table when the cached column is empty.
+    // This happens for users created before the role_name cache was introduced,
+    // or when a role was assigned without updating the cached column.
+    if (!user.roleName && user.roleId) {
+      try {
+        const role = await storage.getUserRole(user.roleId);
+        if (role?.name) {
+          (user as any).roleName = role.name;
+        }
+      } catch {
+        // Non-fatal — proceed without roleName enrichment
+      }
+    }
+
     req.user = user;
     req.userId = req.session.userId;
     next();
