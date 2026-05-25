@@ -223,6 +223,17 @@ app.use((req, res, next) => {
       console.error("syncCompanyName failed (non-fatal):", err);
     }
 
+    // Backfill the role_name cache on any users whose cached value is empty.
+    // This fixes visibility bugs in routes that check roleName for admin access.
+    try {
+      const roleHeal = await storage.healUserRoleNameCache();
+      if (roleHeal.updated > 0) {
+        log(`Role name cache healed: updated ${roleHeal.updated} user(s)`);
+      }
+    } catch (err) {
+      console.error("healUserRoleNameCache failed (non-fatal):", err);
+    }
+
     // Backfill companyId on any bills that pre-date the company-scoping migration
     try {
       const backfillResult = await storage.backfillBillsCompanyId();

@@ -6280,6 +6280,12 @@ export class MemStorage implements IStorage {
   async canUserApproveBills(_userId: string): Promise<boolean> { return true; }
   async canUserApproveTimesheets(_userId: string): Promise<boolean> { return true; }
   async canUserViewTimesheetRates(_userId: string): Promise<boolean> { return true; }
+
+  async healUserRoleNameCache(): Promise<{ updated: number }> { return { updated: 0 }; }
+  async backfillBillsCompanyId(): Promise<{ updated: number }> { return { updated: 0 }; }
+  async backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }> { return { updated: false }; }
+  async syncCompanyName(): Promise<{ synced: boolean; name?: string }> { return { synced: false }; }
+  async repairDuplicateScopeStages(): Promise<{ projectsScanned: number; duplicatesRemoved: number }> { return { projectsScanned: 0, duplicatesRemoved: 0 }; }
 }
 
 // Database-backed storage implementation
@@ -12933,6 +12939,22 @@ export class DbStorage implements IStorage {
     return company?.id;
   }
   
+  async healUserRoleNameCache(): Promise<{ updated: number }> {
+    try {
+      const result = await db.execute(sql`
+        UPDATE users u
+        SET role_name = r.name
+        FROM user_roles r
+        WHERE u.role_id = r.id
+          AND (u.role_name IS NULL OR u.role_name = '')
+      `);
+      return { updated: (result as any).rowCount ?? 0 };
+    } catch (err) {
+      console.error("healUserRoleNameCache failed (non-fatal):", err);
+      return { updated: 0 };
+    }
+  }
+
   async backfillCompanySettingsCompanyId(): Promise<{ updated: boolean }> {
     try {
       const [settings] = await db.select({ id: schema.companySettings.id, companyId: schema.companySettings.companyId })
