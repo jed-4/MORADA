@@ -894,6 +894,15 @@ async function generateSelectionPdf(selections: any[], projectName?: string): Pr
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Client-side error reporting (used by index.html startup error handler).
+  // Logs to stdout so failures are visible in deployment logs.
+  app.post("/api/_client-error", (req, res) => {
+    try {
+      console.error("[CLIENT-ERROR]", JSON.stringify(req.body));
+    } catch {}
+    res.status(204).end();
+  });
+
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
   

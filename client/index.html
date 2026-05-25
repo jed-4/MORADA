@@ -38,8 +38,42 @@
               '</div>';
           } catch(_){}
         }
-        window.addEventListener('error', function(ev) { paint('Uncaught error during startup', ev.error || ev); }, true);
-        window.addEventListener('unhandledrejection', function(ev) { paint('Unhandled promise rejection during startup', ev.reason); });
+        function report(label, info) {
+          try {
+            fetch('/api/_client-error', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ label: label, info: info, ua: navigator.userAgent, url: location.href })
+            }).catch(function(){});
+          } catch(_){}
+        }
+        window.addEventListener('error', function(ev) {
+          // Ignore resource load errors (img/link/script/etc failed to load).
+          // Those fire on the element itself, not on window, and have no useful message.
+          if (ev.target && ev.target !== window && ev.target.tagName) {
+            try {
+              var tag = ev.target.tagName;
+              var src = ev.target.src || ev.target.href || '';
+              report('resource-load-error', { tag: tag, src: src });
+            } catch(_){}
+            return;
+          }
+          var err = ev.error || ev;
+          var msg = err && (err.message || err.reason);
+          // If we have no message and no stack, it's not actionable — don't paint over the app.
+          if (!msg && !(err && err.stack)) {
+            report('window-error-no-message', { type: ev.type, filename: ev.filename, lineno: ev.lineno });
+            return;
+          }
+          report('uncaught-error', { message: String(msg), stack: String((err&&err.stack)||''), filename: ev.filename, lineno: ev.lineno });
+          paint('Uncaught error during startup', err);
+        }, true);
+        window.addEventListener('unhandledrejection', function(ev) {
+          var r = ev.reason;
+          var msg = r && (r.message || r);
+          report('unhandled-rejection', { message: String(msg), stack: String((r&&r.stack)||'') });
+          if (msg) paint('Unhandled promise rejection during startup', r);
+        });
         try {
           // Optional URL override (?theme=dark|light) — does not persist, used
           // for design / palette previews without changing the saved choice.
