@@ -1675,6 +1675,64 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         }
       };
 
+      // When a child item is dragged and its new end date changes the parent's
+      // effective end date, cascade to the parent's dependents (successors).
+      const cascadeParentSuccessors = (childId: number | string, childNewEnd: Date) => {
+        const child = currentItems.find(i => i.id === childId);
+        if (!child?.parentItemId) return;
+        const parentId = child.parentItemId;
+        const parent = currentItems.find(i => String(i.id) === String(parentId));
+        if (!parent) return;
+
+        const siblings = currentItems.filter(i => String(i.parentItemId) === String(parentId));
+
+        // Old parent effective end = max of all siblings' stored end dates
+        const oldParentEnd = siblings.reduce((max, sib) => {
+          const d = parseLocalMidnight(sib.endDate as any);
+          return d > max ? d : max;
+        }, parseLocalMidnight(parent.endDate as any));
+
+        // New parent effective end = replace moved child's old date with its new date
+        const newParentEnd = siblings.reduce((max, sib) => {
+          const d = String(sib.id) === String(childId)
+            ? childNewEnd
+            : parseLocalMidnight(sib.endDate as any);
+          return d > max ? d : max;
+        }, childNewEnd);
+
+        if (newParentEnd.getTime() === oldParentEnd.getTime()) return;
+
+        const oldParentStart = siblings.reduce((min, sib) => {
+          const d = parseLocalMidnight(sib.startDate as any);
+          return d < min ? d : min;
+        }, parseLocalMidnight(parent.startDate as any));
+
+        // Optimistically update the parent bar in the cache
+        updateCacheOptimistically(parent.id, oldParentStart, newParentEnd);
+
+        // Run cascade from parent to its successors
+        const parentCascade = computeMoveCascade({
+          movedItemId: parent.id,
+          originalStart: oldParentStart,
+          originalEnd: oldParentEnd,
+          newStart: oldParentStart,
+          newEnd: newParentEnd,
+          allItems: currentItems,
+          isNonWorking: isNonWorkingDayRef.current,
+        });
+
+        for (const u of parentCascade) {
+          const parsedStart = parseLocalMidnight(u.startDate);
+          const parsedEnd = parseLocalMidnight(u.endDate);
+          updateCacheOptimistically(u.id, parsedStart, parsedEnd);
+          mutate.mutate({
+            id: u.id,
+            startDate: u.startDate as any,
+            endDate: u.endDate as any,
+          });
+        }
+      };
+
       try {
       if (drag.type === 'move') {
         if (deltaDays !== 0) {
@@ -1718,6 +1776,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           }
 
           recalcLagForItem(drag.id, newStart, currentItems);
+          cascadeParentSuccessors(drag.id, newEnd);
         }
       } else if (drag.type === 'resize-left') {
         if (deltaDays !== 0) {
@@ -1776,6 +1835,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             });
 
             recalcLagForSuccessors(drag.id, newEnd, currentItems);
+            cascadeParentSuccessors(drag.id, newEnd);
           }
         }
       } else if (drag.type === 'dependency') {
