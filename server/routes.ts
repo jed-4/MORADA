@@ -13510,10 +13510,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { projectId, status, paidByEmployee } = req.query;
       const user = (req as any).user;
-      const roleName = (user?.roleName || "").toLowerCase();
-      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
 
-      console.log(`[Bills] user=${user?.id} companyId=${user?.companyId} roleName="${roleName}" isAdminLike=${isAdminLike} projectId=${projectId || 'none'}`);
+      const canViewAll = user?.id ? await storage.canUserViewAllBills(user.id) : false;
 
       let bills = await storage.getBills(
         projectId as string | undefined,
@@ -13521,15 +13519,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user?.companyId as string | undefined
       );
 
-      console.log(`[Bills] getBills returned ${bills.length} bill(s) for companyId=${user?.companyId}`);
-
-      // Workers can only see receipts they personally created
-      if (!isAdminLike && user?.id) {
+      // Workers without financial.bills → view permission can only see receipts they submitted
+      if (!canViewAll && user?.id) {
         bills = bills.filter((b: any) => b.billType === "receipt" && b.createdById === user.id);
       }
 
-      // Admin reimbursements-queue filter
-      if (isAdminLike && paidByEmployee === "true") {
+      // Full-access users: filter to reimbursement queue when requested
+      if (canViewAll && paidByEmployee === "true") {
         bills = bills.filter((b: any) => b.paidByEmployee === true);
       }
 

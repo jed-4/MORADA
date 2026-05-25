@@ -768,6 +768,7 @@ export interface IStorage {
   getBillApprovals(billId: string): Promise<BillApproval[]>;
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
   canUserApproveBills(userId: string): Promise<boolean>;
+  canUserViewAllBills(userId: string): Promise<boolean>;
   canUserApproveTimesheets(userId: string): Promise<boolean>;
   canUserViewTimesheetRates(userId: string): Promise<boolean>;
 
@@ -6278,6 +6279,7 @@ export class MemStorage implements IStorage {
 
   // Permission checks — MemStorage stubs (always true for in-memory/dev use)
   async canUserApproveBills(_userId: string): Promise<boolean> { return true; }
+  async canUserViewAllBills(_userId: string): Promise<boolean> { return true; }
   async canUserApproveTimesheets(_userId: string): Promise<boolean> { return true; }
   async canUserViewTimesheetRates(_userId: string): Promise<boolean> { return true; }
 
@@ -15250,6 +15252,53 @@ export class DbStorage implements IStorage {
       return allowedActions && allowedActions.includes('view');
     } catch (error) {
       console.error("Database error in canUserViewTimesheetRates:", error);
+      return false;
+    }
+  }
+
+  async canUserViewAllBills(userId: string): Promise<boolean> {
+    try {
+      const user = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user.length || !user[0].roleId) return false;
+
+      // Admin-level roles always see everything
+      const role = await db.select()
+        .from(schema.userRoles)
+        .where(eq(schema.userRoles.id, user[0].roleId))
+        .limit(1);
+
+      if (role.length) {
+        const rn = (role[0].name ?? '').toLowerCase();
+        if (role[0].isBuiltIn && (rn.includes('admin') || rn.includes('owner') || rn.includes('general manage'))) {
+          return true;
+        }
+      }
+
+      // Otherwise check financial.bills → view permission
+      const perm = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.key, 'financial.bills'))
+        .limit(1);
+
+      if (!perm.length) return false;
+
+      const rp = await db.select()
+        .from(schema.rolePermissions)
+        .where(and(
+          eq(schema.rolePermissions.roleId, user[0].roleId),
+          eq(schema.rolePermissions.permissionId, perm[0].id)
+        ))
+        .limit(1);
+
+      if (!rp.length) return false;
+      const allowed = rp[0].allowedActions as string[];
+      return Array.isArray(allowed) && allowed.includes('view');
+    } catch (error) {
+      console.error("Database error in canUserViewAllBills:", error);
       return false;
     }
   }
