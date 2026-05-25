@@ -184,6 +184,10 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     queryKey: ["/api/user/can-approve-timesheets"],
   });
 
+  const { data: canViewTimesheetRates = false } = useQuery<boolean>({
+    queryKey: ["/api/user/can-view-timesheet-rates"],
+  });
+
   // Fetch active timesheet for clock-in/out
   const { data: activeTimesheet } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
@@ -999,10 +1003,10 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
         },
       },
     ];
-    // Hide cost columns from non-approvers
-    return canApproveTimesheets ? cols : cols.filter(c => c.id !== "rate" && c.id !== "total");
+    // Hide cost columns from users without timesheets.rates permission
+    return canViewTimesheetRates ? cols : cols.filter(c => c.id !== "rate" && c.id !== "total");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, user?.id, user?.roleName, duplicateMutation.isPending]);
+  }, [filteredTimesheets, selectedTimesheets, projects, users, costCodes, tsDateFormat, canApproveTimesheets, canViewTimesheetRates, user?.id, user?.roleName, duplicateMutation.isPending]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1407,7 +1411,7 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
                 <TooltipContent side="bottom">Columns</TooltipContent>
               </Tooltip>
               <PopoverContent className="w-56 p-0" align="end">
-                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={canApproveTimesheets ? PICKER_COLUMNS : PICKER_COLUMNS.filter(c => c.id !== "rate" && c.id !== "total")} />
+                <DataTableColumnPicker storageKey={TABLE_STORAGE_KEY} columns={canViewTimesheetRates ? PICKER_COLUMNS : PICKER_COLUMNS.filter(c => c.id !== "rate" && c.id !== "total")} />
               </PopoverContent>
             </Popover>
           )}

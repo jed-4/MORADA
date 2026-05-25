@@ -8328,6 +8328,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/user/can-view-timesheet-rates", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.json(false);
+      }
+      const canView = await storage.canUserViewTimesheetRates(req.user.id);
+      res.json(canView);
+    } catch (error) {
+      console.error("Error checking timesheet rates permission:", error);
+      res.json(false);
+    }
+  });
+
   // User Management Routes
   app.get("/api/users", requireAuth, requirePermission("admin.users", "view"), async (req, res) => {
     try {
@@ -20881,13 +20894,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filtered = await filterTimesheetsByViewScope(timesheets, req.user);
       }
       let enriched: any[] = await enrichTimesheetsWithCostCodes(filtered);
-      // Strip confidential pay-rate fields for non-admin users
+      // Strip confidential pay-rate fields for users without timesheets.rates view permission
       if (req.user) {
-        const u = req.user as any;
-        const dbU = u?.dbUser || u;
-        const roleName = (dbU?.roleName || dbU?.role?.name || '').toLowerCase();
-        const isAdminLike = roleName.includes('admin') || roleName.includes('owner') || roleName.includes('general manager');
-        if (!isAdminLike) {
+        const canViewRates = await storage.canUserViewTimesheetRates(req.user.id);
+        if (!canViewRates) {
           enriched = enriched.map(({ hourlyRate, totalCost, costPerHour, ...rest }: any) => rest);
         }
       }

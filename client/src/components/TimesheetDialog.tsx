@@ -122,6 +122,9 @@ export function TimesheetDialog({
 }: TimesheetDialogProps) {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
+  const { data: canViewTimesheetRates = false } = useQuery<boolean>({
+    queryKey: ["/api/user/can-view-timesheet-rates"],
+  });
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
@@ -898,8 +901,8 @@ export function TimesheetDialog({
 
                 <div className="border-t border-border" />
 
-                {/* Cost Code | Rate (rate only visible to admins) */}
-                <div className={currentUser?.isAdminLike ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                {/* Cost Code | Rate (rate only visible to users with timesheets.rates permission) */}
+                <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <FormField
                     control={form.control}
                     name="costCodeId"
@@ -920,7 +923,7 @@ export function TimesheetDialog({
                     )}
                   />
 
-                  {currentUser?.isAdminLike && (
+                  {canViewTimesheetRates && (
                     <FormField
                       control={form.control}
                       name="hourlyRate"
@@ -943,8 +946,8 @@ export function TimesheetDialog({
                   )}
                 </div>
 
-                {/* Duration & Total cost — Total only visible to admins */}
-                <div className={currentUser?.isAdminLike ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                {/* Duration & Total cost — Total only visible to users with timesheets.rates permission */}
+                <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <div>
                     <Label className={labelClass}>Duration</Label>
                     <div
@@ -958,7 +961,7 @@ export function TimesheetDialog({
                       <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total hours</div>
                     </div>
                   </div>
-                  {currentUser?.isAdminLike && (
+                  {canViewTimesheetRates && (
                     <div>
                       <Label className={labelClass}>Total cost</Label>
                       <div
@@ -1001,7 +1004,7 @@ export function TimesheetDialog({
                           {costCodeSplits.map((split) => (
                             <div
                               key={split.id}
-                              className={currentUser?.isAdminLike ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
+                              className={canViewTimesheetRates ? "grid gap-2 grid-cols-[2fr_1fr_1fr_auto] items-end" : "grid gap-2 grid-cols-[2fr_1fr_auto] items-end"}
                             >
                               <div className="space-y-1">
                                 <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
@@ -1024,7 +1027,7 @@ export function TimesheetDialog({
                                   data-testid={`input-split-duration-${split.id}`}
                                 />
                               </div>
-                              {currentUser?.isAdminLike && (
+                              {canViewTimesheetRates && (
                                 <div className="space-y-1">
                                   <Label className="text-[10px] text-muted-foreground">Rate</Label>
                                   <Input

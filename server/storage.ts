@@ -768,6 +768,7 @@ export interface IStorage {
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
   canUserApproveBills(userId: string): Promise<boolean>;
   canUserApproveTimesheets(userId: string): Promise<boolean>;
+  canUserViewTimesheetRates(userId: string): Promise<boolean>;
 
   // Variations CRUD
   getVariations(projectId?: string, status?: string): Promise<Variation[]>;
@@ -1403,7 +1404,7 @@ function getDefaultActionsForRole(
       'financial.quotes', 'financial.budget_labour', 'financial.budget_actuals',
       'financial.proposal', 'financial.reports',
       'sales.client', 'sales.proposals', 'sales.leads',
-      'files.manage', 'timesheets.manage', 'calendar.manage', 'messages.team', 'leave.manage',
+      'files.manage', 'timesheets.manage', 'timesheets.rates', 'calendar.manage', 'messages.team', 'leave.manage',
       'dashboard.overview', 'dashboard.financial', 'dashboard.project_health', 'dashboard.team_performance',
       'business.dashboard', 'business.schedule', 'business.files', 'business.calendar',
       'business.messages', 'business.notes', 'business.team', 'business.timesheets',
@@ -1446,6 +1447,7 @@ function getDefaultActionsForRole(
       'projects.invoices', 'projects.view', 'projects.timesheet',
       'admin.cost_codes',
       'dashboard.financial',
+      'timesheets.manage', 'timesheets.rates',
     ];
     for (const key of keys) grantAll(key);
     return result;
@@ -1605,6 +1607,7 @@ export class MemStorage implements IStorage {
       // Team & Operations category
       { key: "files.manage", name: "Files", description: "Manage files and folders", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "timesheets.rates", name: "Labour Rates", description: "View labour cost rates and totals on timesheets", category: "operations", actions: ["view"], isBuiltIn: true },
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
@@ -6271,6 +6274,11 @@ export class MemStorage implements IStorage {
   async getSupplierNameMapping(_invoiceNameString: string, _companyId: string): Promise<import("@shared/schema").SupplierNameMapping | undefined> { return undefined; }
   async createSupplierNameMapping(data: import("@shared/schema").InsertSupplierNameMapping & { companyId: string }): Promise<import("@shared/schema").SupplierNameMapping> { throw new Error("Not implemented"); }
   async getSupplierNameMappings(_companyId: string): Promise<import("@shared/schema").SupplierNameMapping[]> { return []; }
+
+  // Permission checks — MemStorage stubs (always true for in-memory/dev use)
+  async canUserApproveBills(_userId: string): Promise<boolean> { return true; }
+  async canUserApproveTimesheets(_userId: string): Promise<boolean> { return true; }
+  async canUserViewTimesheetRates(_userId: string): Promise<boolean> { return true; }
 }
 
 // Database-backed storage implementation
@@ -6381,6 +6389,7 @@ export class DbStorage implements IStorage {
       // Team & Operations category
       { key: "files.manage", name: "Files", description: "Manage files and folders", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "timesheets.manage", name: "Timesheets", description: "Manage company-wide timesheets (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
+      { key: "timesheets.rates", name: "Labour Rates", description: "View labour cost rates and totals on timesheets", category: "operations", actions: ["view"], isBuiltIn: true },
       { key: "calendar.manage", name: "Calendar", description: "Manage team calendar and scheduling (with view-scope control)", category: "operations", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "messages.team", name: "Team Messaging", description: "Access team-wide messaging", category: "operations", actions: ["view", "add", "edit", "delete", "send"], isBuiltIn: true },
       { key: "leave.manage", name: "Leave", description: "Manage employee leave requests and balances", category: "operations", actions: ["view", "add", "edit", "delete", "approve"], isBuiltIn: true },
@@ -15159,6 +15168,65 @@ export class DbStorage implements IStorage {
       return allowedActions && allowedActions.includes('approve');
     } catch (error) {
       console.error("Database error in canUserApproveTimesheets:", error);
+      return false;
+    }
+  }
+
+  async canUserViewTimesheetRates(userId: string): Promise<boolean> {
+    try {
+      const user = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user.length || !user[0].roleId) {
+        return false;
+      }
+
+      const role = await db.select()
+        .from(schema.userRoles)
+        .where(eq(schema.userRoles.id, user[0].roleId))
+        .limit(1);
+
+      if (role.length) {
+        const roleName = role[0].name?.toLowerCase() || '';
+        const isAdminRole =
+          roleName.includes('admin') ||
+          roleName.includes('general manage') ||
+          roleName.includes('owner') ||
+          roleName === 'general manager';
+        if (isAdminRole) {
+          return true;
+        }
+      }
+
+      const ratesPermission = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.key, 'timesheets.rates'))
+        .limit(1);
+
+      if (!ratesPermission.length) {
+        return false;
+      }
+
+      const rolePermission = await db.select()
+        .from(schema.rolePermissions)
+        .where(
+          and(
+            eq(schema.rolePermissions.roleId, user[0].roleId),
+            eq(schema.rolePermissions.permissionId, ratesPermission[0].id)
+          )
+        )
+        .limit(1);
+
+      if (!rolePermission.length) {
+        return false;
+      }
+
+      const allowedActions = rolePermission[0].allowedActions as string[];
+      return allowedActions && allowedActions.includes('view');
+    } catch (error) {
+      console.error("Database error in canUserViewTimesheetRates:", error);
       return false;
     }
   }
