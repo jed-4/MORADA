@@ -343,6 +343,22 @@ function useGanttRowDrag(
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
               if (itemsCacheKey) queryClient.invalidateQueries({ queryKey: [itemsCacheKey] });
             };
+            // Reorder session: move nested item to sit right after parent's last existing child
+            const reorderedIds = [...sortableItemIds];
+            const fromIdx = reorderedIds.indexOf(itemId);
+            if (fromIdx !== -1) reorderedIds.splice(fromIdx, 1);
+            const parentIdx = reorderedIds.indexOf(newParentId!);
+            let insertAfterIdx = parentIdx;
+            for (let i = parentIdx + 1; i < reorderedIds.length; i++) {
+              const candidate = allItems.find(x => x.id === reorderedIds[i]);
+              if (candidate && candidate.parentItemId === newParentId) {
+                insertAfterIdx = i;
+              } else {
+                break;
+              }
+            }
+            reorderedIds.splice(insertAfterIdx + 1, 0, itemId);
+            setSessionItemOrder(reorderedIds);
             // Optimistic update — move item under parent instantly
             const applyOptimistic = (old: any) => {
               if (!Array.isArray(old)) return old;
