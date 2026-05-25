@@ -243,7 +243,7 @@ export function TimesheetDialog({
         breakStartTime: timesheet.breakStartTime || "",
         breakEndTime: timesheet.breakEndTime || "",
         description: timesheet.description || "",
-        hourlyRate: timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate.toString()).toString() : "50",
+        hourlyRate: (timesheet.hourlyRate && parseFloat(timesheet.hourlyRate.toString()) > 0) ? parseFloat(timesheet.hourlyRate.toString()).toString() : "",
         costCodeId: timesheet.costCodeId || "",
         labels: (timesheet.labels as string[]) || [],
       });
